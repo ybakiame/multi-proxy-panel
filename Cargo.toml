@@ -1,0 +1,110 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/pp-common",
+    "crates/pp-db",
+    "crates/pp-proto",
+    "crates/pp-config",
+    "crates/pp-subscription",
+    "crates/pp-core",
+    "crates/pp-hub",
+    "crates/pp-agent",
+    "crates/pp-cli",
+    "crates/pp-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+authors = ["ProxyPanel Contributors"]
+repository = "https://github.com/your-org/proxy-panel"
+rust-version = "1.86"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.45", features = ["full"] }
+tokio-util = "0.7"
+tokio-stream = "0.1"
+
+# HTTP & web
+axum = { version = "0.8", features = ["macros", "ws", "json"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "auth", "fs"] }
+
+# gRPC
+tonic = { version = "0.13", features = ["transport", "tls-ring"] }
+prost = "0.13"
+prost-types = "0.13"
+
+# Database
+sea-orm = { version = "1.1", features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+    "sqlx-sqlite",
+    "uuid",
+    "chrono",
+    "with-json",
+    "macros",
+] }
+sea-orm-migration = { version = "1.1", features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+    "sqlx-sqlite",
+] }
+
+# Serialization & data
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+uuid = { version = "1.16", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# CLI & config
+clap = { version = "4.5", features = ["derive", "env"] }
+config = "0.15"
+dialoguer = "0.11"
+
+# Utils & observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+thiserror = "2.0"
+anyhow = "1.0"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+sysinfo = "0.34"
+notify = { version = "8.0", default-features = false, features = ["macos_fsevent"] }
+
+# Security
+jsonwebtoken = "9.3"
+argon2 = { version = "0.5", features = ["password-hash"] }
+rustls = "0.23"
+sha2 = "0.10"
+rand = "0.9"
+
+# Template / rendering
+tera = { version = "1.20", default-features = false }
+base64 = "0.22"
+url = "2.5"
+
+# Internal crates
+pp-common = { path = "crates/pp-common" }
+pp-db = { path = "crates/pp-db" }
+pp-proto = { path = "crates/pp-proto" }
+pp-config = { path = "crates/pp-config" }
+pp-subscription = { path = "crates/pp-subscription" }
+pp-core = { path = "crates/pp-core" }
+
+[profile]
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"

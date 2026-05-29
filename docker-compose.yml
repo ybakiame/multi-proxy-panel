@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: proxypanel-db
+    environment:
+      POSTGRES_USER: proxypanel
+      POSTGRES_PASSWORD: proxypanel
+      POSTGRES_DB: proxypanel
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proxypanel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile.hub
+    container_name: proxypanel-hub
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PROXYPANEL_HUB_LISTEN: 0.0.0.0:8080
+      PROXYPANEL_DATABASE_URL: postgres://proxypanel:proxypanel@postgres/proxypanel
+      RUST_LOG: proxy_panel_hub=info,tower_http=debug
+    ports:
+      - "8080:8080"
+    volumes:
+      - hub-data:/data
+
+volumes:
+  pgdata:
+  hub-data:

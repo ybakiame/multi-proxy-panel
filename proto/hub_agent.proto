@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package proxypanel;
+
+// Hub-Agent 双向流服务
+service HubAgent {
+  // Agent 注册后保持长连接，双向持续通信
+  rpc Stream(stream AgentMessage) returns (stream HubMessage);
+}
+
+// Agent → Hub 的消息
+message AgentMessage {
+  oneof payload {
+    RegisterRequest register = 1;
+    Heartbeat heartbeat = 2;
+    TrafficReport traffic = 3;
+    HostMetrics metrics = 4;
+    LogBatch logs = 5;
+    CoreStatusReport core_status = 6;
+  }
+}
+
+// Hub → Agent 的消息
+message HubMessage {
+  oneof payload {
+    RegisterResponse register_resp = 1;
+    ConfigPush config_push = 2;
+    ConfigReload config_reload = 3;
+    CoreCommand core_cmd = 4;
+    AgentShutdown shutdown = 5;
+  }
+}
+
+// 注册请求
+message RegisterRequest {
+  string agent_id = 1;
+  string token = 2;
+  string hostname = 3;
+  string version = 4;
+  repeated string capabilities = 5;
+  map<string, string> labels = 6;
+}
+
+// 注册响应
+message RegisterResponse {
+  bool success = 1;
+  string message = 2;
+  int32 heartbeat_interval_sec = 3;
+  string assigned_agent_id = 4;
+}
+
+// 心跳
+message Heartbeat {
+  int64 timestamp = 1;
+  NodeStatus status = 2;
+}
+
+// 节点状态
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_CONNECTING = 1;
+  NODE_STATUS_ONLINE = 2;
+  NODE_STATUS_DEGRADED = 3;
+  NODE_STATUS_OFFLINE = 4;
+}
+
+// 流量上报
+message TrafficReport {
+  int64 timestamp = 1;
+  repeated InboundTraffic inbounds = 2;
+  repeated UserTraffic users = 3;
+}
+
+message InboundTraffic {
+  string tag = 1;
+  int64 upload_bytes = 2;
+  int64 download_bytes = 3;
+}
+
+message UserTraffic {
+  string client_id = 1;
+  string email = 2;
+  int64 upload_bytes = 3;
+  int64 download_bytes = 4;
+}
+
+// 主机指标上报
+message HostMetrics {
+  int64 timestamp = 1;
+  float cpu_percent = 2;
+  uint64 mem_used = 3;
+  uint64 mem_total = 4;
+  uint64 disk_used = 5;
+  uint64 disk_total = 6;
+  repeated NetInterface net = 7;
+  float load_avg_1 = 8;
+  float load_avg_5 = 9;
+  float load_avg_15 = 10;
+}
+
+message NetInterface {
+  string name = 1;
+  uint64 rx_bytes = 2;
+  uint64 tx_bytes = 3;
+  uint64 rx_packets = 4;
+  uint64 tx_packets = 5;
+}
+
+// 日志批量上报
+message LogBatch {
+  repeated LogEntry entries = 1;
+}
+
+message LogEntry {
+  int64 timestamp = 1;
+  string level = 2;
+  string target = 3;
+  string message = 4;
+  map<string, string> fields = 5;
+}
+
+// 核心状态上报
+message CoreStatusReport {
+  string core_type = 1;
+  string version = 2;
+  bool running = 3;
+  int64 uptime_sec = 4;
+  repeated string active_inbounds = 5;
+  string last_error = 6;
+}
+
+// 配置推送
+message ConfigPush {
+  string config_json = 1;
+  CoreType target_core = 2;
+  bool restart_required = 3;
+  string config_version = 4;
+}
+
+// 配置热重载
+message ConfigReload {
+  string config_json = 1;
+  CoreType target_core = 2;
+  string config_version = 3;
+}
+
+// 核心命令
+message CoreCommand {
+  oneof command {
+    CoreStart start = 1;
+    CoreStop stop = 2;
+    CoreRestart restart = 3;
+  }
+}
+
+message CoreStart {
+  CoreType core_type = 1;
+}
+
+message CoreStop {
+  CoreType core_type = 1;
+}
+
+message CoreRestart {
+  CoreType core_type = 1;
+}
+
+// 目标内核类型
+enum CoreType {
+  CORE_TYPE_UNSPECIFIED = 0;
+  CORE_TYPE_XRAY = 1;
+  CORE_TYPE_SING_BOX = 2;
+  CORE_TYPE_BOTH = 3;
+}
+
+// Agent 关闭指令
+message AgentShutdown {
+  string reason = 1;
+  int32 delay_sec = 2;
+}

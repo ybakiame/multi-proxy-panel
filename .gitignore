@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+Cargo.lock
+*.db
+*.db-shm
+*.db-wal
+.env
+/data
+/dist
+/build
+.DS_Store

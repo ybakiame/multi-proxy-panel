@@ -1,0 +1,20 @@
+[package]
+name = "pp-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+sea-orm = { workspace = true }
+tonic = { workspace = true }
+x25519-dalek = { version = "2.0", features = ["static_secrets", "getrandom"] }
