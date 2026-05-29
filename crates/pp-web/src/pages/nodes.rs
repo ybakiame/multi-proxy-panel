@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::{FormInput, Modal, StatusBadge};
@@ -22,21 +22,21 @@ pub fn Nodes() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Nodes" }
+                h1 { {t!("nodes-title")} }
                 button {
                     onclick: move |_| show_create.set(true),
-                    "+ Create Node"
+                    {t!("nodes-create")}
                 }
             }
 
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Name" }
-                        th { "Hostname" }
-                        th { "Address" }
-                        th { "Status" }
-                        th { "Actions" }
+                        th { {t!("common-name")} }
+                        th { {t!("node-hostname")} }
+                        th { {t!("node-address")} }
+                        th { {t!("common-status")} }
+                        th { {t!("common-actions")} }
                     }
                 }
                 tbody {
@@ -66,7 +66,7 @@ pub fn Nodes() -> Element {
                                                     let _ = api::push_config(&id, payload).await;
                                                 });
                                             },
-                                            "Push Config"
+                                            {t!("nodes-push-config")}
                                         }
                                         button {
                                             class: "danger",
@@ -77,7 +77,7 @@ pub fn Nodes() -> Element {
                                                     nodes.restart();
                                                 });
                                             },
-                                            "Delete"
+                                            {t!("common-delete")}
                                         }
                                     }
                                 }
@@ -89,7 +89,7 @@ pub fn Nodes() -> Element {
         }
 
         Modal {
-            title: "Create Node".to_string(),
+            title: t!("nodes-create-title").to_string(),
             show: show_create,
             on_confirm: move |_| {
                 let name = new_name.read().clone();
@@ -106,10 +106,10 @@ pub fn Nodes() -> Element {
                     });
                 }
             },
-            confirm_text: Some("Create".to_string()),
-            FormInput { label: "Name".to_string(), value: new_name, placeholder: Some("node-01".to_string()), input_type: None }
-            FormInput { label: "Hostname".to_string(), value: new_hostname, placeholder: Some("host.example.com".to_string()), input_type: None }
-            FormInput { label: "Address".to_string(), value: new_address, placeholder: Some("192.168.1.1".to_string()), input_type: None }
+            confirm_text: Some(t!("common-create").to_string()),
+            FormInput { label: t!("common-name").to_string(), value: new_name, placeholder: Some("node-01".to_string()), input_type: None }
+            FormInput { label: t!("node-hostname").to_string(), value: new_hostname, placeholder: Some("host.example.com".to_string()), input_type: None }
+            FormInput { label: t!("node-address").to_string(), value: new_address, placeholder: Some("192.168.1.1".to_string()), input_type: None }
         }
     }
 }

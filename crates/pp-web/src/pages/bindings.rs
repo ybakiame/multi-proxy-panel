@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::{FormSelect, Modal, StatusBadge};
@@ -80,20 +80,20 @@ pub fn Bindings() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Node Bindings" }
+                h1 { {t!("bindings-title")} }
                 button {
                     onclick: move |_| show_create.set(true),
-                    "+ Create Binding"
+                    {t!("bindings-create")}
                 }
             }
 
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Node" }
-                        th { "Protocol" }
-                        th { "Active" }
-                        th { "Actions" }
+                        th { {t!("bindings-node")} }
+                        th { {t!("bindings-protocol")} }
+                        th { {t!("common-active")} }
+                        th { {t!("common-actions")} }
                     }
                 }
                 tbody {
@@ -124,7 +124,7 @@ pub fn Bindings() -> Element {
                                                     bindings.restart();
                                                 });
                                             },
-                                            "Delete"
+                                            {t!("common-delete")}
                                         }
                                     }
                                 }
@@ -136,7 +136,7 @@ pub fn Bindings() -> Element {
         }
 
         Modal {
-            title: "Create Binding".to_string(),
+            title: t!("bindings-create-title").to_string(),
             show: show_create,
             on_confirm: move |_| {
                 let node_id = selected_node.read().clone();
@@ -153,14 +153,14 @@ pub fn Bindings() -> Element {
                     });
                 }
             },
-            confirm_text: Some("Create".to_string()),
+            confirm_text: Some(t!("common-create").to_string()),
             FormSelect {
-                label: "Node".to_string(),
+                label: t!("bindings-node").to_string(),
                 value: selected_node,
                 options: node_options,
             }
             FormSelect {
-                label: "Protocol".to_string(),
+                label: t!("bindings-protocol").to_string(),
                 value: selected_protocol,
                 options: protocol_options,
             }
@@ -171,7 +171,8 @@ pub fn Bindings() -> Element {
                         checked: "{is_active.read().clone()}",
                         onchange: move |e| is_active.set(e.checked()),
                     }
-                    " Active"
+                    " "
+                    {t!("common-active")}
                 }
             }
         }

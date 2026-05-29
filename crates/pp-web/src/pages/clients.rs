@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::{FormInput, Modal, StatusBadge};
@@ -23,22 +23,22 @@ pub fn Clients() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Clients" }
+                h1 { {t!("clients-title")} }
                 button {
                     onclick: move |_| show_create.set(true),
-                    "+ Create Client"
+                    {t!("clients-create")}
                 }
             }
 
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Name" }
-                        th { "Email" }
-                        th { "Status" }
-                        th { "Traffic Used" }
-                        th { "Traffic Limit" }
-                        th { "Actions" }
+                        th { {t!("common-name")} }
+                        th { {t!("clients-email")} }
+                        th { {t!("common-status")} }
+                        th { {t!("clients-traffic-used")} }
+                        th { {t!("clients-traffic-limit")} }
+                        th { {t!("common-actions")} }
                     }
                 }
                 tbody {
@@ -70,7 +70,7 @@ pub fn Clients() -> Element {
                                                     clients.restart();
                                                 });
                                             },
-                                            "Delete"
+                                            {t!("common-delete")}
                                         }
                                     }
                                 }
@@ -82,7 +82,7 @@ pub fn Clients() -> Element {
         }
 
         Modal {
-            title: "Create Client".to_string(),
+            title: t!("clients-create-title").to_string(),
             show: show_create,
             on_confirm: move |_| {
                 let name = new_name.read().clone();
@@ -102,11 +102,11 @@ pub fn Clients() -> Element {
                     });
                 }
             },
-            confirm_text: Some("Create".to_string()),
-            FormInput { label: "Name".to_string(), value: new_name, placeholder: Some("user01".to_string()), input_type: None }
-            FormInput { label: "Email".to_string(), value: new_email, placeholder: Some("user@example.com".to_string()), input_type: Some("email".to_string()) }
-            FormInput { label: "Traffic Limit (bytes)".to_string(), value: new_limit, placeholder: Some("1073741824".to_string()), input_type: Some("number".to_string()) }
-            FormInput { label: "Reset Day (1-31)".to_string(), value: new_reset_day, placeholder: Some("1".to_string()), input_type: Some("number".to_string()) }
+            confirm_text: Some(t!("common-create").to_string()),
+            FormInput { label: t!("common-name").to_string(), value: new_name, placeholder: Some("user01".to_string()), input_type: None }
+            FormInput { label: t!("clients-email").to_string(), value: new_email, placeholder: Some("user@example.com".to_string()), input_type: Some("email".to_string()) }
+            FormInput { label: format!("{} (bytes)", t!("clients-traffic-limit")), value: new_limit, placeholder: Some("1073741824".to_string()), input_type: Some("number".to_string()) }
+            FormInput { label: format!("{} (1-31)", t!("clients-reset-day")), value: new_reset_day, placeholder: Some("1".to_string()), input_type: Some("number".to_string()) }
         }
     }
 }

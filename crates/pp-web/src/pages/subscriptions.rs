@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::{FormSelect, Modal};
@@ -79,22 +79,22 @@ pub fn Subscriptions() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Subscriptions" }
+                h1 { {t!("subscriptions-title")} }
                 button {
                     onclick: move |_| show_create.set(true),
-                    "+ Create Subscription"
+                    {t!("subscriptions-create")}
                 }
             }
 
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Client" }
-                        th { "Template" }
-                        th { "Token" }
-                        th { "URL Path" }
-                        th { "Active" }
-                        th { "Actions" }
+                        th { {t!("nav-clients")} }
+                        th { {t!("subscriptions-template")} }
+                        th { {t!("subscriptions-token")} }
+                        th { {t!("subscriptions-url-path")} }
+                        th { {t!("common-active")} }
+                        th { {t!("common-actions")} }
                     }
                 }
                 tbody {
@@ -126,7 +126,7 @@ pub fn Subscriptions() -> Element {
                                                     subs.restart();
                                                 });
                                             },
-                                            "Delete"
+                                            {t!("common-delete")}
                                         }
                                     }
                                 }
@@ -138,7 +138,7 @@ pub fn Subscriptions() -> Element {
         }
 
         Modal {
-            title: "Create Subscription".to_string(),
+            title: t!("subscriptions-create-title").to_string(),
             show: show_create,
             on_confirm: move |_| {
                 let client_id = selected_client.read().clone();
@@ -153,14 +153,14 @@ pub fn Subscriptions() -> Element {
                     });
                 }
             },
-            confirm_text: Some("Create".to_string()),
+            confirm_text: Some(t!("common-create").to_string()),
             FormSelect {
-                label: "Client".to_string(),
+                label: t!("nav-clients").to_string(),
                 value: selected_client,
                 options: client_options,
             }
             FormSelect {
-                label: "Template".to_string(),
+                label: t!("subscriptions-template").to_string(),
                 value: selected_template,
                 options: template_options,
             }

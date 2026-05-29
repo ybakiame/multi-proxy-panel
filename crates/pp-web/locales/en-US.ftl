@@ -33,6 +33,7 @@ dashboard-clients = Clients
 dashboard-bindings = Bindings
 dashboard-metrics-records = Metrics Records
 dashboard-recent-logs = Recent Logs
+dashboard-node-status = Node Status
 
 # Logs table
 log-level = Level
@@ -49,6 +50,7 @@ node-last-seen = Last Seen
 nodes-title = Nodes
 nodes-create = + Create Node
 nodes-push-config = Push Config
+nodes-create-title = Create Node
 
 # Protocols page
 protocols-title = Protocol Configs
@@ -61,12 +63,15 @@ protocols-key = Key
 protocols-prev = ← Prev
 protocols-next = Next →
 protocols-page = Page { $current } of { $total } ({ $count } total)
+protocols-create-title = Create Protocol
+protocols-edit-title = Edit Protocol
 
 # Bindings page
 bindings-title = Node Bindings
 bindings-create = + Create Binding
 bindings-node = Node
 bindings-protocol = Protocol
+bindings-create-title = Create Binding
 
 # Clients page
 clients-title = Clients
@@ -74,6 +79,8 @@ clients-create = + Create Client
 clients-email = Email
 clients-traffic-used = Traffic Used
 clients-traffic-limit = Traffic Limit
+clients-reset-day = Reset Day
+clients-create-title = Create Client
 
 # Subscriptions page
 subscriptions-title = Subscriptions
@@ -81,6 +88,7 @@ subscriptions-create = + Create Subscription
 subscriptions-template = Template
 subscriptions-token = Token
 subscriptions-url-path = URL Path
+subscriptions-create-title = Create Subscription
 
 # Metrics page
 metrics-title = Host Metrics

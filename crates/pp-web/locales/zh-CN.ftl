@@ -33,6 +33,7 @@ dashboard-clients = 客户端
 dashboard-bindings = 绑定
 dashboard-metrics-records = 指标记录
 dashboard-recent-logs = 最近日志
+dashboard-node-status = 节点状态
 
 # Logs table
 log-level = 级别
@@ -49,6 +50,7 @@ node-last-seen = 最后在线
 nodes-title = 节点管理
 nodes-create = + 创建节点
 nodes-push-config = 推送配置
+nodes-create-title = 创建节点
 
 # Protocols page
 protocols-title = 协议配置
@@ -61,12 +63,15 @@ protocols-key = 密钥
 protocols-prev = ← 上一页
 protocols-next = 下一页 →
 protocols-page = 第 { $current } 页，共 { $total } 页（{ $count } 条）
+protocols-create-title = 创建协议
+protocols-edit-title = 编辑协议
 
 # Bindings page
 bindings-title = 节点绑定
 bindings-create = + 创建绑定
 bindings-node = 节点
 bindings-protocol = 协议
+bindings-create-title = 创建绑定
 
 # Clients page
 clients-title = 客户端
@@ -74,6 +79,8 @@ clients-create = + 创建客户端
 clients-email = 邮箱
 clients-traffic-used = 已用流量
 clients-traffic-limit = 流量限制
+clients-reset-day = 重置日期
+clients-create-title = 创建客户端
 
 # Subscriptions page
 subscriptions-title = 订阅
@@ -81,6 +88,7 @@ subscriptions-create = + 创建订阅
 subscriptions-template = 模板
 subscriptions-token = 令牌
 subscriptions-url-path = URL 路径
+subscriptions-create-title = 创建订阅
 
 # Metrics page
 metrics-title = 主机指标

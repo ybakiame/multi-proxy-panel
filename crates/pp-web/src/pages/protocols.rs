@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 use serde_json::{json, Value};
 
 use crate::api;
@@ -295,33 +296,33 @@ pub fn Protocols() -> Element {
         ],
     };
 
-    let modal_title = if *is_edit.read() { "Edit Protocol".to_string() } else { "Create Protocol".to_string() };
-    let confirm_text = if *is_edit.read() { "Update".to_string() } else { "Create".to_string() };
+    let modal_title = if *is_edit.read() { t!("protocols-edit-title").to_string() } else { t!("protocols-create-title").to_string() };
+    let confirm_text = if *is_edit.read() { t!("common-update").to_string() } else { t!("common-create").to_string() };
 
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Protocol Configs" }
+                h1 { {t!("protocols-title")} }
                 button {
                     onclick: move |_| {
                         reset_form();
                         is_edit.set(false);
                         show_modal.set(true);
                     },
-                    "+ Create Protocol"
+                    {t!("protocols-create")}
                 }
             }
 
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Name" }
-                        th { "Type" }
-                        th { "Core" }
-                        th { "Listen" }
-                        th { "Port" }
-                        th { "Key" }
-                        th { "Actions" }
+                        th { {t!("common-name")} }
+                        th { {t!("protocols-type")} }
+                        th { {t!("protocols-core")} }
+                        th { {t!("protocols-listen")} }
+                        th { {t!("protocols-port")} }
+                        th { {t!("protocols-key")} }
+                        th { {t!("common-actions")} }
                     }
                 }
                 tbody {
@@ -366,7 +367,7 @@ pub fn Protocols() -> Element {
                                                 is_edit.set(true);
                                                 show_modal.set(true);
                                             },
-                                            "Edit"
+                                            {t!("common-edit")}
                                         }
                                         button {
                                             class: "danger",
@@ -377,7 +378,7 @@ pub fn Protocols() -> Element {
                                                     protocols.restart();
                                                 });
                                             },
-                                            "Delete"
+                                            {t!("common-delete")}
                                         }
                                     }
                                 }
@@ -395,9 +396,9 @@ pub fn Protocols() -> Element {
                             page.set(current_page - 1);
                         }
                     },
-                    "← Prev"
+                    {t!("protocols-prev")}
                 }
-                span { "Page {current_page} of {total_pages} ({total} total)" }
+                span { {t!("protocols-page", current: current_page, total: total_pages, count: total)} }
                 button {
                     disabled: current_page >= total_pages,
                     onclick: move |_| {
@@ -405,7 +406,7 @@ pub fn Protocols() -> Element {
                             page.set(current_page + 1);
                         }
                     },
-                    "Next →"
+                    {t!("protocols-next")}
                 }
                 select {
                     value: "{current_per_page}",
@@ -459,9 +460,9 @@ pub fn Protocols() -> Element {
                 }
             },
             confirm_text: Some(confirm_text),
-            FormInput { label: "Name".to_string(), value: new_name, placeholder: Some("vless-443".to_string()), input_type: None }
+            FormInput { label: t!("common-name").to_string(), value: new_name, placeholder: Some("vless-443".to_string()), input_type: None }
             FormSelect {
-                label: "Protocol Type".to_string(),
+                label: t!("protocols-type").to_string(),
                 value: new_protocol_type,
                 options: vec![
                     ("vless_reality".to_string(), "VLESS + REALITY".to_string()),
@@ -472,12 +473,12 @@ pub fn Protocols() -> Element {
                 ],
             }
             FormSelect {
-                label: "Core Type".to_string(),
+                label: t!("protocols-core").to_string(),
                 value: new_core_type,
                 options: core_options,
             }
-            FormInput { label: "Listen Address".to_string(), value: new_listen_address, placeholder: Some("0.0.0.0".to_string()), input_type: None }
-            FormInput { label: "Listen Port".to_string(), value: new_listen_port, placeholder: Some("443".to_string()), input_type: Some("number".to_string()) }
+            FormInput { label: t!("protocols-listen").to_string(), value: new_listen_address, placeholder: Some("0.0.0.0".to_string()), input_type: None }
+            FormInput { label: t!("protocols-port").to_string(), value: new_listen_port, placeholder: Some("443".to_string()), input_type: Some("number".to_string()) }
             {protocol_specific_form}
         }
     }

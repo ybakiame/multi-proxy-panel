@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::FormSelect;
@@ -20,7 +20,7 @@ pub fn Metrics() -> Element {
         }
     });
 
-    let node_options: Vec<(String, String)> = std::iter::once(("".to_string(), "All Nodes".to_string()))
+    let node_options: Vec<(String, String)> = std::iter::once(("".to_string(), t!("common-all").to_string()))
         .chain(
             nodes.read()
                 .as_ref()
@@ -47,16 +47,16 @@ pub fn Metrics() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "Host Metrics" }
+                h1 { {t!("metrics-title")} }
                 div { class: "filters",
                     FormSelect {
-                        label: "Filter by Node".to_string(),
+                        label: t!("metrics-filter-by-node").to_string(),
                         value: selected_node,
                         options: node_options,
                     }
                     button {
                         onclick: move |_| metrics.restart(),
-                        "Refresh"
+                        {t!("common-refresh")}
                     }
                 }
             }
@@ -64,12 +64,12 @@ pub fn Metrics() -> Element {
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Node ID" }
-                        th { "CPU %" }
-                        th { "Memory" }
-                        th { "Disk" }
-                        th { "Load Avg" }
-                        th { "Timestamp" }
+                        th { {t!("node-address")} }
+                        th { {t!("metrics-cpu")} }
+                        th { {t!("metrics-memory")} }
+                        th { {t!("metrics-disk")} }
+                        th { {t!("metrics-load-avg")} }
+                        th { {t!("metrics-timestamp")} }
                     }
                 }
                 tbody {

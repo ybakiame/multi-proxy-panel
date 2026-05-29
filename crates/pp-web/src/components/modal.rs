@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn Modal(
@@ -11,7 +12,7 @@ pub fn Modal(
     if !show.read().clone() {
         return rsx! {};
     }
-    let confirm_text = confirm_text.unwrap_or_else(|| "Confirm".to_string());
+    let confirm_text = confirm_text.unwrap_or_else(|| t!("modal-confirm").to_string());
     rsx! {
         div {
             class: "modal-overlay",
@@ -31,7 +32,7 @@ pub fn Modal(
                     button {
                         class: "danger",
                         onclick: move |_| show.set(false),
-                        "Cancel"
+                        {t!("common-cancel")}
                     }
                 }
             }

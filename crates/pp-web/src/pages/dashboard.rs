@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 use serde_json::Value;
 
 use crate::api;
@@ -33,42 +34,42 @@ pub fn Dashboard() -> Element {
 
     rsx! {
         div { class: "dashboard",
-            h1 { "Dashboard" }
+            h1 { {t!("dashboard-title")} }
             div { class: "stats-grid",
                 div { class: "stat-card",
-                    h3 { "Total Nodes" }
+                    h3 { {t!("dashboard-total-nodes")} }
                     p { "{nodes_data.len()}" }
                 }
                 div { class: "stat-card",
-                    h3 { "Online" }
+                    h3 { {t!("dashboard-online")} }
                     p { "{online_count}" }
                 }
                 div { class: "stat-card",
-                    h3 { "Protocols" }
+                    h3 { {t!("dashboard-protocols")} }
                     p { "{protocols_data.len()}" }
                 }
                 div { class: "stat-card",
-                    h3 { "Clients" }
+                    h3 { {t!("dashboard-clients")} }
                     p { "{clients_data.len()}" }
                 }
                 div { class: "stat-card",
-                    h3 { "Bindings" }
+                    h3 { {t!("dashboard-bindings")} }
                     p { "{bindings_data.len()}" }
                 }
                 div { class: "stat-card",
-                    h3 { "Metrics Records" }
+                    h3 { {t!("dashboard-metrics-records")} }
                     p { "{metrics_data.len()}" }
                 }
             }
 
-            h2 { "Recent Logs" }
+            h2 { {t!("dashboard-recent-logs")} }
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Level" }
-                        th { "Source" }
-                        th { "Message" }
-                        th { "Time" }
+                        th { {t!("log-level")} }
+                        th { {t!("log-source")} }
+                        th { {t!("log-message")} }
+                        th { {t!("log-time")} }
                     }
                 }
                 tbody {
@@ -92,15 +93,15 @@ pub fn Dashboard() -> Element {
                 }
             }
 
-            h2 { "Node Status" }
+            h2 { {t!("dashboard-node-status")} }
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Name" }
-                        th { "Hostname" }
-                        th { "Address" }
-                        th { "Status" }
-                        th { "Last Seen" }
+                        th { {t!("common-name")} }
+                        th { {t!("node-hostname")} }
+                        th { {t!("node-address")} }
+                        th { {t!("common-status")} }
+                        th { {t!("node-last-seen")} }
                     }
                 }
                 tbody {

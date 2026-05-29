@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use serde_json::Value;
+use dioxus_i18n::t;
 
 use crate::api;
 use crate::components::FormSelect;
@@ -29,13 +29,13 @@ pub fn Logs() -> Element {
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h1 { "System Logs" }
+                h1 { {t!("nav-logs")} }
                 div { class: "filters",
                     FormSelect {
-                        label: "Level".to_string(),
+                        label: t!("log-level").to_string(),
                         value: level_filter,
                         options: vec![
-                            ("".to_string(), "All".to_string()),
+                            ("".to_string(), t!("common-all").to_string()),
                             ("info".to_string(), "Info".to_string()),
                             ("warn".to_string(), "Warn".to_string()),
                             ("error".to_string(), "Error".to_string()),
@@ -43,7 +43,7 @@ pub fn Logs() -> Element {
                         ],
                     }
                     div { class: "form-group",
-                        label { "Source" }
+                        label { {t!("log-source")} }
                         input {
                             r#type: "text",
                             placeholder: "Filter by source...",
@@ -53,7 +53,7 @@ pub fn Logs() -> Element {
                     }
                     button {
                         onclick: move |_| logs.restart(),
-                        "Filter"
+                        {t!("common-filter")}
                     }
                 }
             }
@@ -61,10 +61,10 @@ pub fn Logs() -> Element {
             table { class: "data-table",
                 thead {
                     tr {
-                        th { "Level" }
-                        th { "Source" }
-                        th { "Message" }
-                        th { "Time" }
+                        th { {t!("log-level")} }
+                        th { {t!("log-source")} }
+                        th { {t!("log-message")} }
+                        th { {t!("log-time")} }
                     }
                 }
                 tbody {
