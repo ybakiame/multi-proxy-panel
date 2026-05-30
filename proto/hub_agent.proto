@@ -17,6 +17,7 @@ message AgentMessage {
     HostMetrics metrics = 4;
     LogBatch logs = 5;
     CoreStatusReport core_status = 6;
+    OnlineUsersReport online_users = 7;
   }
 }
 
@@ -177,4 +178,17 @@ enum CoreType {
 message AgentShutdown {
   string reason = 1;
   int32 delay_sec = 2;
+}
+
+// 在线用户上报
+message OnlineUsersReport {
+  int64 timestamp = 1;
+  repeated OnlineUser users = 2;
+}
+
+message OnlineUser {
+  string client_id = 1;
+  string email = 2;
+  string ip_address = 3;
+  string inbound_tag = 4;
 }
