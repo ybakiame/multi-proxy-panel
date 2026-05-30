@@ -1,10 +1,11 @@
-use pp_db::entities::{host_metric, node, system_log};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use pp_db::entities::{client, client_online_session, node, node_user_usage_record, traffic_record};
 use pp_proto::{
-    hub_agent_server::HubAgent, AgentMessage, CoreCommand, CoreStart, CoreStatusReport,
-    CoreStop, CoreType, Heartbeat, HostMetrics, HubMessage, LogBatch, RegisterRequest,
-    RegisterResponse, TrafficReport,
+    AgentMessage, Heartbeat,
+    HostMetrics, HubMessage, LogBatch, OnlineUsersReport, RegisterRequest, RegisterResponse,
+    TrafficReport, hub_agent_server::HubAgent,
 };
+use chrono::Timelike;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -27,8 +28,7 @@ impl HubAgentService {
 
 #[tonic::async_trait]
 impl HubAgent for HubAgentService {
-    type StreamStream =
-        Pin<Box<dyn Stream<Item = Result<HubMessage, Status>> + Send + 'static>>;
+    type StreamStream = Pin<Box<dyn Stream<Item = Result<HubMessage, Status>> + Send + 'static>>;
 
     async fn stream(
         &self,
@@ -39,10 +39,10 @@ impl HubAgent for HubAgentService {
 
         // (tx, rx) for sending messages from Hub to Agent
         let (tx, mut rx) = mpsc::channel::<HubMessage>(128);
-        let (registered_tx, registered_rx) = tokio::sync::oneshot::channel::<Uuid>();
+        let (_registered_tx, _registered_rx) = tokio::sync::oneshot::channel::<Uuid>();
 
         // Spawn a task to handle inbound messages from this Agent
-        let inbound_handle = tokio::spawn(async move {
+        let _inbound_handle = tokio::spawn(async move {
             let mut registered_id: Option<Uuid> = None;
 
             while let Some(msg_result) = inbound.next().await {
@@ -77,7 +77,9 @@ impl HubAgent for HubAgentService {
             }
         };
 
-        Ok(Response::new(Box::pin(outbound_stream) as Self::StreamStream))
+        Ok(Response::new(
+            Box::pin(outbound_stream) as Self::StreamStream
+        ))
     }
 }
 
@@ -112,6 +114,11 @@ async fn handle_agent_message(
         Some(Payload::Logs(logs)) => {
             if let Some(id) = registered_id {
                 handle_logs(state, *id, logs).await?;
+            }
+        }
+        Some(Payload::OnlineUsers(report)) => {
+            if let Some(id) = registered_id {
+                handle_online_users(state, *id, report).await?;
             }
         }
         Some(Payload::CoreStatus(status)) => {
@@ -150,8 +157,11 @@ async fn handle_register(
             token_hash: Set(req.token.clone()), // TODO: hash the token
             cores_available: Set(serde_json::json!(req.capabilities)),
             labels: Set(Some(serde_json::json!(
-                req.labels.into_iter().collect::<std::collections::HashMap<_, _>>()
+                req.labels
+                    .into_iter()
+                    .collect::<std::collections::HashMap<_, _>>()
             ))),
+            usage_coefficient: Set(1.0),
             status: Set("online".to_string()),
             last_seen_at: Set(Some(chrono::Utc::now().into())),
             created_at: Set(chrono::Utc::now().into()),
@@ -206,7 +216,7 @@ async fn handle_heartbeat(
 }
 
 async fn handle_traffic(
-    _state: &AppState,
+    state: &AppState,
     agent_id: Uuid,
     traffic: TrafficReport,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -216,7 +226,77 @@ async fn handle_traffic(
         traffic.inbounds.len(),
         traffic.users.len()
     );
-    // TODO: aggregate and persist to traffic_records
+
+    let hour = chrono::Utc::now()
+        .with_second(0)
+        .and_then(|d| d.with_minute(0))
+        .unwrap_or_else(chrono::Utc::now);
+
+    // 1. Persist inbound-level traffic to traffic_records
+    for inbound in &traffic.inbounds {
+        let active = traffic_record::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            node_id: Set(Some(agent_id)),
+            protocol_config_id: Set(None),
+            client_id: Set(None),
+            hour_bucket: Set(hour.into()),
+            upload_bytes: Set(inbound.upload_bytes),
+            download_bytes: Set(inbound.download_bytes),
+            created_at: Set(chrono::Utc::now().into()),
+        };
+        if let Err(e) = active.insert(&state.db).await {
+            tracing::warn!("failed to insert inbound traffic record: {}", e);
+        }
+    }
+
+    // 2. Persist user-level traffic to node_user_usage_records and update client stats
+    for user in &traffic.users {
+        let client_id = Uuid::parse_str(&user.client_id).unwrap_or_else(|_| Uuid::nil());
+        if client_id.is_nil() {
+            continue;
+        }
+
+        // Upsert node_user_usage_records
+        let existing = node_user_usage_record::Entity::find()
+            .filter(node_user_usage_record::Column::NodeId.eq(agent_id))
+            .filter(node_user_usage_record::Column::ClientId.eq(client_id))
+            .filter(node_user_usage_record::Column::HourBucket.eq(hour))
+            .one(&state.db)
+            .await?;
+
+        if let Some(record) = existing {
+            let mut active: node_user_usage_record::ActiveModel = record.into();
+            active.upload_bytes = Set(active.upload_bytes.as_ref() + user.upload_bytes);
+            active.download_bytes = Set(active.download_bytes.as_ref() + user.download_bytes);
+            if let Err(e) = active.update(&state.db).await {
+                tracing::warn!("failed to update node_user_usage record: {}", e);
+            }
+        } else {
+            let active = node_user_usage_record::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                node_id: Set(agent_id),
+                client_id: Set(client_id),
+                hour_bucket: Set(hour.into()),
+                upload_bytes: Set(user.upload_bytes),
+                download_bytes: Set(user.download_bytes),
+                created_at: Set(chrono::Utc::now().into()),
+            };
+            if let Err(e) = active.insert(&state.db).await {
+                tracing::warn!("failed to insert node_user_usage record: {}", e);
+            }
+        }
+
+        // Update client's traffic_used_bytes
+        if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
+            let prev_used = c.traffic_used_bytes;
+            let mut active: client::ActiveModel = c.into();
+            active.traffic_used_bytes = Set(prev_used + user.upload_bytes + user.download_bytes);
+            if let Err(e) = active.update(&state.db).await {
+                tracing::warn!("failed to update client traffic: {}", e);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -273,6 +353,49 @@ async fn handle_logs(
         active.insert(&state.db).await?;
     }
 
+    Ok(())
+}
+
+async fn handle_online_users(
+    state: &AppState,
+    agent_id: Uuid,
+    report: OnlineUsersReport,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Delete old sessions for this node
+    client_online_session::Entity::delete_many()
+        .filter(client_online_session::Column::NodeId.eq(agent_id))
+        .exec(&state.db)
+        .await?;
+
+    // Insert new sessions
+    for user in &report.users {
+        let client_id = Uuid::parse_str(&user.client_id).unwrap_or_else(|_| Uuid::nil());
+        if client_id.is_nil() {
+            continue;
+        }
+        let active = client_online_session::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            client_id: Set(client_id),
+            node_id: Set(agent_id),
+            ip_address: Set(user.ip_address.clone()),
+            inbound_tag: Set(if user.inbound_tag.is_empty() {
+                None
+            } else {
+                Some(user.inbound_tag.clone())
+            }),
+            connected_at: Set(chrono::DateTime::from_timestamp(report.timestamp, 0)
+                .unwrap_or_else(chrono::Utc::now)
+                .into()),
+            last_active_at: Set(chrono::Utc::now().into()),
+        };
+        active.insert(&state.db).await?;
+    }
+
+    tracing::debug!(
+        "online users report from {}: {} users",
+        agent_id,
+        report.users.len()
+    );
     Ok(())
 }
 

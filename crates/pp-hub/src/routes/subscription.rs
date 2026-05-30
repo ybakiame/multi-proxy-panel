@@ -1,12 +1,15 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Json, Response},
 };
-use pp_db::entities::{client, node, node_binding, protocol_config, subscription, subscription_template};
-use pp_subscription::{generate_subscription, ProxyNode, SubscriptionFormat};
+use pp_db::entities::{
+    client, client_group_binding, node, node_binding, node_group_binding, protocol_config,
+    subscription, subscription_template,
+};
+use pp_subscription::{ProxyNode, SubscriptionFormat, generate_subscription};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -16,11 +19,19 @@ use crate::state::AppState;
 // ========== Subscription Templates ==========
 
 pub async fn list_templates(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
-    let templates = subscription_template::Entity::find().all(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let data: Vec<Value> = templates.into_iter().map(|t| json!({
-        "id": t.id, "name": t.name, "format": t.format,
-        "base_config": t.base_config, "filter_rules": t.filter_rules,
-    })).collect();
+    let templates = subscription_template::Entity::find()
+        .all(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let data: Vec<Value> = templates
+        .into_iter()
+        .map(|t| {
+            json!({
+                "id": t.id, "name": t.name, "format": t.format,
+                "base_config": t.base_config, "filter_rules": t.filter_rules,
+            })
+        })
+        .collect();
     Ok(Json(json!({ "data": data })))
 }
 
@@ -28,37 +39,66 @@ pub async fn create_template(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    let name = payload.get("name").and_then(|v| v.as_str()).ok_or(StatusCode::BAD_REQUEST)?;
+    let name = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
     let active = subscription_template::ActiveModel {
         id: Set(Uuid::new_v4()),
         name: Set(name.to_string()),
-        format: Set(payload.get("format").and_then(|v| v.as_str()).unwrap_or("base64").to_string()),
+        format: Set(payload
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("base64")
+            .to_string()),
         base_config: Set(payload.get("base_config").cloned()),
         filter_rules: Set(payload.get("filter_rules").cloned()),
         custom_headers: Set(payload.get("custom_headers").cloned()),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
     };
-    let inserted = active.insert(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(json!({ "data": { "id": inserted.id, "name": inserted.name } })))
+    let inserted = active
+        .insert(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(
+        json!({ "data": { "id": inserted.id, "name": inserted.name } }),
+    ))
 }
 
 pub async fn delete_template(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    let res = subscription_template::Entity::delete_by_id(id).exec(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    if res.rows_affected == 0 { Err(StatusCode::NOT_FOUND) } else { Ok(StatusCode::NO_CONTENT) }
+    let res = subscription_template::Entity::delete_by_id(id)
+        .exec(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if res.rows_affected == 0 {
+        Err(StatusCode::NOT_FOUND)
+    } else {
+        Ok(StatusCode::NO_CONTENT)
+    }
 }
 
 // ========== Subscriptions ==========
 
-pub async fn list_subscriptions(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
-    let subs = subscription::Entity::find().all(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let data: Vec<Value> = subs.into_iter().map(|s| json!({
-        "id": s.id, "client_id": s.client_id, "template_id": s.template_id,
-        "token": s.token, "url_path": s.url_path, "is_active": s.is_active,
-    })).collect();
+pub async fn list_subscriptions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let subs = subscription::Entity::find()
+        .all(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let data: Vec<Value> = subs
+        .into_iter()
+        .map(|s| {
+            json!({
+                "id": s.id, "client_id": s.client_id, "template_id": s.template_id,
+                "token": s.token, "url_path": s.url_path, "is_active": s.is_active,
+            })
+        })
+        .collect();
     Ok(Json(json!({ "data": data })))
 }
 
@@ -66,8 +106,16 @@ pub async fn create_subscription(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    let client_id = payload.get("client_id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()).ok_or(StatusCode::BAD_REQUEST)?;
-    let template_id = payload.get("template_id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()).ok_or(StatusCode::BAD_REQUEST)?;
+    let client_id = payload
+        .get("client_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let template_id = payload
+        .get("template_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
 
     let token = pp_common::generate_secure_token();
     let url_path = format!("/sub/{}", token);
@@ -83,7 +131,10 @@ pub async fn create_subscription(
         last_accessed_at: Set(None),
         created_at: Set(chrono::Utc::now().into()),
     };
-    let inserted = active.insert(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let inserted = active
+        .insert(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(json!({ "data": {
         "id": inserted.id,
@@ -96,8 +147,15 @@ pub async fn delete_subscription(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    let res = subscription::Entity::delete_by_id(id).exec(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    if res.rows_affected == 0 { Err(StatusCode::NOT_FOUND) } else { Ok(StatusCode::NO_CONTENT) }
+    let res = subscription::Entity::delete_by_id(id)
+        .exec(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if res.rows_affected == 0 {
+        Err(StatusCode::NOT_FOUND)
+    } else {
+        Ok(StatusCode::NO_CONTENT)
+    }
 }
 
 // ========== Subscription Access Endpoint ==========
@@ -132,8 +190,13 @@ pub async fn serve_subscription(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Determine format
-    let format_param = params.get("format").map(|s| s.as_str()).unwrap_or(&template.format);
-    let format = format_param.parse::<SubscriptionFormat>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let format_param = params
+        .get("format")
+        .map(|s| s.as_str())
+        .unwrap_or(&template.format);
+    let format = format_param
+        .parse::<SubscriptionFormat>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Get client for credential injection
     let client_model = client::Entity::find_by_id(sub.client_id)
@@ -143,31 +206,63 @@ pub async fn serve_subscription(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Build proxy nodes from all active bindings + configs
-    let proxy_nodes = build_proxy_nodes(&state.db, &client_model).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let proxy_nodes = build_proxy_nodes(&state.db, &client_model)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let base_config = template.base_config.as_ref();
-    let content = generate_subscription(format, &proxy_nodes, base_config)
-        .map_err(|e| {
-            tracing::warn!("subscription generation error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let content = generate_subscription(format, &proxy_nodes, base_config).map_err(|e| {
+        tracing::warn!("subscription generation error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let content_type = match format {
-        SubscriptionFormat::Json | SubscriptionFormat::SingBox | SubscriptionFormat::V2RayNG => "application/json",
+        SubscriptionFormat::Json | SubscriptionFormat::SingBox | SubscriptionFormat::V2RayNG => {
+            "application/json"
+        }
         SubscriptionFormat::Clash => "application/x-yaml",
         SubscriptionFormat::Base64 => "text/plain; charset=utf-8",
     };
 
-    Ok((
-        [(header::CONTENT_TYPE, content_type)],
-        content,
-    ).into_response())
+    Ok(([(header::CONTENT_TYPE, content_type)], content).into_response())
+}
+
+/// Fetch group IDs assigned to a client.
+async fn get_client_group_ids(
+    db: &sea_orm::DatabaseConnection,
+    client_id: Uuid,
+) -> Result<Vec<Uuid>, sea_orm::DbErr> {
+    let bindings = client_group_binding::Entity::find()
+        .filter(client_group_binding::Column::ClientId.eq(client_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
+}
+
+/// Fetch group IDs assigned to a node.
+async fn get_node_group_ids(
+    db: &sea_orm::DatabaseConnection,
+    node_id: Uuid,
+) -> Result<Vec<Uuid>, sea_orm::DbErr> {
+    let bindings = node_group_binding::Entity::find()
+        .filter(node_group_binding::Column::NodeId.eq(node_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
 }
 
 async fn build_proxy_nodes(
     db: &sea_orm::DatabaseConnection,
     client: &client::Model,
 ) -> Result<Vec<ProxyNode>, sea_orm::DbErr> {
+    // Skip clients that are limited or expired
+    if client.status == "limited" || client.status == "expired" {
+        return Ok(Vec::new());
+    }
+
+    let client_group_ids = get_client_group_ids(db, client.id).await?;
+    let client_has_groups = !client_group_ids.is_empty();
+
     let bindings = node_binding::Entity::find()
         .filter(node_binding::Column::IsActive.eq(true))
         .all(db)
@@ -186,6 +281,20 @@ async fn build_proxy_nodes(
             if protocol.is_err() {
                 continue;
             }
+
+            // Group-based access control
+            let node_group_ids = get_node_group_ids(db, node.id).await?;
+            let node_has_groups = !node_group_ids.is_empty();
+
+            if node_has_groups && client_has_groups {
+                // Both have groups — check intersection
+                let has_overlap = node_group_ids.iter().any(|g| client_group_ids.contains(g));
+                if !has_overlap {
+                    continue; // Skip: client has no access to this node
+                }
+            }
+            // If node has no groups → visible to all (backward compatible)
+            // If client has no groups → can see all nodes (backward compatible)
 
             // Inject client credentials into settings
             let mut settings = cfg.settings.clone();
@@ -220,11 +329,16 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
                 } else {
                     ""
                 };
-                let client_obj = json!({
+                let mut client_obj = json!({
                     "id": client.id.to_string(),
                     "email": client.email.as_ref().unwrap_or(&client.name),
                     "flow": flow,
                 });
+                if let Some(limit) = client.max_devices {
+                    if limit > 0 {
+                        client_obj.as_object_mut().unwrap().insert("limitIp".to_string(), json!(limit));
+                    }
+                }
                 if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
                     arr.push(client_obj);
                 }
@@ -252,7 +366,10 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
             }
             // Shadowsocks
             "shadowsocks2022" => {
-                obj.insert("password".to_string(), json!(client.id.to_string().replace("-", "")));
+                obj.insert(
+                    "password".to_string(),
+                    json!(client.id.to_string().replace("-", "")),
+                );
             }
             _ => {}
         }
