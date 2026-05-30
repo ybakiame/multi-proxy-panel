@@ -6,6 +6,7 @@ nav-bindings = 节点绑定
 nav-clients = 客户端
 nav-subscriptions = 订阅
 nav-metrics = 指标
+nav-groups = 分组
 nav-logs = 日志
 
 # Common
@@ -46,11 +47,18 @@ node-hostname = 主机名
 node-address = 地址
 node-last-seen = 最后在线
 
+# Groups page
+groups-title = 分组管理
+groups-create = + 创建分组
+groups-description = 描述
+groups-create-title = 创建分组
+
 # Nodes page
 nodes-title = 节点管理
 nodes-create = + 创建节点
 nodes-push-config = 推送配置
 nodes-create-title = 创建节点
+nodes-groups = 所属分组
 
 # Protocols page
 protocols-title = 协议配置
@@ -80,6 +88,8 @@ clients-email = 邮箱
 clients-traffic-used = 已用流量
 clients-traffic-limit = 流量限制
 clients-reset-day = 重置日期
+clients-reset-strategy = 重置策略
+clients-groups = 所属分组
 clients-create-title = 创建客户端
 
 # Subscriptions page

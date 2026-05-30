@@ -6,6 +6,7 @@ nav-bindings = Bindings
 nav-clients = Clients
 nav-subscriptions = Subscriptions
 nav-metrics = Metrics
+nav-groups = Groups
 nav-logs = Logs
 
 # Common
@@ -46,11 +47,18 @@ node-hostname = Hostname
 node-address = Address
 node-last-seen = Last Seen
 
+# Groups page
+groups-title = Groups
+groups-create = + Create Group
+groups-description = Description
+groups-create-title = Create Group
+
 # Nodes page
 nodes-title = Nodes
 nodes-create = + Create Node
 nodes-push-config = Push Config
 nodes-create-title = Create Node
+nodes-groups = Groups
 
 # Protocols page
 protocols-title = Protocol Configs
@@ -80,6 +88,8 @@ clients-email = Email
 clients-traffic-used = Traffic Used
 clients-traffic-limit = Traffic Limit
 clients-reset-day = Reset Day
+clients-reset-strategy = Reset Strategy
+clients-groups = Groups
 clients-create-title = Create Client
 
 # Subscriptions page

@@ -1,12 +1,11 @@
 //! HTTP API client for ProxyPanel Hub.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[cfg(target_arch = "wasm32")]
 fn base_url() -> String {
-    web_sys::window()
-        .map(|w| w.location().origin().unwrap_or_else(|_| "http://localhost:8081".to_string()))
-        .unwrap_or_else(|| "http://localhost:8081".to_string())
+    // 开发模式下直接指向 Hub 后端地址（Hub 已配置 permissive CORS）
+    "http://localhost:8081".to_string()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -23,10 +22,15 @@ pub async fn get_nodes() -> Result<Value, reqwest::Error> {
         .await
 }
 
-pub async fn create_node(name: &str, hostname: &str, address: &str) -> Result<Value, reqwest::Error> {
+pub async fn create_node(
+    name: &str,
+    hostname: &str,
+    address: &str,
+    group_ids: Vec<String>,
+) -> Result<Value, reqwest::Error> {
     reqwest::Client::new()
         .post(format!("{}/api/v1/nodes", base_url()))
-        .json(&json!({ "name": name, "hostname": hostname, "address": address }))
+        .json(&json!({ "name": name, "hostname": hostname, "address": address, "group_ids": group_ids }))
         .send()
         .await?
         .json()
@@ -54,10 +58,15 @@ pub async fn push_config(id: &str, config: Value) -> Result<Value, reqwest::Erro
 // ===== Protocol Configs =====
 
 pub async fn get_protocols(page: u64, per_page: u64) -> Result<Value, reqwest::Error> {
-    reqwest::get(format!("{}/api/v1/protocols?page={}&per_page={}", base_url(), page, per_page))
-        .await?
-        .json()
-        .await
+    reqwest::get(format!(
+        "{}/api/v1/protocols?page={}&per_page={}",
+        base_url(),
+        page,
+        per_page
+    ))
+    .await?
+    .json()
+    .await
 }
 
 pub async fn create_protocol(
@@ -118,7 +127,11 @@ pub async fn get_bindings() -> Result<Value, reqwest::Error> {
         .await
 }
 
-pub async fn create_binding(node_id: &str, protocol_config_id: &str, is_active: bool) -> Result<Value, reqwest::Error> {
+pub async fn create_binding(
+    node_id: &str,
+    protocol_config_id: &str,
+    is_active: bool,
+) -> Result<Value, reqwest::Error> {
     reqwest::Client::new()
         .post(format!("{}/api/v1/bindings", base_url()))
         .json(&json!({
@@ -154,10 +167,14 @@ pub async fn create_client(
     email: Option<&str>,
     traffic_limit_bytes: i64,
     reset_day: Option<i32>,
+    data_limit_reset_strategy: &str,
+    group_ids: Vec<String>,
 ) -> Result<Value, reqwest::Error> {
     let mut payload = json!({
         "name": name,
         "traffic_limit_bytes": traffic_limit_bytes,
+        "data_limit_reset_strategy": data_limit_reset_strategy,
+        "group_ids": group_ids,
     });
     if let Some(e) = email {
         payload["email"] = json!(e);
@@ -174,6 +191,7 @@ pub async fn create_client(
         .await
 }
 
+#[allow(dead_code)]
 pub async fn update_client(id: &str, payload: Value) -> Result<Value, reqwest::Error> {
     reqwest::Client::new()
         .put(format!("{}/api/v1/clients/{}", base_url(), id))
@@ -201,6 +219,7 @@ pub async fn get_templates() -> Result<Value, reqwest::Error> {
         .await
 }
 
+#[allow(dead_code)]
 pub async fn create_template(name: &str, format: &str) -> Result<Value, reqwest::Error> {
     reqwest::Client::new()
         .post(format!("{}/api/v1/templates", base_url()))
@@ -211,6 +230,7 @@ pub async fn create_template(name: &str, format: &str) -> Result<Value, reqwest:
         .await
 }
 
+#[allow(dead_code)]
 pub async fn delete_template(id: &str) -> Result<(), reqwest::Error> {
     reqwest::Client::new()
         .delete(format!("{}/api/v1/templates/{}", base_url(), id))
@@ -228,7 +248,10 @@ pub async fn get_subscriptions() -> Result<Value, reqwest::Error> {
         .await
 }
 
-pub async fn create_subscription(client_id: &str, template_id: &str) -> Result<Value, reqwest::Error> {
+pub async fn create_subscription(
+    client_id: &str,
+    template_id: &str,
+) -> Result<Value, reqwest::Error> {
     reqwest::Client::new()
         .post(format!("{}/api/v1/subscriptions", base_url()))
         .json(&json!({ "client_id": client_id, "template_id": template_id }))
@@ -246,8 +269,54 @@ pub async fn delete_subscription(id: &str) -> Result<(), reqwest::Error> {
     Ok(())
 }
 
+// ===== Node Groups =====
+
+pub async fn get_groups() -> Result<Value, reqwest::Error> {
+    reqwest::get(format!("{}/api/v1/groups", base_url()))
+        .await?
+        .json()
+        .await
+}
+
+pub async fn create_group(
+    name: &str,
+    description: Option<String>,
+) -> Result<Value, reqwest::Error> {
+    let mut payload = json!({ "name": name });
+    if let Some(d) = description {
+        payload["description"] = json!(d);
+    }
+    reqwest::Client::new()
+        .post(format!("{}/api/v1/groups", base_url()))
+        .json(&payload)
+        .send()
+        .await?
+        .json()
+        .await
+}
+
+#[allow(dead_code)]
+pub async fn update_group(id: &str, payload: Value) -> Result<Value, reqwest::Error> {
+    reqwest::Client::new()
+        .put(format!("{}/api/v1/groups/{}", base_url(), id))
+        .json(&payload)
+        .send()
+        .await?
+        .json()
+        .await
+}
+
+pub async fn delete_group(id: &str) -> Result<(), reqwest::Error> {
+    reqwest::Client::new()
+        .delete(format!("{}/api/v1/groups/{}", base_url(), id))
+        .send()
+        .await?;
+    Ok(())
+}
+
 // ===== Traffic =====
 
+#[allow(dead_code)]
 pub async fn get_traffic() -> Result<Value, reqwest::Error> {
     reqwest::get(format!("{}/api/v1/traffic", base_url()))
         .await?
@@ -280,7 +349,11 @@ pub async fn get_logs() -> Result<Value, reqwest::Error> {
         .await
 }
 
-pub async fn get_logs_filtered(level: Option<String>, source: Option<String>, limit: u64) -> Result<Value, reqwest::Error> {
+pub async fn get_logs_filtered(
+    level: Option<String>,
+    source: Option<String>,
+    limit: u64,
+) -> Result<Value, reqwest::Error> {
     let mut url = format!("{}/api/v1/logs?limit={}", base_url(), limit);
     if let Some(l) = level {
         url.push_str(&format!("&level={}", l));
