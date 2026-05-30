@@ -1,11 +1,12 @@
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 /// Connection handle for a single Agent.
 pub struct AgentConnection {
+    #[allow(dead_code)]
     pub agent_id: Uuid,
     pub sender: mpsc::Sender<pp_proto::HubMessage>,
 }
@@ -28,18 +29,23 @@ impl AppState {
     /// Register a new agent connection.
     pub async fn register_agent(&self, agent_id: Uuid, sender: mpsc::Sender<pp_proto::HubMessage>) {
         let mut agents = self.agents.write().await;
-        agents.insert(
+        agents.insert(agent_id, AgentConnection { agent_id, sender });
+        tracing::info!(
+            "agent {} registered, total agents: {}",
             agent_id,
-            AgentConnection { agent_id, sender },
+            agents.len()
         );
-        tracing::info!("agent {} registered, total agents: {}", agent_id, agents.len());
     }
 
     /// Unregister an agent connection.
     pub async fn unregister_agent(&self, agent_id: Uuid) {
         let mut agents = self.agents.write().await;
         agents.remove(&agent_id);
-        tracing::info!("agent {} unregistered, total agents: {}", agent_id, agents.len());
+        tracing::info!(
+            "agent {} unregistered, total agents: {}",
+            agent_id,
+            agents.len()
+        );
     }
 
     /// Send a message to a specific agent.

@@ -1,7 +1,7 @@
 //! ProxyPanel Agent — Runs on each node, manages xray/sing-box cores.
 
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod client;
 
@@ -76,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn load_or_register_token(
-    data_dir: &PathBuf,
+    data_dir: &Path,
     provided: Option<String>,
 ) -> anyhow::Result<String> {
     let token_path = data_dir.join(".agent_token");

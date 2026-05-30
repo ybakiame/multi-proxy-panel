@@ -5,7 +5,7 @@ use axum::{
 };
 use pp_db::entities::protocol_config;
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, QuerySelect, Set};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -15,8 +15,16 @@ pub async fn list_configs(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Value>, StatusCode> {
-    let page = params.get("page").and_then(|s| s.parse::<u64>().ok()).unwrap_or(1).max(1);
-    let per_page = params.get("per_page").and_then(|s| s.parse::<u64>().ok()).unwrap_or(20).max(1).min(100);
+    let page = params
+        .get("page")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1)
+        .max(1);
+    let per_page = params
+        .get("per_page")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(20)
+        .clamp(1, 100);
 
     let total = protocol_config::Entity::find()
         .count(&state.db)
@@ -24,22 +32,27 @@ pub async fn list_configs(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? as u64;
 
     let configs = protocol_config::Entity::find()
-        .offset(((page - 1) * per_page) as u64)
+        .offset((page - 1) * per_page  )
         .limit(per_page)
         .all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let data: Vec<Value> = configs.into_iter().map(|c| json!({
-        "id": c.id,
-        "name": c.name,
-        "protocol_type": c.protocol_type,
-        "core_type": c.core_type,
-        "listen_port": c.listen_port,
-        "listen_address": c.listen_address,
-        "settings": c.settings,
-        "tls_settings": c.tls_settings,
-    })).collect();
+    let data: Vec<Value> = configs
+        .into_iter()
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "name": c.name,
+                "protocol_type": c.protocol_type,
+                "core_type": c.core_type,
+                "listen_port": c.listen_port,
+                "listen_address": c.listen_address,
+                "settings": c.settings,
+                "tls_settings": c.tls_settings,
+            })
+        })
+        .collect();
     Ok(Json(json!({ "data": data, "total": total })))
 }
 
@@ -107,19 +120,15 @@ pub async fn create_config(
         name: Set(name.to_string()),
         protocol_type: Set(protocol_type),
         core_type: Set(core_type),
-        listen_port: Set(
-            payload
-                .get("listen_port")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(443) as i32,
-        ),
-        listen_address: Set(
-            payload
-                .get("listen_address")
-                .and_then(|v| v.as_str())
-                .unwrap_or("0.0.0.0")
-                .to_string(),
-        ),
+        listen_port: Set(payload
+            .get("listen_port")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(443) as i32),
+        listen_address: Set(payload
+            .get("listen_address")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.0.0.0")
+            .to_string()),
         settings: Set(payload.get("settings").cloned().unwrap_or(json!({}))),
         tls_settings: Set(payload.get("tls_settings").cloned()),
         created_at: Set(chrono::Utc::now().into()),

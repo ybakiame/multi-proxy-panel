@@ -1,5 +1,5 @@
 use pp_common::{CoreType, PanelResult};
-use pp_config::{BuilderRegistry, ConfigBuilder, InboundConfig};
+use pp_config::{BuilderRegistry, InboundConfig};
 use pp_db::entities::{node_binding, protocol_config};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::Value;
@@ -23,10 +23,12 @@ pub async fn generate_node_config(
         let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
             .one(db)
             .await?
-            .ok_or_else(|| pp_common::PanelError::NotFound(format!(
-                "protocol config {} not found",
-                binding.protocol_config_id
-            )))?;
+            .ok_or_else(|| {
+                pp_common::PanelError::NotFound(format!(
+                    "protocol config {} not found",
+                    binding.protocol_config_id
+                ))
+            })?;
 
         // Check if this config applies to the target core
         let config_core = parse_core_type(&config.core_type);
@@ -60,12 +62,9 @@ pub async fn generate_node_config(
     }
 
     let registry = BuilderRegistry::default();
-    let builder = registry
-        .get(target_core)
-        .ok_or_else(|| pp_common::PanelError::Config(format!(
-            "no builder registered for {:?}",
-            target_core
-        )))?;
+    let builder = registry.get(target_core).ok_or_else(|| {
+        pp_common::PanelError::Config(format!("no builder registered for {:?}", target_core))
+    })?;
 
     builder.build_full_config(&inbounds)
 }

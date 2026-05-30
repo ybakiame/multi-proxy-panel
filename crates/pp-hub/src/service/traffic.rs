@@ -1,21 +1,19 @@
+use chrono::{Datelike, TimeZone, Timelike};
 use pp_common::PanelResult;
 use pp_db::entities::traffic_record;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
-use sea_orm::ColumnTrait as _;
-use sea_orm::EntityTrait as _;
-use chrono::{Datelike, Timelike, TimeZone};
-use sea_orm::ActiveModelTrait;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// In-memory traffic aggregation buffer, flushed to DB hourly.
+#[allow(dead_code)]
 pub struct TrafficAggregator {
     buffer: RwLock<HashMap<TrafficKey, TrafficValue>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[allow(dead_code)]
 struct TrafficKey {
     node_id: Option<Uuid>,
     config_id: Option<Uuid>,
@@ -24,11 +22,13 @@ struct TrafficKey {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct TrafficValue {
     upload: i64,
     download: i64,
 }
 
+#[allow(dead_code)]
 impl TrafficAggregator {
     pub fn new() -> Self {
         Self {
@@ -45,7 +45,9 @@ impl TrafficAggregator {
         download: i64,
     ) {
         let now = chrono::Utc::now();
-        let hour = chrono::Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), 0, 0).unwrap();
+        let hour = chrono::Utc
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), 0, 0)
+            .unwrap();
         let key = TrafficKey {
             node_id,
             config_id,
@@ -89,6 +91,7 @@ impl Default for TrafficAggregator {
 }
 
 /// Query traffic records with optional filters.
+#[allow(dead_code)]
 pub async fn query_traffic(
     db: &DatabaseConnection,
     node_id: Option<Uuid>,

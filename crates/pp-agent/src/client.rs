@@ -1,6 +1,6 @@
 use pp_proto::{
-    hub_agent_client::HubAgentClient, AgentMessage, ConfigPush, CoreCommand, Heartbeat,
-    HostMetrics, HubMessage, RegisterRequest,
+    AgentMessage, ConfigPush, CoreCommand, Heartbeat, HostMetrics, HubMessage, OnlineUser,
+    OnlineUsersReport, RegisterRequest, hub_agent_client::HubAgentClient,
 };
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -13,7 +13,9 @@ pub struct AgentStreamClient {
     agent_id: String,
     token: String,
     hostname: String,
+    #[allow(dead_code)]
     hub_tx: mpsc::Sender<AgentMessage>,
+    #[allow(dead_code)]
     hub_rx: Option<mpsc::Receiver<HubMessage>>,
 }
 
@@ -30,11 +32,7 @@ impl AgentStreamClient {
         }
     }
 
-    pub async fn run(
-        &mut self,
-        hub_url: String,
-        supervisor: CoreSupervisor,
-    ) -> anyhow::Result<()> {
+    pub async fn run(&mut self, hub_url: String, supervisor: CoreSupervisor) -> anyhow::Result<()> {
         let mut retry_delay = Duration::from_secs(1);
         let max_retry_delay = Duration::from_secs(60);
 
@@ -69,14 +67,16 @@ impl AgentStreamClient {
 
         // Send register request
         let register_msg = AgentMessage {
-            payload: Some(pp_proto::agent_message::Payload::Register(RegisterRequest {
-                agent_id: self.agent_id.clone(),
-                token: self.token.clone(),
-                hostname: self.hostname.clone(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                capabilities: vec!["xray".to_string(), "sing-box".to_string()],
-                labels: Default::default(),
-            })),
+            payload: Some(pp_proto::agent_message::Payload::Register(
+                RegisterRequest {
+                    agent_id: self.agent_id.clone(),
+                    token: self.token.clone(),
+                    hostname: self.hostname.clone(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    capabilities: vec!["xray".to_string(), "sing-box".to_string()],
+                    labels: Default::default(),
+                },
+            )),
         };
         outbound_tx.send(register_msg).await?;
 
@@ -88,6 +88,7 @@ impl AgentStreamClient {
         let heartbeat_handle = tokio::spawn(async move {
             let mut heartbeat_ticker = tokio::time::interval(Duration::from_secs(30));
             let mut metrics_ticker = tokio::time::interval(Duration::from_secs(60));
+            let mut online_users_ticker = tokio::time::interval(Duration::from_secs(60));
 
             loop {
                 tokio::select! {
@@ -114,6 +115,20 @@ impl AgentStreamClient {
                             }
                         }
                     }
+                    _ = online_users_ticker.tick() => {
+                        let users = collect_online_users().await;
+                        let msg = AgentMessage {
+                            payload: Some(pp_proto::agent_message::Payload::OnlineUsers(
+                                OnlineUsersReport {
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                    users,
+                                }
+                            )),
+                        };
+                        if heartbeat_tx.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
                 }
             }
             tracing::debug!("heartbeat task for agent {} stopped", agent_id);
@@ -122,7 +137,9 @@ impl AgentStreamClient {
         // Inbound message loop (Hub -> Agent)
         let result: anyhow::Result<()> = async {
             while let Some(msg_result) = stream.message().await? {
-                if let Err(e) = handle_hub_message(msg_result, supervisor, outbound_tx.clone()).await {
+                if let Err(e) =
+                    handle_hub_message(msg_result, supervisor, outbound_tx.clone()).await
+                {
                     tracing::warn!("error handling hub message: {}", e);
                 }
             }
@@ -144,10 +161,18 @@ async fn handle_hub_message(
 
     match msg.payload {
         Some(Payload::RegisterResp(resp)) => {
-            tracing::info!("register response: success={}, msg={}", resp.success, resp.message);
+            tracing::info!(
+                "register response: success={}, msg={}",
+                resp.success,
+                resp.message
+            );
         }
         Some(Payload::ConfigPush(push)) => {
-            tracing::info!("received config push, core={:?}, restart={}", push.target_core, push.restart_required);
+            tracing::info!(
+                "received config push, core={:?}, restart={}",
+                push.target_core,
+                push.restart_required
+            );
             handle_config_push(supervisor, push).await?;
         }
         Some(Payload::ConfigReload(reload)) => {
@@ -164,7 +189,11 @@ async fn handle_hub_message(
             handle_core_command(supervisor, cmd).await?;
         }
         Some(Payload::Shutdown(shutdown)) => {
-            tracing::info!("received shutdown command: {}, delay={}s", shutdown.reason, shutdown.delay_sec);
+            tracing::info!(
+                "received shutdown command: {}, delay={}s",
+                shutdown.reason,
+                shutdown.delay_sec
+            );
             tokio::time::sleep(Duration::from_secs(shutdown.delay_sec as u64)).await;
             supervisor.stop_all().await?;
             std::process::exit(0);
@@ -175,18 +204,21 @@ async fn handle_hub_message(
     Ok(())
 }
 
-async fn handle_config_push(
-    supervisor: &CoreSupervisor,
-    push: ConfigPush,
-) -> anyhow::Result<()> {
+async fn handle_config_push(supervisor: &CoreSupervisor, push: ConfigPush) -> anyhow::Result<()> {
     let core_type = core_type_from_i32(push.target_core);
     let config: serde_json::Value = serde_json::from_str(&push.config_json)?;
 
     if let Some(manager) = supervisor.get(core_type).await {
         if push.restart_required {
-            manager.restart(&config).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+            manager
+                .restart(&config)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
         } else {
-            manager.reload(&config).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+            manager
+                .reload(&config)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         tracing::info!("config applied for {:?}", core_type);
     } else {
@@ -196,10 +228,7 @@ async fn handle_config_push(
     Ok(())
 }
 
-async fn handle_core_command(
-    supervisor: &CoreSupervisor,
-    cmd: CoreCommand,
-) -> anyhow::Result<()> {
+async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> anyhow::Result<()> {
     use pp_proto::core_command::Command;
 
     match cmd.command {
@@ -219,7 +248,10 @@ async fn handle_core_command(
             if let Some(manager) = supervisor.get(core_type).await {
                 // Need cached config; for now just restart with empty config
                 let empty = serde_json::json!({});
-                manager.restart(&empty).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+                manager
+                    .restart(&empty)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
             }
         }
         None => {}
@@ -234,13 +266,10 @@ fn collect_host_metrics() -> Option<HostMetrics> {
     let mut sys = System::new_with_specifics(
         RefreshKind::nothing()
             .with_cpu(sysinfo::CpuRefreshKind::everything())
-            .with_memory(MemoryRefreshKind::nothing().with_ram())
+            .with_memory(MemoryRefreshKind::nothing().with_ram()),
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
-    sys.refresh_specifics(
-        RefreshKind::nothing()
-            .with_cpu(sysinfo::CpuRefreshKind::everything())
-    );
+    sys.refresh_specifics(RefreshKind::nothing().with_cpu(sysinfo::CpuRefreshKind::everything()));
 
     let cpu_percent = sys.global_cpu_usage();
     let mem_used = sys.used_memory();
@@ -251,13 +280,23 @@ fn collect_host_metrics() -> Option<HostMetrics> {
         cpu_percent,
         mem_used,
         mem_total,
-        disk_used: 0,  // TODO: implement disk usage
+        disk_used: 0, // TODO: implement disk usage
         disk_total: 0,
         net: vec![],
         load_avg_1: 0.0,
         load_avg_5: 0.0,
         load_avg_15: 0.0,
     })
+}
+
+/// Collect currently online users from running proxy cores.
+/// Returns an empty list if core APIs are unavailable.
+async fn collect_online_users() -> Vec<OnlineUser> {
+    // TODO: Implement actual xray/sing-box API queries
+    // xray: sysapi.StatsService.QueryStats via gRPC
+    // sing-box: GET http://127.0.0.1:9090/connections
+    // For now, return empty list to establish the reporting pipeline.
+    vec![]
 }
 
 fn core_type_from_i32(value: i32) -> pp_common::CoreType {

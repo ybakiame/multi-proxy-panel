@@ -5,8 +5,7 @@ use axum::{
 };
 use pp_db::entities::host_metric;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
-use sea_orm::EntityTrait as _;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -18,7 +17,10 @@ pub async fn query_metrics(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, StatusCode> {
     let node_id = params.get("node_id").and_then(|s| Uuid::parse_str(s).ok());
-    let limit = params.get("limit").and_then(|s| s.parse::<u64>().ok()).unwrap_or(100);
+    let limit = params
+        .get("limit")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(100);
 
     let mut query = host_metric::Entity::find();
 
@@ -33,19 +35,24 @@ pub async fn query_metrics(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let data: Vec<Value> = records.into_iter().map(|r| json!({
-        "id": r.id,
-        "node_id": r.node_id,
-        "timestamp": r.timestamp,
-        "cpu_percent": r.cpu_percent,
-        "mem_used": r.mem_used,
-        "mem_total": r.mem_total,
-        "disk_used": r.disk_used,
-        "disk_total": r.disk_total,
-        "load_avg_1": r.load_avg1,
-        "load_avg_5": r.load_avg5,
-        "load_avg_15": r.load_avg15,
-    })).collect();
+    let data: Vec<Value> = records
+        .into_iter()
+        .map(|r| {
+            json!({
+                "id": r.id,
+                "node_id": r.node_id,
+                "timestamp": r.timestamp,
+                "cpu_percent": r.cpu_percent,
+                "mem_used": r.mem_used,
+                "mem_total": r.mem_total,
+                "disk_used": r.disk_used,
+                "disk_total": r.disk_total,
+                "load_avg_1": r.load_avg1,
+                "load_avg_5": r.load_avg5,
+                "load_avg_15": r.load_avg15,
+            })
+        })
+        .collect();
 
     Ok(Json(json!({ "data": data })))
 }

@@ -1,12 +1,8 @@
-use axum::{
-    extract::Request,
-    http::StatusCode,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 
 /// Placeholder JWT auth middleware.
 /// Will be expanded to validate `Authorization: Bearer <jwt>` header.
+#[allow(dead_code)]
 pub async fn require_auth(req: Request, next: Next) -> Response {
     // TODO: extract and validate JWT
     let _auth_header = req
@@ -20,6 +16,7 @@ pub async fn require_auth(req: Request, next: Next) -> Response {
 
 /// Represents an authenticated user extracted from JWT claims.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
     pub username: String,
