@@ -76,11 +76,11 @@ fn validate_protocol(payload: &Value) -> Result<(String, String), StatusCode> {
         .unwrap_or("xray");
 
     let allowed = match protocol_type {
-        "vless_reality" => &["xray", "sing-box"][..],
+        "vless_reality" | "vless_vision" => &["xray", "sing-box"][..],
         "vless_xhttp" => &["xray"][..],
-        "hysteria2" => &["xray", "sing-box"][..],
+        "hysteria2" => &["sing-box"][..],
         "anytls" => &["sing-box"][..],
-        "tuic" => &["sing-box"][..],
+        "tuic" | "tuic_v5" => &["sing-box"][..],
         _ => return Err(StatusCode::BAD_REQUEST),
     };
 

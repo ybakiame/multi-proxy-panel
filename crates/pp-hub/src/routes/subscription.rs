@@ -207,25 +207,54 @@ async fn build_proxy_nodes(
 
 fn inject_client_credentials(settings: &mut Value, client: &client::Model, protocol_type: &str) {
     if let Some(obj) = settings.as_object_mut() {
-        // For protocols that use UUID-based clients array
-        if protocol_type.starts_with("vless") || protocol_type == "vmess" || protocol_type == "trojan" {
-            let client_obj = json!({
-                "id": client.id.to_string(),
-                "email": client.email.as_ref().unwrap_or(&client.name),
-                "flow": "xtls-rprx-vision",
-            });
-            // Ensure clients array exists
-            if !obj.contains_key("clients") {
-                obj.insert("clients".to_string(), json!([]));
-            }
-            if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
-                arr.push(client_obj);
-            }
+        // Ensure clients array exists
+        if !obj.contains_key("clients") {
+            obj.insert("clients".to_string(), json!([]));
         }
 
-        // For Shadowsocks
-        if protocol_type == "shadowsocks2022" {
-            obj.insert("password".to_string(), json!(client.id.to_string().replace("-", "")));
+        match protocol_type {
+            // UUID-based protocols (VLESS, VMess, Trojan)
+            pt if pt.starts_with("vless") || pt == "vmess" || pt == "trojan" => {
+                let flow = if pt == "vless_vision" || pt == "vless_reality" {
+                    "xtls-rprx-vision"
+                } else {
+                    ""
+                };
+                let client_obj = json!({
+                    "id": client.id.to_string(),
+                    "email": client.email.as_ref().unwrap_or(&client.name),
+                    "flow": flow,
+                });
+                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
+                    arr.push(client_obj);
+                }
+            }
+            // Password-based protocols
+            "hysteria2" | "anytls" => {
+                let client_obj = json!({
+                    "name": client.email.as_ref().unwrap_or(&client.name),
+                    "password": client.id.to_string(),
+                });
+                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
+                    arr.push(client_obj);
+                }
+            }
+            // TUIC uses UUID + password
+            "tuic" | "tuic_v5" => {
+                let client_obj = json!({
+                    "name": client.email.as_ref().unwrap_or(&client.name),
+                    "uuid": client.id.to_string(),
+                    "password": client.id.to_string().replace("-", ""),
+                });
+                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
+                    arr.push(client_obj);
+                }
+            }
+            // Shadowsocks
+            "shadowsocks2022" => {
+                obj.insert("password".to_string(), json!(client.id.to_string().replace("-", "")));
+            }
+            _ => {}
         }
     }
 }
@@ -240,7 +269,8 @@ fn parse_protocol_type(s: &str) -> Result<pp_common::ProtocolType, ()> {
         "trojan" => Ok(ProtocolType::Trojan),
         "shadowsocks2022" => Ok(ProtocolType::Shadowsocks2022),
         "hysteria2" => Ok(ProtocolType::Hysteria2),
-        "tuic_v5" => Ok(ProtocolType::TuicV5),
+        "tuic" | "tuic_v5" => Ok(ProtocolType::TuicV5),
+        "anytls" => Ok(ProtocolType::Anytls),
         _ => Err(()),
     }
 }

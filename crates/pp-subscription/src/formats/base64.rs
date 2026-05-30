@@ -63,12 +63,35 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let mut params = vec![
-        format!("type={}", node.settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp")),
-    ];
+    // Determine network from protocol type or settings
+    let network = match node.protocol {
+        ProtocolType::VlessXhttp => "xhttp",
+        _ => node.settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp"),
+    };
+
+    let mut params = vec![format!("type={}", network)];
 
     if !flow.is_empty() {
         params.push(format!("flow={}", flow));
+    }
+
+    // XHTTP specific params
+    if network == "xhttp" {
+        if let Some(path) = node.settings.get("xhttp_path").and_then(|v| v.as_str()) {
+            params.push(format!("path={}", urlencoding::encode(path)));
+        } else if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
+            params.push(format!("path={}", urlencoding::encode(path)));
+        }
+        if let Some(host) = node.settings.get("xhttp_host").and_then(|v| v.as_str()) {
+            params.push(format!("host={}", urlencoding::encode(host)));
+        } else if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
+            params.push(format!("host={}", urlencoding::encode(host)));
+        }
+        if let Some(mode) = node.settings.get("xhttp_mode").and_then(|v| v.as_str()) {
+            params.push(format!("mode={}", mode));
+        } else if let Some(mode) = node.settings.get("mode").and_then(|v| v.as_str()) {
+            params.push(format!("mode={}", mode));
+        }
     }
 
     if let Some(tls) = &node.tls {

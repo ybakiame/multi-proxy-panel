@@ -61,17 +61,34 @@ fn build_vless_inbound(
     settings: &Value,
     tls: Option<&Value>,
 ) -> PanelResult<Value> {
+    // Build clients array: prefer settings.clients, fallback to single user from uuid/flow
+    let clients = if let Some(clients_arr) = settings.get("clients").and_then(|v| v.as_array()) {
+        json!(clients_arr)
+    } else {
+        let uuid = settings.get("uuid").and_then(|v| v.as_str()).unwrap_or("");
+        let flow = settings.get("flow").and_then(|v| v.as_str()).unwrap_or("");
+        if uuid.is_empty() {
+            json!([])
+        } else {
+            let mut client = json!({ "id": uuid });
+            if !flow.is_empty() {
+                client["flow"] = json!(flow);
+            }
+            json!([client])
+        }
+    };
+
     let mut inbound = json!({
         "protocol": "vless",
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
         "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "settings": {
-            "clients": settings.get("clients").cloned().unwrap_or(json!([])),
+            "clients": clients,
             "decryption": "none"
         },
         "streamSettings": {
             "network": stream_settings_network(&protocol),
-            "security": if tls.is_some() { "tls" } else { "none" },
+            "security": if tls.is_some() && protocol != ProtocolType::VlessReality { "tls" } else { "none" },
         },
         "sniffing": {
             "enabled": true,
@@ -79,18 +96,105 @@ fn build_vless_inbound(
         }
     });
 
-    if let Some(tls_cfg) = tls {
-        inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
-        // REALITY specific
-        if protocol == ProtocolType::VlessReality {
+    match protocol {
+        ProtocolType::VlessReality => {
             inbound["streamSettings"]["security"] = "reality".into();
-            if let Some(reality) = tls_cfg.get("reality") {
-                inbound["streamSettings"]["realitySettings"] = reality.clone();
+            if let Some(reality_cfg) = build_xray_reality_settings(settings) {
+                inbound["streamSettings"]["realitySettings"] = reality_cfg;
+            }
+            // If tls is present (traditional TLS cert), merge tlsSettings too for fallback
+            if let Some(tls_cfg) = tls {
+                inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
             }
         }
+        ProtocolType::VlessVision => {
+            if let Some(tls_cfg) = tls {
+                inbound["streamSettings"]["security"] = "tls".into();
+                inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
+            }
+        }
+        ProtocolType::VlessXhttp => {
+            if let Some(xhttp_cfg) = build_xray_xhttp_settings(settings) {
+                inbound["streamSettings"]["xhttpSettings"] = xhttp_cfg;
+            }
+            if let Some(tls_cfg) = tls {
+                inbound["streamSettings"]["security"] = "tls".into();
+                inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
+            }
+        }
+        _ => {}
     }
 
     Ok(inbound)
+}
+
+fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
+    let dest = settings
+        .get("reality_dest")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("dest").and_then(|v| v.as_str()))?;
+    let private_key = settings
+        .get("reality_private_key")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("private_key").and_then(|v| v.as_str()))?;
+
+    let server_names_str = settings
+        .get("reality_server_names")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let server_names: Vec<String> = server_names_str
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let short_id_str = settings
+        .get("reality_short_id")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("short_id").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let short_ids: Vec<String> = short_id_str
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let reality = json!({
+        "dest": dest,
+        "serverNames": if server_names.is_empty() { json!([""]) } else { json!(server_names) },
+        "privateKey": private_key,
+        "shortIds": if short_ids.is_empty() { json!([""]) } else { json!(short_ids) },
+    });
+
+    Some(reality)
+}
+
+fn build_xray_xhttp_settings(settings: &Value) -> Option<Value> {
+    let path = settings
+        .get("xhttp_path")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("path").and_then(|v| v.as_str()))?;
+    let host = settings
+        .get("xhttp_host")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("host").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let mode = settings
+        .get("xhttp_mode")
+        .and_then(|v| v.as_str())
+        .or_else(|| settings.get("mode").and_then(|v| v.as_str()))
+        .unwrap_or("auto");
+
+    let mut xhttp = json!({
+        "path": path,
+        "mode": mode,
+    });
+    if !host.is_empty() {
+        xhttp["host"] = json!(host);
+    }
+
+    Some(xhttp)
 }
 
 fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {

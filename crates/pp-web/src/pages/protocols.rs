@@ -11,7 +11,7 @@ fn gen_uuid() -> String {
 
 fn protocol_settings_summary(pt: &str, settings: &Value) -> String {
     match pt {
-        "vless_reality" | "vless_xhttp" => {
+        "vless_reality" | "vless_vision" | "vless_xhttp" => {
             settings.get("uuid").and_then(|v| v.as_str()).unwrap_or("-").to_string()
         }
         "hysteria2" => {
@@ -20,7 +20,7 @@ fn protocol_settings_summary(pt: &str, settings: &Value) -> String {
         "anytls" => {
             settings.get("password").and_then(|v| v.as_str()).unwrap_or("-").to_string()
         }
-        "tuic" => {
+        "tuic" | "tuic_v5" => {
             let uuid = settings.get("uuid").and_then(|v| v.as_str()).unwrap_or("-");
             format!("{}", uuid)
         }
@@ -72,6 +72,7 @@ pub fn Protocols() -> Element {
 
     // AnyTLS fields
     let mut anytls_password = use_signal(|| String::new());
+    let mut anytls_masquerade = use_signal(|| String::new());
 
     // TUIC fields
     let mut tuic_uuid = use_signal(|| gen_uuid());
@@ -119,6 +120,7 @@ pub fn Protocols() -> Element {
         h2_up_mbps.set("100".to_string());
         h2_down_mbps.set("100".to_string());
         anytls_password.set(String::new());
+        anytls_masquerade.set(String::new());
         tuic_uuid.set(gen_uuid());
         tuic_password.set(String::new());
         tuic_cc.set("cubic".to_string());
@@ -129,17 +131,54 @@ pub fn Protocols() -> Element {
             "vless_reality" => {
                 vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
                 vless_flow.set(settings.get("flow").and_then(|v| v.as_str()).unwrap_or("xtls-rprx-vision").to_string());
-                reality_dest.set(settings.get("dest").and_then(|v| v.as_str()).unwrap_or("www.cloudflare.com:443").to_string());
-                reality_server_names.set(settings.get("server_names").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                reality_private_key.set(settings.get("private_key").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                reality_public_key.set(settings.get("public_key").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                reality_short_id.set(settings.get("short_id").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                // Prefer new neutral field names, fallback to old names for backward compatibility
+                reality_dest.set(
+                    settings.get("reality_dest").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("dest").and_then(|v| v.as_str()))
+                        .unwrap_or("www.cloudflare.com:443").to_string()
+                );
+                reality_server_names.set(
+                    settings.get("reality_server_names").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string()
+                );
+                reality_private_key.set(
+                    settings.get("reality_private_key").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("private_key").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string()
+                );
+                reality_public_key.set(
+                    settings.get("reality_public_key").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("public_key").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string()
+                );
+                reality_short_id.set(
+                    settings.get("reality_short_id").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("short_id").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string()
+                );
+            }
+            "vless_vision" => {
+                vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
+                vless_flow.set(settings.get("flow").and_then(|v| v.as_str()).unwrap_or("xtls-rprx-vision").to_string());
             }
             "vless_xhttp" => {
                 vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                xhttp_path.set(settings.get("path").and_then(|v| v.as_str()).unwrap_or("/xhttp").to_string());
-                xhttp_host.set(settings.get("host").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                xhttp_mode.set(settings.get("mode").and_then(|v| v.as_str()).unwrap_or("auto").to_string());
+                xhttp_path.set(
+                    settings.get("xhttp_path").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("path").and_then(|v| v.as_str()))
+                        .unwrap_or("/xhttp").to_string()
+                );
+                xhttp_host.set(
+                    settings.get("xhttp_host").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("host").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string()
+                );
+                xhttp_mode.set(
+                    settings.get("xhttp_mode").and_then(|v| v.as_str())
+                        .or_else(|| settings.get("mode").and_then(|v| v.as_str()))
+                        .unwrap_or("auto").to_string()
+                );
             }
             "hysteria2" => {
                 h2_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
@@ -150,8 +189,9 @@ pub fn Protocols() -> Element {
             }
             "anytls" => {
                 anytls_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                anytls_masquerade.set(settings.get("masquerade").and_then(|v| v.as_str()).unwrap_or("").to_string());
             }
-            "tuic" => {
+            "tuic" | "tuic_v5" => {
                 tuic_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
                 tuic_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
                 tuic_cc.set(settings.get("congestion_control").and_then(|v| v.as_str()).unwrap_or("cubic").to_string());
@@ -166,17 +206,21 @@ pub fn Protocols() -> Element {
             "vless_reality" => json!({
                 "uuid": vless_uuid.read().clone(),
                 "flow": vless_flow.read().clone(),
-                "dest": reality_dest.read().clone(),
-                "server_names": reality_server_names.read().clone(),
-                "private_key": reality_private_key.read().clone(),
-                "public_key": reality_public_key.read().clone(),
-                "short_id": reality_short_id.read().clone(),
+                "reality_dest": reality_dest.read().clone(),
+                "reality_server_names": reality_server_names.read().clone(),
+                "reality_private_key": reality_private_key.read().clone(),
+                "reality_public_key": reality_public_key.read().clone(),
+                "reality_short_id": reality_short_id.read().clone(),
+            }),
+            "vless_vision" => json!({
+                "uuid": vless_uuid.read().clone(),
+                "flow": vless_flow.read().clone(),
             }),
             "vless_xhttp" => json!({
                 "uuid": vless_uuid.read().clone(),
-                "path": xhttp_path.read().clone(),
-                "host": xhttp_host.read().clone(),
-                "mode": xhttp_mode.read().clone(),
+                "xhttp_path": xhttp_path.read().clone(),
+                "xhttp_host": xhttp_host.read().clone(),
+                "xhttp_mode": xhttp_mode.read().clone(),
             }),
             "hysteria2" => json!({
                 "password": h2_password.read().clone(),
@@ -187,8 +231,9 @@ pub fn Protocols() -> Element {
             }),
             "anytls" => json!({
                 "password": anytls_password.read().clone(),
+                "masquerade": anytls_masquerade.read().clone(),
             }),
-            "tuic" => json!({
+            "tuic" | "tuic_v5" => json!({
                 "uuid": tuic_uuid.read().clone(),
                 "password": tuic_password.read().clone(),
                 "congestion_control": tuic_cc.read().clone(),
@@ -264,10 +309,22 @@ pub fn Protocols() -> Element {
             FormInput { label: "Up Mbps".to_string(), value: h2_up_mbps, placeholder: Some("100".to_string()), input_type: Some("number".to_string()) }
             FormInput { label: "Down Mbps".to_string(), value: h2_down_mbps, placeholder: Some("100".to_string()), input_type: Some("number".to_string()) }
         },
+        "vless_vision" => rsx! {
+            FormInput { label: "UUID".to_string(), value: vless_uuid, placeholder: Some("auto-generated".to_string()), input_type: None }
+            FormSelect {
+                label: "Flow".to_string(),
+                value: vless_flow,
+                options: vec![
+                    ("xtls-rprx-vision".to_string(), "xtls-rprx-vision".to_string()),
+                    ("xtls-rprx-vision-udp443".to_string(), "xtls-rprx-vision-udp443".to_string()),
+                ],
+            }
+        },
         "anytls" => rsx! {
             FormInput { label: "Password".to_string(), value: anytls_password, placeholder: Some("password".to_string()), input_type: None }
+            FormInput { label: "Masquerade URL".to_string(), value: anytls_masquerade, placeholder: Some("https://example.com".to_string()), input_type: None }
         },
-        "tuic" => rsx! {
+        "tuic" | "tuic_v5" => rsx! {
             FormInput { label: "UUID".to_string(), value: tuic_uuid, placeholder: Some("auto-generated".to_string()), input_type: None }
             FormInput { label: "Password".to_string(), value: tuic_password, placeholder: Some("password".to_string()), input_type: None }
             FormSelect {
@@ -284,12 +341,15 @@ pub fn Protocols() -> Element {
     };
 
     let core_options: Vec<(String, String)> = match pt.as_str() {
-        "vless_reality" | "hysteria2" => vec![
+        "vless_reality" | "vless_vision" => vec![
             ("xray".to_string(), "Xray".to_string()),
             ("sing-box".to_string(), "sing-box".to_string()),
         ],
         "vless_xhttp" => vec![
             ("xray".to_string(), "Xray".to_string()),
+        ],
+        "hysteria2" | "anytls" | "tuic" | "tuic_v5" => vec![
+            ("sing-box".to_string(), "sing-box".to_string()),
         ],
         _ => vec![
             ("sing-box".to_string(), "sing-box".to_string()),
@@ -466,10 +526,11 @@ pub fn Protocols() -> Element {
                 value: new_protocol_type,
                 options: vec![
                     ("vless_reality".to_string(), "VLESS + REALITY".to_string()),
+                    ("vless_vision".to_string(), "VLESS + Vision".to_string()),
                     ("vless_xhttp".to_string(), "VLESS + XHTTP".to_string()),
                     ("hysteria2".to_string(), "Hysteria2".to_string()),
                     ("anytls".to_string(), "AnyTLS".to_string()),
-                    ("tuic".to_string(), "TUIC".to_string()),
+                    ("tuic_v5".to_string(), "TUIC v5".to_string()),
                 ],
             }
             FormSelect {

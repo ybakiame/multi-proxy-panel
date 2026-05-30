@@ -12,7 +12,7 @@ pub enum ProtocolType {
     Shadowsocks2022,
     Hysteria2,
     TuicV5,
-    // Extend as needed
+    Anytls,
 }
 
 impl std::fmt::Display for ProtocolType {
@@ -26,6 +26,7 @@ impl std::fmt::Display for ProtocolType {
             ProtocolType::Shadowsocks2022 => "shadowsocks2022",
             ProtocolType::Hysteria2 => "hysteria2",
             ProtocolType::TuicV5 => "tuic_v5",
+            ProtocolType::Anytls => "anytls",
         };
         write!(f, "{}", s)
     }

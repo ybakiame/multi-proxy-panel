@@ -88,7 +88,8 @@ fn parse_protocol_type(s: &str) -> PanelResult<pp_common::ProtocolType> {
         "trojan" => Ok(ProtocolType::Trojan),
         "shadowsocks2022" => Ok(ProtocolType::Shadowsocks2022),
         "hysteria2" => Ok(ProtocolType::Hysteria2),
-        "tuic_v5" => Ok(ProtocolType::TuicV5),
+        "tuic" | "tuic_v5" => Ok(ProtocolType::TuicV5),
+        "anytls" => Ok(ProtocolType::Anytls),
         _ => Err(pp_common::PanelError::Validation(format!(
             "unknown protocol type: {}",
             s
