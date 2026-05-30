@@ -292,11 +292,21 @@ fn collect_host_metrics() -> Option<HostMetrics> {
 /// Collect currently online users from running proxy cores.
 /// Returns an empty list if core APIs are unavailable.
 async fn collect_online_users() -> Vec<OnlineUser> {
-    // TODO: Implement actual xray/sing-box API queries
-    // xray: sysapi.StatsService.QueryStats via gRPC
-    // sing-box: GET http://127.0.0.1:9090/connections
-    // For now, return empty list to establish the reporting pipeline.
-    vec![]
+    match pp_core::query_all_online_users().await {
+        Ok(users) => users
+            .into_iter()
+            .map(|u| OnlineUser {
+                client_id: u.client_id,
+                email: u.email,
+                ip_address: u.ip_address,
+                inbound_tag: u.inbound_tag.unwrap_or_default(),
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!("failed to collect online users: {}", e);
+            vec![]
+        }
+    }
 }
 
 fn core_type_from_i32(value: i32) -> pp_common::CoreType {
