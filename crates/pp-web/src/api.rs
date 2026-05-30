@@ -340,6 +340,16 @@ pub async fn get_metrics_for_node(node_id: &str) -> Result<Value, reqwest::Error
         .await
 }
 
+// ===== Onlines =====
+
+#[allow(dead_code)]
+pub async fn get_online_count() -> Result<Value, reqwest::Error> {
+    reqwest::get(format!("{}/api/v1/onlines/count", base_url()))
+        .await?
+        .json()
+        .await
+}
+
 // ===== Logs =====
 
 pub async fn get_logs() -> Result<Value, reqwest::Error> {

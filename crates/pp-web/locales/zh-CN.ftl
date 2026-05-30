@@ -32,6 +32,7 @@ dashboard-online = 在线
 dashboard-protocols = 协议
 dashboard-clients = 客户端
 dashboard-bindings = 绑定
+dashboard-online-users = 在线用户
 dashboard-metrics-records = 指标记录
 dashboard-recent-logs = 最近日志
 dashboard-node-status = 节点状态

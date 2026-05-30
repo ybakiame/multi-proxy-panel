@@ -32,6 +32,7 @@ dashboard-online = Online
 dashboard-protocols = Protocols
 dashboard-clients = Clients
 dashboard-bindings = Bindings
+dashboard-online-users = Online Users
 dashboard-metrics-records = Metrics Records
 dashboard-recent-logs = Recent Logs
 dashboard-node-status = Node Status

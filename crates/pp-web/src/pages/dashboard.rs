@@ -14,23 +14,34 @@ fn extract_array(res: &Option<Value>, key: &str) -> Vec<Value> {
 
 #[component]
 pub fn Dashboard() -> Element {
-    let mut nodes = use_resource(|| async move { api::get_nodes().await.unwrap_or_default() });
-    let mut protocols = use_resource(|| async move { api::get_protocols(1, 100).await.unwrap_or_default() });
-    let mut clients = use_resource(|| async move { api::get_clients().await.unwrap_or_default() });
-    let mut bindings = use_resource(|| async move { api::get_bindings().await.unwrap_or_default() });
-    let mut metrics = use_resource(|| async move { api::get_metrics().await.unwrap_or_default() });
-    let mut logs = use_resource(|| async move { api::get_logs().await.unwrap_or_default() });
+    let nodes = use_resource(|| async move { api::get_nodes().await.unwrap_or_default() });
+    let protocols =
+        use_resource(|| async move { api::get_protocols(1, 100).await.unwrap_or_default() });
+    let clients = use_resource(|| async move { api::get_clients().await.unwrap_or_default() });
+    let bindings =
+        use_resource(|| async move { api::get_bindings().await.unwrap_or_default() });
+    let metrics = use_resource(|| async move { api::get_metrics().await.unwrap_or_default() });
+    let logs = use_resource(|| async move { api::get_logs().await.unwrap_or_default() });
+    let onlines = use_resource(|| async move { api::get_online_count().await.unwrap_or_default() });
 
-    let nodes_data = extract_array(&*nodes.read(), "data");
-    let protocols_data = extract_array(&*protocols.read(), "data");
-    let clients_data = extract_array(&*clients.read(), "data");
-    let bindings_data = extract_array(&*bindings.read(), "data");
-    let metrics_data = extract_array(&*metrics.read(), "data");
-    let logs_data = extract_array(&*logs.read(), "data");
+    let nodes_data = extract_array(&nodes.read(), "data");
+    let protocols_data = extract_array(&protocols.read(), "data");
+    let clients_data = extract_array(&clients.read(), "data");
+    let bindings_data = extract_array(&bindings.read(), "data");
+    let metrics_data = extract_array(&metrics.read(), "data");
+    let logs_data = extract_array(&logs.read(), "data");
+    let online_user_count = onlines
+        .read()
+        .as_ref()
+        .and_then(|r| r.get("data"))
+        .and_then(|v| v.get("count"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
-    let online_count = nodes_data.iter().filter(|n| {
-        n.get("status").and_then(|v| v.as_str()).unwrap_or("") == "online"
-    }).count();
+    let online_count = nodes_data
+        .iter()
+        .filter(|n| n.get("status").and_then(|v| v.as_str()).unwrap_or("") == "online")
+        .count();
 
     rsx! {
         div { class: "dashboard",
@@ -43,6 +54,10 @@ pub fn Dashboard() -> Element {
                 div { class: "stat-card",
                     h3 { {t!("dashboard-online")} }
                     p { "{online_count}" }
+                }
+                div { class: "stat-card",
+                    h3 { {t!("dashboard-online-users")} }
+                    p { "{online_user_count}" }
                 }
                 div { class: "stat-card",
                     h3 { {t!("dashboard-protocols")} }
