@@ -127,6 +127,45 @@ refactor(db): 提取节点查询为 NodeService 方法
 docs: 更新部署指南中的 TLS 配置示例
 ```
 
+## Architecture Decision Records (ADR)
+
+When making **architecture-level changes** that affect data models, cross-crate contracts, or design patterns, create an ADR in `docs/adr/`. The project currently has no ADR directory — you must create it when adding the first record.
+
+**ADR naming convention:** `docs/adr/NNNN-title-in-kebab-case.md` (zero-padded sequential number)
+
+**ADR template:**
+```markdown
+# ADR-NNNN: Title
+
+- **Status:** Proposed / Accepted / Deprecated / Superseded
+- **Date:** YYYY-MM-DD
+- **Deciders:** (yourself / team)
+
+## Context
+What problem are we solving?
+
+## Decision
+What did we decide and why?
+
+## Consequences
+What becomes easier or harder?
+
+## Alternatives Considered
+What else was evaluated and rejected?
+```
+
+**When to write an ADR:**
+- Introducing a new design pattern across multiple crates (e.g., the neutral-fields approach)
+- Changing the protocol-to-kernel configuration pipeline
+- Modifying the database schema strategy (JSON columns vs normalized tables)
+- Altering the Hub-Agent communication contract
+- Adding or removing a supported proxy core type
+
+**When NOT to write an ADR:**
+- Adding a new field to an existing form
+- Bug fixes or performance optimizations within existing patterns
+- Frontend UI adjustments without architectural impact
+
 ## Extending the System
 
 ### Adding a New Proxy Protocol
