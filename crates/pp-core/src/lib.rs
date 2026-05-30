@@ -2,10 +2,12 @@
 
 #![allow(clippy::result_large_err)]
 
+pub mod core_api;
 pub mod manager;
 pub mod supervisor;
 pub mod traffic;
 
+pub use core_api::*;
 pub use manager::*;
 pub use supervisor::*;
 pub use traffic::*;
