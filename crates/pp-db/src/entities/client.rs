@@ -10,8 +10,12 @@ pub struct Model {
     pub email: Option<String>,
     pub traffic_limit_bytes: i64,
     pub traffic_used_bytes: i64,
+    pub all_time_used_bytes: i64,
     pub expiry_date: Option<DateTimeWithTimeZone>,
     pub reset_day: Option<i32>,
+    pub data_limit_reset_strategy: String,
+    pub last_traffic_reset_time: Option<DateTimeWithTimeZone>,
+    pub max_devices: Option<i32>,
     pub status: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -26,10 +30,14 @@ pub enum Relation {
 }
 
 impl Related<super::subscription::Entity> for Entity {
-    fn to() -> RelationDef { Relation::Subscriptions.def() }
+    fn to() -> RelationDef {
+        Relation::Subscriptions.def()
+    }
 }
 impl Related<super::traffic_record::Entity> for Entity {
-    fn to() -> RelationDef { Relation::TrafficRecords.def() }
+    fn to() -> RelationDef {
+        Relation::TrafficRecords.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

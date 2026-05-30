@@ -11,6 +11,7 @@ pub struct Model {
     pub token_hash: String,
     pub cores_available: Json,
     pub labels: Option<Json>,
+    pub usage_coefficient: f32,
     pub status: String,
     pub last_seen_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
@@ -28,13 +29,19 @@ pub enum Relation {
 }
 
 impl Related<super::node_binding::Entity> for Entity {
-    fn to() -> RelationDef { Relation::NodeBindings.def() }
+    fn to() -> RelationDef {
+        Relation::NodeBindings.def()
+    }
 }
 impl Related<super::host_metric::Entity> for Entity {
-    fn to() -> RelationDef { Relation::HostMetrics.def() }
+    fn to() -> RelationDef {
+        Relation::HostMetrics.def()
+    }
 }
 impl Related<super::traffic_record::Entity> for Entity {
-    fn to() -> RelationDef { Relation::TrafficRecords.def() }
+    fn to() -> RelationDef {
+        Relation::TrafficRecords.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
