@@ -1,5 +1,5 @@
 use pp_common::{CoreType, PanelError, PanelResult, ProtocolType};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::builder::{ConfigBuilder, InboundConfig};
 
@@ -99,13 +99,12 @@ fn build_vless_inbound(
     match protocol {
         ProtocolType::VlessReality => {
             inbound["streamSettings"]["security"] = "reality".into();
-            if let Some(reality_cfg) = build_xray_reality_settings(settings) {
-                inbound["streamSettings"]["realitySettings"] = reality_cfg;
-            }
-            // If tls is present (traditional TLS cert), merge tlsSettings too for fallback
-            if let Some(tls_cfg) = tls {
-                inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
-            }
+            let reality_cfg = build_xray_reality_settings(settings)
+                .ok_or_else(|| PanelError::Validation(
+                    "VLESS+REALITY requires reality_dest and reality_private_key".into()
+                ))?;
+            inbound["streamSettings"]["realitySettings"] = reality_cfg;
+            // REALITY uses its own handshake; do not merge traditional TLS settings.
         }
         ProtocolType::VlessVision => {
             if let Some(tls_cfg) = tls {
@@ -133,10 +132,16 @@ fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
         .get("reality_dest")
         .and_then(|v| v.as_str())
         .or_else(|| settings.get("dest").and_then(|v| v.as_str()))?;
+    if dest.is_empty() {
+        return None;
+    }
     let private_key = settings
         .get("reality_private_key")
         .and_then(|v| v.as_str())
         .or_else(|| settings.get("private_key").and_then(|v| v.as_str()))?;
+    if private_key.is_empty() {
+        return None;
+    }
 
     let server_names_str = settings
         .get("reality_server_names")
@@ -262,5 +267,89 @@ fn stream_settings_network(protocol: &ProtocolType) -> &'static str {
         ProtocolType::VlessReality | ProtocolType::VlessVision => "tcp",
         ProtocolType::VlessXhttp => "xhttp",
         _ => "tcp",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reality_settings() -> Value {
+        json!({
+            "tag": "vless-reality-in",
+            "listen": "0.0.0.0",
+            "port": 443,
+            "clients": [
+                { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com", "flow": "xtls-rprx-vision" }
+            ],
+            "reality_dest": "example.com:443",
+            "reality_server_names": "example.com,www.example.com",
+            "reality_private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "reality_short_id": "0123456789abcdef"
+        })
+    }
+
+    #[test]
+    fn vless_reality_inbound_has_reality_settings() {
+        let builder = XrayConfigBuilder;
+        let inbound = builder
+            .build_inbound(ProtocolType::VlessReality, &reality_settings(), None)
+            .unwrap();
+
+        assert_eq!(inbound["protocol"], "vless");
+        assert_eq!(inbound["port"], 443);
+        assert_eq!(inbound["streamSettings"]["network"], "tcp");
+        assert_eq!(inbound["streamSettings"]["security"], "reality");
+        assert!(inbound["streamSettings"]["realitySettings"].is_object());
+        assert_eq!(
+            inbound["streamSettings"]["realitySettings"]["dest"],
+            "example.com:443"
+        );
+        assert_eq!(
+            inbound["streamSettings"]["realitySettings"]["privateKey"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        let server_names = inbound["streamSettings"]["realitySettings"]["serverNames"]
+            .as_array()
+            .unwrap();
+        assert_eq!(server_names.len(), 2);
+        assert_eq!(server_names[0], "example.com");
+    }
+
+    #[test]
+    fn vless_reality_requires_reality_private_key() {
+        let builder = XrayConfigBuilder;
+        let mut settings = reality_settings();
+        settings["reality_private_key"] = "".into();
+        settings["private_key"] = "".into();
+
+        let err = builder
+            .build_inbound(ProtocolType::VlessReality, &settings, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("reality_dest and reality_private_key"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn full_config_contains_inbounds_and_freedom_outbound() {
+        let builder = XrayConfigBuilder;
+        let inbound = InboundConfig {
+            tag: "vless-reality-in".into(),
+            protocol: ProtocolType::VlessReality,
+            listen: "0.0.0.0".into(),
+            port: 443,
+            settings: reality_settings(),
+            tls: None,
+            sniffing: None,
+        };
+
+        let config = builder.build_full_config(&[inbound]).unwrap();
+        assert!(config["inbounds"].is_array());
+        assert_eq!(config["inbounds"].as_array().unwrap().len(), 1);
+        assert_eq!(config["outbounds"][0]["protocol"], "freedom");
+        assert_eq!(config["log"]["loglevel"], "warning");
     }
 }

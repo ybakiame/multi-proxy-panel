@@ -1,5 +1,5 @@
 use pp_common::{CoreType, PanelError, PanelResult, ProtocolType};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::builder::{ConfigBuilder, InboundConfig};
 
@@ -40,7 +40,9 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             )?);
         }
 
-        Ok(json!({
+        let (services, experimental) = build_api_services();
+
+        let mut config = json!({
             "log": {
                 "level": "warning",
                 "timestamp": true
@@ -55,8 +57,53 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             "route": {
                 "auto_detect_interface": true
             }
-        }))
+        });
+
+        if let Some(services_arr) = services.as_array() {
+            if !services_arr.is_empty() {
+                config["services"] = services;
+            }
+        }
+        if let Some(exp_obj) = experimental.as_object() {
+            if !exp_obj.is_empty() {
+                config["experimental"] = experimental;
+            }
+        }
+
+        Ok(config)
     }
+}
+
+/// Build the sing-box API service definitions.
+/// Returns `(services, experimental)` to be merged into the top-level config.
+fn build_api_services() -> (Value, Value) {
+    let grpc_listen = std::env::var("PROXYPANEL_SINGBOX_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9092".to_string());
+    let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
+
+    let mut api_service = json!({
+        "type": "api",
+        "listen": grpc_listen,
+    });
+    if !secret.is_empty() {
+        api_service["secret"] = serde_json::json!(secret);
+    }
+
+    let mut clash_api = json!({
+        "external_controller": http_listen,
+    });
+    if !secret.is_empty() {
+        clash_api["secret"] = serde_json::json!(secret);
+    }
+
+    (
+        json!([api_service]),
+        json!({
+            "clash_api": clash_api,
+        }),
+    )
 }
 
 fn build_vless_inbound(
@@ -91,9 +138,11 @@ fn build_vless_inbound(
     }
 
     if protocol == ProtocolType::VlessReality {
-        if let Some(reality_tls) = build_singbox_reality_tls(settings, tls) {
-            inbound["tls"] = reality_tls;
-        }
+        let reality_tls = build_singbox_reality_tls(settings, tls)
+            .ok_or_else(|| PanelError::Validation(
+                "VLESS+REALITY requires reality_dest and reality_private_key".into()
+            ))?;
+        inbound["tls"] = reality_tls;
     } else if let Some(tls_cfg) = tls {
         inbound["tls"] = json!({
             "enabled": true,
@@ -137,15 +186,21 @@ fn vless_clients_to_users(settings: &Value) -> Value {
 }
 
 /// Build sing-box TLS object with REALITY from neutral settings fields.
-fn build_singbox_reality_tls(settings: &Value, tls: Option<&Value>) -> Option<Value> {
+fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<Value> {
     let dest = settings
         .get("reality_dest")
         .and_then(|v| v.as_str())
         .or_else(|| settings.get("dest").and_then(|v| v.as_str()))?;
+    if dest.is_empty() {
+        return None;
+    }
     let private_key = settings
         .get("reality_private_key")
         .and_then(|v| v.as_str())
         .or_else(|| settings.get("private_key").and_then(|v| v.as_str()))?;
+    if private_key.is_empty() {
+        return None;
+    }
 
     // Parse dest into server and port
     let (server, server_port) = if let Some((host, port_str)) = dest.rsplit_once(':') {
@@ -160,7 +215,11 @@ fn build_singbox_reality_tls(settings: &Value, tls: Option<&Value>) -> Option<Va
         .and_then(|v| v.as_str())
         .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
         .unwrap_or("");
-    let server_name = server_names_str.split(',').next().map(|s| s.trim()).unwrap_or(&server);
+    let server_name = server_names_str
+        .split(',')
+        .next()
+        .map(|s| s.trim())
+        .unwrap_or(&server);
 
     let short_id_str = settings
         .get("reality_short_id")
@@ -173,7 +232,7 @@ fn build_singbox_reality_tls(settings: &Value, tls: Option<&Value>) -> Option<Va
         .filter(|s| !s.is_empty())
         .collect();
 
-    let mut tls_obj = json!({
+    let tls_obj = json!({
         "enabled": true,
         "server_name": server_name,
         "reality": {
@@ -186,16 +245,6 @@ fn build_singbox_reality_tls(settings: &Value, tls: Option<&Value>) -> Option<Va
             "short_id": if short_ids.is_empty() { json!([""]) } else { json!(short_ids) },
         }
     });
-
-    // Merge traditional TLS cert paths if provided
-    if let Some(tls_cfg) = tls {
-        if let Some(cert) = tls_cfg.get("certFile").and_then(|v| v.as_str()) {
-            tls_obj["certificate_path"] = json!(cert);
-        }
-        if let Some(key) = tls_cfg.get("keyFile").and_then(|v| v.as_str()) {
-            tls_obj["key_path"] = json!(key);
-        }
-    }
 
     Some(tls_obj)
 }
@@ -363,7 +412,10 @@ fn password_clients_to_users(settings: &Value) -> Value {
         json!(users)
     } else {
         // Fallback: single user from settings.password
-        let password = settings.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let password = settings
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if password.is_empty() {
             json!([])
         } else {
@@ -397,7 +449,10 @@ fn tuic_clients_to_users(settings: &Value) -> Value {
         json!(users)
     } else {
         let uuid = settings.get("uuid").and_then(|v| v.as_str()).unwrap_or("");
-        let password = settings.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let password = settings
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let mut user = json!({"name": ""});
         if !uuid.is_empty() {
             user["uuid"] = json!(uuid);
@@ -406,5 +461,87 @@ fn tuic_clients_to_users(settings: &Value) -> Value {
             user["password"] = json!(password);
         }
         json!([user])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reality_settings() -> Value {
+        json!({
+            "tag": "vless-reality-in",
+            "listen": "::",
+            "port": 443,
+            "clients": [
+                { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com", "flow": "xtls-rprx-vision" }
+            ],
+            "reality_dest": "example.com:443",
+            "reality_server_names": "example.com,www.example.com",
+            "reality_private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "reality_short_id": "0123456789abcdef"
+        })
+    }
+
+    #[test]
+    fn vless_reality_inbound_has_reality_tls() {
+        let builder = SingBoxConfigBuilder;
+        let inbound = builder
+            .build_inbound(ProtocolType::VlessReality, &reality_settings(), None)
+            .unwrap();
+
+        assert_eq!(inbound["type"], "vless");
+        assert_eq!(inbound["listen_port"], 443);
+        assert_eq!(inbound["tls"]["enabled"], true);
+        assert_eq!(inbound["tls"]["reality"]["enabled"], true);
+        assert_eq!(inbound["tls"]["reality"]["handshake"]["server"], "example.com");
+        assert_eq!(inbound["tls"]["reality"]["handshake"]["server_port"], 443);
+        assert_eq!(
+            inbound["tls"]["reality"]["private_key"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        let users = inbound["users"].as_array().unwrap();
+        assert_eq!(users[0]["uuid"], "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4");
+        assert_eq!(users[0]["flow"], "xtls-rprx-vision");
+    }
+
+    #[test]
+    fn vless_reality_requires_reality_private_key() {
+        let builder = SingBoxConfigBuilder;
+        let mut settings = reality_settings();
+        settings["reality_private_key"] = "".into();
+        settings["private_key"] = "".into();
+        settings["reality_dest"] = "".into();
+
+        let err = builder
+            .build_inbound(ProtocolType::VlessReality, &settings, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("reality_dest and reality_private_key"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn full_config_contains_api_services_and_outbounds() {
+        let builder = SingBoxConfigBuilder;
+        let inbound = InboundConfig {
+            tag: "vless-reality-in".into(),
+            protocol: ProtocolType::VlessReality,
+            listen: "::".into(),
+            port: 443,
+            settings: reality_settings(),
+            tls: None,
+            sniffing: None,
+        };
+
+        let config = builder.build_full_config(&[inbound]).unwrap();
+        assert!(config["inbounds"].is_array());
+        assert!(config["services"].is_array());
+        assert_eq!(config["services"][0]["type"], "api");
+        assert!(config["experimental"]["clash_api"].is_object());
+        assert!(config["experimental"]["clash_api"]["external_controller"].is_string());
+        assert_eq!(config["outbounds"][0]["type"], "direct");
     }
 }

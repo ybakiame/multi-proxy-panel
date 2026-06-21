@@ -39,7 +39,9 @@ pub struct BuilderRegistry {
 
 impl BuilderRegistry {
     pub fn new() -> Self {
-        Self { builders: Vec::new() }
+        Self {
+            builders: Vec::new(),
+        }
     }
 
     pub fn register<B: ConfigBuilder + 'static>(&mut self, builder: B) {
@@ -47,7 +49,10 @@ impl BuilderRegistry {
     }
 
     pub fn get(&self, core: CoreType) -> Option<&dyn ConfigBuilder> {
-        self.builders.iter().find(|b| b.core_type() == core).map(|b| b.as_ref())
+        self.builders
+            .iter()
+            .find(|b| b.core_type() == core)
+            .map(|b| b.as_ref())
     }
 }
 
