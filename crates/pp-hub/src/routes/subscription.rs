@@ -532,3 +532,101 @@ fn parse_protocol_type(s: &str) -> Result<pp_common::ProtocolType, ()> {
         _ => Err(()),
     }
 }
+
+/// Generate a subscription link for a subscription token and optional format.
+async fn build_subscription_link(
+    state: &Arc<AppState>,
+    token: &str,
+    format: &str,
+) -> Result<String, ApiError> {
+    let sub = subscription::Entity::find()
+        .filter(subscription::Column::Token.eq(token))
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("subscription not found"))?;
+
+    let client_model = client::Entity::find_by_id(sub.client_id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("client not found"))?;
+
+    let proxy_nodes = build_proxy_nodes(&state.db, &client_model, None)
+        .await
+        .map_err(ApiError::from)?;
+
+    let fmt = format
+        .parse::<SubscriptionFormat>()
+        .map_err(|_| ApiError::bad_request("invalid_format", "unknown subscription format"))?;
+
+    let content = generate_subscription(fmt, &proxy_nodes, None).map_err(|e| {
+        tracing::warn!("subscription generation error: {}", e);
+        ApiError::internal(format!("subscription generation failed: {e}"))
+    })?;
+
+    Ok(content)
+}
+
+/// GET /sub/{token}/qr — Return an SVG QR code of the default subscription link.
+pub async fn serve_subscription_qr(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Response, ApiError> {
+    // Validate subscription exists and is active
+    let sub = subscription::Entity::find()
+        .filter(subscription::Column::Token.eq(&token))
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("subscription not found"))?;
+
+    if !sub.is_active {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "subscription_inactive",
+            "subscription is inactive",
+        ));
+    }
+
+    // Update last_accessed_at
+    let mut active: subscription::ActiveModel = sub.clone().into();
+    active.last_accessed_at = Set(Some(chrono::Utc::now().into()));
+    let _ = active.update(&state.db).await;
+
+    let format = params
+        .get("format")
+        .map(|s| s.as_str())
+        .unwrap_or("base64");
+
+    let content = build_subscription_link(&state, &token, format).await?;
+
+    // Generate SVG QR code
+    let code = qrcode::QrCode::new(content.as_bytes())
+        .map_err(|e| ApiError::internal(format!("failed to generate QR code: {e}")))?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(200, 200)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build();
+
+    Ok((
+        [(header::CONTENT_TYPE, "image/svg+xml")],
+        svg,
+    )
+        .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_protocol_type_works() {
+        assert!(parse_protocol_type("vless_reality").is_ok());
+        assert!(parse_protocol_type("vmess").is_ok());
+        assert!(parse_protocol_type("unknown").is_err());
+    }
+}
