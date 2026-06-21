@@ -26,6 +26,7 @@ pp-core = { workspace = true }
 pp-config = { workspace = true }
 sysinfo = { workspace = true }
 tokio-stream = { workspace = true }
+reqwest = { workspace = true }
 gethostname = "1.0"
 thiserror = { workspace = true }
 anyhow = { workspace = true }

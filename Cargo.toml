@@ -81,8 +81,12 @@ notify = { version = "8.0", default-features = false, features = ["macos_fsevent
 jsonwebtoken = "9.3"
 argon2 = { version = "0.5", features = ["password-hash"] }
 rustls = "0.23"
+rustls-pemfile = "2"
 sha2 = "0.10"
 rand = "0.9"
+
+# TLS for HTTP
+tokio-rustls = "0.26"
 
 # Template / rendering
 tera = { version = "1.20", default-features = false }

@@ -24,6 +24,13 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["js"] }
-web-sys = { version = "0.3", features = ["console"] }
+web-sys = { version = "0.3", features = ["console", "Storage", "Window"] }
 wasm-bindgen-futures = "0.4"
 dioxus-i18n = "0.5.1"
+gloo-timers = "0.3"
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = ["web"] }
+dioxus-icons = { version = "0.1.0", default-features = false }
+time = { version = "0.3.44", default-features = false }
+
+[dev-dependencies]
+dioxus-ssr = "0.7.0"

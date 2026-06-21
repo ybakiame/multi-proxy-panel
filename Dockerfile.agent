@@ -1,10 +1,53 @@
+FROM rust:1.86 AS planner
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates/pp-common/Cargo.toml crates/pp-common/Cargo.toml
+COPY crates/pp-db/Cargo.toml crates/pp-db/Cargo.toml
+COPY crates/pp-proto/Cargo.toml crates/pp-proto/Cargo.toml
+COPY crates/pp-config/Cargo.toml crates/pp-config/Cargo.toml
+COPY crates/pp-subscription/Cargo.toml crates/pp-subscription/Cargo.toml
+COPY crates/pp-core/Cargo.toml crates/pp-core/Cargo.toml
+COPY crates/pp-hub/Cargo.toml crates/pp-hub/Cargo.toml
+COPY crates/pp-agent/Cargo.toml crates/pp-agent/Cargo.toml
+COPY crates/pp-cli/Cargo.toml crates/pp-cli/Cargo.toml
+COPY crates/pp-web/Cargo.toml crates/pp-web/Cargo.toml
+RUN mkdir -p \
+    crates/pp-common/src crates/pp-db/src crates/pp-proto/src \
+    crates/pp-config/src crates/pp-subscription/src crates/pp-core/src \
+    crates/pp-hub/src crates/pp-agent/src crates/pp-cli/src crates/pp-web/src && \
+    echo 'fn main() {}' > crates/pp-hub/src/main.rs && \
+    echo 'fn main() {}' > crates/pp-agent/src/main.rs && \
+    echo 'fn main() {}' > crates/pp-cli/src/main.rs && \
+    echo 'fn main() {}' > crates/pp-web/src/main.rs && \
+    echo '' > crates/pp-common/src/lib.rs && \
+    echo '' > crates/pp-db/src/lib.rs && \
+    echo '' > crates/pp-proto/src/lib.rs && \
+    echo '' > crates/pp-config/src/lib.rs && \
+    echo '' > crates/pp-subscription/src/lib.rs && \
+    echo '' > crates/pp-core/src/lib.rs && \
+    cargo build --release -p pp-agent
+
 FROM rust:1.86 AS builder
 WORKDIR /app
 COPY . .
+COPY --from=planner /app/target /app/target
 RUN cargo build --release -p pp-agent
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r proxypanel && useradd -r -g proxypanel -d /app -s /sbin/nologin proxypanel
+
 WORKDIR /app
-COPY --from=builder /app/target/release/proxy-panel-agent /usr/local/bin/proxy-panel-agent
+COPY --from=builder --chown=proxypanel:proxypanel /app/target/release/proxy-panel-agent /usr/local/bin/proxy-panel-agent
+
+RUN mkdir -p /var/lib/proxy-panel/agent && chown -R proxypanel:proxypanel /var/lib/proxy-panel
+
+USER proxypanel
+
+EXPOSE 50052
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD pgrep -x proxy-panel-agent >/dev/null || exit 1
+
 ENTRYPOINT ["proxy-panel-agent"]
