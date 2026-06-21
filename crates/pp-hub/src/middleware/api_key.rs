@@ -1,8 +1,8 @@
 use axum::{
-    extract::{Request, State},
+    extract::{FromRequestParts, Request, State},
+    http::{StatusCode, request::Parts},
     middleware::Next,
     response::Response,
-    http::StatusCode,
 };
 use pp_db::entities::api_key;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -10,19 +10,84 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
+/// Scope constants used for API key authorization.
+pub mod scopes {
+    pub const NODES_READ: &str = "nodes:read";
+    pub const NODES_WRITE: &str = "nodes:write";
+    pub const CLIENTS_READ: &str = "clients:read";
+    pub const CLIENTS_WRITE: &str = "clients:write";
+    pub const PROTOCOLS_READ: &str = "protocols:read";
+    pub const PROTOCOLS_WRITE: &str = "protocols:write";
+    pub const BINDINGS_READ: &str = "bindings:read";
+    pub const BINDINGS_WRITE: &str = "bindings:write";
+    pub const GROUPS_READ: &str = "groups:read";
+    pub const GROUPS_WRITE: &str = "groups:write";
+    pub const SUBSCRIPTIONS_READ: &str = "subscriptions:read";
+    pub const SUBSCRIPTIONS_WRITE: &str = "subscriptions:write";
+    pub const TEMPLATES_READ: &str = "templates:read";
+    pub const TEMPLATES_WRITE: &str = "templates:write";
+    pub const API_KEYS_READ: &str = "apikeys:read";
+    pub const API_KEYS_WRITE: &str = "apikeys:write";
+    pub const WEBHOOKS_READ: &str = "webhooks:read";
+    pub const WEBHOOKS_WRITE: &str = "webhooks:write";
+    pub const TRAFFIC_READ: &str = "traffic:read";
+    pub const METRICS_READ: &str = "metrics:read";
+    pub const ONLINES_READ: &str = "onlines:read";
+    pub const LOGS_READ: &str = "logs:read";
+    pub const ALL: &str = "*";
+
+    pub const ALL_SCOPES: &[&str] = &[
+        NODES_READ,
+        NODES_WRITE,
+        CLIENTS_READ,
+        CLIENTS_WRITE,
+        PROTOCOLS_READ,
+        PROTOCOLS_WRITE,
+        BINDINGS_READ,
+        BINDINGS_WRITE,
+        GROUPS_READ,
+        GROUPS_WRITE,
+        SUBSCRIPTIONS_READ,
+        SUBSCRIPTIONS_WRITE,
+        TEMPLATES_READ,
+        TEMPLATES_WRITE,
+        API_KEYS_READ,
+        API_KEYS_WRITE,
+        WEBHOOKS_READ,
+        WEBHOOKS_WRITE,
+        TRAFFIC_READ,
+        METRICS_READ,
+        ONLINES_READ,
+        LOGS_READ,
+        ALL,
+    ];
+}
+
 /// API Key authentication result attached to request extensions.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct ApiKeyAuth {
+    #[allow(dead_code)]
     pub key_id: uuid::Uuid,
+    #[allow(dead_code)]
     pub name: String,
     pub scopes: Vec<String>,
 }
 
 impl ApiKeyAuth {
-    #[allow(dead_code)]
     pub fn has_scope(&self, required: &str) -> bool {
-        self.scopes.iter().any(|s| s == required || s == "*")
+        self.scopes.iter().any(|s| s == required || s == scopes::ALL)
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for ApiKeyAuth {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<ApiKeyAuth>()
+            .cloned()
+            .ok_or(StatusCode::UNAUTHORIZED)
     }
 }
 
@@ -38,14 +103,15 @@ pub async fn require_api_key(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let key_hash = sha256_truncated(&key_str);
-
     let key_record = api_key::Entity::find()
-        .filter(api_key::Column::KeyHash.eq(&key_hash))
         .filter(api_key::Column::IsActive.eq(true))
-        .one(&state.db)
+        .all(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let key_record = key_record
+        .into_iter()
+        .find(|k| pp_common::verify_secret(&key_str, &k.key_hash).unwrap_or(false))
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Check expiration
@@ -57,25 +123,29 @@ pub async fn require_api_key(
 
     // Check IP allowlist
     if let Some(allowlist) = key_record.ip_allowlist {
-        let client_ip = req
-            .headers()
-            .get("x-forwarded-for")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                req.extensions()
-                    .get::<std::net::SocketAddr>()
-                    .map(|addr| addr.ip().to_string())
-            })
-            .unwrap_or_default();
+        let client_ip = extract_client_ip(
+            &req,
+            state.config.trusted_proxy_ips.as_ref(),
+        );
 
         if let Some(ips) = allowlist.as_array() {
             let allowed: Vec<String> = ips
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
-            if !allowed.is_empty() && !allowed.iter().any(|ip| client_ip.starts_with(ip)) {
+            if !allowed.is_empty() && !allowed.iter().any(|ip| ip_matches(&client_ip, ip)) {
                 return Err(StatusCode::FORBIDDEN);
+            }
+        }
+    }
+
+    // Rate limit check
+    if let Some(limit) = key_record.rate_limit {
+        if limit > 0 {
+            let key = format!("rate:apikey:{}", key_record.id);
+            let allowed = state.rate_limiter.check(&key, limit as u64).await;
+            if !allowed {
+                return Err(StatusCode::TOO_MANY_REQUESTS);
             }
         }
     }
@@ -118,22 +188,110 @@ fn extract_key_from_request(req: &Request) -> String {
     String::new()
 }
 
-fn sha256_truncated(input: &str) -> String {
-    use sha2::{Sha256, Digest};
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(&result[..16])
+fn extract_client_ip(
+    req: &Request,
+    trusted_proxies: Option<&std::collections::HashSet<std::net::IpAddr>>,
+) -> String {
+    let direct_ip = req
+        .extensions()
+        .get::<std::net::SocketAddr>()
+        .map(|addr| addr.ip());
+
+    let forwarded = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.trim().parse::<std::net::IpAddr>().ok());
+
+    match (direct_ip, forwarded, trusted_proxies) {
+        (_, Some(forwarded_ip), Some(trusted)) => {
+            if direct_ip.map(|ip| trusted.contains(&ip)).unwrap_or(false) {
+                forwarded_ip.to_string()
+            } else {
+                direct_ip.map(|ip| ip.to_string()).unwrap_or_default()
+            }
+        }
+        (Some(ip), _, _) => ip.to_string(),
+        _ => String::new(),
+    }
 }
 
-/// Middleware that checks if the authenticated API key has the required scope.
-#[allow(dead_code)]
-pub fn require_scope(scope: &'static str) -> impl Fn(ApiKeyAuth) -> Result<ApiKeyAuth, StatusCode> {
-    move |auth: ApiKeyAuth| {
-        if auth.has_scope(scope) {
-            Ok(auth)
-        } else {
-            Err(StatusCode::FORBIDDEN)
+fn ip_matches(client_ip: &str, pattern: &str) -> bool {
+    if pattern.contains('/') {
+        if let Ok(net) = pattern.parse::<ipnet::IpNet>() {
+            if let Ok(ip) = client_ip.parse::<std::net::IpAddr>() {
+                return net.contains(&ip);
+            }
         }
+        false
+    } else {
+        client_ip == pattern
+    }
+}
+
+type ScopeFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>;
+
+/// Middleware function that checks if the authenticated API key has the required scope.
+pub async fn require_scope_middleware(
+    scope: &'static str,
+    auth: ApiKeyAuth,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if auth.has_scope(scope) {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+/// Build a Tower layer that enforces the given scope.
+pub fn scope_layer(
+    scope: &'static str,
+) -> axum::middleware::FromFnLayer<
+    impl Clone + Fn(ApiKeyAuth, Request, Next) -> ScopeFuture,
+    (),
+    (ApiKeyAuth, Request),
+> {
+    #[derive(Clone)]
+    struct ScopeState(&'static str);
+
+    let scope_fn = move |auth: ApiKeyAuth, req: Request, next: Next| {
+        let state = ScopeState(scope);
+        Box::pin(async move { require_scope_middleware(state.0, auth, req, next).await }) as ScopeFuture
+    };
+
+    axum::middleware::from_fn(scope_fn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ip_matching() {
+        assert!(ip_matches("192.168.1.1", "192.168.1.1"));
+        assert!(!ip_matches("192.168.1.100", "192.168.1.1"));
+        assert!(ip_matches("192.168.1.100", "192.168.1.0/24"));
+        assert!(!ip_matches("10.0.0.1", "192.168.1.0/24"));
+    }
+
+    #[test]
+    fn scope_check() {
+        let auth = ApiKeyAuth {
+            key_id: uuid::Uuid::new_v4(),
+            name: "test".into(),
+            scopes: vec!["nodes:read".into()],
+        };
+        assert!(auth.has_scope("nodes:read"));
+        assert!(!auth.has_scope("nodes:write"));
+
+        let wildcard = ApiKeyAuth {
+            key_id: uuid::Uuid::new_v4(),
+            name: "admin".into(),
+            scopes: vec!["*".into()],
+        };
+        assert!(wildcard.has_scope("anything:write"));
     }
 }

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
+use crate::{HubConfig, rate_limiter::RateLimiter, routes::metrics_export::MetricsHandle};
+
 /// Connection handle for a single Agent.
 pub struct AgentConnection {
     #[allow(dead_code)]
@@ -15,19 +17,33 @@ pub struct AgentConnection {
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub config: HubConfig,
+    pub rate_limiter: RateLimiter,
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
+    pub metrics_handle: Option<Arc<MetricsHandle>>,
 }
 
 impl AppState {
-    pub fn new(db: DatabaseConnection) -> Arc<Self> {
+    pub fn new(
+        db: DatabaseConnection,
+        config: HubConfig,
+        rate_limiter: RateLimiter,
+        metrics_handle: Option<Arc<MetricsHandle>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             db,
+            config,
+            rate_limiter,
             agents: Arc::new(RwLock::new(HashMap::new())),
+            metrics_handle,
         })
     }
 
     /// Register a new agent connection.
-    pub async fn register_agent(&self, agent_id: Uuid, sender: mpsc::Sender<pp_proto::HubMessage>) {
+    pub async fn register_agent(&self,
+        agent_id: Uuid,
+        sender: mpsc::Sender<pp_proto::HubMessage>,
+    ) {
         let mut agents = self.agents.write().await;
         agents.insert(agent_id, AgentConnection { agent_id, sender });
         tracing::info!(
