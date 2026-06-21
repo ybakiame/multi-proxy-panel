@@ -24,6 +24,16 @@ impl HubAgentService {
     pub fn new(state: Arc<AppState>) -> Self {
         Self { state }
     }
+
+    #[cfg(test)]
+    pub async fn test_handle_register(
+        &self,
+        req: RegisterRequest,
+        hub_tx: mpsc::Sender<HubMessage>,
+        remote_addr: Option<String>,
+    ) -> Result<Uuid, Status> {
+        handle_register(&self.state, req, &hub_tx, remote_addr).await
+    }
 }
 
 #[tonic::async_trait]
@@ -34,6 +44,8 @@ impl HubAgent for HubAgentService {
         &self,
         request: Request<Streaming<AgentMessage>>,
     ) -> Result<Response<Self::StreamStream>, Status> {
+        // Capture peer address before consuming the request.
+        let remote_addr = request.remote_addr().map(|a| a.ip().to_string());
         let mut inbound = request.into_inner();
         let state = self.state.clone();
 
@@ -49,7 +61,7 @@ impl HubAgent for HubAgentService {
                 match msg_result {
                     Ok(msg) => {
                         if let Err(e) =
-                            handle_agent_message(&state, msg, &mut registered_id, &tx).await
+                            handle_agent_message(&state, msg, &mut registered_id, &tx, remote_addr.clone()).await
                         {
                             tracing::warn!("error handling agent message: {}", e);
                         }
@@ -88,12 +100,13 @@ async fn handle_agent_message(
     msg: AgentMessage,
     registered_id: &mut Option<Uuid>,
     hub_tx: &mpsc::Sender<HubMessage>,
+    remote_addr: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use pp_proto::agent_message::Payload;
 
     match msg.payload {
         Some(Payload::Register(req)) => {
-            let agent_id = handle_register(state, req, hub_tx).await?;
+            let agent_id = handle_register(state, req, hub_tx, remote_addr).await?;
             *registered_id = Some(agent_id);
         }
         Some(Payload::Heartbeat(hb)) => {
@@ -136,25 +149,57 @@ async fn handle_register(
     state: &AppState,
     req: RegisterRequest,
     hub_tx: &mpsc::Sender<HubMessage>,
-) -> Result<Uuid, Box<dyn std::error::Error + Send + Sync>> {
-    let agent_id = Uuid::parse_str(&req.agent_id)?;
+    remote_addr: Option<String>,
+) -> Result<Uuid, Status> {
+    let agent_id = Uuid::parse_str(&req.agent_id)
+        .map_err(|e| Status::invalid_argument(format!("invalid agent_id: {}", e)))?;
 
-    // Verify token against database
     let node = node::Entity::find()
         .filter(node::Column::Id.eq(agent_id))
         .one(&state.db)
-        .await?;
+        .await
+        .map_err(|e| Status::internal(format!("database error: {}", e)))?;
 
-    let node_exists = node.is_some();
+    let auto_register = std::env::var("PROXYPANEL_AGENT_AUTO_REGISTER")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
 
-    // If node doesn't exist, auto-create it (auto-register mode)
-    if !node_exists {
+    if let Some(node) = node {
+        // Existing node: verify token against stored hash using Argon2 verification.
+        if node.token_hash.is_empty() {
+            tracing::warn!("node {} has empty token_hash; reject registration", agent_id);
+            return Err(Status::failed_precondition(
+                "node token is not set; provision a token first",
+            ));
+        }
+        let token_valid = pp_common::verify_secret(&req.token, &node.token_hash).unwrap_or(false);
+        if !token_valid {
+            tracing::warn!("agent {} provided invalid token", agent_id);
+            return Err(Status::unauthenticated("invalid agent token"));
+        }
+
+        let mut active: node::ActiveModel = node.into();
+        active.status = Set("online".to_string());
+        active.hostname = Set(req.hostname.clone());
+        if let Some(addr) = &remote_addr {
+            active.address = Set(addr.clone());
+        }
+        active.last_seen_at = Set(Some(chrono::Utc::now().into()));
+        active.updated_at = Set(chrono::Utc::now().into());
+        active
+            .update(&state.db)
+            .await
+            .map_err(|e| Status::internal(format!("database error: {}", e)))?;
+    } else if auto_register {
+        let token_hash = pp_common::hash_secret(&req.token)
+            .map_err(|_| Status::internal("failed to hash agent token"))?;
+
         let new_node = node::ActiveModel {
             id: Set(agent_id),
             name: Set(req.hostname.clone()),
             hostname: Set(req.hostname.clone()),
-            address: Set("".to_string()),
-            token_hash: Set(req.token.clone()), // TODO: hash the token
+            address: Set(remote_addr.clone().unwrap_or_default()),
+            token_hash: Set(token_hash),
             cores_available: Set(serde_json::json!(req.capabilities)),
             labels: Set(Some(serde_json::json!(
                 req.labels
@@ -167,16 +212,16 @@ async fn handle_register(
             created_at: Set(chrono::Utc::now().into()),
             updated_at: Set(chrono::Utc::now().into()),
         };
-        new_node.insert(&state.db).await?;
+        new_node
+            .insert(&state.db)
+            .await
+            .map_err(|e| Status::internal(format!("database error: {}", e)))?;
         tracing::info!("auto-registered new agent: {}", agent_id);
     } else {
-        // Update last_seen_at and status
-        let node = node.unwrap();
-        let mut active: node::ActiveModel = node.into();
-        active.status = Set("online".to_string());
-        active.last_seen_at = Set(Some(chrono::Utc::now().into()));
-        active.updated_at = Set(chrono::Utc::now().into());
-        active.update(&state.db).await?;
+        tracing::warn!("agent {} attempted to register but node does not exist", agent_id);
+        return Err(Status::not_found(
+            "node not registered; create the node and provision a token first",
+        ));
     }
 
     // Register the connection
@@ -193,7 +238,10 @@ async fn handle_register(
             },
         )),
     };
-    hub_tx.send(resp).await?;
+    hub_tx
+        .send(resp)
+        .await
+        .map_err(|e| Status::internal(format!("failed to send register response: {}", e)))?;
 
     Ok(agent_id)
 }

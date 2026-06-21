@@ -1,1 +1,78 @@
-//! Subscription generation service.
+//! Subscription business logic.
+//!
+//! Subscription generation and proxy node building logic lives in
+//! `crate::routes::subscription` (route handlers) and
+//! `pp-subscription` crate (format generators).
+//!
+//! This module is reserved for service-layer subscription operations
+//! that are shared across HTTP and gRPC handlers.
+
+use pp_common::PanelResult;
+use pp_db::entities::{client, client_group_binding, node, node_binding, protocol_config};
+use pp_subscription::ProxyNode;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use uuid::Uuid;
+
+/// Fetch group IDs assigned to a client.
+pub async fn get_client_group_ids(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+) -> PanelResult<Vec<Uuid>> {
+    let bindings = client_group_binding::Entity::find()
+        .filter(client_group_binding::Column::ClientId.eq(client_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
+}
+
+/// Build proxy nodes for subscription generation.
+pub async fn build_proxy_nodes(
+    db: &DatabaseConnection,
+    client_model: &client::Model,
+) -> PanelResult<Vec<ProxyNode>> {
+    if client_model.status == "limited" || client_model.status == "expired" {
+        return Ok(Vec::new());
+    }
+
+    let _client_group_ids = get_client_group_ids(db, client_model.id).await?;
+
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    let mut nodes = Vec::new();
+
+    for binding in bindings {
+        let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
+            .one(db)
+            .await?;
+        let node_model = node::Entity::find_by_id(binding.node_id).one(db).await?;
+
+        if let (Some(cfg), Some(node)) = (config, node_model) {
+            let protocol = match cfg.protocol_type.as_str() {
+                "vless_reality" => pp_common::ProtocolType::VlessReality,
+                "vless_vision" => pp_common::ProtocolType::VlessVision,
+                "vless_xhttp" => pp_common::ProtocolType::VlessXhttp,
+                "vmess" => pp_common::ProtocolType::Vmess,
+                "trojan" => pp_common::ProtocolType::Trojan,
+                "shadowsocks2022" => pp_common::ProtocolType::Shadowsocks2022,
+                "hysteria2" => pp_common::ProtocolType::Hysteria2,
+                "tuic" | "tuic_v5" => pp_common::ProtocolType::TuicV5,
+                "anytls" => pp_common::ProtocolType::Anytls,
+                _ => continue,
+            };
+
+            nodes.push(ProxyNode {
+                name: format!("{}-{}", node.name, cfg.name),
+                protocol,
+                server: node.address.clone(),
+                port: cfg.listen_port as u16,
+                settings: cfg.settings.clone(),
+                tls: cfg.tls_settings.clone(),
+            });
+        }
+    }
+
+    Ok(nodes)
+}

@@ -1,6 +1,8 @@
-use chrono::Datelike;
+use chrono::{Datelike, Duration};
 use pp_common::PanelError;
-use pp_db::entities::{client, node_binding, traffic_record};
+use pp_db::entities::{
+    client, client_online_session, node_binding, protocol_config, system_log, traffic_record,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
@@ -36,6 +38,34 @@ pub async fn run_periodic_checks(state: &Arc<AppState>) -> Result<(), PanelError
     all_affected.extend(reset_clients);
     if !all_affected.is_empty() {
         push_updated_configs_for_clients(state, &all_affected).await?;
+    }
+
+    // 4. Cleanup old records
+    cleanup_old_records(&state.db).await?;
+
+    Ok(())
+}
+
+/// Cleanup old system logs and stale online sessions.
+async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> {
+    // Delete system logs older than 30 days
+    let cutoff_logs = chrono::Utc::now() - Duration::days(30);
+    let deleted_logs = system_log::Entity::delete_many()
+        .filter(system_log::Column::CreatedAt.lt(cutoff_logs))
+        .exec(db)
+        .await?;
+    if deleted_logs.rows_affected > 0 {
+        tracing::info!("cleaned up {} old system log records", deleted_logs.rows_affected);
+    }
+
+    // Delete online sessions older than 10 minutes (stale sessions)
+    let cutoff_sessions = chrono::Utc::now() - Duration::minutes(10);
+    let deleted_sessions = client_online_session::Entity::delete_many()
+        .filter(client_online_session::Column::LastActiveAt.lt(cutoff_sessions))
+        .exec(db)
+        .await?;
+    if deleted_sessions.rows_affected > 0 {
+        tracing::info!("cleaned up {} stale online sessions", deleted_sessions.rows_affected);
     }
 
     Ok(())
@@ -221,7 +251,12 @@ async fn get_client_traffic_total(
     Ok(total)
 }
 
-/// Push updated configs to all nodes that have bindings for the affected clients.
+/// Push updated configs to all nodes that have active bindings.
+///
+/// Note: client_ids is not used for filtering because config push updates
+/// inbound configurations (protocol/port/TLS), not client credentials.
+/// Client access control is handled at subscription generation time based
+/// on client status (active/limited/expired).
 async fn push_updated_configs_for_clients(
     state: &Arc<AppState>,
     _client_ids: &HashSet<Uuid>,
@@ -237,56 +272,103 @@ async fn push_updated_configs_for_clients(
     }
 
     for node_id in node_ids {
-        if let Ok(config) = crate::service::protocol::generate_node_config(
-            &state.db,
-            node_id,
-            pp_common::CoreType::SingBox,
-        )
-        .await
-        {
-            let config_str = serde_json::to_string(&config)
-                .map_err(|e| PanelError::Config(format!("serialize config: {}", e)))?;
-            let message = pp_proto::HubMessage {
-                payload: Some(pp_proto::hub_message::Payload::ConfigPush(
-                    pp_proto::ConfigPush {
-                        config_json: config_str,
-                        target_core: pp_proto::CoreType::SingBox as i32,
-                        restart_required: false,
-                        config_version: "1".to_string(),
-                    },
-                )),
-            };
-            if let Err(e) = state.send_to_agent(node_id, message).await {
-                tracing::warn!("failed to push config to node {}: {}", node_id, e);
-            }
-        }
-
-        if let Ok(config) = crate::service::protocol::generate_node_config(
-            &state.db,
-            node_id,
-            pp_common::CoreType::Xray,
-        )
-        .await
-        {
-            let config_str = serde_json::to_string(&config)
-                .map_err(|e| PanelError::Config(format!("serialize config: {}", e)))?;
-            let message = pp_proto::HubMessage {
-                payload: Some(pp_proto::hub_message::Payload::ConfigPush(
-                    pp_proto::ConfigPush {
-                        config_json: config_str,
-                        target_core: pp_proto::CoreType::Xray as i32,
-                        restart_required: false,
-                        config_version: "1".to_string(),
-                    },
-                )),
-            };
-            if let Err(e) = state.send_to_agent(node_id, message).await {
-                tracing::warn!("failed to push xray config to node {}: {}", node_id, e);
-            }
-        }
+        push_config_for_core(state, node_id, pp_common::CoreType::SingBox).await;
+        push_config_for_core(state, node_id, pp_common::CoreType::Xray).await;
     }
 
     Ok(())
+}
+
+/// Generate and push config for a specific core type, but only if the node
+/// has active bindings for that core type (avoids pushing empty configs).
+async fn push_config_for_core(state: &Arc<AppState>, node_id: Uuid, core_type: pp_common::CoreType) {
+    // First check if there are any bindings that target this core type on this node
+    let has_bindings = match check_bindings_for_core(&state.db, node_id, core_type).await {
+        Ok(true) => true,
+        _ => return,
+    };
+
+    if !has_bindings {
+        return;
+    }
+
+    match crate::service::protocol::generate_node_config(&state.db, node_id, core_type).await {
+        Ok(config) => {
+            // Verify the generated config has inbounds (the core needs at least one)
+            let has_inbounds = config
+                .get("inbounds")
+                .and_then(|v| v.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            if !has_inbounds {
+                return;
+            }
+
+            let config_str = match serde_json::to_string(&config) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("failed to serialize config for node {}: {}", node_id, e);
+                    return;
+                }
+            };
+
+            let proto_core = match core_type {
+                pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
+                _ => pp_proto::CoreType::SingBox,
+            };
+
+            let message = pp_proto::HubMessage {
+                payload: Some(pp_proto::hub_message::Payload::ConfigPush(
+                    pp_proto::ConfigPush {
+                        config_json: config_str,
+                        target_core: proto_core as i32,
+                        restart_required: false,
+                        config_version: "1".to_string(),
+                    },
+                )),
+            };
+
+            if let Err(e) = state.send_to_agent(node_id, message).await {
+                tracing::warn!("failed to push {:?} config to node {}: {}", core_type, node_id, e);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("failed to generate {:?} config for node {}: {}", core_type, node_id, e);
+        }
+    }
+}
+
+/// Check if a node has active bindings for a specific core type.
+async fn check_bindings_for_core(
+    db: &DatabaseConnection,
+    node_id: Uuid,
+    core_type: pp_common::CoreType,
+) -> Result<bool, PanelError> {
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::NodeId.eq(node_id))
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    for binding in bindings {
+        let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
+            .one(db)
+            .await?
+            .map(|c| c.core_type)
+            .unwrap_or_default();
+
+        let binding_core = match config.as_str() {
+            "xray" => pp_common::CoreType::Xray,
+            "sing-box" | "singbox" => pp_common::CoreType::SingBox,
+            _ => pp_common::CoreType::Both,
+        };
+
+        if binding_core == pp_common::CoreType::Both || binding_core == core_type {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// Write an event to system_logs.

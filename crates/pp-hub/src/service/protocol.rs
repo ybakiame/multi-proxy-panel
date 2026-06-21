@@ -69,6 +69,67 @@ pub async fn generate_node_config(
     builder.build_full_config(&inbounds)
 }
 
+/// Validate that active bindings on a node do not ask two cores to listen on the
+/// same address/port. Returns an error if any overlap is found.
+pub async fn validate_node_port_conflicts(
+    db: &DatabaseConnection,
+    node_id: Uuid,
+) -> PanelResult<()> {
+    use std::collections::{HashMap, HashSet};
+
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::NodeId.eq(node_id))
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    // Map (listen, port) -> set of cores that want it.
+    let mut port_cores: HashMap<(String, u16), HashSet<CoreType>> = HashMap::new();
+
+    for binding in bindings {
+        let config = match protocol_config::Entity::find_by_id(binding.protocol_config_id)
+            .one(db)
+            .await?
+        {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let mut listen = config.listen_address.clone();
+        let mut port = config.listen_port as u16;
+
+        // Apply binding-level overrides for listen/port if present.
+        if let Some(overrides) = binding.override_settings {
+            if let Some(obj) = overrides.as_object() {
+                if let Some(v) = obj.get("listen_address").and_then(|v| v.as_str()) {
+                    listen = v.to_string();
+                }
+                if let Some(v) = obj.get("listen_port").and_then(|v| v.as_u64()) {
+                    port = v as u16;
+                }
+            }
+        }
+
+        let config_core = parse_core_type(&config.core_type);
+        let cores: Vec<CoreType> = match config_core {
+            CoreType::Both => vec![CoreType::Xray, CoreType::SingBox],
+            c => vec![c],
+        };
+
+        let entry = port_cores.entry((listen.clone(), port)).or_default();
+        for c in cores {
+            if !entry.insert(c) {
+                return Err(pp_common::PanelError::Validation(format!(
+                    "port conflict on {}:{}: multiple inbounds target {:?}",
+                    listen, port, c
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn parse_core_type(s: &str) -> CoreType {
     match s {
         "xray" => CoreType::Xray,
