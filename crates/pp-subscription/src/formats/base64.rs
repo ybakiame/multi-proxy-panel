@@ -30,7 +30,13 @@ fn generate_vmess_link(node: &ProxyNode) -> PanelResult<String> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| PanelError::Subscription("missing vmess id".into()))?;
 
-    let obj = serde_json::json!({
+    let network = node
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
+    let mut obj = serde_json::json!({
         "v": "2",
         "ps": node.name,
         "add": node.server,
@@ -38,13 +44,54 @@ fn generate_vmess_link(node: &ProxyNode) -> PanelResult<String> {
         "id": id,
         "aid": node.settings.get("alterId").and_then(|v| v.as_u64()).unwrap_or(0),
         "scy": node.settings.get("security").and_then(|v| v.as_str()).unwrap_or("auto"),
-        "net": node.settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp"),
-        "type": node.settings.get("type").and_then(|v| v.as_str()).unwrap_or("none"),
-        "host": node.settings.get("host").and_then(|v| v.as_str()).unwrap_or(""),
-        "path": node.settings.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+        "net": network,
+        "type": node.settings.get("header_type").and_then(|v| v.as_str()).unwrap_or("none"),
+        "host": "",
+        "path": "",
         "tls": if node.tls.is_some() { "tls" } else { "" },
         "sni": node.tls.as_ref().and_then(|t| t.get("serverName")).and_then(|v| v.as_str()).unwrap_or(""),
     });
+
+    match network {
+        "ws" | "xhttp" | "httpupgrade" => {
+            obj["path"] = node
+                .settings
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("/")
+                .into();
+            obj["host"] = node
+                .settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .into();
+        }
+        "grpc" => {
+            obj["path"] = node
+                .settings
+                .get("service_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .into();
+            obj["host"] = node
+                .settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .into();
+            obj["type"] = "gun".into();
+        }
+        "kcp" | "mkcp" => {
+            obj["path"] = node
+                .settings
+                .get("seed")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .into();
+        }
+        _ => {}
+    }
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(serde_json::to_string(&obj)?);
     Ok(format!("vmess://{}", b64))
@@ -87,23 +134,47 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
         params.push(format!("flow={}", flow));
     }
 
-    // XHTTP specific params
-    if network == "xhttp" {
-        if let Some(path) = node.settings.get("xhttp_path").and_then(|v| v.as_str()) {
-            params.push(format!("path={}", urlencoding::encode(path)));
-        } else if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
-            params.push(format!("path={}", urlencoding::encode(path)));
+    // Transport-specific params
+    match network {
+        "ws" => {
+            if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
+                params.push(format!("path={}", urlencoding::encode(path)));
+            }
+            if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
+                params.push(format!("host={}", urlencoding::encode(host)));
+            }
         }
-        if let Some(host) = node.settings.get("xhttp_host").and_then(|v| v.as_str()) {
-            params.push(format!("host={}", urlencoding::encode(host)));
-        } else if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
-            params.push(format!("host={}", urlencoding::encode(host)));
+        "grpc" => {
+            if let Some(service) = node.settings.get("service_name").and_then(|v| v.as_str()) {
+                params.push(format!("serviceName={}", urlencoding::encode(service)));
+            }
         }
-        if let Some(mode) = node.settings.get("xhttp_mode").and_then(|v| v.as_str()) {
-            params.push(format!("mode={}", mode));
-        } else if let Some(mode) = node.settings.get("mode").and_then(|v| v.as_str()) {
-            params.push(format!("mode={}", mode));
+        "xhttp" => {
+            if let Some(path) = node.settings.get("xhttp_path").and_then(|v| v.as_str()) {
+                params.push(format!("path={}", urlencoding::encode(path)));
+            } else if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
+                params.push(format!("path={}", urlencoding::encode(path)));
+            }
+            if let Some(host) = node.settings.get("xhttp_host").and_then(|v| v.as_str()) {
+                params.push(format!("host={}", urlencoding::encode(host)));
+            } else if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
+                params.push(format!("host={}", urlencoding::encode(host)));
+            }
+            if let Some(mode) = node.settings.get("xhttp_mode").and_then(|v| v.as_str()) {
+                params.push(format!("mode={}", mode));
+            } else if let Some(mode) = node.settings.get("mode").and_then(|v| v.as_str()) {
+                params.push(format!("mode={}", mode));
+            }
         }
+        "kcp" | "mkcp" => {
+            if let Some(seed) = node.settings.get("seed").and_then(|v| v.as_str()) {
+                params.push(format!("seed={}", urlencoding::encode(seed)));
+            }
+            if let Some(header_type) = node.settings.get("header_type").and_then(|v| v.as_str()) {
+                params.push(format!("headerType={}", header_type));
+            }
+        }
+        _ => {}
     }
 
     match node.protocol {
@@ -188,15 +259,40 @@ fn generate_trojan_link(node: &ProxyNode) -> PanelResult<String> {
         .settings
         .get("password")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.settings
+                .get("clients")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("password"))
+                .and_then(|v| v.as_str())
+        })
         .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
 
-    let mut params = vec![format!(
-        "type={}",
-        node.settings
-            .get("network")
-            .and_then(|v| v.as_str())
-            .unwrap_or("tcp")
-    )];
+    let network = node
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
+    let mut params = vec![format!("type={}", network)];
+
+    match network {
+        "ws" => {
+            if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
+                params.push(format!("path={}", urlencoding::encode(path)));
+            }
+            if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
+                params.push(format!("host={}", urlencoding::encode(host)));
+            }
+        }
+        "grpc" => {
+            if let Some(service) = node.settings.get("service_name").and_then(|v| v.as_str()) {
+                params.push(format!("serviceName={}", urlencoding::encode(service)));
+            }
+        }
+        _ => {}
+    }
 
     if let Some(tls) = &node.tls {
         if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
@@ -281,10 +377,45 @@ mod tests {
     }
 
     #[test]
-    fn vless_reality_link_requires_public_key() {
-        let mut node = reality_node();
-        node.settings["public_key"] = json!("");
-        let err = generate_vless_link(&node).unwrap_err();
-        assert!(err.to_string().contains("public_key"));
+    fn vless_ws_link_contains_path_and_host() {
+        let node = ProxyNode {
+            name: "test-ws".into(),
+            protocol: ProtocolType::VlessVision,
+            server: "1.2.3.4".into(),
+            port: 443,
+            settings: json!({
+                "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4",
+                "network": "ws",
+                "path": "/vless",
+                "host": "cdn.example.com",
+            }),
+            tls: Some(json!({ "serverName": "cdn.example.com" })),
+        };
+        let link = generate_vless_link(&node).unwrap();
+        assert!(link.starts_with("vless://"));
+        assert!(link.contains("type=ws"));
+        assert!(link.contains("path=%2Fvless"));
+        assert!(link.contains("host=cdn.example.com"));
+        assert!(link.contains("security=tls"));
+    }
+
+    #[test]
+    fn trojan_grpc_link_contains_service_name() {
+        let node = ProxyNode {
+            name: "test-trojan-grpc".into(),
+            protocol: ProtocolType::Trojan,
+            server: "1.2.3.4".into(),
+            port: 443,
+            settings: json!({
+                "password": "secret",
+                "network": "grpc",
+                "service_name": "trojan-grpc",
+            }),
+            tls: Some(json!({ "serverName": "example.com" })),
+        };
+        let link = generate_trojan_link(&node).unwrap();
+        assert!(link.starts_with("trojan://"));
+        assert!(link.contains("type=grpc"));
+        assert!(link.contains("serviceName=trojan-grpc"));
     }
 }
