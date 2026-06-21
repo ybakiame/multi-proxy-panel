@@ -666,7 +666,7 @@ mod tests {
         };
 
         let config = builder.build_full_config(&[inbound]).unwrap();
-        assert!(config["route"]["rules"].as_array().unwrap().len() >= 1);
+        assert!(!config["route"]["rules"].as_array().unwrap().is_empty());
         assert_eq!(config["outbounds"][1]["tag"], "block");
     }
 }
