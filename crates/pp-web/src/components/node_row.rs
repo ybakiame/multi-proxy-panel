@@ -4,7 +4,13 @@ use serde_json::json;
 use crate::api;
 
 #[component]
-pub fn NodeRow(id: String, name: String, hostname: String, address: String, status: String) -> Element {
+pub fn NodeRow(
+    id: String,
+    name: String,
+    hostname: String,
+    address: String,
+    status: String,
+) -> Element {
     let push_id = id.clone();
     let delete_id = id;
 

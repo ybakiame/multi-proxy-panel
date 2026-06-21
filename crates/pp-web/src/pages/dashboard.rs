@@ -3,6 +3,7 @@ use dioxus_i18n::t;
 use serde_json::Value;
 
 use crate::api;
+use crate::components::{Alert, Loading};
 
 fn extract_array(res: &Option<Value>, key: &str) -> Vec<Value> {
     res.as_ref()
@@ -12,17 +13,31 @@ fn extract_array(res: &Option<Value>, key: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+fn load_with_error<T: Default + 'static>(
+    res: crate::api::ApiResult<T>,
+    mut error: Signal<Option<String>>,
+) -> T {
+    match res {
+        Ok(v) => v,
+        Err(e) => {
+            error.set(Some(e.to_string()));
+            T::default()
+        }
+    }
+}
+
 #[component]
 pub fn Dashboard() -> Element {
-    let nodes = use_resource(|| async move { api::get_nodes().await.unwrap_or_default() });
+    let error = use_signal(|| None::<String>);
+
+    let nodes = use_resource(move || async move { load_with_error(api::get_nodes().await, error) });
     let protocols =
-        use_resource(|| async move { api::get_protocols(1, 100).await.unwrap_or_default() });
-    let clients = use_resource(|| async move { api::get_clients().await.unwrap_or_default() });
-    let bindings =
-        use_resource(|| async move { api::get_bindings().await.unwrap_or_default() });
-    let metrics = use_resource(|| async move { api::get_metrics().await.unwrap_or_default() });
-    let logs = use_resource(|| async move { api::get_logs().await.unwrap_or_default() });
-    let onlines = use_resource(|| async move { api::get_online_count().await.unwrap_or_default() });
+        use_resource(move || async move { load_with_error(api::get_protocols(1, 100).await, error) });
+    let clients = use_resource(move || async move { load_with_error(api::get_clients().await, error) });
+    let bindings = use_resource(move || async move { load_with_error(api::get_bindings().await, error) });
+    let metrics = use_resource(move || async move { load_with_error(api::get_metrics().await, error) });
+    let logs = use_resource(move || async move { load_with_error(api::get_logs().await, error) });
+    let onlines = use_resource(move || async move { load_with_error(api::get_online_count().await, error) });
 
     let nodes_data = extract_array(&nodes.read(), "data");
     let protocols_data = extract_array(&protocols.read(), "data");
@@ -43,9 +58,26 @@ pub fn Dashboard() -> Element {
         .filter(|n| n.get("status").and_then(|v| v.as_str()).unwrap_or("") == "online")
         .count();
 
+    let all_ready = nodes.read().is_some()
+        && protocols.read().is_some()
+        && clients.read().is_some()
+        && bindings.read().is_some()
+        && metrics.read().is_some()
+        && logs.read().is_some()
+        && onlines.read().is_some();
+
     rsx! {
         div { class: "dashboard",
             h1 { {t!("dashboard-title")} }
+
+            if !all_ready {
+                Loading {}
+            }
+
+            if let Some(err) = error.read().as_ref() {
+                Alert { level: "warning".to_string(), p { "{t!(\"dashboard-error-banner\")}: {err}" } }
+            }
+
             div { class: "stats-grid",
                 div { class: "stat-card",
                     h3 { {t!("dashboard-total-nodes")} }
