@@ -16,6 +16,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250701_000003_add_client_max_devices::Migration),
             Box::new(m20250701_000004_create_api_keys::Migration),
             Box::new(m20250701_000005_create_webhooks::Migration),
+            Box::new(m20250702_000001_add_constraints_and_indexes::Migration),
         ]
     }
 }
@@ -28,3 +29,4 @@ mod m20250701_000002_add_node_usage_coefficient_and_node_user_usage;
 mod m20250701_000003_add_client_max_devices;
 mod m20250701_000004_create_api_keys;
 mod m20250701_000005_create_webhooks;
+mod m20250702_000001_add_constraints_and_indexes;

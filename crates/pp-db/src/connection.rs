@@ -43,7 +43,10 @@ pub async fn connect(database_url: &str) -> Result<DatabaseConnection, DbErr> {
             // Enable WAL mode
             let _ = sea_orm::ConnectionTrait::execute(
                 &conn,
-                sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite, "PRAGMA journal_mode = WAL;".to_string()),
+                sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Sqlite,
+                    "PRAGMA journal_mode = WAL;".to_string(),
+                ),
             )
             .await;
             Ok(conn)

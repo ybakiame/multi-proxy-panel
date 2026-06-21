@@ -219,75 +219,177 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_table(Table::drop().table(SystemLogs::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(HostMetrics::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(TrafficRecords::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(Subscriptions::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(SubscriptionTemplates::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(Clients::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(NodeBindings::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(ProtocolConfigs::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(Nodes::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(Users::Table).to_owned()).await?;
+        manager
+            .drop_table(Table::drop().table(SystemLogs::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(HostMetrics::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TrafficRecords::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Subscriptions::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(SubscriptionTemplates::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Clients::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(NodeBindings::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(ProtocolConfigs::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Nodes::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Users::Table).to_owned())
+            .await?;
         Ok(())
     }
 }
 
 #[derive(Iden)]
 enum Users {
-    Table, Id, Username, PasswordHash, Role, Status, CreatedAt, UpdatedAt,
+    Table,
+    Id,
+    Username,
+    PasswordHash,
+    Role,
+    Status,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
 enum Nodes {
-    Table, Id, Name, Hostname, Address, TokenHash,
-    CoresAvailable, Labels, Status, LastSeenAt, CreatedAt, UpdatedAt,
+    Table,
+    Id,
+    Name,
+    Hostname,
+    Address,
+    TokenHash,
+    CoresAvailable,
+    Labels,
+    Status,
+    LastSeenAt,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
 enum ProtocolConfigs {
-    Table, Id, Name, ProtocolType, CoreType, ListenPort, ListenAddress,
-    Settings, TlsSettings, CreatedAt, UpdatedAt,
+    Table,
+    Id,
+    Name,
+    ProtocolType,
+    CoreType,
+    ListenPort,
+    ListenAddress,
+    Settings,
+    TlsSettings,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
 enum NodeBindings {
-    Table, Id, NodeId, ProtocolConfigId, OverrideSettings, IsActive, CreatedAt,
+    Table,
+    Id,
+    NodeId,
+    ProtocolConfigId,
+    OverrideSettings,
+    IsActive,
+    CreatedAt,
 }
 
 #[derive(Iden)]
 enum Clients {
-    Table, Id, UserId, Name, Email, TrafficLimitBytes, TrafficUsedBytes,
-    ExpiryDate, ResetDay, Status, CreatedAt, UpdatedAt,
+    Table,
+    Id,
+    UserId,
+    Name,
+    Email,
+    TrafficLimitBytes,
+    TrafficUsedBytes,
+    ExpiryDate,
+    ResetDay,
+    Status,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
 enum SubscriptionTemplates {
-    Table, Id, Name, Format, BaseConfig, FilterRules, CustomHeaders, CreatedAt, UpdatedAt,
+    Table,
+    Id,
+    Name,
+    Format,
+    BaseConfig,
+    FilterRules,
+    CustomHeaders,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
 enum Subscriptions {
-    Table, Id, ClientId, TemplateId, Token, UrlPath,
-    ExpireAt, IsActive, LastAccessedAt, CreatedAt,
+    Table,
+    Id,
+    ClientId,
+    TemplateId,
+    Token,
+    UrlPath,
+    ExpireAt,
+    IsActive,
+    LastAccessedAt,
+    CreatedAt,
 }
 
 #[derive(Iden)]
 enum TrafficRecords {
-    Table, Id, NodeId, ProtocolConfigId, ClientId,
-    HourBucket, UploadBytes, DownloadBytes, CreatedAt,
+    Table,
+    Id,
+    NodeId,
+    ProtocolConfigId,
+    ClientId,
+    HourBucket,
+    UploadBytes,
+    DownloadBytes,
+    CreatedAt,
 }
 
 #[derive(Iden)]
 enum HostMetrics {
-    Table, Id, NodeId, Timestamp, CpuPercent,
-    MemUsed, MemTotal, DiskUsed, DiskTotal,
-    NetRx, NetTx, LoadAvg1, LoadAvg5, LoadAvg15,
+    Table,
+    Id,
+    NodeId,
+    Timestamp,
+    CpuPercent,
+    MemUsed,
+    MemTotal,
+    DiskUsed,
+    DiskTotal,
+    NetRx,
+    NetTx,
+    LoadAvg1,
+    LoadAvg5,
+    LoadAvg15,
 }
 
 #[derive(Iden)]
 enum SystemLogs {
-    Table, Id, Level, Source, Message, Metadata, CreatedAt,
+    Table,
+    Id,
+    Level,
+    Source,
+    Message,
+    Metadata,
+    CreatedAt,
 }
 
 fn pk_uuid<C: Iden + 'static>(c: C) -> ColumnDef {
@@ -295,20 +397,56 @@ fn pk_uuid<C: Iden + 'static>(c: C) -> ColumnDef {
     // PostgreSQL could use DEFAULT gen_random_uuid(), but SQLite does not support it.
     ColumnDef::new(c).uuid().not_null().primary_key().to_owned()
 }
-fn uuid<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).uuid().not_null().to_owned() }
-fn uuid_null<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).uuid().to_owned() }
-fn string<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).string().not_null().to_owned() }
-fn string_uniq<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).string().not_null().unique_key().to_owned() }
-fn string_null<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).string().to_owned() }
-fn text<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).text().not_null().to_owned() }
-fn integer<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).integer().not_null().to_owned() }
-fn integer_null<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).integer().to_owned() }
-fn big_integer<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).big_integer().not_null().to_owned() }
-fn boolean<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).boolean().not_null().to_owned() }
-fn float<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).float().not_null().to_owned() }
-fn timestamp<C: Iden + 'static>(c: C) -> ColumnDef {
-    ColumnDef::new(c).timestamp_with_time_zone().not_null().extra("DEFAULT NOW()".to_string()).to_owned()
+fn uuid<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).uuid().not_null().to_owned()
 }
-fn timestamp_null<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).timestamp_with_time_zone().to_owned() }
-fn json<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).json().not_null().to_owned() }
-fn json_null<C: Iden + 'static>(c: C) -> ColumnDef { ColumnDef::new(c).json().to_owned() }
+fn uuid_null<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).uuid().to_owned()
+}
+fn string<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).string().not_null().to_owned()
+}
+fn string_uniq<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c)
+        .string()
+        .not_null()
+        .unique_key()
+        .to_owned()
+}
+fn string_null<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).string().to_owned()
+}
+fn text<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).text().not_null().to_owned()
+}
+fn integer<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).integer().not_null().to_owned()
+}
+fn integer_null<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).integer().to_owned()
+}
+fn big_integer<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).big_integer().not_null().to_owned()
+}
+fn boolean<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).boolean().not_null().to_owned()
+}
+fn float<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).float().not_null().to_owned()
+}
+fn timestamp<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c)
+        .timestamp_with_time_zone()
+        .not_null()
+        .extra("DEFAULT CURRENT_TIMESTAMP".to_string())
+        .to_owned()
+}
+fn timestamp_null<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).timestamp_with_time_zone().to_owned()
+}
+fn json<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).json().not_null().to_owned()
+}
+fn json_null<C: Iden + 'static>(c: C) -> ColumnDef {
+    ColumnDef::new(c).json().to_owned()
+}

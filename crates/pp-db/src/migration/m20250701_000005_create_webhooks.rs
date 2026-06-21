@@ -76,6 +76,6 @@ fn timestamp<C: Iden + 'static>(c: C) -> ColumnDef {
     ColumnDef::new(c)
         .timestamp_with_time_zone()
         .not_null()
-        .extra("DEFAULT NOW()".to_string())
+        .extra("DEFAULT CURRENT_TIMESTAMP".to_string())
         .to_owned()
 }

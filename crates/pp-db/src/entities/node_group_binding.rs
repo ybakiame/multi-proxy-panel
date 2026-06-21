@@ -1,14 +1,12 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "node_bindings")]
+#[sea_orm(table_name = "node_group_bindings")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub node_id: Uuid,
-    pub protocol_config_id: Uuid,
-    pub override_settings: Option<Json>,
-    pub is_active: bool,
+    pub group_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
 }
 
@@ -21,11 +19,11 @@ pub enum Relation {
     )]
     Node,
     #[sea_orm(
-        belongs_to = "super::protocol_config::Entity",
-        from = "Column::ProtocolConfigId",
-        to = "super::protocol_config::Column::Id"
+        belongs_to = "super::node_group::Entity",
+        from = "Column::GroupId",
+        to = "super::node_group::Column::Id"
     )]
-    ProtocolConfig,
+    NodeGroup,
 }
 
 impl Related<super::node::Entity> for Entity {
@@ -33,9 +31,10 @@ impl Related<super::node::Entity> for Entity {
         Relation::Node.def()
     }
 }
-impl Related<super::protocol_config::Entity> for Entity {
+
+impl Related<super::node_group::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ProtocolConfig.def()
+        Relation::NodeGroup.def()
     }
 }
 

@@ -1,18 +1,16 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "subscriptions")]
+#[sea_orm(table_name = "client_online_sessions")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub client_id: Uuid,
-    pub template_id: Uuid,
-    pub token: String,
-    pub url_path: String,
-    pub expire_at: Option<DateTimeWithTimeZone>,
-    pub is_active: bool,
-    pub last_accessed_at: Option<DateTimeWithTimeZone>,
-    pub created_at: DateTimeWithTimeZone,
+    pub node_id: Uuid,
+    pub ip_address: String,
+    pub inbound_tag: Option<String>,
+    pub connected_at: DateTimeWithTimeZone,
+    pub last_active_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -24,11 +22,11 @@ pub enum Relation {
     )]
     Client,
     #[sea_orm(
-        belongs_to = "super::subscription_template::Entity",
-        from = "Column::TemplateId",
-        to = "super::subscription_template::Column::Id"
+        belongs_to = "super::node::Entity",
+        from = "Column::NodeId",
+        to = "super::node::Column::Id"
     )]
-    Template,
+    Node,
 }
 
 impl Related<super::client::Entity> for Entity {
@@ -36,9 +34,10 @@ impl Related<super::client::Entity> for Entity {
         Relation::Client.def()
     }
 }
-impl Related<super::subscription_template::Entity> for Entity {
+
+impl Related<super::node::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Template.def()
+        Relation::Node.def()
     }
 }
 

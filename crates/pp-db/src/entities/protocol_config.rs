@@ -23,7 +23,9 @@ pub enum Relation {
 }
 
 impl Related<super::node_binding::Entity> for Entity {
-    fn to() -> RelationDef { Relation::NodeBindings.def() }
+    fn to() -> RelationDef {
+        Relation::NodeBindings.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
