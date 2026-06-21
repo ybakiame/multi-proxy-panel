@@ -11,6 +11,7 @@ pub mod node_group;
 pub mod nodes;
 pub mod onlines;
 pub mod protocol;
+pub mod protocol_preset;
 pub mod subscription;
 pub mod traffic;
 pub mod webhook;

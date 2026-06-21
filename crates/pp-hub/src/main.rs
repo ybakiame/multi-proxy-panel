@@ -32,7 +32,7 @@ use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
     api_key, bindings, client, health, login, logs, metrics, metrics_export, node_group, nodes,
-    onlines, protocol, subscription, traffic, webhook,
+    onlines, protocol, protocol_preset, subscription, traffic, webhook,
 };
 use state::AppState;
 
@@ -174,6 +174,16 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             "/api/v1/utils/generate-reality-keys",
             get(protocol::generate_reality_keys)
                 .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_READ)),
+        )
+        .route(
+            "/api/v1/protocols/presets",
+            get(protocol_preset::list_available_presets)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_READ)),
+        )
+        .route(
+            "/api/v1/protocols/presets",
+            post(protocol_preset::apply_preset)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
         )
         // Node Bindings
         .route(
@@ -362,6 +372,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route("/ready", get(health::ready))
         .route("/metrics", get(metrics_export::prometheus_metrics))
         .route("/sub/{token}", get(subscription::serve_subscription))
+        .route("/sub/{token}/qr", get(subscription::serve_subscription_qr))
         .route("/api/v1/login", post(login::login))
         .with_state(state.clone());
 
