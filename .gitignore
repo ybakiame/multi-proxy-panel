@@ -9,3 +9,6 @@ Cargo.lock
 /dist
 /build
 .DS_Store
+/claude
+/.claude
+/scripts/.*
