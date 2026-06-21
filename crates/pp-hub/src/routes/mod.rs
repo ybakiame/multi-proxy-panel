@@ -1,9 +1,12 @@
 pub mod api_key;
 pub mod bindings;
 pub mod client;
+pub mod common;
 pub mod health;
+pub mod login;
 pub mod logs;
 pub mod metrics;
+pub mod metrics_export;
 pub mod node_group;
 pub mod nodes;
 pub mod onlines;

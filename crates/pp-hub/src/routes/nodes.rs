@@ -1,14 +1,14 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
     response::Json,
 };
 use pp_db::entities::{node, node_group_binding};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
 /// Fetch group IDs assigned to a node.
@@ -47,82 +47,100 @@ async fn sync_node_groups(
     Ok(())
 }
 
-pub async fn list_nodes(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
-    let nodes = node::Entity::find()
-        .all(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+fn node_to_json(n: node::Model, group_ids: Vec<Uuid>) -> Value {
+    json!({
+        "id": n.id,
+        "name": n.name,
+        "hostname": n.hostname,
+        "address": n.address,
+        "cores_available": n.cores_available,
+        "labels": n.labels.unwrap_or(json!({})),
+        "usage_coefficient": n.usage_coefficient,
+        "status": n.status,
+        "group_ids": group_ids,
+        "last_seen_at": n.last_seen_at,
+    })
+}
+
+pub async fn list_nodes(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> PaginatedResult<Value> {
+    let (nodes, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+        let total = node::Entity::find()
+            .count(&state.db)
+            .await
+            .map_err(ApiError::from)? as u64;
+        let items = node::Entity::find()
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        (items, total)
+    } else {
+        let items = node::Entity::find()
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        let total = items.len() as u64;
+        (items, total)
+    };
 
     let mut data = Vec::with_capacity(nodes.len());
     for n in nodes {
         let group_ids = get_node_group_ids(&state.db, n.id)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        data.push(json!({
-            "id": n.id,
-            "name": n.name,
-            "hostname": n.hostname,
-            "address": n.address,
-            "cores_available": n.cores_available,
-            "labels": n.labels.unwrap_or(json!({})),
-            "usage_coefficient": n.usage_coefficient,
-            "status": n.status,
-            "group_ids": group_ids,
-            "last_seen_at": n.last_seen_at,
-        }));
+            .map_err(ApiError::from)?;
+        data.push(node_to_json(n, group_ids));
     }
 
-    Ok(Json(json!({ "data": data })))
+    Ok(PaginatedResponse::new(data, total))
 }
 
 pub async fn get_node(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, StatusCode> {
+) -> ApiResult<Value> {
     let n = node::Entity::find_by_id(id)
         .one(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("node not found"))?;
 
     let group_ids = get_node_group_ids(&state.db, n.id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
-    Ok(Json(json!({ "data": {
-        "id": n.id,
-        "name": n.name,
-        "hostname": n.hostname,
-        "address": n.address,
-        "usage_coefficient": n.usage_coefficient,
-        "status": n.status,
-        "group_ids": group_ids,
-    } })))
+    Ok(ApiResponse::new(node_to_json(n, group_ids)))
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateNodePayload {
+    pub name: String,
+    pub hostname: Option<String>,
+    pub address: Option<String>,
+    pub group_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn create_node(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
-    let name = payload
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
+    Json(payload): Json<CreateNodePayload>,
+) -> ApiResult<Value> {
+    if payload.name.trim().is_empty() {
+        return Err(ApiError::bad_request("invalid_name", "node name is required"));
+    }
+
+    let raw_token = pp_common::generate_secure_token();
+    let token_hash = pp_common::hash_secret(&raw_token)
+        .map_err(|e| ApiError::internal(format!("failed to hash token: {e}")))?;
 
     let active = node::ActiveModel {
         id: Set(Uuid::new_v4()),
-        name: Set(name.to_string()),
-        hostname: Set(payload
-            .get("hostname")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()),
-        address: Set(payload
-            .get("address")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()),
-        token_hash: Set("".to_string()), // TODO: generate and hash token
+        name: Set(payload.name),
+        hostname: Set(payload.hostname.unwrap_or_default()),
+        address: Set(payload.address.unwrap_or_default()),
+        token_hash: Set(token_hash),
         cores_available: Set(json!([])),
         labels: Set(None),
         usage_coefficient: Set(1.0),
@@ -135,83 +153,90 @@ pub async fn create_node(
     let inserted = active
         .insert(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
-    // Sync group bindings if provided
-    if let Some(group_ids) = parse_group_ids(&payload) {
+    if let Some(group_ids) = payload.group_ids {
         sync_node_groups(&state.db, inserted.id, &group_ids)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(ApiError::from)?;
     }
 
-    Ok(Json(json!({
-        "data": {
-            "id": inserted.id,
-            "name": inserted.name,
-            "hostname": inserted.hostname,
-            "address": inserted.address,
-            "status": inserted.status,
-        }
+    Ok(ApiResponse::new(json!({
+        "id": inserted.id,
+        "name": inserted.name,
+        "hostname": inserted.hostname,
+        "address": inserted.address,
+        "status": inserted.status,
+        "token": raw_token,
     })))
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct UpdateNodePayload {
+    pub name: Option<String>,
+    pub hostname: Option<String>,
+    pub address: Option<String>,
+    pub usage_coefficient: Option<f32>,
+    pub labels: Option<Value>,
+    pub group_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn update_node(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
+    Json(payload): Json<UpdateNodePayload>,
+) -> ApiResult<Value> {
     let n = node::Entity::find_by_id(id)
         .one(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("node not found"))?;
 
     let mut active: node::ActiveModel = n.into();
 
-    if let Some(name) = payload.get("name").and_then(|v| v.as_str()) {
-        active.name = Set(name.to_string());
+    if let Some(name) = payload.name {
+        if name.trim().is_empty() {
+            return Err(ApiError::bad_request("invalid_name", "node name cannot be empty"));
+        }
+        active.name = Set(name);
     }
-    if let Some(hostname) = payload.get("hostname").and_then(|v| v.as_str()) {
-        active.hostname = Set(hostname.to_string());
+    if let Some(hostname) = payload.hostname {
+        active.hostname = Set(hostname);
     }
-    if let Some(address) = payload.get("address").and_then(|v| v.as_str()) {
-        active.address = Set(address.to_string());
+    if let Some(address) = payload.address {
+        active.address = Set(address);
+    }
+    if let Some(coefficient) = payload.usage_coefficient {
+        active.usage_coefficient = Set(coefficient);
+    }
+    if payload.labels.is_some() {
+        active.labels = Set(payload.labels);
     }
     active.updated_at = Set(chrono::Utc::now().into());
 
     let updated = active
         .update(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
-    // Sync group bindings if provided
-    if payload.get("group_ids").is_some() {
-        if let Some(group_ids) = parse_group_ids(&payload) {
-            sync_node_groups(&state.db, updated.id, &group_ids)
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        } else {
-            node_group_binding::Entity::delete_many()
-                .filter(node_group_binding::Column::NodeId.eq(updated.id))
-                .exec(&state.db)
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        }
+    if payload.group_ids.is_some() {
+        let group_ids = payload.group_ids.unwrap_or_default();
+        sync_node_groups(&state.db, updated.id, &group_ids)
+            .await
+            .map_err(ApiError::from)?;
     }
 
-    Ok(Json(json!({ "data": {
-        "id": updated.id,
-        "name": updated.name,
-        "hostname": updated.hostname,
-        "address": updated.address,
-        "status": updated.status,
-    } })))
+    let group_ids = get_node_group_ids(&state.db, updated.id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(ApiResponse::new(node_to_json(updated, group_ids)))
 }
 
 pub async fn delete_node(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<axum::http::StatusCode, ApiError> {
     let _ = node_group_binding::Entity::delete_many()
         .filter(node_group_binding::Column::NodeId.eq(id))
         .exec(&state.db)
@@ -220,40 +245,57 @@ pub async fn delete_node(
     let res = node::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     if res.rows_affected == 0 {
-        Err(StatusCode::NOT_FOUND)
+        Err(ApiError::not_found("node not found"))
     } else {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(axum::http::StatusCode::NO_CONTENT)
     }
+}
+
+#[derive(serde::Deserialize)]
+pub struct PushConfigPayload {
+    pub core_type: Option<String>,
+    pub restart: Option<bool>,
+    pub version: Option<String>,
 }
 
 pub async fn push_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
-    let target_core = payload
-        .get("core_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("sing-box");
+    Json(payload): Json<PushConfigPayload>,
+) -> ApiResult<Value> {
+    let target_core = payload.core_type.as_deref().unwrap_or("sing-box");
 
     let core_type = match target_core {
         "xray" => pp_common::CoreType::Xray,
         "sing-box" | "singbox" => pp_common::CoreType::SingBox,
-        _ => pp_common::CoreType::SingBox,
+        _ => {
+            return Err(ApiError::bad_request(
+                "invalid_core_type",
+                "core_type must be 'xray' or 'sing-box'",
+            ));
+        }
     };
+
+    crate::service::protocol::validate_node_port_conflicts(&state.db, id)
+        .await
+        .map_err(|e| {
+            tracing::warn!("node {} port conflict: {}", id, e);
+            ApiError::new(axum::http::StatusCode::CONFLICT, "port_conflict", e.to_string())
+        })?;
 
     let config_json = crate::service::protocol::generate_node_config(&state.db, id, core_type)
         .await
         .map_err(|e| {
             tracing::warn!("failed to generate config for node {}: {}", id, e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            ApiError::internal(format!("failed to generate config: {e}"))
         })?;
 
-    let config_str =
-        serde_json::to_string(&config_json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let config_str = serde_json::to_string(&config_json).map_err(|e| {
+        ApiError::internal(format!("failed to serialize config: {e}"))
+    })?;
 
     let proto_core = match core_type {
         pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
@@ -266,33 +308,19 @@ pub async fn push_config(
             pp_proto::ConfigPush {
                 config_json: config_str,
                 target_core: proto_core as i32,
-                restart_required: payload
-                    .get("restart")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true),
-                config_version: payload
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("1")
-                    .to_string(),
+                restart_required: payload.restart.unwrap_or(true),
+                config_version: payload.version.unwrap_or_else(|| "1".to_string()),
             },
         )),
     };
 
     state.send_to_agent(id, message).await.map_err(|e| {
         tracing::warn!("failed to push config to agent {}: {}", id, e);
-        StatusCode::BAD_GATEWAY
+        ApiError::new(axum::http::StatusCode::BAD_GATEWAY, "agent_unreachable", e.to_string())
     })?;
 
-    Ok(Json(json!({ "success": true, "message": "config pushed" })))
-}
-
-fn parse_group_ids(payload: &Value) -> Option<Vec<Uuid>> {
-    payload
-        .get("group_ids")?
-        .as_array()?
-        .iter()
-        .filter_map(|v| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-        .collect::<Vec<_>>()
-        .into()
+    Ok(ApiResponse::new(json!({
+        "success": true,
+        "message": "config pushed",
+    })))
 }

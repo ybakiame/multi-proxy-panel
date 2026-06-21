@@ -1,7 +1,5 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
-    response::Json,
 };
 use pp_db::entities::traffic_record;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
@@ -10,12 +8,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::response::{ApiError, ApiResponse, ApiResult};
 use crate::state::AppState;
 
 pub async fn query_traffic(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
+) -> ApiResult<Vec<Value>> {
     let node_id = params.get("node_id").and_then(|s| Uuid::parse_str(s).ok());
     let client_id = params
         .get("client_id")
@@ -34,7 +33,7 @@ pub async fn query_traffic(
         .order_by_desc(traffic_record::Column::HourBucket)
         .all(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     let data: Vec<Value> = records
         .into_iter()
@@ -51,5 +50,5 @@ pub async fn query_traffic(
         })
         .collect();
 
-    Ok(Json(json!({ "data": data })))
+    Ok(ApiResponse::new(data))
 }

@@ -1,26 +1,21 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
-    response::Json,
 };
 use pp_db::entities::system_log;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::response::{ApiError, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
 pub async fn query_logs(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
+) -> PaginatedResult<Value> {
     let level = params.get("level");
     let source = params.get("source");
-    let limit = params
-        .get("limit")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(100);
 
     let mut query = system_log::Entity::find();
 
@@ -31,12 +26,30 @@ pub async fn query_logs(
         query = query.filter(system_log::Column::Source.contains(s));
     }
 
-    let records = query
-        .order_by_desc(system_log::Column::CreatedAt)
-        .limit(limit)
-        .all(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let (records, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+        let total = query.clone().count(&state.db).await.map_err(ApiError::from)? as u64;
+        let items = query
+            .order_by_desc(system_log::Column::CreatedAt)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        (items, total)
+    } else {
+        let limit = params
+            .get("limit")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(100);
+        let items = query
+            .order_by_desc(system_log::Column::CreatedAt)
+            .limit(limit)
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        let total = items.len() as u64;
+        (items, total)
+    };
 
     let data: Vec<Value> = records
         .into_iter()
@@ -52,5 +65,5 @@ pub async fn query_logs(
         })
         .collect();
 
-    Ok(Json(json!({ "data": data })))
+    Ok(PaginatedResponse::new(data, total))
 }

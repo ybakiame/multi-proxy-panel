@@ -1,7 +1,5 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
 };
 use pp_db::entities::host_metric;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
@@ -10,12 +8,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::response::{ApiError, ApiResponse, ApiResult};
 use crate::state::AppState;
 
 pub async fn query_metrics(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
+) -> ApiResult<Vec<Value>> {
     let node_id = params.get("node_id").and_then(|s| Uuid::parse_str(s).ok());
     let limit = params
         .get("limit")
@@ -33,7 +32,7 @@ pub async fn query_metrics(
         .limit(limit)
         .all(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     let data: Vec<Value> = records
         .into_iter()
@@ -54,22 +53,22 @@ pub async fn query_metrics(
         })
         .collect();
 
-    Ok(Json(json!({ "data": data })))
+    Ok(ApiResponse::new(data))
 }
 
 pub async fn latest_metrics(
     State(state): State<Arc<AppState>>,
     Path(node_id): Path<Uuid>,
-) -> Result<Json<Value>, StatusCode> {
+) -> ApiResult<Value> {
     let record = host_metric::Entity::find()
         .filter(host_metric::Column::NodeId.eq(node_id))
         .order_by_desc(host_metric::Column::Timestamp)
         .one(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("metrics not found for node"))?;
 
-    Ok(Json(json!({ "data": {
+    Ok(ApiResponse::new(json!({
         "node_id": record.node_id,
         "timestamp": record.timestamp,
         "cpu_percent": record.cpu_percent,
@@ -78,5 +77,5 @@ pub async fn latest_metrics(
         "disk_used": record.disk_used,
         "disk_total": record.disk_total,
         "load_avg": [record.load_avg1, record.load_avg5, record.load_avg15],
-    } })))
+    })))
 }

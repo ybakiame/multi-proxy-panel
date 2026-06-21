@@ -1,6 +1,5 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
     response::Json,
 };
 use pp_db::entities::protocol_config;
@@ -9,225 +8,213 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
+
+fn config_to_json(c: protocol_config::Model) -> Value {
+    json!({
+        "id": c.id,
+        "name": c.name,
+        "protocol_type": c.protocol_type,
+        "core_type": c.core_type,
+        "listen_port": c.listen_port,
+        "listen_address": c.listen_address,
+        "settings": c.settings,
+        "tls_settings": c.tls_settings,
+    })
+}
 
 pub async fn list_configs(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
-    let page = params
-        .get("page")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(1)
-        .max(1);
-    let per_page = params
-        .get("per_page")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(20)
-        .clamp(1, 100);
+) -> PaginatedResult<Value> {
+    let (configs, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+        let total = protocol_config::Entity::find()
+            .count(&state.db)
+            .await
+            .map_err(ApiError::from)? as u64;
+        let items = protocol_config::Entity::find()
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        (items, total)
+    } else {
+        let items = protocol_config::Entity::find()
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+        let total = items.len() as u64;
+        (items, total)
+    };
 
-    let total = protocol_config::Entity::find()
-        .count(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? as u64;
-
-    let configs = protocol_config::Entity::find()
-        .offset((page - 1) * per_page  )
-        .limit(per_page)
-        .all(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let data: Vec<Value> = configs
-        .into_iter()
-        .map(|c| {
-            json!({
-                "id": c.id,
-                "name": c.name,
-                "protocol_type": c.protocol_type,
-                "core_type": c.core_type,
-                "listen_port": c.listen_port,
-                "listen_address": c.listen_address,
-                "settings": c.settings,
-                "tls_settings": c.tls_settings,
-            })
-        })
-        .collect();
-    Ok(Json(json!({ "data": data, "total": total })))
+    let data: Vec<Value> = configs.into_iter().map(config_to_json).collect();
+    Ok(PaginatedResponse::new(data, total))
 }
 
 pub async fn get_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, StatusCode> {
+) -> ApiResult<Value> {
     let cfg = protocol_config::Entity::find_by_id(id)
         .one(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("protocol config not found"))?;
 
-    Ok(Json(json!({ "data": {
-        "id": cfg.id,
-        "name": cfg.name,
-        "protocol_type": cfg.protocol_type,
-        "core_type": cfg.core_type,
-        "listen_port": cfg.listen_port,
-        "listen_address": cfg.listen_address,
-        "settings": cfg.settings,
-        "tls_settings": cfg.tls_settings,
-    } })))
+    Ok(ApiResponse::new(config_to_json(cfg)))
 }
 
-fn validate_protocol(payload: &Value) -> Result<(String, String), StatusCode> {
-    let protocol_type = payload
+fn validate_protocol(payload: &Value) -> Result<(pp_common::ProtocolType, pp_common::CoreType), ApiError> {
+    let protocol_str = payload
         .get("protocol_type")
         .and_then(|v| v.as_str())
         .unwrap_or("vless_reality");
-    let core_type = payload
+    let core_str = payload
         .get("core_type")
         .and_then(|v| v.as_str())
         .unwrap_or("xray");
 
-    let allowed = match protocol_type {
-        "vless_reality" | "vless_vision" => &["xray", "sing-box"][..],
-        "vless_xhttp" => &["xray"][..],
-        "hysteria2" => &["sing-box"][..],
-        "anytls" => &["sing-box"][..],
-        "tuic" | "tuic_v5" => &["sing-box"][..],
-        _ => return Err(StatusCode::BAD_REQUEST),
-    };
+    let protocol = protocol_str
+        .parse::<pp_common::ProtocolType>()
+        .map_err(|_| ApiError::bad_request("invalid_protocol_type", "unknown protocol type"))?;
+    let core = core_str
+        .parse::<pp_common::CoreType>()
+        .map_err(|_| ApiError::bad_request("invalid_core_type", "unknown core type"))?;
 
-    if !allowed.contains(&core_type) {
-        return Err(StatusCode::BAD_REQUEST);
+    let allowed = pp_common::CoreType::valid_for(protocol);
+    if !allowed.contains(&core) {
+        return Err(ApiError::bad_request(
+            "incompatible_core_type",
+            format!("{} does not support core {}", protocol, core),
+        ));
     }
 
-    Ok((protocol_type.to_string(), core_type.to_string()))
+    Ok((protocol, core))
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateConfigPayload {
+    pub name: String,
+    pub protocol_type: String,
+    pub core_type: String,
+    pub listen_port: Option<u64>,
+    pub listen_address: Option<String>,
+    pub settings: Option<Value>,
+    pub tls_settings: Option<Value>,
 }
 
 pub async fn create_config(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
-    let name = payload
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    let (protocol_type, core_type) = validate_protocol(&payload)?;
+    Json(payload): Json<CreateConfigPayload>,
+) -> ApiResult<Value> {
+    let (protocol_type, core_type) = validate_protocol(&json!({
+        "protocol_type": payload.protocol_type,
+        "core_type": payload.core_type,
+    }))?;
 
     let active = protocol_config::ActiveModel {
         id: Set(Uuid::new_v4()),
-        name: Set(name.to_string()),
-        protocol_type: Set(protocol_type),
-        core_type: Set(core_type),
-        listen_port: Set(payload
-            .get("listen_port")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(443) as i32),
-        listen_address: Set(payload
-            .get("listen_address")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0.0.0.0")
-            .to_string()),
-        settings: Set(payload.get("settings").cloned().unwrap_or(json!({}))),
-        tls_settings: Set(payload.get("tls_settings").cloned()),
+        name: Set(payload.name),
+        protocol_type: Set(protocol_type.to_string()),
+        core_type: Set(core_type.to_string()),
+        listen_port: Set(payload.listen_port.unwrap_or(443) as i32),
+        listen_address: Set(payload.listen_address.unwrap_or_else(|| "0.0.0.0".to_string())),
+        settings: Set(payload.settings.unwrap_or_else(|| json!({}))),
+        tls_settings: Set(payload.tls_settings),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
     };
 
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
-    Ok(Json(json!({ "data": {
-        "id": inserted.id,
-        "name": inserted.name,
-        "protocol_type": inserted.protocol_type,
-        "core_type": inserted.core_type,
-        "listen_port": inserted.listen_port,
-        "listen_address": inserted.listen_address,
-    } })))
+    Ok(ApiResponse::new(config_to_json(inserted)))
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct UpdateConfigPayload {
+    pub name: Option<String>,
+    pub protocol_type: Option<String>,
+    pub core_type: Option<String>,
+    pub listen_port: Option<u64>,
+    pub listen_address: Option<String>,
+    pub settings: Option<Value>,
+    pub tls_settings: Option<Value>,
 }
 
 pub async fn update_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
+    Json(payload): Json<UpdateConfigPayload>,
+) -> ApiResult<Value> {
     let cfg = protocol_config::Entity::find_by_id(id)
         .one(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("protocol config not found"))?;
 
     let mut active: protocol_config::ActiveModel = cfg.into();
 
-    if let Some(name) = payload.get("name").and_then(|v| v.as_str()) {
-        active.name = Set(name.to_string());
+    if let Some(name) = payload.name {
+        active.name = Set(name);
     }
-    if payload.get("protocol_type").is_some() || payload.get("core_type").is_some() {
-        let (_, _) = validate_protocol(&payload)?;
-        if let Some(pt) = payload.get("protocol_type").and_then(|v| v.as_str()) {
-            active.protocol_type = Set(pt.to_string());
+    if payload.protocol_type.is_some() || payload.core_type.is_some() {
+        let existing_protocol = active.protocol_type.clone().unwrap();
+        let existing_core = active.core_type.clone().unwrap();
+        let protocol_type = payload.protocol_type.as_deref().unwrap_or(&existing_protocol);
+        let core_type = payload.core_type.as_deref().unwrap_or(&existing_core);
+        let _ = validate_protocol(&json!({
+            "protocol_type": protocol_type,
+            "core_type": core_type,
+        }))?;
+
+        if let Some(pt) = payload.protocol_type {
+            active.protocol_type = Set(pt);
         }
-        if let Some(ct) = payload.get("core_type").and_then(|v| v.as_str()) {
-            active.core_type = Set(ct.to_string());
+        if let Some(ct) = payload.core_type {
+            active.core_type = Set(ct);
         }
     }
-    if let Some(port) = payload.get("listen_port").and_then(|v| v.as_u64()) {
+    if let Some(port) = payload.listen_port {
         active.listen_port = Set(port as i32);
     }
-    if let Some(addr) = payload.get("listen_address").and_then(|v| v.as_str()) {
-        active.listen_address = Set(addr.to_string());
+    if let Some(addr) = payload.listen_address {
+        active.listen_address = Set(addr);
     }
-    if let Some(settings) = payload.get("settings") {
-        active.settings = Set(settings.clone());
+    if let Some(settings) = payload.settings {
+        active.settings = Set(settings);
     }
-    if payload.get("tls_settings").is_some() {
-        active.tls_settings = Set(payload.get("tls_settings").cloned());
-    }
+    active.tls_settings = Set(payload.tls_settings);
     active.updated_at = Set(chrono::Utc::now().into());
 
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    Ok(Json(json!({ "data": {
-        "id": updated.id,
-        "name": updated.name,
-        "protocol_type": updated.protocol_type,
-        "core_type": updated.core_type,
-        "listen_port": updated.listen_port,
-        "listen_address": updated.listen_address,
-    } })))
+    Ok(ApiResponse::new(config_to_json(updated)))
 }
 
-pub async fn generate_reality_keys() -> Result<Json<Value>, StatusCode> {
+pub async fn generate_reality_keys() -> ApiResult<Value> {
     let (private_key, public_key) = pp_common::generate_x25519_keypair();
     let short_id = pp_common::generate_short_id();
-    Ok(Json(json!({
-        "data": {
-            "private_key": private_key,
-            "public_key": public_key,
-            "short_id": short_id,
-        }
+    Ok(ApiResponse::new(json!({
+        "private_key": private_key,
+        "public_key": public_key,
+        "short_id": short_id,
     })))
 }
 
 pub async fn delete_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<axum::http::StatusCode, ApiError> {
     let res = protocol_config::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     if res.rows_affected == 0 {
-        Err(StatusCode::NOT_FOUND)
+        Err(ApiError::not_found("protocol config not found"))
     } else {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(axum::http::StatusCode::NO_CONTENT)
     }
 }
