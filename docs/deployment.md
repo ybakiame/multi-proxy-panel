@@ -346,14 +346,42 @@ sudo ufw enable
 
 ### 3. TLS 配置
 
-使用 Let's Encrypt 自动证书：
+#### HTTP API TLS
+
+ProxyPanel Hub 的 HTTP API 默认不启用 TLS。推荐使用反向代理（Nginx/Caddy）提供 TLS 终止：
 
 ```bash
-# Caddy（自动）
+# Caddy（自动证书）
 caddy reverse-proxy --from panel.example.com --to localhost:8080
 
 # Certbot + Nginx
 sudo certbot --nginx -d panel.example.com -d grpc.example.com
+```
+
+#### gRPC TLS
+
+Hub 支持原生 gRPC TLS，通过启动参数配置：
+
+```bash
+proxy-panel-hub \
+  --grpc-tls-cert /path/to/server.crt \
+  --grpc-tls-key /path/to/server.key
+```
+
+Agent 连接 TLS Hub：
+
+```bash
+proxy-panel-agent \
+  --hub-url https://grpc.example.com:50052 \
+  --tls-ca /path/to/ca.crt \
+  --tls-domain grpc.example.com
+```
+
+或通过环境变量：
+
+```bash
+PROXYPANEL_GRPC_TLS_CERT=/path/to/server.crt
+PROXYPANEL_GRPC_TLS_KEY=/path/to/server.key
 ```
 
 ### 4. Agent Token 轮换
@@ -373,7 +401,7 @@ sudo systemctl restart proxypanel-agent
 
 ### 使用 Prometheus + Grafana
 
-Hub 内置 Prometheus metrics 端点（预留）：
+Hub 内置 Prometheus metrics 端点，无需额外配置：
 
 ```bash
 # 抓取配置
@@ -381,16 +409,21 @@ scrape_configs:
   - job_name: 'proxypanel-hub'
     static_configs:
       - targets: ['localhost:8081']
+    metrics_path: '/metrics'
 ```
+
+访问 `http://localhost:8081/metrics` 查看所有可用指标。
 
 ### 关键指标
 
-| 指标 | 说明 |
-|------|------|
-| `proxypanel_agents_connected` | 当前连接的 Agent 数量 |
-| `proxypanel_traffic_bytes_total` | 总流量（按方向） |
-| `proxypanel_api_requests_total` | API 请求数（按状态码） |
-| `proxypanel_grpc_streams_active` | 活跃的 gRPC 流数量 |
+| 指标 | 类型 | 说明 |
+|------|------|------|
+| `proxypanel_http_requests_total` | Counter | HTTP 请求总数（按 method, path, status） |
+| `proxypanel_agent_connections_total` | Counter | Agent 连接事件总数 |
+| `proxypanel_grpc_messages_total` | Counter | gRPC 消息总数（按 type） |
+| `proxypanel_active_agents` | Gauge | 当前活跃 Agent 数量 |
+| `proxypanel_active_clients` | Gauge | 当前活跃客户端数量 |
+| `proxypanel_active_nodes` | Gauge | 当前活跃节点数量 |
 
 ### 日志收集
 

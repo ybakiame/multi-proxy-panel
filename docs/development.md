@@ -136,11 +136,17 @@ RUST_LOG=proxy_panel_hub=debug,tower_http=debug \
 
 **终端 2 — 启动 Agent（可选）:**
 
+开发环境默认开启 `PROXYPANEL_AGENT_AUTO_REGISTER=1`，Agent 首次连接时会自动在 Hub 中注册为新节点。
+
 ```bash
 RUST_LOG=proxy_panel_agent=debug \
   cargo run --bin proxy-panel-agent \
-  -- --hub-url "http://localhost:50052"
+  -- --hub-url "http://localhost:50052" \
+     --name "dev-agent-node" \
+     --data-dir /tmp/proxypanel-agent
 ```
+
+> 生产环境请关闭 `PROXYPANEL_AGENT_AUTO_REGISTER`，先在 **节点管理** 中创建节点并获取 token，再通过 `--token <token>` 启动 Agent。
 
 **终端 3 — 启动前端开发服务器:**
 
@@ -149,7 +155,21 @@ cd crates/pp-web
 dx serve
 ```
 
-访问 `http://localhost:8080`（前端开发服务器，带热重载）
+访问 `http://localhost:8080`（前端开发服务器，带热重载）。
+首次打开页面会要求输入 **API Key**，可从 Hub 启动日志中找到 Bootstrap API Key：
+
+```bash
+grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
+```
+
+> 注意：Bootstrap Key 是 base64 编码，**末尾的 `=` 是 key 的一部分**，日志行后面的 `.` 只是标点符号，不要复制进去。
+
+> 若使用 `./scripts/dev.sh start`，脚本会自动设置 `PROXYPANEL_API_URL` 并打印该 Key。
+
+**注意：8081 与 8085 的区别**
+
+- `http://localhost:8085` 是 `dx serve` 开发服务器，推荐使用。
+- `http://localhost:8081` 是 Hub 自身的 HTTP 端口，会回退提供前端静态文件。由于静态文件没有鉴权，若此前在同一 Origin 登录过（`localStorage` 中已有 `pp_api_key`），直接访问 8081 会进入 Dashboard；所有 `/api/v1/*` 接口仍然需要 API Key。
 
 ---
 

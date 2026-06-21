@@ -1,0 +1,32 @@
+[Unit]
+Description=ProxyPanel Agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxy-panel
+
+Environment=RUST_LOG=proxy_panel_agent=info
+EnvironmentFile=-/etc/proxy-panel/agent.env
+
+ExecStart=/usr/local/bin/proxy-panel-agent \
+    --hub-url ${PROXYPANEL_HUB_URL} \
+    --token ${PROXYPANEL_AGENT_TOKEN} \
+    --data-dir /var/lib/proxy-panel/agent \
+    --bin-dir /usr/local/bin
+
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/proxy-panel
+
+[Install]
+WantedBy=multi-user.target

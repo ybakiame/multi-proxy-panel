@@ -1,0 +1,30 @@
+[Unit]
+Description=ProxyPanel Hub
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxy-panel
+
+Environment=RUST_LOG=proxy_panel_hub=info,tower_http=debug
+EnvironmentFile=-/etc/proxy-panel/hub.env
+
+ExecStart=/usr/local/bin/proxy-panel-hub \
+    --config /etc/proxy-panel/hub.toml \
+    --static-dir /opt/proxy-panel/web/dist
+
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/proxy-panel/data
+
+[Install]
+WantedBy=multi-user.target

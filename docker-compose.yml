@@ -6,10 +6,10 @@ services:
     container_name: proxypanel-db
     environment:
       POSTGRES_USER: proxypanel
-      POSTGRES_PASSWORD: proxypanel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proxypanel}
       POSTGRES_DB: proxypanel
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +17,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - proxypanel
 
   hub:
     build:
@@ -27,14 +29,48 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PROXYPANEL_HUB_LISTEN: 0.0.0.0:8080
-      PROXYPANEL_DATABASE_URL: postgres://proxypanel:proxypanel@postgres/proxypanel
+      PROXYPANEL_HUB_LISTEN: 0.0.0.0:8081
+      PROXYPANEL_GRPC_LISTEN: 0.0.0.0:50052
+      PROXYPANEL_DATABASE_URL: postgres://proxypanel:${POSTGRES_PASSWORD:-changeme}@postgres/proxypanel
+      PROXYPANEL_BOOTSTRAP_API_KEY: ${PROXYPANEL_BOOTSTRAP_API_KEY:?Set PROXYPANEL_BOOTSTRAP_API_KEY in .env}
+      PROXYPANEL_JWT_SECRET: ${PROXYPANEL_JWT_SECRET:-change-me-in-production}
+      PROXYPANEL_STATIC_DIR: /app/dist
       RUST_LOG: proxy_panel_hub=info,tower_http=debug
     ports:
-      - "8080:8080"
+      - "8081:8081"
+      - "50052:50052"
     volumes:
       - hub-data:/data
+    networks:
+      - proxypanel
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: proxypanel-agent
+    depends_on:
+      - hub
+    environment:
+      PROXYPANEL_HUB_URL: http://proxypanel-hub:50052
+      PROXYPANEL_AGENT_TOKEN: ${PROXYPANEL_AGENT_TOKEN:?Set PROXYPANEL_AGENT_TOKEN in .env}
+      PROXYPANEL_AGENT_NAME: docker-agent
+    volumes:
+      - agent-data:/var/lib/proxy-panel/agent
+    networks:
+      - proxypanel
 
 volumes:
   pgdata:
   hub-data:
+  agent-data:
+
+networks:
+  proxypanel:
+    name: proxypanel
+    driver: bridge

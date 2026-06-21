@@ -1,0 +1,13 @@
+listen = "0.0.0.0:8081"
+grpc_listen = "0.0.0.0:50052"
+database_url = "postgres://proxypanel:proxypanel@localhost/proxypanel"
+static_dir = "crates/pp-web/dist"
+cors_origins = "http://localhost:8085,http://127.0.0.1:8085"
+auto_register_agents = true
+
+# JWT secret for admin authentication — CHANGE THIS in production
+jwt_secret = "change-me-to-a-long-random-secret-string"
+
+# HTTP TLS (uncomment for HTTPS)
+# http_tls_cert = "/path/to/cert.pem"
+# http_tls_key = "/path/to/key.pem"

@@ -1,0 +1,18 @@
+# Example Hub configuration.
+# Copy this file to config/hub.toml and adjust values for your deployment.
+
+listen = "0.0.0.0:8081"
+grpc_listen = "0.0.0.0:50052"
+database_url = "postgres://proxypanel:changeme@localhost/proxypanel"
+static_dir = "crates/pp-web/dist"
+
+# Comma-separated list of allowed CORS origins. Leave empty to allow same-origin only.
+# In production, set this to the exact origin(s) serving the web panel.
+cors_origins = "http://localhost:8080,https://panel.example.com"
+
+# Comma-separated list of trusted proxy IPs. Only these IPs may provide X-Forwarded-For.
+trusted_proxy_ips = "127.0.0.1,::1"
+
+# Allow any agent with a valid token to auto-register as a new node.
+# WARNING: enable only for development. Always disable in production.
+auto_register_agents = true
