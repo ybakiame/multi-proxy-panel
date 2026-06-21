@@ -50,3 +50,4 @@ rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 hyper = "1.10"
 hyper-util = { version = "0.1", features = ["server", "tokio"] }
+qrcode = { workspace = true }

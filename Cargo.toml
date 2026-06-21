@@ -92,6 +92,7 @@ tokio-rustls = "0.26"
 tera = { version = "1.20", default-features = false }
 base64 = "0.22"
 url = "2.5"
+qrcode = "0.14"
 
 # Internal crates
 pp-common = { path = "crates/pp-common" }
