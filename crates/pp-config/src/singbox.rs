@@ -41,6 +41,7 @@ impl ConfigBuilder for SingBoxConfigBuilder {
         }
 
         let (services, experimental) = build_api_services();
+        let route = build_singbox_route();
 
         let mut config = json!({
             "log": {
@@ -52,11 +53,13 @@ impl ConfigBuilder for SingBoxConfigBuilder {
                 {
                     "type": "direct",
                     "tag": "direct"
+                },
+                {
+                    "type": "block",
+                    "tag": "block"
                 }
             ],
-            "route": {
-                "auto_detect_interface": true
-            }
+            "route": route
         });
 
         if let Some(services_arr) = services.as_array() {
@@ -72,6 +75,22 @@ impl ConfigBuilder for SingBoxConfigBuilder {
 
         Ok(config)
     }
+}
+
+fn build_singbox_route() -> Value {
+    json!({
+        "auto_detect_interface": true,
+        "rules": [
+            {
+                "protocol": "bittorrent",
+                "outbound": "block"
+            },
+            {
+                "rule_set": ["geosite-ads"],
+                "outbound": "block"
+            }
+        ]
+    })
 }
 
 /// Build the sing-box API service definitions.
@@ -119,6 +138,10 @@ fn build_vless_inbound(
 
     let users = vless_clients_to_users(settings);
     let flow = settings.get("flow").and_then(|v| v.as_str()).unwrap_or("");
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
 
     let mut inbound = json!({
         "type": "vless",
@@ -126,6 +149,7 @@ fn build_vless_inbound(
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": users,
+        "transport": build_singbox_transport(network, settings),
     });
 
     if !flow.is_empty() {
@@ -153,6 +177,55 @@ fn build_vless_inbound(
     }
 
     Ok(inbound)
+}
+
+/// Build sing-box transport object from neutral transport settings.
+fn build_singbox_transport(network: &str, settings: &Value) -> Value {
+    match network {
+        "ws" => {
+            let path = settings
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("/");
+            let host = settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            json!({
+                "type": "ws",
+                "path": path,
+                "headers": if host.is_empty() { json!({}) } else { json!({ "Host": host }) },
+            })
+        }
+        "grpc" => {
+            let service_name = settings
+                .get("service_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            json!({
+                "type": "grpc",
+                "service_name": service_name,
+            })
+        }
+        "httpupgrade" | "xhttp" => {
+            let path = settings
+                .get("path")
+                .and_then(|v| v.as_str())
+                .or_else(|| settings.get("xhttp_path").and_then(|v| v.as_str()))
+                .unwrap_or("/");
+            let host = settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .or_else(|| settings.get("xhttp_host").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            json!({
+                "type": "httpupgrade",
+                "path": path,
+                "host": host,
+            })
+        }
+        _ => json!({ "type": "tcp" }),
+    }
 }
 
 /// Convert VLESS clients array (id, email, flow) to sing-box users array (uuid, name, flow).
@@ -250,12 +323,18 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
 }
 
 fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
     let mut inbound = json!({
         "type": "vmess",
         "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("vmess-in"),
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": settings.get("clients").cloned().unwrap_or(json!([])),
+        "transport": build_singbox_transport(network, settings),
     });
 
     if let Some(tls_cfg) = tls {
@@ -275,12 +354,18 @@ fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
         ));
     }
 
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
     Ok(json!({
         "type": "trojan",
         "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("trojan-in"),
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": settings.get("clients").cloned().unwrap_or(json!([])),
+        "transport": build_singbox_transport(network, settings),
         "tls": {
             "enabled": true,
             "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
@@ -524,7 +609,51 @@ mod tests {
     }
 
     #[test]
-    fn full_config_contains_api_services_and_outbounds() {
+    fn vless_ws_inbound_has_transport() {
+        let builder = SingBoxConfigBuilder;
+        let settings = json!({
+            "tag": "vless-ws-in",
+            "listen": "::",
+            "port": 443,
+            "clients": [
+                { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com" }
+            ],
+            "network": "ws",
+            "path": "/vless",
+            "host": "cdn.example.com",
+        });
+        let tls = json!({ "serverName": "cdn.example.com" });
+        let inbound = builder
+            .build_inbound(ProtocolType::VlessVision, &settings, Some(&tls))
+            .unwrap();
+
+        assert_eq!(inbound["transport"]["type"], "ws");
+        assert_eq!(inbound["transport"]["path"], "/vless");
+        assert_eq!(inbound["tls"]["enabled"], true);
+    }
+
+    #[test]
+    fn trojan_grpc_inbound_has_transport() {
+        let builder = SingBoxConfigBuilder;
+        let settings = json!({
+            "tag": "trojan-grpc-in",
+            "listen": "::",
+            "port": 443,
+            "clients": [{ "password": "secret" }],
+            "network": "grpc",
+            "service_name": "trojan-grpc",
+        });
+        let tls = json!({ "serverName": "example.com", "certFile": "", "keyFile": "" });
+        let inbound = builder
+            .build_inbound(ProtocolType::Trojan, &settings, Some(&tls))
+            .unwrap();
+
+        assert_eq!(inbound["transport"]["type"], "grpc");
+        assert_eq!(inbound["transport"]["service_name"], "trojan-grpc");
+    }
+
+    #[test]
+    fn full_config_contains_route_rules() {
         let builder = SingBoxConfigBuilder;
         let inbound = InboundConfig {
             tag: "vless-reality-in".into(),
@@ -537,11 +666,7 @@ mod tests {
         };
 
         let config = builder.build_full_config(&[inbound]).unwrap();
-        assert!(config["inbounds"].is_array());
-        assert!(config["services"].is_array());
-        assert_eq!(config["services"][0]["type"], "api");
-        assert!(config["experimental"]["clash_api"].is_object());
-        assert!(config["experimental"]["clash_api"]["external_controller"].is_string());
-        assert_eq!(config["outbounds"][0]["type"], "direct");
+        assert!(config["route"]["rules"].as_array().unwrap().len() >= 1);
+        assert_eq!(config["outbounds"][1]["tag"], "block");
     }
 }

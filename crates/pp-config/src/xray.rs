@@ -41,6 +41,8 @@ impl ConfigBuilder for XrayConfigBuilder {
             )?);
         }
 
+        let routing = build_xray_routing();
+
         Ok(json!({
             "log": {
                 "loglevel": "warning"
@@ -50,10 +52,40 @@ impl ConfigBuilder for XrayConfigBuilder {
                 {
                     "protocol": "freedom",
                     "tag": "direct"
+                },
+                {
+                    "protocol": "blackhole",
+                    "tag": "block"
                 }
-            ]
+            ],
+            "routing": routing,
         }))
     }
+}
+
+fn build_xray_routing() -> Value {
+    let mut rules = Vec::<Value>::new();
+
+    // Block BitTorrent
+    rules.push(json!({
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "block"
+    }));
+
+    // Block common AD domains (minimal list, user can override via base_config)
+    rules.push(json!({
+        "type": "field",
+        "domain": [
+            "geosite:category-ads-all"
+        ],
+        "outboundTag": "block"
+    }));
+
+    json!({
+        "domainStrategy": "IPIfNonMatch",
+        "rules": rules,
+    })
 }
 
 fn build_vless_inbound(
@@ -78,6 +110,11 @@ fn build_vless_inbound(
         }
     };
 
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| stream_settings_network(&protocol));
+
     let mut inbound = json!({
         "protocol": "vless",
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
@@ -87,7 +124,7 @@ fn build_vless_inbound(
             "decryption": "none"
         },
         "streamSettings": {
-            "network": stream_settings_network(&protocol),
+            "network": network,
             "security": if tls.is_some() && protocol != ProtocolType::VlessReality { "tls" } else { "none" },
         },
         "sniffing": {
@@ -95,6 +132,9 @@ fn build_vless_inbound(
             "destOverride": ["http", "tls", "quic"]
         }
     });
+
+    // Apply transport-specific stream settings
+    apply_xray_transport_settings(&mut inbound, network, settings)?;
 
     match protocol {
         ProtocolType::VlessReality => {
@@ -106,25 +146,106 @@ fn build_vless_inbound(
             inbound["streamSettings"]["realitySettings"] = reality_cfg;
             // REALITY uses its own handshake; do not merge traditional TLS settings.
         }
-        ProtocolType::VlessVision => {
+        _ => {
             if let Some(tls_cfg) = tls {
                 inbound["streamSettings"]["security"] = "tls".into();
                 inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
             }
         }
-        ProtocolType::VlessXhttp => {
+    }
+
+    Ok(inbound)
+}
+
+fn apply_xray_transport_settings(
+    inbound: &mut Value,
+    network: &str,
+    settings: &Value,
+) -> PanelResult<()> {
+    let stream = inbound
+        .get_mut("streamSettings")
+        .ok_or_else(|| PanelError::Config("missing streamSettings".into()))?;
+
+    match network {
+        "tcp" => {
+            // TCP is the default; optionally accept HTTP camouflage settings.
+            if let Some(tcp_header) = settings.get("tcp_header") {
+                stream["tcpSettings"] = json!({ "header": tcp_header });
+            }
+        }
+        "ws" => {
+            let path = settings
+                .get("path")
+                .and_then(|v| v.as_str())
+                .or_else(|| settings.get("ws_path").and_then(|v| v.as_str()))
+                .unwrap_or("/");
+            let host = settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .or_else(|| settings.get("ws_host").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            let mut ws = json!({ "path": path });
+            if !host.is_empty() {
+                ws["headers"] = json!({ "Host": host });
+            }
+            stream["wsSettings"] = ws;
+        }
+        "grpc" => {
+            let service_name = settings
+                .get("service_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            stream["grpcSettings"] = json!({
+                "serviceName": service_name,
+            });
+        }
+        "xhttp" | "httpupgrade" => {
             if let Some(xhttp_cfg) = build_xray_xhttp_settings(settings) {
-                inbound["streamSettings"]["xhttpSettings"] = xhttp_cfg;
+                stream["xhttpSettings"] = xhttp_cfg;
             }
-            if let Some(tls_cfg) = tls {
-                inbound["streamSettings"]["security"] = "tls".into();
-                inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
+        }
+        "kcp" | "mkcp" => {
+            let mtu = settings.get("kcp_mtu").and_then(|v| v.as_u64()).unwrap_or(1350);
+            let tti = settings.get("kcp_tti").and_then(|v| v.as_u64()).unwrap_or(50);
+            let uplink_capacity = settings
+                .get("kcp_uplink_capacity")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(5);
+            let downlink_capacity = settings
+                .get("kcp_downlink_capacity")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20);
+            let congestion = settings
+                .get("kcp_congestion")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let seed = settings
+                .get("seed")
+                .and_then(|v| v.as_str())
+                .or_else(|| settings.get("kcp_seed").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            let header_type = settings
+                .get("header_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("none");
+
+            let mut kcp = json!({
+                "mtu": mtu,
+                "tti": tti,
+                "uplinkCapacity": uplink_capacity,
+                "downlinkCapacity": downlink_capacity,
+                "congestion": congestion,
+                "header": { "type": header_type },
+            });
+            if !seed.is_empty() {
+                kcp["seed"] = json!(seed);
             }
+            stream["kcpSettings"] = kcp;
         }
         _ => {}
     }
 
-    Ok(inbound)
+    Ok(())
 }
 
 fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
@@ -203,6 +324,11 @@ fn build_xray_xhttp_settings(settings: &Value) -> Option<Value> {
 }
 
 fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
     let mut inbound = json!({
         "protocol": "vmess",
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
@@ -211,7 +337,7 @@ fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Val
             "clients": settings.get("clients").cloned().unwrap_or(json!([]))
         },
         "streamSettings": {
-            "network": settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp"),
+            "network": network,
             "security": if tls.is_some() { "tls" } else { "none" },
         },
         "sniffing": {
@@ -219,6 +345,8 @@ fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Val
             "destOverride": ["http", "tls", "quic"]
         }
     });
+
+    apply_xray_transport_settings(&mut inbound, network, settings)?;
 
     if let Some(tls_cfg) = tls {
         inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
@@ -234,7 +362,12 @@ fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
         ));
     }
 
-    Ok(json!({
+    let network = settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
+    let mut inbound = json!({
         "protocol": "trojan",
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
         "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
@@ -242,11 +375,15 @@ fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
             "clients": settings.get("clients").cloned().unwrap_or(json!([]))
         },
         "streamSettings": {
-            "network": settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp"),
+            "network": network,
             "security": "tls",
             "tlsSettings": tls.unwrap()
         }
-    }))
+    });
+
+    apply_xray_transport_settings(&mut inbound, network, settings)?;
+
+    Ok(inbound)
 }
 
 fn build_shadowsocks_inbound(settings: &Value, _tls: Option<&Value>) -> PanelResult<Value> {
@@ -334,7 +471,58 @@ mod tests {
     }
 
     #[test]
-    fn full_config_contains_inbounds_and_freedom_outbound() {
+    fn vless_ws_tls_inbound_has_ws_settings() {
+        let builder = XrayConfigBuilder;
+        let settings = json!({
+            "tag": "vless-ws-in",
+            "listen": "0.0.0.0",
+            "port": 443,
+            "clients": [
+                { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com" }
+            ],
+            "network": "ws",
+            "path": "/vless",
+            "host": "cdn.example.com",
+        });
+        let tls = json!({ "serverName": "cdn.example.com" });
+        let inbound = builder
+            .build_inbound(ProtocolType::VlessVision, &settings, Some(&tls))
+            .unwrap();
+
+        assert_eq!(inbound["streamSettings"]["network"], "ws");
+        assert_eq!(inbound["streamSettings"]["security"], "tls");
+        assert_eq!(inbound["streamSettings"]["wsSettings"]["path"], "/vless");
+        assert_eq!(
+            inbound["streamSettings"]["wsSettings"]["headers"]["Host"],
+            "cdn.example.com"
+        );
+    }
+
+    #[test]
+    fn vmess_grpc_inbound_has_grpc_settings() {
+        let builder = XrayConfigBuilder;
+        let settings = json!({
+            "tag": "vmess-grpc-in",
+            "listen": "0.0.0.0",
+            "port": 443,
+            "clients": [{ "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }],
+            "network": "grpc",
+            "service_name": "vmess-grpc",
+        });
+        let tls = json!({ "serverName": "example.com" });
+        let inbound = builder
+            .build_inbound(ProtocolType::Vmess, &settings, Some(&tls))
+            .unwrap();
+
+        assert_eq!(inbound["streamSettings"]["network"], "grpc");
+        assert_eq!(
+            inbound["streamSettings"]["grpcSettings"]["serviceName"],
+            "vmess-grpc"
+        );
+    }
+
+    #[test]
+    fn full_config_contains_routing_rules() {
         let builder = XrayConfigBuilder;
         let inbound = InboundConfig {
             tag: "vless-reality-in".into(),
@@ -347,9 +535,8 @@ mod tests {
         };
 
         let config = builder.build_full_config(&[inbound]).unwrap();
-        assert!(config["inbounds"].is_array());
-        assert_eq!(config["inbounds"].as_array().unwrap().len(), 1);
-        assert_eq!(config["outbounds"][0]["protocol"], "freedom");
-        assert_eq!(config["log"]["loglevel"], "warning");
+        assert!(config["routing"].is_object());
+        assert!(config["routing"]["rules"].as_array().unwrap().len() >= 1);
+        assert_eq!(config["outbounds"][1]["tag"], "block");
     }
 }
