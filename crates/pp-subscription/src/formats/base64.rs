@@ -9,9 +9,9 @@ pub fn generate(nodes: &[ProxyNode]) -> PanelResult<String> {
     for node in nodes {
         let link = match node.protocol {
             ProtocolType::Vmess => generate_vmess_link(node)?,
-            ProtocolType::VlessReality
-            | ProtocolType::VlessVision
-            | ProtocolType::VlessXhttp => generate_vless_link(node)?,
+            ProtocolType::VlessReality | ProtocolType::VlessVision | ProtocolType::VlessXhttp => {
+                generate_vless_link(node)?
+            }
             ProtocolType::Trojan => generate_trojan_link(node)?,
             ProtocolType::Shadowsocks2022 => generate_ss_link(node)?,
             _ => continue,
@@ -55,6 +55,14 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
         .settings
         .get("id")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.settings
+                .get("clients")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("id"))
+                .and_then(|v| v.as_str())
+        })
         .ok_or_else(|| PanelError::Subscription("missing vless id".into()))?;
 
     let flow = node
@@ -66,7 +74,11 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
     // Determine network from protocol type or settings
     let network = match node.protocol {
         ProtocolType::VlessXhttp => "xhttp",
-        _ => node.settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp"),
+        _ => node
+            .settings
+            .get("network")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tcp"),
     };
 
     let mut params = vec![format!("type={}", network)];
@@ -94,10 +106,69 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
         }
     }
 
-    if let Some(tls) = &node.tls {
-        params.push("security=tls".to_string());
-        if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
-            params.push(format!("sni={}", urlencoding::encode(sni)));
+    match node.protocol {
+        ProtocolType::VlessReality => {
+            let public_key = node
+                .settings
+                .get("public_key")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
+            if public_key.is_empty() {
+                return Err(PanelError::Subscription("missing REALITY public_key".into()));
+            }
+            let server_name = node
+                .settings
+                .get("server_names")
+                .and_then(|v| v.as_str())
+                .or_else(|| node.settings.get("reality_server_names").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .split(',')
+                .next()
+                .map(|s| s.trim())
+                .unwrap_or("")
+                .to_string();
+            let short_id = node
+                .settings
+                .get("short_id")
+                .and_then(|v| v.as_str())
+                .or_else(|| node.settings.get("reality_short_id").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .split(',')
+                .next()
+                .map(|s| s.trim())
+                .unwrap_or("")
+                .to_string();
+            let spider_x = node
+                .settings
+                .get("spider_x")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let fingerprint = node
+                .settings
+                .get("fingerprint")
+                .and_then(|v| v.as_str())
+                .unwrap_or("chrome");
+
+            params.push("security=reality".to_string());
+            if !server_name.is_empty() {
+                params.push(format!("sni={}", urlencoding::encode(&server_name)));
+            }
+            params.push(format!("pbk={}", urlencoding::encode(public_key)));
+            if !short_id.is_empty() {
+                params.push(format!("sid={}", urlencoding::encode(&short_id)));
+            }
+            if !spider_x.is_empty() {
+                params.push(format!("spx={}", urlencoding::encode(spider_x)));
+            }
+            params.push(format!("fp={}", fingerprint));
+        }
+        _ => {
+            if let Some(tls) = &node.tls {
+                params.push("security=tls".to_string());
+                if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
+                    params.push(format!("sni={}", urlencoding::encode(sni)));
+                }
+            }
         }
     }
 
@@ -119,9 +190,13 @@ fn generate_trojan_link(node: &ProxyNode) -> PanelResult<String> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
 
-    let mut params = vec![
-        format!("type={}", node.settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp")),
-    ];
+    let mut params = vec![format!(
+        "type={}",
+        node.settings
+            .get("network")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tcp")
+    )];
 
     if let Some(tls) = &node.tls {
         if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
@@ -152,7 +227,8 @@ fn generate_ss_link(node: &ProxyNode) -> PanelResult<String> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| PanelError::Subscription("missing ss password".into()))?;
 
-    let userinfo = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", method, password));
+    let userinfo =
+        base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", method, password));
     Ok(format!(
         "ss://{}@{}:{}#{}",
         userinfo,
@@ -165,5 +241,50 @@ fn generate_ss_link(node: &ProxyNode) -> PanelResult<String> {
 mod urlencoding {
     pub fn encode(s: &str) -> String {
         url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generator::ProxyNode;
+    use serde_json::json;
+
+    fn reality_node() -> ProxyNode {
+        ProxyNode {
+            name: "test-reality".into(),
+            protocol: ProtocolType::VlessReality,
+            server: "1.2.3.4".into(),
+            port: 443,
+            settings: json!({
+                "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4",
+                "flow": "xtls-rprx-vision",
+                "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                "server_names": "example.com,www.example.com",
+                "short_id": "0123456789abcdef",
+                "fingerprint": "chrome"
+            }),
+            tls: None,
+        }
+    }
+
+    #[test]
+    fn vless_reality_link_contains_required_params() {
+        let link = generate_vless_link(&reality_node()).unwrap();
+        assert!(link.starts_with("vless://"));
+        assert!(link.contains("security=reality"));
+        assert!(link.contains("pbk=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"));
+        assert!(link.contains("sid=0123456789abcdef"));
+        assert!(link.contains("sni=example.com"));
+        assert!(link.contains("flow=xtls-rprx-vision"));
+        assert!(link.contains("fp=chrome"));
+    }
+
+    #[test]
+    fn vless_reality_link_requires_public_key() {
+        let mut node = reality_node();
+        node.settings["public_key"] = json!("");
+        let err = generate_vless_link(&node).unwrap_err();
+        assert!(err.to_string().contains("public_key"));
     }
 }
