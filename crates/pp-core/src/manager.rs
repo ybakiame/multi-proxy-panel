@@ -38,7 +38,10 @@ impl CoreManagerFactory {
     ) -> PanelResult<Box<dyn CoreManager>> {
         match core_type {
             CoreType::Xray => Ok(Box::new(XrayProcessManager::new(binary_path, config_dir)?)),
-            CoreType::SingBox => Ok(Box::new(SingBoxProcessManager::new(binary_path, config_dir)?)),
+            CoreType::SingBox => Ok(Box::new(SingBoxProcessManager::new(
+                binary_path,
+                config_dir,
+            )?)),
             CoreType::Both => Err(PanelError::Core(
                 "Cannot create manager for 'Both' — select a specific core".into(),
             )),
@@ -77,6 +80,13 @@ impl CoreManager for XrayProcessManager {
     }
 
     async fn start(&self, config: &Value) -> PanelResult<()> {
+        if !tokio::fs::try_exists(&self.binary).await.unwrap_or(false) {
+            return Err(PanelError::Core(format!(
+                "xray binary not found at {}",
+                self.binary.display()
+            )));
+        }
+
         let mut proc = self.process.write().await;
         if proc.is_some() {
             return Err(PanelError::Core("xray already running".into()));
@@ -127,10 +137,7 @@ impl CoreManager for XrayProcessManager {
     }
 
     async fn version(&self) -> PanelResult<String> {
-        let output = Command::new(&self.binary)
-            .arg("version")
-            .output()
-            .await?;
+        let output = Command::new(&self.binary).arg("version").output().await?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.trim().to_string())
     }
@@ -164,6 +171,13 @@ impl CoreManager for SingBoxProcessManager {
     }
 
     async fn start(&self, config: &Value) -> PanelResult<()> {
+        if !tokio::fs::try_exists(&self.binary).await.unwrap_or(false) {
+            return Err(PanelError::Core(format!(
+                "sing-box binary not found at {}",
+                self.binary.display()
+            )));
+        }
+
         let mut proc = self.process.write().await;
         if proc.is_some() {
             return Err(PanelError::Core("sing-box already running".into()));
@@ -226,7 +240,10 @@ impl CoreManager for SingBoxProcessManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(PanelError::Core(format!("sing-box reload failed: {}", stderr)));
+            return Err(PanelError::Core(format!(
+                "sing-box reload failed: {}",
+                stderr
+            )));
         }
 
         tracing::info!("sing-box config reloaded");
@@ -234,10 +251,7 @@ impl CoreManager for SingBoxProcessManager {
     }
 
     async fn version(&self) -> PanelResult<String> {
-        let output = Command::new(&self.binary)
-            .arg("version")
-            .output()
-            .await?;
+        let output = Command::new(&self.binary).arg("version").output().await?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.trim().to_string())
     }
