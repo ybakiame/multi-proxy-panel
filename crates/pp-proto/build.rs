@@ -9,13 +9,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("workspace root")
         .join("proto");
 
-    let proto_file = proto_dir.join("hub_agent.proto");
+    let hub_proto = proto_dir.join("hub_agent.proto");
+    let xray_stats_proto = proto_dir.join("xray_stats.proto");
+    let singbox_daemon_proto = proto_dir.join("singbox_daemon.proto");
 
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
         .protoc_arg("--experimental_allow_proto3_optional")
-        .compile_protos(&[proto_file], &[proto_dir])?;
+        .compile_protos(
+            &[hub_proto, xray_stats_proto, singbox_daemon_proto],
+            &[proto_dir],
+        )?;
 
     Ok(())
 }
