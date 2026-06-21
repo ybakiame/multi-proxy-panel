@@ -32,6 +32,25 @@ impl std::fmt::Display for ProtocolType {
     }
 }
 
+impl std::str::FromStr for ProtocolType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "vless_reality" => Ok(ProtocolType::VlessReality),
+            "vless_vision" => Ok(ProtocolType::VlessVision),
+            "vless_xhttp" => Ok(ProtocolType::VlessXhttp),
+            "vmess" => Ok(ProtocolType::Vmess),
+            "trojan" => Ok(ProtocolType::Trojan),
+            "shadowsocks2022" => Ok(ProtocolType::Shadowsocks2022),
+            "hysteria2" => Ok(ProtocolType::Hysteria2),
+            "tuic_v5" => Ok(ProtocolType::TuicV5),
+            "anytls" => Ok(ProtocolType::Anytls),
+            _ => Err(format!("unknown protocol type: {}", s)),
+        }
+    }
+}
+
 /// Which core(s) a protocol config targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -42,12 +61,36 @@ pub enum CoreType {
     SingBox,
 }
 
+impl CoreType {
+    pub fn valid_for(protocol: ProtocolType) -> &'static [CoreType] {
+        use {CoreType::*, ProtocolType::*};
+        match protocol {
+            VlessReality | VlessVision | Vmess | Trojan | Shadowsocks2022 => &[Xray, SingBox, Both],
+            VlessXhttp => &[Xray],
+            Hysteria2 | Anytls | TuicV5 => &[SingBox],
+        }
+    }
+}
+
 impl std::fmt::Display for CoreType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CoreType::Both => write!(f, "both"),
             CoreType::Xray => write!(f, "xray"),
             CoreType::SingBox => write!(f, "sing-box"),
+        }
+    }
+}
+
+impl std::str::FromStr for CoreType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "xray" => Ok(CoreType::Xray),
+            "sing-box" | "singbox" => Ok(CoreType::SingBox),
+            "both" => Ok(CoreType::Both),
+            _ => Err(format!("unknown core type: {}", s)),
         }
     }
 }

@@ -38,4 +38,15 @@ pub struct ClientDto {
     pub expiry_date: Option<chrono::DateTime<chrono::Utc>>,
     pub reset_day: Option<i32>,
     pub status: super::UserStatus,
+    pub group_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeGroupDto {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub labels: serde_json::Value,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
