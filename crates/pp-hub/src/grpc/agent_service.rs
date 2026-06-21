@@ -160,9 +160,7 @@ async fn handle_register(
         .await
         .map_err(|e| Status::internal(format!("database error: {}", e)))?;
 
-    let auto_register = std::env::var("PROXYPANEL_AGENT_AUTO_REGISTER")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+    let auto_register = state.config.auto_register_agents;
 
     if let Some(node) = node {
         // Existing node: verify token against stored hash using Argon2 verification.

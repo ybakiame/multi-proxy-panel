@@ -23,6 +23,14 @@ mod tests {
         AppState::new(db, HubConfig::default(), RateLimiter::default(), None)
     }
 
+    fn test_state_auto_register(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
+        let config = HubConfig {
+            auto_register_agents: true,
+            ..Default::default()
+        };
+        AppState::new(db, config, RateLimiter::default(), None)
+    }
+
     /// Create a pre-provisioned node in the database (simulates CLI provision-node).
     async fn create_provisioned_node(
         db: &sea_orm::DatabaseConnection,
@@ -185,9 +193,57 @@ mod tests {
         }
     }
 
-    /// Test that a register request with invalid UUID is rejected
+    /// Test that auto-register creates a new node when enabled.
     #[tokio::test]
-    async fn grpc_register_rejects_invalid_uuid() {
+    async fn grpc_register_auto_register_creates_node() {
+        let db = setup_db().await;
+        let agent_id = uuid::Uuid::new_v4();
+        let token = "auto-register-token";
+
+        let state = test_state_auto_register(db.clone());
+        let service = HubAgentService::new(state);
+        let (tx, mut rx) = mpsc::channel::<HubMessage>(1);
+
+        let result = HubAgentService::test_handle_register(
+            &service,
+            RegisterRequest {
+                agent_id: agent_id.to_string(),
+                token: token.to_string(),
+                hostname: "auto-node".to_string(),
+                version: "0.1.0".to_string(),
+                capabilities: vec!["xray".to_string()],
+                labels: Default::default(),
+            },
+            tx,
+            Some("192.168.1.1".to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), agent_id);
+
+        let resp = rx.try_recv().expect("should receive register response");
+        match resp.payload {
+            Some(hub_message::Payload::RegisterResp(reg_resp)) => {
+                assert!(reg_resp.success);
+                assert_eq!(reg_resp.assigned_agent_id, agent_id.to_string());
+            }
+            _ => panic!("expected RegisterResponse"),
+        }
+
+        let node_record = node::Entity::find_by_id(agent_id)
+            .one(&db)
+            .await
+            .expect("query node")
+            .expect("node exists");
+        assert_eq!(node_record.status, "online");
+        assert_eq!(node_record.hostname, "auto-node");
+        assert_eq!(node_record.address, "192.168.1.1");
+    }
+
+    /// Test that auto-register is disabled by default.
+    #[tokio::test]
+    async fn grpc_register_rejects_unknown_agent_when_auto_register_disabled() {
         let db = setup_db().await;
         let state = test_state(db);
         let service = HubAgentService::new(state);
@@ -196,8 +252,8 @@ mod tests {
         let result = HubAgentService::test_handle_register(
             &service,
             RegisterRequest {
-                agent_id: "not-a-uuid".to_string(),
-                token: "token".to_string(),
+                agent_id: uuid::Uuid::new_v4().to_string(),
+                token: "some-token".to_string(),
                 hostname: "test".to_string(),
                 version: "0.1.0".to_string(),
                 capabilities: vec![],
@@ -209,5 +265,7 @@ mod tests {
         .await;
 
         assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code(), tonic::Code::NotFound);
     }
 }

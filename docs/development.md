@@ -136,7 +136,7 @@ RUST_LOG=proxy_panel_hub=debug,tower_http=debug \
 
 **终端 2 — 启动 Agent（可选）:**
 
-开发环境默认开启 `PROXYPANEL_AGENT_AUTO_REGISTER=1`，Agent 首次连接时会自动在 Hub 中注册为新节点。
+开发环境默认在 `config/hub.toml` 中开启 `auto_register_agents = true`，Agent 首次连接时会自动在 Hub 中注册为新节点。
 
 ```bash
 RUST_LOG=proxy_panel_agent=debug \
@@ -146,7 +146,7 @@ RUST_LOG=proxy_panel_agent=debug \
      --data-dir /tmp/proxypanel-agent
 ```
 
-> 生产环境请关闭 `PROXYPANEL_AGENT_AUTO_REGISTER`，先在 **节点管理** 中创建节点并获取 token，再通过 `--token <token>` 启动 Agent。
+> 生产环境请关闭 `auto_register_agents`（或通过环境变量 `PROXYPANEL_AUTO_REGISTER_AGENTS=false` 覆盖），先在 **节点管理** 中创建节点并获取 token，再通过 `--token <token>` 启动 Agent。
 
 **终端 3 — 启动前端开发服务器:**
 
