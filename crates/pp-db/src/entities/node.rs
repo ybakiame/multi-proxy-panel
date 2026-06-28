@@ -13,6 +13,7 @@ pub struct Model {
     pub labels: Option<Json>,
     pub usage_coefficient: f32,
     pub status: String,
+    pub parent_id: Option<Uuid>,
     pub last_seen_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

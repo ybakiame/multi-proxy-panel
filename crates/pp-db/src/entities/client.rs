@@ -17,6 +17,8 @@ pub struct Model {
     pub last_traffic_reset_time: Option<DateTimeWithTimeZone>,
     pub max_devices: Option<i32>,
     pub status: String,
+    pub on_hold_expire_duration_secs: Option<i64>,
+    pub on_hold_timeout: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -10,6 +10,7 @@ pub struct Model {
     pub hour_bucket: DateTimeWithTimeZone,
     pub upload_bytes: i64,
     pub download_bytes: i64,
+    pub rate: f32,
     pub created_at: DateTimeWithTimeZone,
 }
 
