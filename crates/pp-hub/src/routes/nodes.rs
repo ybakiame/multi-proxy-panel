@@ -57,6 +57,7 @@ fn node_to_json(n: node::Model, group_ids: Vec<Uuid>) -> Value {
         "labels": n.labels.unwrap_or(json!({})),
         "usage_coefficient": n.usage_coefficient,
         "status": n.status,
+        "parent_id": n.parent_id,
         "group_ids": group_ids,
         "last_seen_at": n.last_seen_at,
     })
@@ -121,6 +122,7 @@ pub struct CreateNodePayload {
     pub hostname: Option<String>,
     pub address: Option<String>,
     pub group_ids: Option<Vec<Uuid>>,
+    pub parent_id: Option<Uuid>,
 }
 
 pub async fn create_node(
@@ -145,6 +147,7 @@ pub async fn create_node(
         labels: Set(None),
         usage_coefficient: Set(1.0),
         status: Set("connecting".to_string()),
+        parent_id: Set(payload.parent_id),
         last_seen_at: Set(None),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
@@ -179,6 +182,7 @@ pub struct UpdateNodePayload {
     pub usage_coefficient: Option<f32>,
     pub labels: Option<Value>,
     pub group_ids: Option<Vec<Uuid>>,
+    pub parent_id: Option<Option<Uuid>>,
 }
 
 pub async fn update_node(
@@ -211,6 +215,9 @@ pub async fn update_node(
     }
     if payload.labels.is_some() {
         active.labels = Set(payload.labels);
+    }
+    if let Some(parent_id) = payload.parent_id {
+        active.parent_id = Set(parent_id);
     }
     active.updated_at = Set(chrono::Utc::now().into());
 

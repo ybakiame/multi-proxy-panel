@@ -31,8 +31,8 @@ use middleware::api_key::scopes;
 use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
-    api_key, bindings, client, health, login, logs, metrics, metrics_export, node_group, nodes,
-    onlines, protocol, protocol_preset, subscription, traffic, webhook,
+    api_key, bindings, client, health, inbound_host, login, logs, metrics, metrics_export,
+    node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic, webhook,
 };
 use state::AppState;
 
@@ -199,6 +199,32 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route(
             "/api/v1/bindings/{id}",
             delete(bindings::delete_binding)
+                .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_WRITE)),
+        )
+        // Inbound Hosts (user-facing address overrides)
+        .route(
+            "/api/v1/hosts",
+            get(inbound_host::list_hosts)
+                .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_READ)),
+        )
+        .route(
+            "/api/v1/hosts",
+            post(inbound_host::create_host)
+                .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_WRITE)),
+        )
+        .route(
+            "/api/v1/hosts/{id}",
+            get(inbound_host::get_host)
+                .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_READ)),
+        )
+        .route(
+            "/api/v1/hosts/{id}",
+            put(inbound_host::update_host)
+                .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_WRITE)),
+        )
+        .route(
+            "/api/v1/hosts/{id}",
+            delete(inbound_host::delete_host)
                 .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_WRITE)),
         )
         // Clients

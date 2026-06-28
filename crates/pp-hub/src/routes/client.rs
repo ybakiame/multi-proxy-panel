@@ -94,6 +94,8 @@ fn client_to_json(c: client::Model, group_ids: Vec<Uuid>, traffic_total: i64) ->
         "last_traffic_reset_time": c.last_traffic_reset_time,
         "max_devices": c.max_devices,
         "status": c.status,
+        "on_hold_expire_duration_secs": c.on_hold_expire_duration_secs,
+        "on_hold_timeout": c.on_hold_timeout,
         "group_ids": group_ids,
     })
 }
@@ -168,6 +170,8 @@ pub struct CreateClientPayload {
     pub data_limit_reset_strategy: Option<String>,
     pub max_devices: Option<i32>,
     pub group_ids: Option<Vec<Uuid>>,
+    pub on_hold_expire_duration_secs: Option<i64>,
+    pub on_hold_timeout: Option<chrono::DateTime<chrono::FixedOffset>>,
 }
 
 pub async fn create_client(
@@ -177,6 +181,10 @@ pub async fn create_client(
     if payload.name.trim().is_empty() {
         return Err(ApiError::bad_request("invalid_name", "client name is required"));
     }
+
+    // Determine status: on_hold if on_hold_expire_duration is set and no expiry_date
+    let is_on_hold = payload.on_hold_expire_duration_secs.is_some() && payload.expiry_date.is_none();
+    let status = if is_on_hold { "on_hold" } else { "active" };
 
     let active = client::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -193,7 +201,9 @@ pub async fn create_client(
             .unwrap_or_else(|| "no_reset".to_string())),
         last_traffic_reset_time: Set(None),
         max_devices: Set(payload.max_devices),
-        status: Set("active".to_string()),
+        on_hold_expire_duration_secs: Set(payload.on_hold_expire_duration_secs),
+        on_hold_timeout: Set(payload.on_hold_timeout),
+        status: Set(status.to_string()),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
     };
@@ -225,6 +235,8 @@ pub struct UpdateClientPayload {
     pub max_devices: Option<i32>,
     pub status: Option<String>,
     pub group_ids: Option<Vec<Uuid>>,
+    pub on_hold_expire_duration_secs: Option<i64>,
+    pub on_hold_timeout: Option<chrono::DateTime<chrono::FixedOffset>>,
 }
 
 pub async fn update_client(
@@ -266,6 +278,12 @@ pub async fn update_client(
     }
     if let Some(status) = payload.status {
         active.status = Set(status);
+    }
+    if payload.on_hold_expire_duration_secs.is_some() {
+        active.on_hold_expire_duration_secs = Set(payload.on_hold_expire_duration_secs);
+    }
+    if payload.on_hold_timeout.is_some() {
+        active.on_hold_timeout = Set(payload.on_hold_timeout);
     }
     active.updated_at = Set(chrono::Utc::now().into());
 

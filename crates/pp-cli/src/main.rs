@@ -122,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
                 labels: Set(None),
                 usage_coefficient: Set(1.0),
                 status: Set("connecting".to_string()),
+                parent_id: Set(None),
                 last_seen_at: Set(None),
                 created_at: Set(chrono::Utc::now().into()),
                 updated_at: Set(chrono::Utc::now().into()),

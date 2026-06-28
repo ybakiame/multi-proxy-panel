@@ -4,8 +4,8 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use pp_db::entities::{
-    client, client_group_binding, node, node_binding, node_group, node_group_binding,
-    protocol_config, subscription, subscription_template,
+    client, client_group_binding, inbound_host, node, node_binding, node_group,
+    node_group_binding, protocol_config, subscription, subscription_template,
 };
 use pp_subscription::{ProxyNode, SubscriptionFormat, generate_subscription};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
@@ -439,11 +439,70 @@ async fn build_proxy_nodes(
             let mut settings = cfg.settings.clone();
             inject_client_credentials(&mut settings, client, &cfg.protocol_type);
 
+            // Determine effective address/port: check for inbound_host override
+            let host_override = inbound_host::Entity::find()
+                .filter(inbound_host::Column::ProtocolConfigId.eq(cfg.id))
+                .filter(inbound_host::Column::NodeId.eq(node.id))
+                .filter(inbound_host::Column::IsActive.eq(true))
+                .one(db)
+                .await?;
+
+            let (effective_server, effective_port) = if let Some(ref host) = host_override {
+                (host.address.clone(), host.port as u16)
+            } else if let Some(parent_id) = node.parent_id {
+                // Relay/child node: use parent node's address with this node's port
+                let parent = node::Entity::find_by_id(parent_id).one(db).await?;
+                if let Some(parent) = parent {
+                    (parent.address.clone(), cfg.listen_port as u16)
+                } else {
+                    (node.address.clone(), cfg.listen_port as u16)
+                }
+            } else {
+                (node.address.clone(), cfg.listen_port as u16)
+            };
+
+            // Apply host overrides to settings (sni, host, path)
+            if let Some(ref host) = host_override {
+                if let Some(obj) = settings.as_object_mut() {
+                    if let Some(sni) = &host.sni {
+                        obj.insert("sni".to_string(), json!(sni));
+                    }
+                    if let Some(host_val) = &host.host {
+                        obj.insert("host".to_string(), json!(host_val));
+                    }
+                    if let Some(path) = &host.path {
+                        obj.insert("path".to_string(), json!(path));
+                    }
+                }
+                if let Some(tls) = cfg.tls_settings.as_ref() {
+                    if let Some(tls_obj) = tls.as_object() {
+                        let mut new_tls = tls_obj.clone();
+                        if let Some(sni) = &host.sni {
+                            new_tls.insert("serverName".to_string(), json!(sni));
+                        }
+                        if let Some(alpn) = &host.alpn {
+                            new_tls.insert("alpn".to_string(), json!(alpn.split(',').collect::<Vec<_>>()));
+                        }
+                        if let Some(fp) = &host.fingerprint {
+                            new_tls.insert("fingerprint".to_string(), json!(fp));
+                        }
+                        // Re-assign to settings.tls via a separate variable
+                    }
+                }
+            }
+
+            // Build node name with variable substitution
+            let display_name = if let Some(ref host) = host_override {
+                substitute_variables(&host.remark, client, &cfg, &node)
+            } else {
+                format!("{}-{}", node.name, cfg.name)
+            };
+
             nodes.push(ProxyNode {
-                name: format!("{}-{}", node.name, cfg.name),
+                name: display_name,
                 protocol: protocol_type,
-                server: node.address.clone(),
-                port: cfg.listen_port as u16,
+                server: effective_server,
+                port: effective_port,
                 settings,
                 tls: cfg.tls_settings.clone(),
             });
@@ -451,6 +510,74 @@ async fn build_proxy_nodes(
     }
 
     Ok(nodes)
+}
+
+/// Substitute template variables in a string.
+/// Supported: {USERNAME}, {DATA_USED}, {DATA_LEFT}, {DATA_LIMIT}, {DAYS_LEFT}, {EXPIRE_DATE}, {STATUS}, {PROTOCOL}, {TRANSPORT}
+fn substitute_variables(
+    template: &str,
+    client: &client::Model,
+    cfg: &protocol_config::Model,
+    node: &node::Model,
+) -> String {
+    let data_used = client.traffic_used_bytes;
+    let data_limit = client.traffic_limit_bytes;
+    let data_left = if data_limit > 0 {
+        (data_limit - data_used).max(0)
+    } else {
+        0
+    };
+    let days_left = client
+        .expiry_date
+        .map(|e| {
+            let diff = e.signed_duration_since(chrono::Utc::now().fixed_offset());
+            diff.num_days().max(0)
+        })
+        .unwrap_or(0);
+
+    let expire_date_str = client
+        .expiry_date
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "never".to_string());
+
+    let transport_str = cfg
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp")
+        .to_string();
+
+    template
+        .replace("{USERNAME}", &client.name)
+        .replace("{DATA_USED}", &format_bytes(data_used))
+        .replace("{DATA_LEFT}", &format_bytes(data_left))
+        .replace("{DATA_LIMIT}", &format_bytes(data_limit))
+        .replace("{DAYS_LEFT}", &days_left.to_string())
+        .replace("{EXPIRE_DATE}", &expire_date_str)
+        .replace("{STATUS}", &client.status)
+        .replace("{PROTOCOL}", &cfg.protocol_type)
+        .replace("{TRANSPORT}", &transport_str)
+        .replace("{SERVER_IP}", &node.address)
+}
+
+/// Format bytes as human-readable string (e.g. "1.5 GB").
+fn format_bytes(bytes: i64) -> String {
+    const KB: i64 = 1024;
+    const MB: i64 = KB * 1024;
+    const GB: i64 = MB * 1024;
+    const TB: i64 = GB * 1024;
+
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 fn inject_client_credentials(settings: &mut Value, client: &client::Model, protocol_type: &str) {
@@ -622,11 +749,108 @@ pub async fn serve_subscription_qr(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pp_db::entities::{client, node, protocol_config};
 
     #[test]
     fn parse_protocol_type_works() {
         assert!(parse_protocol_type("vless_reality").is_ok());
         assert!(parse_protocol_type("vmess").is_ok());
         assert!(parse_protocol_type("unknown").is_err());
+    }
+
+    #[test]
+    fn format_bytes_works() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_bytes(1024_i64 * 1024 * 1024 * 1024), "1.0 TB");
+    }
+
+    fn make_test_client() -> client::Model {
+        client::Model {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            name: "testuser".to_string(),
+            email: Some("test@example.com".to_string()),
+            traffic_limit_bytes: 10 * 1024 * 1024 * 1024, // 10 GB
+            traffic_used_bytes: 2 * 1024 * 1024 * 1024,   // 2 GB used
+            all_time_used_bytes: 5 * 1024 * 1024 * 1024,
+            expiry_date: Some((chrono::Utc::now() + chrono::Duration::days(30)).into()),
+            reset_day: None,
+            data_limit_reset_strategy: "monthly".to_string(),
+            last_traffic_reset_time: None,
+            max_devices: Some(3),
+            status: "active".to_string(),
+            on_hold_expire_duration_secs: None,
+            on_hold_timeout: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    fn make_test_config() -> protocol_config::Model {
+        protocol_config::Model {
+            id: Uuid::new_v4(),
+            name: "vless-reality".to_string(),
+            protocol_type: "vless_reality".to_string(),
+            core_type: "xray".to_string(),
+            listen_port: 443,
+            listen_address: "0.0.0.0".to_string(),
+            settings: serde_json::json!({"network": "tcp"}),
+            tls_settings: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    fn make_test_node() -> node::Model {
+        node::Model {
+            id: Uuid::new_v4(),
+            name: "us-node".to_string(),
+            hostname: "us-server".to_string(),
+            address: "1.2.3.4".to_string(),
+            token_hash: "hash".to_string(),
+            cores_available: serde_json::json!(["xray"]),
+            labels: None,
+            usage_coefficient: 1.0,
+            status: "online".to_string(),
+            parent_id: None,
+            last_seen_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    #[test]
+    fn substitute_variables_replaces_all_placeholders() {
+        let client = make_test_client();
+        let config = make_test_config();
+        let node = make_test_node();
+
+        let template = "{USERNAME}-{PROTOCOL}-{TRANSPORT}-{SERVER_IP}-{STATUS}-{DAYS_LEFT}-{DATA_USED}-{DATA_LEFT}-{DATA_LIMIT}-{EXPIRE_DATE}";
+        let result = substitute_variables(template, &client, &config, &node);
+
+        assert!(result.contains("testuser"));
+        assert!(result.contains("vless_reality"));
+        assert!(result.contains("tcp"));
+        assert!(result.contains("1.2.3.4"));
+        assert!(result.contains("active"));
+        assert!(result.contains("2.0 GB")); // DATA_USED
+        assert!(result.contains("8.0 GB")); // DATA_LEFT (10-2)
+        assert!(result.contains("10.0 GB")); // DATA_LIMIT
+    }
+
+    #[test]
+    fn substitute_variables_handles_no_expiry() {
+        let mut client = make_test_client();
+        client.expiry_date = None;
+        let config = make_test_config();
+        let node = make_test_node();
+
+        let result = substitute_variables("{EXPIRE_DATE}-{DAYS_LEFT}", &client, &config, &node);
+        assert!(result.contains("never"));
+        assert!(result.contains("0"));
     }
 }

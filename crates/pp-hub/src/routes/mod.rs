@@ -3,6 +3,7 @@ pub mod bindings;
 pub mod client;
 pub mod common;
 pub mod health;
+pub mod inbound_host;
 pub mod login;
 pub mod logs;
 pub mod metrics;
