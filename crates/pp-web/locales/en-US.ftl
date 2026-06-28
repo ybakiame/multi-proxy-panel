@@ -3,6 +3,7 @@ nav-dashboard = Dashboard
 nav-nodes = Nodes
 nav-protocols = Protocols
 nav-bindings = Bindings
+nav-hosts = Hosts
 nav-clients = Clients
 nav-subscriptions = Subscriptions
 nav-metrics = Metrics
@@ -279,3 +280,27 @@ metrics-empty = No metrics available.
 # Dashboard extras
 dashboard-loading = Loading dashboard...
 dashboard-error-banner = Some dashboard data failed to load.
+
+# Hosts page
+hosts-title = Inbound Hosts
+hosts-create = + Create Host
+hosts-create-title = Create Host
+hosts-edit-title = Edit Host
+hosts-remark = Remark
+hosts-address = Address
+hosts-port = Port
+hosts-sni = SNI
+hosts-host = Host
+hosts-path = Path
+hosts-protocol-config = Protocol Config ID
+hosts-node = Node ID
+hosts-delete-title = Delete Host
+hosts-delete-confirm = This host will be removed. Continue?
+
+# On-hold / parent extras
+clients-on-hold = On Hold
+clients-on-hold-timeout = On Hold Timeout
+clients-on-hold-duration = On Hold Duration
+nodes-parent-id = Parent Node ID
+nodes-child-of = Child of
+nodes-clear-parent = Clear parent node

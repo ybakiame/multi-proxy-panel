@@ -17,6 +17,8 @@ pub enum Route {
     Protocols {},
     #[route("/bindings")]
     Bindings {},
+    #[route("/hosts")]
+    Hosts {},
     #[route("/clients")]
     Clients {},
     #[route("/groups")]
@@ -102,6 +104,7 @@ pub fn Layout() -> Element {
                     NavItem { label: t!("nav-nodes").to_string(), to: Route::Nodes {} }
                     NavItem { label: t!("nav-protocols").to_string(), to: Route::Protocols {} }
                     NavItem { label: t!("nav-bindings").to_string(), to: Route::Bindings {} }
+                    NavItem { label: t!("nav-hosts").to_string(), to: Route::Hosts {} }
                     NavItem { label: t!("nav-clients").to_string(), to: Route::Clients {} }
                     NavItem { label: t!("nav-groups").to_string(), to: Route::Groups {} }
                     NavItem { label: t!("nav-subscriptions").to_string(), to: Route::Subscriptions {} }

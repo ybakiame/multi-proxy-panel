@@ -255,19 +255,20 @@ pub async fn create_node(
     usage_coefficient: f64,
     labels: Value,
     group_ids: Vec<String>,
+    parent_id: Option<&str>,
 ) -> ApiResult<Value> {
-    post_json(
-        "/api/v1/nodes",
-        json!({
-            "name": name,
-            "hostname": hostname,
-            "address": address,
-            "usage_coefficient": usage_coefficient,
-            "labels": labels,
-            "group_ids": group_ids,
-        }),
-    )
-    .await
+    let mut payload = json!({
+        "name": name,
+        "hostname": hostname,
+        "address": address,
+        "usage_coefficient": usage_coefficient,
+        "labels": labels,
+        "group_ids": group_ids,
+    });
+    if let Some(pid) = parent_id.filter(|s| !s.is_empty()) {
+        payload["parent_id"] = json!(pid);
+    }
+    post_json("/api/v1/nodes", payload).await
 }
 
 pub async fn update_node(id: &str, payload: Value) -> ApiResult<Value> {
@@ -642,4 +643,32 @@ pub async fn update_webhook(id: &str, payload: Value) -> ApiResult<Value> {
 
 pub async fn delete_webhook(id: &str) -> ApiResult<()> {
     delete(&format!("/api/v1/webhooks/{}", id)).await
+}
+
+// ===== Inbound Hosts =====
+
+#[allow(dead_code)]
+pub async fn list_hosts() -> ApiResult<Value> {
+    get_json("/api/v1/hosts").await
+}
+
+pub async fn get_hosts_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
+    get_json(&format!("/api/v1/hosts?page={}&per_page={}", page, per_page)).await
+}
+
+pub async fn create_host(payload: Value) -> ApiResult<Value> {
+    post_json("/api/v1/hosts", payload).await
+}
+
+#[allow(dead_code)]
+pub async fn get_host(id: &str) -> ApiResult<Value> {
+    get_json(&format!("/api/v1/hosts/{}", id)).await
+}
+
+pub async fn update_host(id: &str, payload: Value) -> ApiResult<Value> {
+    put_json(&format!("/api/v1/hosts/{}", id), payload).await
+}
+
+pub async fn delete_host(id: &str) -> ApiResult<()> {
+    delete(&format!("/api/v1/hosts/{}", id)).await
 }

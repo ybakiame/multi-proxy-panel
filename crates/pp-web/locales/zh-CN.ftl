@@ -3,6 +3,7 @@ nav-dashboard = 仪表盘
 nav-nodes = 节点
 nav-protocols = 协议配置
 nav-bindings = 节点绑定
+nav-hosts = 入站主机
 nav-clients = 客户端
 nav-subscriptions = 订阅
 nav-metrics = 指标
@@ -279,3 +280,27 @@ metrics-empty = 暂无指标数据。
 # Dashboard extras
 dashboard-loading = 加载中...
 dashboard-error-banner = 部分仪表板数据加载失败。
+
+# Hosts page
+hosts-title = 入站主机
+hosts-create = + 创建主机
+hosts-create-title = 创建主机
+hosts-edit-title = 编辑主机
+hosts-remark = 备注
+hosts-address = 地址
+hosts-port = 端口
+hosts-sni = SNI
+hosts-host = 主机
+hosts-path = 路径
+hosts-protocol-config = 协议配置 ID
+hosts-node = 节点 ID
+hosts-delete-title = 删除主机
+hosts-delete-confirm = 该主机将被移除，是否继续？
+
+# On-hold / parent extras
+clients-on-hold = 暂停
+clients-on-hold-timeout = 暂停超时
+clients-on-hold-duration = 暂停时长
+nodes-parent-id = 父节点 ID
+nodes-child-of = 子节点，父节点：
+nodes-clear-parent = 清除父节点

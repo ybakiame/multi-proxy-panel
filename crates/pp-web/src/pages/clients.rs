@@ -44,6 +44,8 @@ pub fn Clients() -> Element {
     let mut new_reset_strategy = use_signal(|| "no_reset".to_string());
     let mut new_max_devices = use_signal(String::new);
     let mut new_status = use_signal(|| "active".to_string());
+    let mut new_on_hold_duration = use_signal(String::new);
+    let mut new_on_hold_timeout = use_signal(String::new);
     let mut selected_group_ids = use_signal(Vec::<String>::new);
 
     let clients_data = clients
@@ -79,6 +81,8 @@ pub fn Clients() -> Element {
         new_reset_strategy.set("no_reset".to_string());
         new_max_devices.set(String::new());
         new_status.set("active".to_string());
+        new_on_hold_duration.set(String::new());
+        new_on_hold_timeout.set(String::new());
         selected_group_ids.set(Vec::new());
     };
 
@@ -92,6 +96,8 @@ pub fn Clients() -> Element {
         new_reset_strategy.set(c.get("data_limit_reset_strategy").and_then(|v| v.as_str()).unwrap_or("no_reset").to_string());
         new_max_devices.set(c.get("max_devices").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default());
         new_status.set(c.get("status").and_then(|v| v.as_str()).unwrap_or("active").to_string());
+        new_on_hold_duration.set(c.get("on_hold_expire_duration_secs").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default());
+        new_on_hold_timeout.set(c.get("on_hold_timeout").and_then(|v| v.as_str()).unwrap_or("").to_string());
         let gids: Vec<String> = c.get("group_ids")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
@@ -143,6 +149,9 @@ pub fn Clients() -> Element {
                             th { {t!("clients-traffic-limit")} }
                             th { {t!("clients-all-time-used")} }
                             th { {t!("clients-is-exceeded")} }
+                            th { {t!("clients-on-hold")} }
+                            th { {t!("clients-on-hold-timeout")} }
+                            th { {t!("clients-on-hold-duration")} }
                             th { {t!("common-expiry")} }
                             th { {t!("clients-reset-strategy")} }
                             th { {t!("clients-groups")} }
@@ -163,6 +172,8 @@ pub fn Clients() -> Element {
                                 let is_exceeded = c.get("is_exceeded").and_then(|v| v.as_bool()).unwrap_or(false);
                                 let expiry = c.get("expiry_date").and_then(|v| v.as_str()).unwrap_or("-").to_string();
                                 let strategy = c.get("data_limit_reset_strategy").and_then(|v| v.as_str()).unwrap_or("no_reset").to_string();
+                                let on_hold_timeout = c.get("on_hold_timeout").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let on_hold_duration_secs = c.get("on_hold_expire_duration_secs").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default();
                                 let group_ids = c.get("group_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                                 let group_names: Vec<String> = group_ids.iter()
                                     .filter_map(|gid| gid.as_str())
@@ -191,6 +202,27 @@ pub fn Clients() -> Element {
                                                 span { class: "badge danger", {t!("clients-is-exceeded")} }
                                             } else {
                                                 "-"
+                                            }
+                                        }
+                                        td {
+                                            if status == "on_hold" {
+                                                span { class: "badge warning", {t!("clients-on-hold")} }
+                                            } else {
+                                                "-"
+                                            }
+                                        }
+                                        td {
+                                            if on_hold_timeout.is_empty() {
+                                                "-"
+                                            } else {
+                                                "{on_hold_timeout}"
+                                            }
+                                        }
+                                        td {
+                                            if on_hold_duration_secs.is_empty() {
+                                                "-"
+                                            } else {
+                                                "{on_hold_duration_secs} s"
                                             }
                                         }
                                         td { "{expiry}" }
@@ -264,6 +296,8 @@ pub fn Clients() -> Element {
                 let max_devices = new_max_devices.read().parse::<i32>().ok();
                 let expiry = new_expiry.read().clone();
                 let status = new_status.read().clone();
+                let on_hold_duration = new_on_hold_duration.read().clone();
+                let on_hold_timeout = new_on_hold_timeout.read().clone();
                 let group_ids = selected_group_ids.read().clone();
 
                 if *is_edit.read() {
@@ -291,6 +325,12 @@ pub fn Clients() -> Element {
                         }
                         if !expiry.is_empty() {
                             payload["expiry_date"] = json!(expiry);
+                        }
+                        if let Ok(d) = on_hold_duration.parse::<i64>() {
+                            payload["on_hold_expire_duration_secs"] = json!(d);
+                        }
+                        if !on_hold_timeout.is_empty() {
+                            payload["on_hold_timeout"] = json!(on_hold_timeout);
                         }
                         match api::update_client(&id, payload).await {
                             Ok(_) => {
@@ -325,6 +365,12 @@ pub fn Clients() -> Element {
                         }
                         if !expiry.is_empty() {
                             payload["expiry_date"] = json!(expiry);
+                        }
+                        if let Ok(d) = on_hold_duration.parse::<i64>() {
+                            payload["on_hold_expire_duration_secs"] = json!(d);
+                        }
+                        if !on_hold_timeout.is_empty() {
+                            payload["on_hold_timeout"] = json!(on_hold_timeout);
                         }
                         match api::create_client_from_payload(payload).await {
                             Ok(_) => {
@@ -364,10 +410,13 @@ pub fn Clients() -> Element {
                     options: vec![
                         ("active".to_string(), t!("common-active").to_string()),
                         ("inactive".to_string(), t!("common-disabled").to_string()),
+                        ("on_hold".to_string(), t!("clients-on-hold").to_string()),
                     ],
                     error: None,
                 }
             }
+            FormInput { label: format!("{} (s)", t!("clients-on-hold-duration")), value: new_on_hold_duration, placeholder: Some("86400".to_string()), input_type: Some("number".to_string()), error: None }
+            FormInput { label: t!("clients-on-hold-timeout").to_string(), value: new_on_hold_timeout, placeholder: Some("2025-01-01T00:00:00+00:00".to_string()), input_type: Some("datetime-local".to_string()), error: None }
             div { class: "form-group",
                 label { {t!("clients-groups")} }
                 div { class: "checkbox-group",

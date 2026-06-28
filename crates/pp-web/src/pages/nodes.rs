@@ -38,6 +38,7 @@ pub fn Nodes() -> Element {
     let mut new_address = use_signal(String::new);
     let mut new_usage_coefficient = use_signal(|| "1.0".to_string());
     let mut new_labels = use_signal(|| "{}".to_string());
+    let mut new_parent_id = use_signal(String::new);
     let mut selected_group_ids = use_signal(Vec::<String>::new);
 
     // Edit form
@@ -46,6 +47,8 @@ pub fn Nodes() -> Element {
     let mut edit_address = use_signal(String::new);
     let mut edit_usage_coefficient = use_signal(|| "1.0".to_string());
     let mut edit_labels = use_signal(|| "{}".to_string());
+    let mut edit_parent_id = use_signal(String::new);
+    let mut edit_clear_parent = use_signal(|| false);
     let mut edit_selected_group_ids = use_signal(Vec::<String>::new);
 
     let nodes_data = nodes
@@ -77,6 +80,7 @@ pub fn Nodes() -> Element {
         new_address.set(String::new());
         new_usage_coefficient.set("1.0".to_string());
         new_labels.set("{}".to_string());
+        new_parent_id.set(String::new());
         selected_group_ids.set(Vec::new());
         created_token.set(None);
     };
@@ -102,6 +106,9 @@ pub fn Nodes() -> Element {
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
             .unwrap_or_default();
         edit_selected_group_ids.set(gids);
+        let pid = node.get("parent_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        edit_parent_id.set(pid);
+        edit_clear_parent.set(false);
     };
 
     let modal_title = if *is_edit.read() {
@@ -163,6 +170,7 @@ pub fn Nodes() -> Element {
                             th { {t!("node-hostname")} }
                             th { {t!("node-address")} }
                             th { {t!("common-status")} }
+                            th { {t!("nodes-parent-id")} }
                             th { {t!("node-cores-available")} }
                             th { {t!("node-usage-coefficient")} }
                             th { {t!("common-labels")} }
@@ -179,6 +187,7 @@ pub fn Nodes() -> Element {
                                 let address = node.get("address").and_then(|v| v.as_str()).unwrap_or("-").to_string();
                                 let status = node.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                                 let cores = node.get("cores_available").cloned().unwrap_or(json!([]));
+                                let parent_id = node.get("parent_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                 let coeff = node.get("usage_coefficient").and_then(|v| v.as_f64()).unwrap_or(1.0);
                                 let labels = node.get("labels").cloned().unwrap_or(json!({}));
                                 let group_ids = node.get("group_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -201,6 +210,13 @@ pub fn Nodes() -> Element {
                                         td { "{address}" }
                                         td {
                                             StatusBadge { status: status.clone() }
+                                        }
+                                        td {
+                                            if parent_id.is_empty() {
+                                                "-"
+                                            } else {
+                                                span { {t!("nodes-child-of")} " " span { class: "mono", "{parent_id}" } }
+                                            }
                                         }
                                         td { class: "mono", "{cores}" }
                                         td { "{coeff}" }
@@ -283,9 +299,11 @@ pub fn Nodes() -> Element {
                         Err(e) => { error.set(Some(e)); return; }
                     };
                     let group_ids = edit_selected_group_ids.read().clone();
+                    let parent_id_input = edit_parent_id.read().clone();
+                    let clear_parent = *edit_clear_parent.read();
 
                     spawn(async move {
-                        let payload = json!({
+                        let mut payload = json!({
                             "name": name,
                             "hostname": hostname,
                             "address": address,
@@ -293,6 +311,11 @@ pub fn Nodes() -> Element {
                             "labels": labels,
                             "group_ids": group_ids,
                         });
+                        if clear_parent {
+                            payload["parent_id"] = json!(null);
+                        } else if !parent_id_input.is_empty() {
+                            payload["parent_id"] = json!(parent_id_input);
+                        }
                         match api::update_node(&id, payload).await {
                             Ok(_) => {
                                 error.set(None);
@@ -317,9 +340,12 @@ pub fn Nodes() -> Element {
                         Err(e) => { error.set(Some(e)); return; }
                     };
                     let group_ids = selected_group_ids.read().clone();
+                    let parent_id_input = new_parent_id.read().clone();
+                    let parent_id_opt: Option<String> = if parent_id_input.is_empty() { None } else { Some(parent_id_input) };
                     spawn(async move {
+                        let parent_id_ref = parent_id_opt.as_deref();
                         match api::create_node(
-                            &name, &hostname, &address, usage_coefficient, labels, group_ids
+                            &name, &hostname, &address, usage_coefficient, labels, group_ids, parent_id_ref
                         ).await {
                             Ok(resp) => {
                                 if let Some(token) = resp.get("data")
@@ -342,6 +368,18 @@ pub fn Nodes() -> Element {
                 FormInput { label: t!("node-hostname").to_string(), value: edit_hostname, placeholder: Some("host.example.com".to_string()), input_type: None, error: None }
                 FormInput { label: t!("node-address").to_string(), value: edit_address, placeholder: Some("192.168.1.1".to_string()), input_type: None, error: None }
                 FormInput { label: t!("node-usage-coefficient").to_string(), value: edit_usage_coefficient, placeholder: Some("1.0".to_string()), input_type: Some("number".to_string()), error: None }
+                FormInput { label: t!("nodes-parent-id").to_string(), value: edit_parent_id, placeholder: Some("00000000-0000-0000-0000-000000000000".to_string()), input_type: None, error: None }
+                div { class: "form-group",
+                    label { class: "checkbox-label",
+                        input {
+                            r#type: "checkbox",
+                            checked: "{edit_clear_parent.read().clone()}",
+                            onchange: move |e| edit_clear_parent.set(e.checked()),
+                        }
+                        " "
+                        {t!("nodes-clear-parent")}
+                    }
+                }
                 FormTextarea { label: t!("common-labels").to_string(), value: edit_labels, placeholder: Some("{\"region\": \"eu\"}".to_string()), rows: Some(3), error: None }
                 div { class: "form-group",
                     label { {t!("nodes-groups")} }
@@ -382,6 +420,7 @@ pub fn Nodes() -> Element {
                 FormInput { label: t!("node-hostname").to_string(), value: new_hostname, placeholder: Some("host.example.com".to_string()), input_type: None, error: None }
                 FormInput { label: t!("node-address").to_string(), value: new_address, placeholder: Some("192.168.1.1".to_string()), input_type: None, error: None }
                 FormInput { label: t!("node-usage-coefficient").to_string(), value: new_usage_coefficient, placeholder: Some("1.0".to_string()), input_type: Some("number".to_string()), error: None }
+                FormInput { label: t!("nodes-parent-id").to_string(), value: new_parent_id, placeholder: Some("00000000-0000-0000-0000-000000000000".to_string()), input_type: None, error: None }
                 FormTextarea { label: t!("common-labels").to_string(), value: new_labels, placeholder: Some("{\"region\": \"eu\"}".to_string()), rows: Some(3), error: None }
                 div { class: "form-group",
                     label { {t!("nodes-groups")} }
