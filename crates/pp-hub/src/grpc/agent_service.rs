@@ -206,6 +206,7 @@ async fn handle_register(
             ))),
             usage_coefficient: Set(1.0),
             status: Set("online".to_string()),
+            parent_id: Set(None),
             last_seen_at: Set(Some(chrono::Utc::now().into())),
             created_at: Set(chrono::Utc::now().into()),
             updated_at: Set(chrono::Utc::now().into()),
@@ -278,6 +279,10 @@ async fn handle_traffic(
         .and_then(|d| d.with_minute(0))
         .unwrap_or_else(chrono::Utc::now);
 
+    // Look up the node to get its usage_coefficient (traffic rate multiplier)
+    let node_model = node::Entity::find_by_id(agent_id).one(&state.db).await?;
+    let rate = node_model.as_ref().map(|n| n.usage_coefficient).unwrap_or(1.0);
+
     // 1. Persist inbound-level traffic to traffic_records
     for inbound in &traffic.inbounds {
         let active = traffic_record::ActiveModel {
@@ -302,6 +307,10 @@ async fn handle_traffic(
             continue;
         }
 
+        // Apply rate multiplier: counted bytes = real bytes × rate
+        let counted_upload = (user.upload_bytes as f32 * rate) as i64;
+        let counted_download = (user.download_bytes as f32 * rate) as i64;
+
         // Upsert node_user_usage_records
         let existing = node_user_usage_record::Entity::find()
             .filter(node_user_usage_record::Column::NodeId.eq(agent_id))
@@ -312,8 +321,8 @@ async fn handle_traffic(
 
         if let Some(record) = existing {
             let mut active: node_user_usage_record::ActiveModel = record.into();
-            active.upload_bytes = Set(active.upload_bytes.as_ref() + user.upload_bytes);
-            active.download_bytes = Set(active.download_bytes.as_ref() + user.download_bytes);
+            active.upload_bytes = Set(active.upload_bytes.as_ref() + counted_upload);
+            active.download_bytes = Set(active.download_bytes.as_ref() + counted_download);
             if let Err(e) = active.update(&state.db).await {
                 tracing::warn!("failed to update node_user_usage record: {}", e);
             }
@@ -323,8 +332,9 @@ async fn handle_traffic(
                 node_id: Set(agent_id),
                 client_id: Set(client_id),
                 hour_bucket: Set(hour.into()),
-                upload_bytes: Set(user.upload_bytes),
-                download_bytes: Set(user.download_bytes),
+                upload_bytes: Set(counted_upload),
+                download_bytes: Set(counted_download),
+                rate: Set(rate),
                 created_at: Set(chrono::Utc::now().into()),
             };
             if let Err(e) = active.insert(&state.db).await {
@@ -332,11 +342,15 @@ async fn handle_traffic(
             }
         }
 
-        // Update client's traffic_used_bytes
+        // Update client's traffic_used_bytes (using rate-adjusted values)
         if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
+            // Skip on_hold clients — their traffic shouldn't count until activated
+            if c.status == "on_hold" {
+                continue;
+            }
             let prev_used = c.traffic_used_bytes;
             let mut active: client::ActiveModel = c.into();
-            active.traffic_used_bytes = Set(prev_used + user.upload_bytes + user.download_bytes);
+            active.traffic_used_bytes = Set(prev_used + counted_upload + counted_download);
             if let Err(e) = active.update(&state.db).await {
                 tracing::warn!("failed to update client traffic: {}", e);
             }
@@ -413,12 +427,43 @@ async fn handle_online_users(
         .exec(&state.db)
         .await?;
 
-    // Insert new sessions
+    // Insert new sessions and activate on-hold clients on first connection
     for user in &report.users {
         let client_id = Uuid::parse_str(&user.client_id).unwrap_or_else(|_| Uuid::nil());
         if client_id.is_nil() {
             continue;
         }
+
+        // Activate on-hold clients on first actual connection
+        if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
+            if c.status == "on_hold" {
+                let now = chrono::Utc::now();
+                let expire_date = c.on_hold_expire_duration_secs
+                    .map(|secs| now + chrono::Duration::seconds(secs));
+
+                let mut active: client::ActiveModel = c.into();
+                active.status = Set("active".to_string());
+                active.expiry_date = Set(expire_date.map(|d| d.into()));
+                active.updated_at = Set(now.into());
+                if let Err(e) = active.update(&state.db).await {
+                    tracing::warn!("failed to activate on-hold client {}: {}", client_id, e);
+                } else {
+                    tracing::info!("activated on-hold client {} on first connection", client_id);
+
+                    let _ = crate::service::webhook::trigger_event(
+                        &state.db,
+                        "client_activated",
+                        &serde_json::json!({
+                            "client_id": client_id,
+                            "activated_at": now.to_rfc3339(),
+                            "expire_date": expire_date.map(|d| d.to_rfc3339()),
+                        }),
+                    )
+                    .await;
+                }
+            }
+        }
+
         let active = client_online_session::ActiveModel {
             id: Set(Uuid::new_v4()),
             client_id: Set(client_id),

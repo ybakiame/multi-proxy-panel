@@ -33,14 +33,21 @@ pub async fn run_periodic_checks(state: &Arc<AppState>) -> Result<(), PanelError
         push_updated_configs_for_clients(state, &affected_clients).await?;
     }
 
-    // 3. Also push configs for clients whose traffic was reset (they may have been limited before)
+    // 3. Check on-hold timeouts (expire clients who never connected within the hold window)
+    let expired_hold = check_on_hold_timeouts(&state.db).await?;
+    if !expired_hold.is_empty() {
+        tracing::info!("{} on-hold clients expired (timeout)", expired_hold.len());
+    }
+
+    // 4. Also push configs for clients whose traffic was reset or on-hold expired
     let mut all_affected = affected_clients;
     all_affected.extend(reset_clients);
+    all_affected.extend(expired_hold);
     if !all_affected.is_empty() {
         push_updated_configs_for_clients(state, &all_affected).await?;
     }
 
-    // 4. Cleanup old records
+    // 5. Cleanup old records
     cleanup_old_records(&state.db).await?;
 
     Ok(())
@@ -233,6 +240,49 @@ async fn check_client_limits(db: &DatabaseConnection) -> Result<HashSet<Uuid>, P
     }
 
     Ok(affected)
+}
+
+/// Check on-hold clients whose on_hold_timeout has passed and mark them expired.
+/// Returns the set of client IDs that were expired.
+async fn check_on_hold_timeouts(db: &DatabaseConnection) -> Result<HashSet<Uuid>, PanelError> {
+    let clients = client::Entity::find()
+        .filter(client::Column::Status.eq("on_hold"))
+        .all(db)
+        .await?;
+
+    let mut expired = HashSet::new();
+    let now = chrono::Utc::now();
+
+    for c in clients {
+        if let Some(timeout) = c.on_hold_timeout {
+            if timeout < now {
+                let mut active: client::ActiveModel = c.clone().into();
+                active.status = Set("expired".to_string());
+                active.update(db).await?;
+                expired.insert(c.id);
+                log_event(
+                    db,
+                    "on_hold_expired",
+                    &format!("Client {} on-hold timeout expired", c.id),
+                )
+                .await?;
+
+                let _ = crate::service::webhook::trigger_event(
+                    db,
+                    "on_hold_expired",
+                    &json!({
+                        "client_id": c.id,
+                        "name": c.name,
+                        "email": c.email,
+                        "timeout": timeout.to_rfc3339(),
+                    }),
+                )
+                .await;
+            }
+        }
+    }
+
+    Ok(expired)
 }
 
 /// Calculate total traffic used by a client from traffic_records.
