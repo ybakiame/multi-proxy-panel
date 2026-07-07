@@ -76,7 +76,7 @@ struct Args {
 
 /// Build the full HTTP router including protected API, public routes, CORS, and tracing.
 pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
-    // Static file serving for the Dioxus web app.
+    // Static file serving for the React web app.
     // API routes take precedence; anything else falls back to the SPA.
     let static_service = tower_http::services::ServeDir::new(&hub_config.static_dir).fallback(
         tower_http::services::ServeFile::new(hub_config.static_dir.join("index.html")),

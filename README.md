@@ -19,7 +19,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **现代化前端**: 基于 Dioxus + Tailwind CSS 的响应式 Web 管理界面
+- **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
 - **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
 
 ## 系统架构
@@ -29,7 +29,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 │                           ProxyPanel Hub                            │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
 │  │   HTTP API   │  │  gRPC Stream │  │   Web App    │              │
-│  │   (Axum)     │  │   (Tonic)    │  │  (Dioxus)    │              │
+│  │   (Axum)     │  │   (Tonic)    │  │  (React)     │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 │         │                │                  │                       │
 │         └────────────────┼──────────────────┘                       │
@@ -69,7 +69,9 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 - Rust 1.86+ (参见 `rust-toolchain.toml`)
 - PostgreSQL 15+ (或 SQLite 用于开发)
-- Node.js 20+ (构建 Web 前端)
+    - Node.js 20+ (构建 Web 前端)
+    - npm (用于安装前端依赖)
+
 
 ### 1. 克隆项目
 
@@ -105,7 +107,17 @@ Hub 将监听：
 
 ```bash
 cd crates/pp-web
-dx build --release
+npm install
+npm run build
+```
+
+产物位于 `crates/pp-web/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
+
+开发模式热重载：
+
+```bash
+cd crates/pp-web
+npm run dev
 ```
 
 ### 6. 启动 Agent（在节点服务器上）
@@ -133,7 +145,8 @@ proxy-panel/
 │   ├── pp-subscription/    # 订阅链接生成器
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
 │   ├── pp-agent/           # 节点代理程序
-│   ├── pp-web/             # Dioxus Web 前端
+│   ├── pp-web/             # React Web 前端
+│   │                         # React + Vite + HeroUI + Tailwind CSS
 │   └── pp-cli/             # 管理 CLI 工具
 ├── migrations/             # 数据库迁移文件
 ├── docs/                   # 项目文档
@@ -146,7 +159,7 @@ proxy-panel/
 |-------|------|------|
 | `pp-hub` | 中央管理面板，提供 REST API、gRPC 服务和静态文件托管 | `proxy-panel-hub` |
 | `pp-agent` | 节点代理，管理本地 xray/sing-box 进程，上报指标 | `proxy-panel-agent` |
-| `pp-web` | Dioxus 前端应用，提供现代化管理界面 | WASM / 静态文件 |
+| `pp-web` | React 前端应用，提供现代化管理界面 | 静态文件 |
 | `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、诊断 | `proxy-panel` |
 | `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
@@ -179,10 +192,13 @@ proxy-panel/
 cargo test --workspace
 
 # 检查代码
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 
 # 格式化代码
 cargo fmt --all
+
+# 构建前端
+cd crates/pp-web && npm install && npm run build
 
 # 生成实体（修改迁移后）
 cd crates/pp-db && sea-orm-cli generate entity -o src/entities

@@ -178,12 +178,12 @@ EOF
     # 5. 启动 Web 前端
     log_step "[5/5] 启动 Web 前端 (http://localhost:$WEB_PORT)..."
     cd "$PROJECT_ROOT/crates/pp-web"
-    DX_PATH="${HOME}/.cargo/bin/dx"
-    if [ ! -x "$DX_PATH" ]; then
-        DX_PATH="dx"
+    if [ ! -d "node_modules" ]; then
+        log_info "安装前端依赖..."
+        npm install >/dev/null 2>&1
     fi
     # 前端开发服务器需要知道 Hub API 地址，否则默认使用自身 origin 导致 404。
-    nohup bash -c "PROXYPANEL_API_URL=http://127.0.0.1:$HUB_HTTP_PORT \"$DX_PATH\" serve --addr 127.0.0.1 --port $WEB_PORT" > "$WEB_LOG" 2>&1 &
+    nohup bash -c "PROXYPANEL_API_URL=http://127.0.0.1:$HUB_HTTP_PORT npm run dev -- --host 127.0.0.1 --port $WEB_PORT" > "$WEB_LOG" 2>&1 &
     WEB_PID=$!
     echo "web:$WEB_PID" >> "$PID_FILE"
     log_info "Web 前端启动完成 (PID: $WEB_PID)"
@@ -276,7 +276,7 @@ kill_residual() {
     log_step "清理残留进程..."
     # 查找并停止所有 proxypanel 相关进程
     local pids
-    pids=$(ps aux | grep -E 'proxy-panel-hub|proxy-panel-agent|dx serve' | grep -v grep | awk '{print $2}' || true)
+    pids=$(ps aux | grep -E 'proxy-panel-hub|proxy-panel-agent|npm run dev' | grep -v grep | awk '{print $2}' || true)
     if [ -n "$pids" ]; then
         echo "$pids" | xargs kill -9 2>/dev/null || true
         log_info "已清理残留进程"

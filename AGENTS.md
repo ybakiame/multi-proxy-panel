@@ -10,7 +10,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 xray/sing-box 进程，通过 gRPC 长连接与 Hub 通信
-- **Web** (`pp-web`): Dioxus 前端，WASM 目标，通过 HTTP API 与 Hub 交互
+- **Web** (`pp-web`): React 前端，通过 HTTP API 与 Hub 交互（Vite + TypeScript + HeroUI + Tailwind CSS）
 
 ---
 
@@ -20,7 +20,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - Rust 1.86+（Workspace 指定 `rust-version = "1.86"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
-- 构建前端需要 `dioxus-cli` (`dx`)
+- 构建前端需要 Node.js 20+ 和 npm（`crates/pp-web` 为独立的 Vite + React 项目）
 
 ### 2.2 常用构建命令
 
@@ -54,10 +54,12 @@ cargo fmt --all
 
 ```bash
 cd crates/pp-web
+# 安装依赖
+npm install
 # 开发模式
-dx serve
+npm run dev
 # 发布构建
-dx build --release
+npm run build
 # 产物位于 crates/pp-web/dist/
 ```
 

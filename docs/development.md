@@ -26,7 +26,7 @@
 | Rust | 1.86+ | 后端与核心开发 |
 | PostgreSQL | 15+ | 开发数据库 |
 | Docker & Compose | 最新 | 基础设施快速启动 |
-| dioxus-cli (`dx`) | 0.7+ | Web 前端构建 |
+| Node.js & npm | 20+ | 构建 Web 前端 |
 | sea-orm-cli | 1.1+ | 数据库实体生成 |
 | grpcurl | 最新 | gRPC 接口调试 |
 
@@ -38,7 +38,6 @@ cd proxy-panel
 rustc --version  # 应显示 1.86+
 
 # 安装额外组件
-cargo install dioxus-cli
 cargo install sea-orm-cli
 ```
 
@@ -152,10 +151,11 @@ RUST_LOG=proxy_panel_agent=debug \
 
 ```bash
 cd crates/pp-web
-dx serve
+npm install
+npm run dev
 ```
 
-访问 `http://localhost:8080`（前端开发服务器，带热重载）。
+访问 `http://localhost:5173`（Vite 开发服务器，带热重载）。
 首次打开页面会要求输入 **API Key**，可从 Hub 启动日志中找到 Bootstrap API Key：
 
 ```bash
@@ -166,9 +166,9 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 > 若使用 `./scripts/dev.sh start`，脚本会自动设置 `PROXYPANEL_API_URL` 并打印该 Key。
 
-**注意：8081 与 8085 的区别**
+**注意：5173 与 8081 的区别**
 
-- `http://localhost:8085` 是 `dx serve` 开发服务器，推荐使用。
+- `http://localhost:5173` 是 Vite 开发服务器，推荐使用。
 - `http://localhost:8081` 是 Hub 自身的 HTTP 端口，会回退提供前端静态文件。由于静态文件没有鉴权，若此前在同一 Origin 登录过（`localStorage` 中已有 `pp_api_key`），直接访问 8081 会进入 Dashboard；所有 `/api/v1/*` 接口仍然需要 API Key。
 
 ---
@@ -269,81 +269,77 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 
 ### 技术栈
 
-- **框架**: Dioxus 0.7 (Rust → WASM)
-- **样式**: Tailwind CSS
-- **国际化**: dioxus-i18n
-- **HTTP 客户端**: reqwest (WASM 兼容)
+- **框架**: React 18 + TypeScript
+- **构建工具**: Vite 6
+- **UI 库**: HeroUI
+- **样式**: Tailwind CSS v4
+- **路由**: React Router v7
+- **国际化**: react-i18next
+- **HTTP 客户端**: Axios
 
 ### 项目结构
 
 ```
 crates/pp-web/
 ├── src/
-│   ├── main.rs              # 入口
-│   ├── app.rs               # 路由与布局
-│   ├── api.rs               # HTTP API 封装
-│   ├── i18n.rs              # 国际化配置
-│   ├── components/          # 可复用组件
-│   │   ├── data_table.rs
-│   │   ├── form_input.rs
-│   │   ├── modal.rs
-│   │   ├── node_row.rs
-│   │   └── status_badge.rs
-│   └── pages/               # 页面组件
-│       ├── dashboard.rs
-│       ├── nodes.rs
-│       ├── protocols.rs
-│       ├── bindings.rs
-│       ├── clients.rs
-│       ├── subscriptions.rs
-│       ├── metrics.rs
-│       └── logs.rs
-├── assets/
-│   ├── tailwind.css         # Tailwind 入口
-│   └── style.css            # 自定义样式
-└── Cargo.toml
+│   ├── main.tsx              # React 入口
+│   ├── App.tsx               # 路由与布局
+│   ├── api/                  # HTTP API 封装
+│   │   └── client.ts
+│   ├── context/              # React Context（Auth 等）
+│   ├── components/           # 可复用组件与导航
+│   ├── pages/                # 页面组件
+│   │   ├── Dashboard.tsx
+│   │   ├── Nodes.tsx
+│   │   ├── Protocols.tsx
+│   │   ├── Bindings.tsx
+│   │   ├── Clients.tsx
+│   │   ├── Subscriptions.tsx
+│   │   └── ...
+│   ├── i18n/                 # 翻译 JSON 文件
+│   │   ├── zh-CN.json
+│   │   └── en-US.json
+│   └── index.css             # Tailwind CSS 入口
+├── index.html
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
 ```
 
 ### 添加新页面
 
-1. 在 `src/pages/` 创建新页面组件
-2. 在 `src/pages/mod.rs` 导出
-3. 在 `src/app.rs` 的 `Route` 枚举中添加路由
-4. 在 `Layout` 的导航栏中添加链接
-5. 在 `src/i18n.rs` 中添加翻译键
+1. 在 `src/pages/` 创建新页面组件（如 `NewPage.tsx`）
+2. 在 `src/components/nav.ts` 的 `navItems` 中添加导航项
+3. 在 `src/App.tsx` 的路由配置中添加对应路由
+4. 在 `src/i18n/zh-CN.json` 和 `src/i18n/en-US.json` 中添加翻译键
+5. 如页面需要 API 调用，在 `src/api/client.ts` 中添加请求函数
 
 ### API 调用示例
 
-```rust
-// crates/pp-web/src/api.rs
-use serde_json::Value;
+```typescript
+// src/api/client.ts
+import { apiClient } from './client';
 
-const API_BASE: &str = "/api/v1";
-
-pub async fn get_nodes() -> reqwest::Result<Value> {
-    reqwest::get(format!("{}{}/nodes", API_BASE, ""))
-        .await?
-        .json()
-        .await
+export interface Node {
+  id: string;
+  name: string;
+  address: string;
 }
+
+export const listNodes = () => apiClient.get<Node[]>('/nodes');
+export const createNode = (data: Partial<Node>) => apiClient.post<Node>('/nodes', data);
 ```
 
 ### 国际化
 
-翻译文件位于 `src/i18n.rs`（当前为硬编码，可扩展为加载外部 JSON）：
+翻译文件位于 `src/i18n/zh-CN.json` 和 `src/i18n/en-US.json`。在组件中使用：
 
-```rust
-pub fn init_i18n() {
-    use dioxus_i18n::prelude::*;
-    use dioxus_i18n::unic_langid::langid;
+```tsx
+import { useTranslation } from 'react-i18next';
 
-    let en_us = langid!("en-US");
-    let zh_cn = langid!("zh-CN");
-
-    I18n::new(vec![en_us, zh_cn])
-        .with_default_lang(en_us)
-        .with_translation(zh_cn, translate!("nav-dashboard" => "仪表盘", ...))
-        .init();
+export function MyPage() {
+  const { t } = useTranslation();
+  return <h1>{t('my-page.title')}</h1>;
 }
 ```
 

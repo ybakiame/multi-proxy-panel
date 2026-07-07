@@ -113,24 +113,30 @@ pp-agent/
 
 ### pp-web — Web 前端
 
-基于 Dioxus 的响应式单页应用（SPA）：
+基于 React 的响应式单页应用（SPA）：
 
-- **技术栈**: Dioxus 0.7 + Tailwind CSS + dioxus-i18n（国际化）
-- **构建目标**: WebAssembly (`wasm32-unknown-unknown`)
-- **通信方式**: 通过 `reqwest` 调用 Hub REST API
+- **技术栈**: React 18 + TypeScript + Vite 6 + HeroUI + Tailwind CSS v4 + react-i18next（国际化）
+- **构建目标**: 静态 JavaScript / CSS 资源（由 Hub 或 CDN 托管）
+- **通信方式**: 通过 Axios 调用 Hub REST API
 
 **页面结构：**
 
 | 路由 | 页面 | 功能 |
 |------|------|------|
 | `/` | Dashboard | 全局概览、统计卡片、节点状态、最近日志 |
-| `/nodes` | Nodes | 节点列表、创建、删除、状态监控 |
+| `/nodes` | Nodes | 节点列表、创建、删除、状态监控、父节点配置 |
 | `/protocols` | Protocols | 协议配置管理、REALITY 密钥生成 |
 | `/bindings` | Bindings | 节点与协议配置的绑定关系 |
-| `/clients` | Clients | 客户端（用户）管理、流量配额 |
+| `/clients` | Clients | 客户端（用户）管理、流量配额、on-hold 状态 |
+| `/groups` | Groups | 用户组管理 |
 | `/subscriptions` | Subscriptions | 订阅模板与订阅链接管理 |
-| `/metrics` | Metrics | 主机性能指标图表（预留） |
+| `/hosts` | Hosts | 主机设置与变量管理 |
+| `/metrics` | Metrics | 主机性能指标图表 |
+| `/traffic` | Traffic | 实时与历史流量查询 |
+| `/onlines` | Onlines | 在线用户列表 |
 | `/logs` | Logs | 系统日志查看与筛选 |
+| `/api-keys` | ApiKeys | Bootstrap 与管理 API Key |
+| `/webhooks` | Webhooks | Webhook 事件接收配置 |
 
 ### pp-core — 核心进程管理
 

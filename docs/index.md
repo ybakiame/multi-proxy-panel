@@ -22,7 +22,7 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 
 - **Hub** (`pp-hub`) — 中央管理面板，提供 REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`) — 节点代理，管理 xray/sing-box 核心进程
-- **Web** (`pp-web`) — Dioxus 前端管理界面
+- **Web** (`pp-web`) — React 前端管理界面
 - **CLI** (`pp-cli`) — 管理命令行工具
 
 ### 核心能力
@@ -54,7 +54,7 @@ cargo run --bin proxy-panel -- init-db \
 cargo run --release --bin proxy-panel-hub
 
 # 5. 构建前端
-cd crates/pp-web && dx build --release
+cd crates/pp-web && npm install && npm run build
 ```
 
 更多详情请参阅 [开发指南](development.md)。
@@ -68,7 +68,7 @@ cd crates/pp-web && dx build --release
 | 后端框架 | Axum (HTTP) + Tonic (gRPC) |
 | 异步运行时 | Tokio |
 | 数据库 | Sea-ORM (PostgreSQL / SQLite) |
-| 前端框架 | Dioxus (WASM) + Tailwind CSS |
+| 前端框架 | React 18 + TypeScript + Vite 6 + HeroUI + Tailwind CSS v4 |
 | 序列化 | Serde + Protobuf |
 | 观测 | Tracing + Metrics |
 
