@@ -10,7 +10,7 @@ members = [
     "crates/pp-hub",
     "crates/pp-agent",
     "crates/pp-cli",
-    "crates/pp-web",
+    # "crates/pp-web",  # now a standalone React/Vite app, see crates/pp-web/README.md
 ]
 
 [workspace.package]

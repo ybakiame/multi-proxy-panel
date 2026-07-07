@@ -1,0 +1,33 @@
+import {
+  HomeIcon,
+  ServerIcon,
+  CogIcon,
+  LinkIcon,
+  GlobeAltIcon,
+  UsersIcon,
+  UserGroupIcon,
+  NewspaperIcon,
+  ChartBarIcon,
+  DocumentTextIcon,
+  KeyIcon,
+  BellIcon,
+  SignalIcon,
+  ArrowsRightLeftIcon,
+} from "@heroicons/react/24/outline";
+
+export const navItems = [
+  { path: "/", labelKey: "nav.dashboard", icon: HomeIcon },
+  { path: "/nodes", labelKey: "nav.nodes", icon: ServerIcon },
+  { path: "/protocols", labelKey: "nav.protocols", icon: CogIcon },
+  { path: "/bindings", labelKey: "nav.bindings", icon: LinkIcon },
+  { path: "/hosts", labelKey: "nav.hosts", icon: GlobeAltIcon },
+  { path: "/clients", labelKey: "nav.clients", icon: UsersIcon },
+  { path: "/groups", labelKey: "nav.groups", icon: UserGroupIcon },
+  { path: "/subscriptions", labelKey: "nav.subscriptions", icon: NewspaperIcon },
+  { path: "/metrics", labelKey: "nav.metrics", icon: ChartBarIcon },
+  { path: "/logs", labelKey: "nav.logs", icon: DocumentTextIcon },
+  { path: "/api-keys", labelKey: "nav.apiKeys", icon: KeyIcon },
+  { path: "/webhooks", labelKey: "nav.webhooks", icon: BellIcon },
+  { path: "/onlines", labelKey: "nav.onlines", icon: SignalIcon },
+  { path: "/traffic", labelKey: "nav.traffic", icon: ArrowsRightLeftIcon },
+];
