@@ -332,6 +332,7 @@ pub async fn delete_client(
 
 #[derive(serde::Deserialize)]
 pub struct ClientResetTrafficPayload {
+    #[allow(dead_code)]
     pub reason: Option<String>,
 }
 

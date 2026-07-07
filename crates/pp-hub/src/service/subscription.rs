@@ -14,6 +14,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 /// Fetch group IDs assigned to a client.
+#[allow(dead_code)]
 pub async fn get_client_group_ids(
     db: &DatabaseConnection,
     client_id: Uuid,
@@ -26,6 +27,7 @@ pub async fn get_client_group_ids(
 }
 
 /// Build proxy nodes for subscription generation.
+#[allow(dead_code)]
 pub async fn build_proxy_nodes(
     db: &DatabaseConnection,
     client_model: &client::Model,

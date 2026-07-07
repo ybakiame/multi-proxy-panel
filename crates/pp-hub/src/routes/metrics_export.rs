@@ -43,6 +43,7 @@ pub async fn prometheus_metrics(
 }
 
 /// Record an HTTP request metric.
+#[allow(dead_code)]
 pub fn record_http_request(method: &str, path: &str, status: u16) {
     metrics::counter!(
         "proxypanel_http_requests_total",
@@ -54,6 +55,7 @@ pub fn record_http_request(method: &str, path: &str, status: u16) {
 }
 
 /// Record an agent connection event.
+#[allow(dead_code)]
 pub fn record_agent_connection(event: &str) {
     metrics::counter!(
         "proxypanel_agent_connections_total",
@@ -63,6 +65,7 @@ pub fn record_agent_connection(event: &str) {
 }
 
 /// Record a gRPC message received.
+#[allow(dead_code)]
 pub fn record_grpc_message(message_type: &str) {
     metrics::counter!(
         "proxypanel_grpc_messages_total",
@@ -72,16 +75,19 @@ pub fn record_grpc_message(message_type: &str) {
 }
 
 /// Set the number of active agents.
+#[allow(dead_code)]
 pub fn set_active_agents(count: u64) {
     metrics::gauge!("proxypanel_active_agents").set(count as f64);
 }
 
 /// Set the number of active clients.
+#[allow(dead_code)]
 pub fn set_active_clients(count: u64) {
     metrics::gauge!("proxypanel_active_clients").set(count as f64);
 }
 
 /// Set the number of active nodes.
+#[allow(dead_code)]
 pub fn set_active_nodes(count: u64) {
     metrics::gauge!("proxypanel_active_nodes").set(count as f64);
 }

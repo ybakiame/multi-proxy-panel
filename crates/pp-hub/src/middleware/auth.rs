@@ -21,6 +21,7 @@ pub struct Claims {
 }
 
 impl Claims {
+    #[allow(dead_code)]
     pub fn has_role(&self, required: &str) -> bool {
         self.role == required || self.role == "admin"
     }
