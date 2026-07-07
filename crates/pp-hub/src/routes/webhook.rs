@@ -26,26 +26,27 @@ pub async fn list_webhooks(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (hooks, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = webhook::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = webhook::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = webhook::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (hooks, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = webhook::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = webhook::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = webhook::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = hooks.into_iter().map(webhook_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -65,10 +66,16 @@ pub async fn create_webhook(
     Json(payload): Json<CreateWebhookPayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "webhook name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "webhook name is required",
+        ));
     }
     if payload.url.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_url", "webhook URL is required"));
+        return Err(ApiError::bad_request(
+            "invalid_url",
+            "webhook URL is required",
+        ));
     }
 
     let active = webhook::ActiveModel {
@@ -111,13 +118,19 @@ pub async fn update_webhook(
 
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_name", "webhook name cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "webhook name cannot be empty",
+            ));
         }
         active.name = Set(name);
     }
     if let Some(url) = payload.url {
         if url.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_url", "webhook URL cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_url",
+                "webhook URL cannot be empty",
+            ));
         }
         active.url = Set(url);
     }

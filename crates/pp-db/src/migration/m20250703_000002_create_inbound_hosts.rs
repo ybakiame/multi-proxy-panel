@@ -45,11 +45,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(
-                Table::drop()
-                    .table(InboundHosts::Table)
-                    .to_owned(),
-            )
+            .drop_table(Table::drop().table(InboundHosts::Table).to_owned())
             .await?;
 
         Ok(())
@@ -101,5 +97,8 @@ fn boolean_not_null<C: Iden + 'static>(c: C) -> ColumnDef {
 }
 
 fn timestamp_not_null<C: Iden + 'static>(c: C) -> ColumnDef {
-    ColumnDef::new(c).timestamp_with_time_zone().not_null().to_owned()
+    ColumnDef::new(c)
+        .timestamp_with_time_zone()
+        .not_null()
+        .to_owned()
 }

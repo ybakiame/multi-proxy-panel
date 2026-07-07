@@ -16,7 +16,11 @@ pub struct AuthState {
 
 impl AuthState {
     pub fn is_authenticated(&self) -> bool {
-        self.token.read().as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+        self.token
+            .read()
+            .as_ref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn login(&mut self, key: &str) {

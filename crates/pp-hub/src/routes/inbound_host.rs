@@ -35,26 +35,27 @@ pub async fn list_hosts(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (hosts, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = inbound_host::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = inbound_host::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = inbound_host::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (hosts, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = inbound_host::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = inbound_host::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = inbound_host::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = hosts.into_iter().map(host_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -81,10 +82,16 @@ pub async fn create_host(
     Json(payload): Json<CreateHostPayload>,
 ) -> ApiResult<Value> {
     if payload.remark.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_remark", "remark is required"));
+        return Err(ApiError::bad_request(
+            "invalid_remark",
+            "remark is required",
+        ));
     }
     if payload.address.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_address", "address is required"));
+        return Err(ApiError::bad_request(
+            "invalid_address",
+            "address is required",
+        ));
     }
 
     let active = inbound_host::ActiveModel {

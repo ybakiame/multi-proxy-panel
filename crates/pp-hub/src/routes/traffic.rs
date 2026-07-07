@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Query, State},
-};
+use axum::extract::{Query, State};
 use pp_db::entities::traffic_record;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::{Value, json};

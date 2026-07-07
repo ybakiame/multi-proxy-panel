@@ -1,10 +1,11 @@
-use pp_db::entities::{client, client_online_session, node, node_user_usage_record, traffic_record};
-use pp_proto::{
-    AgentMessage, Heartbeat,
-    HostMetrics, HubMessage, LogBatch, OnlineUsersReport, RegisterRequest, RegisterResponse,
-    TrafficReport, hub_agent_server::HubAgent,
-};
 use chrono::Timelike;
+use pp_db::entities::{
+    client, client_online_session, node, node_user_usage_record, traffic_record,
+};
+use pp_proto::{
+    AgentMessage, Heartbeat, HostMetrics, HubMessage, LogBatch, OnlineUsersReport, RegisterRequest,
+    RegisterResponse, TrafficReport, hub_agent_server::HubAgent,
+};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -60,8 +61,14 @@ impl HubAgent for HubAgentService {
             while let Some(msg_result) = inbound.next().await {
                 match msg_result {
                     Ok(msg) => {
-                        if let Err(e) =
-                            handle_agent_message(&state, msg, &mut registered_id, &tx, remote_addr.clone()).await
+                        if let Err(e) = handle_agent_message(
+                            &state,
+                            msg,
+                            &mut registered_id,
+                            &tx,
+                            remote_addr.clone(),
+                        )
+                        .await
                         {
                             tracing::warn!("error handling agent message: {}", e);
                         }
@@ -165,7 +172,10 @@ async fn handle_register(
     if let Some(node) = node {
         // Existing node: verify token against stored hash using Argon2 verification.
         if node.token_hash.is_empty() {
-            tracing::warn!("node {} has empty token_hash; reject registration", agent_id);
+            tracing::warn!(
+                "node {} has empty token_hash; reject registration",
+                agent_id
+            );
             return Err(Status::failed_precondition(
                 "node token is not set; provision a token first",
             ));
@@ -217,7 +227,10 @@ async fn handle_register(
             .map_err(|e| Status::internal(format!("database error: {}", e)))?;
         tracing::info!("auto-registered new agent: {}", agent_id);
     } else {
-        tracing::warn!("agent {} attempted to register but node does not exist", agent_id);
+        tracing::warn!(
+            "agent {} attempted to register but node does not exist",
+            agent_id
+        );
         return Err(Status::not_found(
             "node not registered; create the node and provision a token first",
         ));
@@ -281,7 +294,10 @@ async fn handle_traffic(
 
     // Look up the node to get its usage_coefficient (traffic rate multiplier)
     let node_model = node::Entity::find_by_id(agent_id).one(&state.db).await?;
-    let rate = node_model.as_ref().map(|n| n.usage_coefficient).unwrap_or(1.0);
+    let rate = node_model
+        .as_ref()
+        .map(|n| n.usage_coefficient)
+        .unwrap_or(1.0);
 
     // 1. Persist inbound-level traffic to traffic_records
     for inbound in &traffic.inbounds {
@@ -438,7 +454,8 @@ async fn handle_online_users(
         if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
             if c.status == "on_hold" {
                 let now = chrono::Utc::now();
-                let expire_date = c.on_hold_expire_duration_secs
+                let expire_date = c
+                    .on_hold_expire_duration_secs
                     .map(|secs| now + chrono::Duration::seconds(secs));
 
                 let mut active: client::ActiveModel = c.into();

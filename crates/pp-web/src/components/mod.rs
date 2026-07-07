@@ -8,13 +8,13 @@ pub mod search_input;
 pub mod status_badge;
 
 pub use confirm_dialog::ConfirmDialog;
+pub use date_picker::FormDate;
 pub use feedback::{Alert, EmptyState, Loading};
 pub use form_input::{FormInput, FormSelect, FormTextarea};
 pub use modal::Modal;
 pub use pagination::Pagination;
 pub use search_input::SearchInput;
 pub use status_badge::StatusBadge;
-pub use date_picker::FormDate;
-pub mod date_picker;
 pub mod calendar;
+pub mod date_picker;
 pub mod popover;

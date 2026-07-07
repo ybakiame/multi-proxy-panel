@@ -185,13 +185,19 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
             if public_key.is_empty() {
-                return Err(PanelError::Subscription("missing REALITY public_key".into()));
+                return Err(PanelError::Subscription(
+                    "missing REALITY public_key".into(),
+                ));
             }
             let server_name = node
                 .settings
                 .get("server_names")
                 .and_then(|v| v.as_str())
-                .or_else(|| node.settings.get("reality_server_names").and_then(|v| v.as_str()))
+                .or_else(|| {
+                    node.settings
+                        .get("reality_server_names")
+                        .and_then(|v| v.as_str())
+                })
                 .unwrap_or("")
                 .split(',')
                 .next()
@@ -202,7 +208,11 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
                 .settings
                 .get("short_id")
                 .and_then(|v| v.as_str())
-                .or_else(|| node.settings.get("reality_short_id").and_then(|v| v.as_str()))
+                .or_else(|| {
+                    node.settings
+                        .get("reality_short_id")
+                        .and_then(|v| v.as_str())
+                })
                 .unwrap_or("")
                 .split(',')
                 .next()

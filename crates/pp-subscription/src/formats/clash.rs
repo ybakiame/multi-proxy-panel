@@ -32,7 +32,12 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
         }
         if let Some(base_groups) = base.get("proxy-groups").and_then(|v| v.as_array()) {
             let mut merged = base_groups.clone();
-            merged.extend(output["proxy-groups"].as_array().cloned().unwrap_or_default());
+            merged.extend(
+                output["proxy-groups"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             output["proxy-groups"] = serde_json::Value::Array(merged);
         }
     }
@@ -120,7 +125,11 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
             .settings
             .get("server_names")
             .and_then(|v| v.as_str())
-            .or_else(|| node.settings.get("reality_server_names").and_then(|v| v.as_str()))
+            .or_else(|| {
+                node.settings
+                    .get("reality_server_names")
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .split(',')
             .next()
@@ -131,7 +140,11 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
             .settings
             .get("short_id")
             .and_then(|v| v.as_str())
-            .or_else(|| node.settings.get("reality_short_id").and_then(|v| v.as_str()))
+            .or_else(|| {
+                node.settings
+                    .get("reality_short_id")
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .split(',')
             .next()

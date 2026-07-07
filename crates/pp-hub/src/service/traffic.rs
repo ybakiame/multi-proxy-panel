@@ -1,7 +1,9 @@
 use chrono::{Datelike, TimeZone, Timelike};
 use pp_common::PanelResult;
 use pp_db::entities::traffic_record;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;

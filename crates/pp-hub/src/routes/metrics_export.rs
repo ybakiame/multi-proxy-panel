@@ -31,7 +31,10 @@ pub async fn prometheus_metrics(
     if let Some(metrics) = &state.metrics_handle {
         let prometheus_text = metrics.handle.render();
         Ok((
-            [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; version=0.0.4; charset=utf-8",
+            )],
             prometheus_text,
         ))
     } else {

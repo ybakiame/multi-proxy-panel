@@ -3,7 +3,9 @@ use dioxus_i18n::t;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Alert, ConfirmDialog, FormInput, FormSelect, FormTextarea, Modal, Pagination};
+use crate::components::{
+    Alert, ConfirmDialog, FormInput, FormSelect, FormTextarea, Modal, Pagination,
+};
 
 fn gen_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -15,33 +17,27 @@ fn mask_secret(s: &str) -> String {
     } else if s.len() <= 8 {
         "••••".to_string()
     } else {
-        format!("{}••••{}", &s[..4], &s[s.len()-4..])
+        format!("{}••••{}", &s[..4], &s[s.len() - 4..])
     }
 }
 
 fn protocol_settings_summary(pt: &str, settings: &Value) -> String {
     match pt {
-        "vless_reality" | "vless_vision" | "vless_xhttp" | "vmess" | "tuic" | "tuic_v5" => {
-            settings
-                .get("uuid")
-                .and_then(|v| v.as_str())
-                .map(mask_secret)
-                .unwrap_or_else(|| "-".to_string())
-        }
-        "trojan" | "hysteria2" | "anytls" => {
-            settings
-                .get("password")
-                .and_then(|v| v.as_str())
-                .map(mask_secret)
-                .unwrap_or_else(|| "-".to_string())
-        }
-        "shadowsocks2022" => {
-            settings
-                .get("password")
-                .and_then(|v| v.as_str())
-                .map(mask_secret)
-                .unwrap_or_else(|| "-".to_string())
-        }
+        "vless_reality" | "vless_vision" | "vless_xhttp" | "vmess" | "tuic" | "tuic_v5" => settings
+            .get("uuid")
+            .and_then(|v| v.as_str())
+            .map(mask_secret)
+            .unwrap_or_else(|| "-".to_string()),
+        "trojan" | "hysteria2" | "anytls" => settings
+            .get("password")
+            .and_then(|v| v.as_str())
+            .map(mask_secret)
+            .unwrap_or_else(|| "-".to_string()),
+        "shadowsocks2022" => settings
+            .get("password")
+            .and_then(|v| v.as_str())
+            .map(mask_secret)
+            .unwrap_or_else(|| "-".to_string()),
         _ => "-".to_string(),
     }
 }
@@ -181,50 +177,227 @@ pub fn Protocols() -> Element {
     let mut load_settings = move |protocol_type: &str, settings: &Value, tls: &Value| {
         match protocol_type {
             "vless_reality" => {
-                vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                vless_flow.set(settings.get("flow").and_then(|v| v.as_str()).unwrap_or("xtls-rprx-vision").to_string());
-                reality_dest.set(settings.get("reality_dest").and_then(|v| v.as_str()).or_else(|| settings.get("dest").and_then(|v| v.as_str())).unwrap_or("www.cloudflare.com:443").to_string());
-                reality_server_names.set(settings.get("reality_server_names").and_then(|v| v.as_str()).or_else(|| settings.get("server_names").and_then(|v| v.as_str())).unwrap_or("").to_string());
-                reality_private_key.set(settings.get("reality_private_key").and_then(|v| v.as_str()).or_else(|| settings.get("private_key").and_then(|v| v.as_str())).unwrap_or("").to_string());
-                reality_public_key.set(settings.get("reality_public_key").and_then(|v| v.as_str()).or_else(|| settings.get("public_key").and_then(|v| v.as_str())).unwrap_or("").to_string());
-                reality_short_id.set(settings.get("reality_short_id").and_then(|v| v.as_str()).or_else(|| settings.get("short_id").and_then(|v| v.as_str())).unwrap_or("").to_string());
+                vless_uuid.set(
+                    settings
+                        .get("uuid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&gen_uuid())
+                        .to_string(),
+                );
+                vless_flow.set(
+                    settings
+                        .get("flow")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("xtls-rprx-vision")
+                        .to_string(),
+                );
+                reality_dest.set(
+                    settings
+                        .get("reality_dest")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("dest").and_then(|v| v.as_str()))
+                        .unwrap_or("www.cloudflare.com:443")
+                        .to_string(),
+                );
+                reality_server_names.set(
+                    settings
+                        .get("reality_server_names")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                reality_private_key.set(
+                    settings
+                        .get("reality_private_key")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("private_key").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                reality_public_key.set(
+                    settings
+                        .get("reality_public_key")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("public_key").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                reality_short_id.set(
+                    settings
+                        .get("reality_short_id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("short_id").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string(),
+                );
             }
             "vless_vision" => {
-                vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                vless_flow.set(settings.get("flow").and_then(|v| v.as_str()).unwrap_or("xtls-rprx-vision").to_string());
+                vless_uuid.set(
+                    settings
+                        .get("uuid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&gen_uuid())
+                        .to_string(),
+                );
+                vless_flow.set(
+                    settings
+                        .get("flow")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("xtls-rprx-vision")
+                        .to_string(),
+                );
             }
             "vless_xhttp" => {
-                vless_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                xhttp_path.set(settings.get("xhttp_path").and_then(|v| v.as_str()).or_else(|| settings.get("path").and_then(|v| v.as_str())).unwrap_or("/xhttp").to_string());
-                xhttp_host.set(settings.get("xhttp_host").and_then(|v| v.as_str()).or_else(|| settings.get("host").and_then(|v| v.as_str())).unwrap_or("").to_string());
-                xhttp_mode.set(settings.get("xhttp_mode").and_then(|v| v.as_str()).or_else(|| settings.get("mode").and_then(|v| v.as_str())).unwrap_or("auto").to_string());
+                vless_uuid.set(
+                    settings
+                        .get("uuid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&gen_uuid())
+                        .to_string(),
+                );
+                xhttp_path.set(
+                    settings
+                        .get("xhttp_path")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("path").and_then(|v| v.as_str()))
+                        .unwrap_or("/xhttp")
+                        .to_string(),
+                );
+                xhttp_host.set(
+                    settings
+                        .get("xhttp_host")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("host").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                xhttp_mode.set(
+                    settings
+                        .get("xhttp_mode")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| settings.get("mode").and_then(|v| v.as_str()))
+                        .unwrap_or("auto")
+                        .to_string(),
+                );
             }
             "vmess" => {
-                vmess_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                vmess_alter_id.set(settings.get("alterId").and_then(|v| v.as_i64()).or_else(|| settings.get("alter_id").and_then(|v| v.as_i64())).map(|v| v.to_string()).unwrap_or_else(|| "0".to_string()));
+                vmess_uuid.set(
+                    settings
+                        .get("uuid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&gen_uuid())
+                        .to_string(),
+                );
+                vmess_alter_id.set(
+                    settings
+                        .get("alterId")
+                        .and_then(|v| v.as_i64())
+                        .or_else(|| settings.get("alter_id").and_then(|v| v.as_i64()))
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "0".to_string()),
+                );
             }
             "trojan" => {
-                trojan_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                trojan_password.set(
+                    settings
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
             }
             "shadowsocks2022" => {
-                ss_method.set(settings.get("method").and_then(|v| v.as_str()).unwrap_or("2022-blake3-aes-128-gcm").to_string());
-                ss_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                ss_method.set(
+                    settings
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("2022-blake3-aes-128-gcm")
+                        .to_string(),
+                );
+                ss_password.set(
+                    settings
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
             }
             "hysteria2" => {
-                h2_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                h2_obfs_type.set(settings.get("obfs_type").and_then(|v| v.as_str()).unwrap_or("none").to_string());
-                h2_obfs_password.set(settings.get("obfs_password").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                h2_up_mbps.set(settings.get("up_mbps").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_else(|| "100".to_string()));
-                h2_down_mbps.set(settings.get("down_mbps").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_else(|| "100".to_string()));
+                h2_password.set(
+                    settings
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                h2_obfs_type.set(
+                    settings
+                        .get("obfs_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("none")
+                        .to_string(),
+                );
+                h2_obfs_password.set(
+                    settings
+                        .get("obfs_password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                h2_up_mbps.set(
+                    settings
+                        .get("up_mbps")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "100".to_string()),
+                );
+                h2_down_mbps.set(
+                    settings
+                        .get("down_mbps")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "100".to_string()),
+                );
             }
             "anytls" => {
-                anytls_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                anytls_masquerade.set(settings.get("masquerade").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                anytls_password.set(
+                    settings
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                anytls_masquerade.set(
+                    settings
+                        .get("masquerade")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
             }
             "tuic" | "tuic_v5" => {
-                tuic_uuid.set(settings.get("uuid").and_then(|v| v.as_str()).unwrap_or(&gen_uuid()).to_string());
-                tuic_password.set(settings.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                tuic_cc.set(settings.get("congestion_control").and_then(|v| v.as_str()).unwrap_or("cubic").to_string());
+                tuic_uuid.set(
+                    settings
+                        .get("uuid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&gen_uuid())
+                        .to_string(),
+                );
+                tuic_password.set(
+                    settings
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                tuic_cc.set(
+                    settings
+                        .get("congestion_control")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("cubic")
+                        .to_string(),
+                );
             }
             _ => {}
         }
@@ -289,7 +462,10 @@ pub fn Protocols() -> Element {
     };
 
     let validate = move || -> Result<(u64, Option<Value>), String> {
-        let port = new_listen_port.read().parse::<u64>().map_err(|_| "Port must be a number".to_string())?;
+        let port = new_listen_port
+            .read()
+            .parse::<u64>()
+            .map_err(|_| "Port must be a number".to_string())?;
         if port == 0 || port > 65535 {
             return Err("Port must be between 1 and 65535".to_string());
         }
@@ -433,15 +609,42 @@ pub fn Protocols() -> Element {
     };
 
     let protocol_type_options = vec![
-        ("vless_reality".to_string(), t!("protocols-protocol-vless-reality").to_string()),
-        ("vless_vision".to_string(), t!("protocols-protocol-vless-vision").to_string()),
-        ("vless_xhttp".to_string(), t!("protocols-protocol-vless-xhttp").to_string()),
-        ("vmess".to_string(), t!("protocols-protocol-vmess").to_string()),
-        ("trojan".to_string(), t!("protocols-protocol-trojan").to_string()),
-        ("shadowsocks2022".to_string(), t!("protocols-protocol-shadowsocks2022").to_string()),
-        ("hysteria2".to_string(), t!("protocols-protocol-hysteria2").to_string()),
-        ("anytls".to_string(), t!("protocols-protocol-anytls").to_string()),
-        ("tuic_v5".to_string(), t!("protocols-protocol-tuic-v5").to_string()),
+        (
+            "vless_reality".to_string(),
+            t!("protocols-protocol-vless-reality").to_string(),
+        ),
+        (
+            "vless_vision".to_string(),
+            t!("protocols-protocol-vless-vision").to_string(),
+        ),
+        (
+            "vless_xhttp".to_string(),
+            t!("protocols-protocol-vless-xhttp").to_string(),
+        ),
+        (
+            "vmess".to_string(),
+            t!("protocols-protocol-vmess").to_string(),
+        ),
+        (
+            "trojan".to_string(),
+            t!("protocols-protocol-trojan").to_string(),
+        ),
+        (
+            "shadowsocks2022".to_string(),
+            t!("protocols-protocol-shadowsocks2022").to_string(),
+        ),
+        (
+            "hysteria2".to_string(),
+            t!("protocols-protocol-hysteria2").to_string(),
+        ),
+        (
+            "anytls".to_string(),
+            t!("protocols-protocol-anytls").to_string(),
+        ),
+        (
+            "tuic_v5".to_string(),
+            t!("protocols-protocol-tuic-v5").to_string(),
+        ),
     ];
 
     let modal_title = if *is_edit.read() {

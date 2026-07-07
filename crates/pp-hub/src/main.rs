@@ -100,8 +100,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         )
         .route(
             "/api/v1/nodes/{id}",
-            get(nodes::get_node)
-                .route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
+            get(nodes::get_node).route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
         )
         .route(
             "/api/v1/nodes/{id}",
@@ -277,18 +276,21 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         )
         .route(
             "/api/v1/subscriptions",
-            post(subscription::create_subscription)
-                .route_layer(middleware::api_key::scope_layer(scopes::SUBSCRIPTIONS_WRITE)),
+            post(subscription::create_subscription).route_layer(middleware::api_key::scope_layer(
+                scopes::SUBSCRIPTIONS_WRITE,
+            )),
         )
         .route(
             "/api/v1/subscriptions/{id}",
-            put(subscription::update_subscription)
-                .route_layer(middleware::api_key::scope_layer(scopes::SUBSCRIPTIONS_WRITE)),
+            put(subscription::update_subscription).route_layer(middleware::api_key::scope_layer(
+                scopes::SUBSCRIPTIONS_WRITE,
+            )),
         )
         .route(
             "/api/v1/subscriptions/{id}",
-            delete(subscription::delete_subscription)
-                .route_layer(middleware::api_key::scope_layer(scopes::SUBSCRIPTIONS_WRITE)),
+            delete(subscription::delete_subscription).route_layer(
+                middleware::api_key::scope_layer(scopes::SUBSCRIPTIONS_WRITE),
+            ),
         )
         // API Keys
         .route(
@@ -373,8 +375,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         // Logs
         .route(
             "/api/v1/logs",
-            get(logs::query_logs)
-                .route_layer(middleware::api_key::scope_layer(scopes::LOGS_READ)),
+            get(logs::query_logs).route_layer(middleware::api_key::scope_layer(scopes::LOGS_READ)),
         )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -487,7 +488,10 @@ async fn main() -> anyhow::Result<()> {
     if grpc_tls.is_some() {
         tracing::info!("gRPC listening on https://{} (TLS enabled)", grpc_addr);
     } else {
-        tracing::warn!("gRPC listening on http://{} (TLS disabled - not recommended in production)", grpc_addr);
+        tracing::warn!(
+            "gRPC listening on http://{} (TLS disabled - not recommended in production)",
+            grpc_addr
+        );
     }
 
     if hub_config.auto_register_agents {
@@ -497,102 +501,106 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Build HTTP server (plain or TLS)
-    let http_server: Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> = if let (Some(cert_path), Some(key_path)) = (&hub_config.http_tls_cert, &hub_config.http_tls_key) {
-        tracing::info!("HTTP API listening on https://{} (TLS enabled)", http_addr);
-        let cert = tokio::fs::read(cert_path).await?;
-        let key = tokio::fs::read(key_path).await?;
+    let http_server: Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> =
+        if let (Some(cert_path), Some(key_path)) =
+            (&hub_config.http_tls_cert, &hub_config.http_tls_key)
+        {
+            tracing::info!("HTTP API listening on https://{} (TLS enabled)", http_addr);
+            let cert = tokio::fs::read(cert_path).await?;
+            let key = tokio::fs::read(key_path).await?;
 
-        let cert_chain = rustls_pemfile::certs(&mut cert.as_slice())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("failed to parse HTTP TLS cert: {}", e))?;
-        let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key.as_slice())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("failed to parse HTTP TLS key: {}", e))?;
+            let cert_chain = rustls_pemfile::certs(&mut cert.as_slice())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| anyhow::anyhow!("failed to parse HTTP TLS cert: {}", e))?;
+            let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key.as_slice())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| anyhow::anyhow!("failed to parse HTTP TLS key: {}", e))?;
 
-        if keys.is_empty() {
-            anyhow::bail!("no private keys found in HTTP TLS key file");
-        }
+            if keys.is_empty() {
+                anyhow::bail!("no private keys found in HTTP TLS key file");
+            }
 
-        let server_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(
-                cert_chain.into_iter().collect(),
-                rustls::pki_types::PrivateKeyDer::from(keys.remove(0)),
-            )
-            .map_err(|e| anyhow::anyhow!("failed to build HTTP TLS config: {}", e))?;
+            let server_config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(
+                    cert_chain.into_iter().collect(),
+                    rustls::pki_types::PrivateKeyDer::from(keys.remove(0)),
+                )
+                .map_err(|e| anyhow::anyhow!("failed to build HTTP TLS config: {}", e))?;
 
-        let acceptor = std::sync::Arc::new(server_config);
-        let listener = tokio::net::TcpListener::bind(http_addr).await?;
+            let acceptor = std::sync::Arc::new(server_config);
+            let listener = tokio::net::TcpListener::bind(http_addr).await?;
 
-        Box::pin(async move {
-            let shutdown = shutdown_signal();
-            futures_util::pin_mut!(shutdown);
-            loop {
-                tokio::select! {
-                    _ = &mut shutdown => {
-                        tracing::info!("HTTP server stopped by shutdown signal");
-                        return Ok(());
-                    }
-                    result = listener.accept() => {
-                        let (stream, _) = result?;
-                        let app = app.clone();
-                        let acceptor = acceptor.clone();
-                        tokio::spawn(async move {
-                            let tls_acceptor = tokio_rustls::TlsAcceptor::from(acceptor);
-                            let tls_stream = match tls_acceptor.accept(stream).await {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    tracing::warn!("TLS handshake error: {}", e);
-                                    return;
+            Box::pin(async move {
+                let shutdown = shutdown_signal();
+                futures_util::pin_mut!(shutdown);
+                loop {
+                    tokio::select! {
+                        _ = &mut shutdown => {
+                            tracing::info!("HTTP server stopped by shutdown signal");
+                            return Ok(());
+                        }
+                        result = listener.accept() => {
+                            let (stream, _) = result?;
+                            let app = app.clone();
+                            let acceptor = acceptor.clone();
+                            tokio::spawn(async move {
+                                let tls_acceptor = tokio_rustls::TlsAcceptor::from(acceptor);
+                                let tls_stream = match tls_acceptor.accept(stream).await {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        tracing::warn!("TLS handshake error: {}", e);
+                                        return;
+                                    }
+                                };
+                                let io = hyper_util::rt::TokioIo::new(tls_stream);
+                                let svc = hyper::service::service_fn(move |req| {
+                                    let mut app = app.clone();
+                                    async move { app.call(req).await }
+                                });
+                                if let Err(e) = hyper::server::conn::http1::Builder::new()
+                                    .serve_connection(io, svc)
+                                    .await
+                                {
+                                    tracing::warn!("HTTPS connection error: {}", e);
                                 }
-                            };
-                            let io = hyper_util::rt::TokioIo::new(tls_stream);
-                            let svc = hyper::service::service_fn(move |req| {
-                                let mut app = app.clone();
-                                async move { app.call(req).await }
                             });
-                            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                                .serve_connection(io, svc)
-                                .await
-                            {
-                                tracing::warn!("HTTPS connection error: {}", e);
-                            }
-                        });
+                        }
                     }
                 }
-            }
-        })
-    } else {
-        tracing::info!("HTTP API listening on http://{}", http_addr);
-        let http_listener = tokio::net::TcpListener::bind(http_addr).await?;
-        Box::pin(async move {
-            axum::serve(http_listener, app)
-                .with_graceful_shutdown(shutdown_signal())
-                .await?;
-            Ok(())
-        })
-    };
+            })
+        } else {
+            tracing::info!("HTTP API listening on http://{}", http_addr);
+            let http_listener = tokio::net::TcpListener::bind(http_addr).await?;
+            Box::pin(async move {
+                axum::serve(http_listener, app)
+                    .with_graceful_shutdown(shutdown_signal())
+                    .await?;
+                Ok(())
+            })
+        };
 
     // Build gRPC server
     let grpc_state = state.clone();
-    let grpc_server: Pin<Box<dyn Future<Output = Result<(), tonic::transport::Error>> + Send>> = if let Some(config) = grpc_tls {
-        Box::pin(
-            tonic::transport::Server::builder()
-                .tls_config(config)?
-                .add_service(pp_proto::hub_agent_server::HubAgentServer::new(
-                    HubAgentService::new(grpc_state),
-                ))
-                .serve(grpc_addr)
-        )
-    } else {
-        Box::pin(
-            tonic::transport::Server::builder()
-                .add_service(pp_proto::hub_agent_server::HubAgentServer::new(
-                    HubAgentService::new(grpc_state),
-                ))
-                .serve(grpc_addr)
-        )
-    };
+    let grpc_server: Pin<Box<dyn Future<Output = Result<(), tonic::transport::Error>> + Send>> =
+        if let Some(config) = grpc_tls {
+            Box::pin(
+                tonic::transport::Server::builder()
+                    .tls_config(config)?
+                    .add_service(pp_proto::hub_agent_server::HubAgentServer::new(
+                        HubAgentService::new(grpc_state),
+                    ))
+                    .serve(grpc_addr),
+            )
+        } else {
+            Box::pin(
+                tonic::transport::Server::builder()
+                    .add_service(pp_proto::hub_agent_server::HubAgentServer::new(
+                        HubAgentService::new(grpc_state),
+                    ))
+                    .serve(grpc_addr),
+            )
+        };
 
     tokio::select! {
         res = http_server => {
@@ -655,7 +663,9 @@ async fn grpc_tls_config(
             let cert = tokio::fs::read(cert).await?;
             let key = tokio::fs::read(key).await?;
             let identity = tonic::transport::Identity::from_pem(&cert, &key);
-            Ok(Some(tonic::transport::ServerTlsConfig::new().identity(identity)))
+            Ok(Some(
+                tonic::transport::ServerTlsConfig::new().identity(identity),
+            ))
         }
         (None, None) => Ok(None),
         _ => anyhow::bail!("both --grpc-tls-cert and --grpc-tls-key must be provided together"),
@@ -671,7 +681,7 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         let mut sigterm =
             signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
         sigterm.recv().await;
@@ -704,10 +714,7 @@ async fn ensure_bootstrap_api_key(db: &sea_orm::DatabaseConnection) -> anyhow::R
     }
 
     let raw_key = if let Ok(path) = std::env::var("PROXYPANEL_BOOTSTRAP_API_KEY_FILE") {
-        tokio::fs::read_to_string(path)
-            .await?
-            .trim()
-            .to_string()
+        tokio::fs::read_to_string(path).await?.trim().to_string()
     } else {
         std::env::var("PROXYPANEL_BOOTSTRAP_API_KEY")
             .unwrap_or_else(|_| pp_common::generate_secure_token())
@@ -746,4 +753,3 @@ async fn ensure_bootstrap_api_key(db: &sea_orm::DatabaseConnection) -> anyhow::R
 #[cfg(test)]
 #[path = "integration_tests.rs"]
 mod integration_tests;
-

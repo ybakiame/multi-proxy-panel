@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Path, Query, State},
-};
+use axum::extract::{Path, Query, State};
 use pp_db::entities::client_online_session;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
@@ -31,10 +29,7 @@ pub async fn list_onlines(
         query = query.filter(client_online_session::Column::ClientId.eq(client_id));
     }
 
-    let sessions = query
-        .all(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let sessions = query.all(&state.db).await.map_err(ApiError::from)?;
 
     let data: Vec<Value> = sessions
         .into_iter()
@@ -75,9 +70,7 @@ pub async fn get_client_ips(
 }
 
 /// Get total count of currently online users.
-pub async fn get_online_count(
-    State(state): State<Arc<AppState>>,
-) -> ApiResult<Value> {
+pub async fn get_online_count(State(state): State<Arc<AppState>>) -> ApiResult<Value> {
     let five_min_ago = chrono::Utc::now() - chrono::Duration::minutes(5);
 
     let sessions = client_online_session::Entity::find()

@@ -32,12 +32,18 @@ pub fn Dashboard() -> Element {
 
     let nodes = use_resource(move || async move { load_with_error(api::get_nodes().await, error) });
     let protocols =
-        use_resource(move || async move { load_with_error(api::get_protocols(1, 100).await, error) });
-    let clients = use_resource(move || async move { load_with_error(api::get_clients().await, error) });
-    let bindings = use_resource(move || async move { load_with_error(api::get_bindings().await, error) });
-    let metrics = use_resource(move || async move { load_with_error(api::get_metrics().await, error) });
+        use_resource(
+            move || async move { load_with_error(api::get_protocols(1, 100).await, error) },
+        );
+    let clients =
+        use_resource(move || async move { load_with_error(api::get_clients().await, error) });
+    let bindings =
+        use_resource(move || async move { load_with_error(api::get_bindings().await, error) });
+    let metrics =
+        use_resource(move || async move { load_with_error(api::get_metrics().await, error) });
     let logs = use_resource(move || async move { load_with_error(api::get_logs().await, error) });
-    let onlines = use_resource(move || async move { load_with_error(api::get_online_count().await, error) });
+    let onlines =
+        use_resource(move || async move { load_with_error(api::get_online_count().await, error) });
 
     let nodes_data = extract_array(&nodes.read(), "data");
     let protocols_data = extract_array(&protocols.read(), "data");

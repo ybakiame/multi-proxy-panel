@@ -104,26 +104,27 @@ pub async fn list_clients(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (clients, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = client::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = client::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = client::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (clients, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = client::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = client::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = client::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let mut data = Vec::with_capacity(clients.len());
     for c in clients {
@@ -156,7 +157,11 @@ pub async fn get_client(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(ApiResponse::new(client_to_json(c, group_ids, traffic_total)))
+    Ok(ApiResponse::new(client_to_json(
+        c,
+        group_ids,
+        traffic_total,
+    )))
 }
 
 #[derive(serde::Deserialize)]
@@ -179,11 +184,15 @@ pub async fn create_client(
     Json(payload): Json<CreateClientPayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "client name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "client name is required",
+        ));
     }
 
     // Determine status: on_hold if on_hold_expire_duration is set and no expiry_date
-    let is_on_hold = payload.on_hold_expire_duration_secs.is_some() && payload.expiry_date.is_none();
+    let is_on_hold =
+        payload.on_hold_expire_duration_secs.is_some() && payload.expiry_date.is_none();
     let status = if is_on_hold { "on_hold" } else { "active" };
 
     let active = client::ActiveModel {
@@ -254,7 +263,10 @@ pub async fn update_client(
 
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_name", "client name cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "client name cannot be empty",
+            ));
         }
         active.name = Set(name.trim().to_string());
     }

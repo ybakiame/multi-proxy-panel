@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::middleware::api_key::scopes;
 use crate::middleware::api_key::ApiKeyAuth;
+use crate::middleware::api_key::scopes;
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
@@ -38,26 +38,27 @@ pub async fn list_keys(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (keys, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = api_key::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = api_key::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = api_key::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (keys, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = api_key::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = api_key::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = api_key::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = keys.into_iter().map(key_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -79,7 +80,10 @@ pub async fn create_key(
     Json(payload): Json<CreateKeyPayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "API key name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "API key name is required",
+        ));
     }
 
     let raw_key = format!("ck_{}", Uuid::new_v4().simple());
@@ -102,10 +106,7 @@ pub async fn create_key(
         updated_at: Set(chrono::Utc::now().into()),
     };
 
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
     Ok(ApiResponse::new(json!({
         "id": inserted.id,
@@ -141,7 +142,10 @@ pub async fn update_key(
 
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_name", "API key name cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "API key name cannot be empty",
+            ));
         }
         active.name = Set(name);
     }
@@ -161,10 +165,7 @@ pub async fn update_key(
     }
     active.updated_at = Set(chrono::Utc::now().into());
 
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
     Ok(ApiResponse::new(key_to_json(updated)))
 }

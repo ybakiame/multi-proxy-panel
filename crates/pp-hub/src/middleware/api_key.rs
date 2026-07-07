@@ -75,7 +75,9 @@ pub struct ApiKeyAuth {
 
 impl ApiKeyAuth {
     pub fn has_scope(&self, required: &str) -> bool {
-        self.scopes.iter().any(|s| s == required || s == scopes::ALL)
+        self.scopes
+            .iter()
+            .any(|s| s == required || s == scopes::ALL)
     }
 }
 
@@ -123,10 +125,7 @@ pub async fn require_api_key(
 
     // Check IP allowlist
     if let Some(allowlist) = key_record.ip_allowlist {
-        let client_ip = extract_client_ip(
-            &req,
-            state.config.trusted_proxy_ips.as_ref(),
-        );
+        let client_ip = extract_client_ip(&req, state.config.trusted_proxy_ips.as_ref());
 
         if let Some(ips) = allowlist.as_array() {
             let allowed: Vec<String> = ips
@@ -230,7 +229,8 @@ fn ip_matches(client_ip: &str, pattern: &str) -> bool {
     }
 }
 
-type ScopeFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>;
+type ScopeFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>;
 
 /// Middleware function that checks if the authenticated API key has the required scope.
 pub async fn require_scope_middleware(
@@ -259,7 +259,8 @@ pub fn scope_layer(
 
     let scope_fn = move |auth: ApiKeyAuth, req: Request, next: Next| {
         let state = ScopeState(scope);
-        Box::pin(async move { require_scope_middleware(state.0, auth, req, next).await }) as ScopeFuture
+        Box::pin(async move { require_scope_middleware(state.0, auth, req, next).await })
+            as ScopeFuture
     };
 
     axum::middleware::from_fn(scope_fn)

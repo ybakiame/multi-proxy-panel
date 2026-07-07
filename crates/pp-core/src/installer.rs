@@ -45,11 +45,7 @@ fn env_version(core_type: CoreType) -> Option<String> {
     std::env::var(key).ok().filter(|s| !s.is_empty())
 }
 
-fn target_info() -> PanelResult<(&'static str,
-    &'static str,
-    &'static str,
-    bool,
-)> {
+fn target_info() -> PanelResult<(&'static str, &'static str, &'static str, bool)> {
     let arch = std::env::consts::ARCH;
     let os = std::env::consts::OS;
 
@@ -63,7 +59,7 @@ fn target_info() -> PanelResult<(&'static str,
             return Err(PanelError::Core(format!(
                 "unsupported platform for auto-install: {}-{}",
                 os, arch
-            )))
+            )));
         }
     };
 
@@ -106,7 +102,10 @@ async fn fetch_latest_version(owner: &str, repo: &str) -> PanelResult<String> {
         .build()
         .map_err(|e| PanelError::Core(format!("failed to build http client: {}", e)))?;
 
-    let url = format!("https://api.github.com/repos/{}/{}/releases/latest", owner, repo);
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/releases/latest",
+        owner, repo
+    );
     let resp = client
         .get(&url)
         .header("User-Agent", "proxy-panel-agent")
@@ -140,11 +139,7 @@ async fn resolve_version(core_type: CoreType) -> PanelResult<String> {
 
     let info = release_info(core_type);
     let version = fetch_latest_version(info.owner, info.repo).await?;
-    tracing::info!(
-        "resolved latest version for {:?}: {}",
-        core_type,
-        version
-    );
+    tracing::info!("resolved latest version for {:?}: {}", core_type, version);
     Ok(version)
 }
 
@@ -190,10 +185,7 @@ fn extract_tgz(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?;
-        let file_name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if file_name == target_name || file_name == format!("{}.{}", target_name, "exe") {
             let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
             entry.unpack(&dest)?;
@@ -210,10 +202,13 @@ fn extract_tgz(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
 fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResult<PathBuf> {
     let archive_display = archive.display().to_string();
     let file = std::fs::File::open(archive)?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| PanelError::Core(format!("invalid zip archive: {}", e)))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| PanelError::Core(format!("invalid zip archive: {}", e)))?;
 
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| PanelError::Core(format!("zip entry error: {}", e)))?;
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| PanelError::Core(format!("zip entry error: {}", e)))?;
         let path = entry.name();
         let file_name = std::path::Path::new(path)
             .file_name()
@@ -239,7 +234,10 @@ fn core_type_from_name(name: &str) -> PanelResult<CoreType> {
     match name {
         "xray" => Ok(CoreType::Xray),
         "sing-box" => Ok(CoreType::SingBox),
-        _ => Err(PanelError::Core(format!("unknown core binary name: {}", name))),
+        _ => Err(PanelError::Core(format!(
+            "unknown core binary name: {}",
+            name
+        ))),
     }
 }
 
@@ -258,9 +256,7 @@ fn set_executable(path: &Path) -> PanelResult<()> {
 /// GitHub releases if necessary.
 pub async fn ensure_core_binary(bin_dir: &Path, core_type: CoreType) -> PanelResult<PathBuf> {
     if core_type == CoreType::Both {
-        return Err(PanelError::Core(
-            "Cannot install 'Both' core type".into(),
-        ));
+        return Err(PanelError::Core("Cannot install 'Both' core type".into()));
     }
 
     let on_disk = bin_dir.join(binary_name_on_disk(core_type));
@@ -276,12 +272,7 @@ pub async fn ensure_core_binary(bin_dir: &Path, core_type: CoreType) -> PanelRes
         info.owner, info.repo, version, asset
     );
 
-    tracing::info!(
-        "downloading {:?} {} from {}",
-        core_type,
-        version,
-        url
-    );
+    tracing::info!("downloading {:?} {} from {}", core_type, version, url);
 
     tokio::fs::create_dir_all(bin_dir).await?;
     let tmp_archive = bin_dir.join(format!(".{}", asset));
@@ -306,11 +297,7 @@ pub async fn ensure_core_binary(bin_dir: &Path, core_type: CoreType) -> PanelRes
     let path = dest?;
     set_executable(&path)?;
 
-    tracing::info!(
-        "installed {:?} binary at {}",
-        core_type,
-        path.display()
-    );
+    tracing::info!("installed {:?} binary at {}", core_type, path.display());
     Ok(path)
 }
 

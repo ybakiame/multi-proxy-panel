@@ -40,24 +40,25 @@ pub async fn list_bindings(
         }
     }
 
-    let (bindings, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = query
-            .clone()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = query
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = query.all(&state.db).await.map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (bindings, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = query
+                .clone()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = query
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = query.all(&state.db).await.map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = bindings.into_iter().map(binding_to_json).collect();
     Ok(PaginatedResponse::new(data, total))

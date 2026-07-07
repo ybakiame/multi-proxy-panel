@@ -47,7 +47,10 @@ impl HubConfig {
             .add_source(config::Environment::with_prefix("PROXYPANEL").separator("_"))
             .set_default("listen", Self::default().listen)?
             .set_default("grpc_listen", Self::default().grpc_listen)?
-            .set_default("static_dir", Self::default().static_dir.to_string_lossy().to_string())?
+            .set_default(
+                "static_dir",
+                Self::default().static_dir.to_string_lossy().to_string(),
+            )?
             .set_default("auto_register_agents", false)?
             .set_default("jwt_secret", Self::default().jwt_secret)?;
 
@@ -66,7 +69,9 @@ impl HubConfig {
             cors_origins: parse_csv(built.get_string("cors_origins").ok().as_deref()),
             trusted_proxy_ips: parse_ips(built.get_string("trusted_proxy_ips").ok().as_deref()),
             auto_register_agents: built.get_bool("auto_register_agents").unwrap_or(false),
-            jwt_secret: built.get_string("jwt_secret").unwrap_or_else(|_| Self::default().jwt_secret),
+            jwt_secret: built
+                .get_string("jwt_secret")
+                .unwrap_or_else(|_| Self::default().jwt_secret),
             http_tls_cert: built.get_string("http_tls_cert").ok().map(PathBuf::from),
             http_tls_key: built.get_string("http_tls_key").ok().map(PathBuf::from),
         };
@@ -87,9 +92,7 @@ impl HubConfig {
         Ok(hub_config)
     }
 
-    pub fn cors_allowed_origins(
-        &self,
-    ) -> Option<Vec<axum::http::HeaderValue>> {
+    pub fn cors_allowed_origins(&self) -> Option<Vec<axum::http::HeaderValue>> {
         self.cors_origins.as_ref().map(|origins| {
             origins
                 .iter()

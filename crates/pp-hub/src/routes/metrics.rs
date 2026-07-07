@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Path, Query, State},
-};
+use axum::extract::{Path, Query, State};
 use pp_db::entities::host_metric;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{Value, json};

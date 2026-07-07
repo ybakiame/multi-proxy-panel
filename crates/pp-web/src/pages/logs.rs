@@ -19,7 +19,11 @@ pub fn Logs() -> Element {
         let per_page = *per_page.read();
         async move {
             let level_opt = if level.is_empty() { None } else { Some(level) };
-            let source_opt = if source.is_empty() { None } else { Some(source) };
+            let source_opt = if source.is_empty() {
+                None
+            } else {
+                Some(source)
+            };
             api::get_logs_filtered(level_opt, source_opt, page, per_page)
                 .await
                 .unwrap_or_default()

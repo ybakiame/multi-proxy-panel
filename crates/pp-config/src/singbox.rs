@@ -162,10 +162,11 @@ fn build_vless_inbound(
     }
 
     if protocol == ProtocolType::VlessReality {
-        let reality_tls = build_singbox_reality_tls(settings, tls)
-            .ok_or_else(|| PanelError::Validation(
-                "VLESS+REALITY requires reality_dest and reality_private_key".into()
-            ))?;
+        let reality_tls = build_singbox_reality_tls(settings, tls).ok_or_else(|| {
+            PanelError::Validation(
+                "VLESS+REALITY requires reality_dest and reality_private_key".into(),
+            )
+        })?;
         inbound["tls"] = reality_tls;
     } else if let Some(tls_cfg) = tls {
         inbound["tls"] = json!({
@@ -183,14 +184,8 @@ fn build_vless_inbound(
 fn build_singbox_transport(network: &str, settings: &Value) -> Value {
     match network {
         "ws" => {
-            let path = settings
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("/");
-            let host = settings
-                .get("host")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let path = settings.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+            let host = settings.get("host").and_then(|v| v.as_str()).unwrap_or("");
             json!({
                 "type": "ws",
                 "path": path,
@@ -579,7 +574,10 @@ mod tests {
         assert_eq!(inbound["listen_port"], 443);
         assert_eq!(inbound["tls"]["enabled"], true);
         assert_eq!(inbound["tls"]["reality"]["enabled"], true);
-        assert_eq!(inbound["tls"]["reality"]["handshake"]["server"], "example.com");
+        assert_eq!(
+            inbound["tls"]["reality"]["handshake"]["server"],
+            "example.com"
+        );
         assert_eq!(inbound["tls"]["reality"]["handshake"]["server_port"], 443);
         assert_eq!(
             inbound["tls"]["reality"]["private_key"],
@@ -602,7 +600,8 @@ mod tests {
             .build_inbound(ProtocolType::VlessReality, &settings, None)
             .unwrap_err();
         assert!(
-            err.to_string().contains("reality_dest and reality_private_key"),
+            err.to_string()
+                .contains("reality_dest and reality_private_key"),
             "unexpected error: {}",
             err
         );

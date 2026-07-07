@@ -161,53 +161,128 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         if manager.get_database_backend() == sea_orm::DbBackend::Sqlite {
             manager
-                .drop_index(Index::drop().name("idx_node_bindings_unique").table(NodeBindings::Table).to_owned())
+                .drop_index(
+                    Index::drop()
+                        .name("idx_node_bindings_unique")
+                        .table(NodeBindings::Table)
+                        .to_owned(),
+                )
                 .await?;
             manager
-                .drop_index(Index::drop().name("idx_subscriptions_token").table(Subscriptions::Table).to_owned())
+                .drop_index(
+                    Index::drop()
+                        .name("idx_subscriptions_token")
+                        .table(Subscriptions::Table)
+                        .to_owned(),
+                )
                 .await?;
             manager
-                .drop_index(Index::drop().name("idx_traffic_client").table(TrafficRecords::Table).to_owned())
+                .drop_index(
+                    Index::drop()
+                        .name("idx_traffic_client")
+                        .table(TrafficRecords::Table)
+                        .to_owned(),
+                )
                 .await?;
             manager
-                .drop_index(Index::drop().name("idx_traffic_node").table(TrafficRecords::Table).to_owned())
+                .drop_index(
+                    Index::drop()
+                        .name("idx_traffic_node")
+                        .table(TrafficRecords::Table)
+                        .to_owned(),
+                )
                 .await?;
             return Ok(());
         }
 
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_bindings_node").table(NodeBindings::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_bindings_node")
+                    .table(NodeBindings::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_bindings_protocol_config").table(NodeBindings::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_bindings_protocol_config")
+                    .table(NodeBindings::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_subscriptions_client").table(Subscriptions::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_subscriptions_client")
+                    .table(Subscriptions::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_subscriptions_template").table(Subscriptions::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_subscriptions_template")
+                    .table(Subscriptions::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_traffic_records_node").table(TrafficRecords::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_traffic_records_node")
+                    .table(TrafficRecords::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_traffic_records_client").table(TrafficRecords::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_traffic_records_client")
+                    .table(TrafficRecords::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_foreign_key(ForeignKey::drop().name("fk_host_metrics_node").table(HostMetrics::Table).to_owned())
+            .drop_foreign_key(
+                ForeignKey::drop()
+                    .name("fk_host_metrics_node")
+                    .table(HostMetrics::Table)
+                    .to_owned(),
+            )
             .await?;
 
         manager
-            .drop_index(Index::drop().name("idx_node_bindings_unique").table(NodeBindings::Table).to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_node_bindings_unique")
+                    .table(NodeBindings::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_index(Index::drop().name("idx_subscriptions_token").table(Subscriptions::Table).to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_subscriptions_token")
+                    .table(Subscriptions::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_index(Index::drop().name("idx_traffic_client").table(TrafficRecords::Table).to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_traffic_client")
+                    .table(TrafficRecords::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_index(Index::drop().name("idx_traffic_node").table(TrafficRecords::Table).to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_traffic_node")
+                    .table(TrafficRecords::Table)
+                    .to_owned(),
+            )
             .await?;
 
         for (table, chk) in [

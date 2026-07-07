@@ -22,6 +22,7 @@ pub mod traffic_record;
 pub mod user;
 pub mod webhook;
 
+pub use api_key::Entity as ApiKey;
 pub use client::Entity as Client;
 pub use client_group_binding::Entity as ClientGroupBinding;
 pub use client_online_session::Entity as ClientOnlineSession;
@@ -30,7 +31,6 @@ pub use inbound_host::Entity as InboundHost;
 pub use node::Entity as Node;
 pub use node_binding::Entity as NodeBinding;
 pub use node_group::Entity as NodeGroup;
-pub use api_key::Entity as ApiKey;
 pub use node_group_binding::Entity as NodeGroupBinding;
 pub use node_user_usage_record::Entity as NodeUserUsageRecord;
 pub use protocol_config::Entity as ProtocolConfig;

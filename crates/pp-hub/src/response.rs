@@ -78,21 +78,25 @@ impl ApiError {
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            message,
-        )
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", message)
     }
 
     #[allow(dead_code)]
     pub fn unauthorized() -> Self {
-        Self::new(StatusCode::UNAUTHORIZED, "unauthorized", "authentication required")
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "authentication required",
+        )
     }
 
     #[allow(dead_code)]
     pub fn forbidden() -> Self {
-        Self::new(StatusCode::FORBIDDEN, "forbidden", "insufficient permissions")
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "insufficient permissions",
+        )
     }
 }
 
@@ -135,7 +139,11 @@ impl From<anyhow::Error> for ApiError {
 
 impl From<StatusCode> for ApiError {
     fn from(status: StatusCode) -> Self {
-        Self::new(status, "http_error", status.canonical_reason().unwrap_or("error"))
+        Self::new(
+            status,
+            "http_error",
+            status.canonical_reason().unwrap_or("error"),
+        )
     }
 }
 

@@ -3,7 +3,9 @@ use axum::{
     response::Json,
 };
 use pp_db::entities::{node, node_group_binding};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -67,26 +69,27 @@ pub async fn list_nodes(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (nodes, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = node::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = node::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = node::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (nodes, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = node::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = node::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = node::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let mut data = Vec::with_capacity(nodes.len());
     for n in nodes {
@@ -130,7 +133,10 @@ pub async fn create_node(
     Json(payload): Json<CreateNodePayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "node name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "node name is required",
+        ));
     }
 
     let raw_token = pp_common::generate_secure_token();
@@ -153,10 +159,7 @@ pub async fn create_node(
         updated_at: Set(chrono::Utc::now().into()),
     };
 
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
     if let Some(group_ids) = payload.group_ids {
         sync_node_groups(&state.db, inserted.id, &group_ids)
@@ -200,7 +203,10 @@ pub async fn update_node(
 
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_name", "node name cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "node name cannot be empty",
+            ));
         }
         active.name = Set(name);
     }
@@ -221,10 +227,7 @@ pub async fn update_node(
     }
     active.updated_at = Set(chrono::Utc::now().into());
 
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
     if payload.group_ids.is_some() {
         let group_ids = payload.group_ids.unwrap_or_default();
@@ -290,7 +293,11 @@ pub async fn push_config(
         .await
         .map_err(|e| {
             tracing::warn!("node {} port conflict: {}", id, e);
-            ApiError::new(axum::http::StatusCode::CONFLICT, "port_conflict", e.to_string())
+            ApiError::new(
+                axum::http::StatusCode::CONFLICT,
+                "port_conflict",
+                e.to_string(),
+            )
         })?;
 
     let config_json = crate::service::protocol::generate_node_config(&state.db, id, core_type)
@@ -300,9 +307,8 @@ pub async fn push_config(
             ApiError::internal(format!("failed to generate config: {e}"))
         })?;
 
-    let config_str = serde_json::to_string(&config_json).map_err(|e| {
-        ApiError::internal(format!("failed to serialize config: {e}"))
-    })?;
+    let config_str = serde_json::to_string(&config_json)
+        .map_err(|e| ApiError::internal(format!("failed to serialize config: {e}")))?;
 
     let proto_core = match core_type {
         pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
@@ -323,7 +329,11 @@ pub async fn push_config(
 
     state.send_to_agent(id, message).await.map_err(|e| {
         tracing::warn!("failed to push config to agent {}: {}", id, e);
-        ApiError::new(axum::http::StatusCode::BAD_GATEWAY, "agent_unreachable", e.to_string())
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "agent_unreachable",
+            e.to_string(),
+        )
     })?;
 
     Ok(ApiResponse::new(json!({

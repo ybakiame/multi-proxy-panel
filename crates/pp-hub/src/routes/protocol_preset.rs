@@ -56,7 +56,8 @@ pub fn list_presets() -> Vec<PresetInfo> {
         PresetInfo {
             id: "vless_reality".to_string(),
             name: "VLESS + REALITY".to_string(),
-            description: "Recommended. VLESS with REALITY handshake and xtls-rprx-vision flow.".to_string(),
+            description: "Recommended. VLESS with REALITY handshake and xtls-rprx-vision flow."
+                .to_string(),
             protocol_type: ProtocolType::VlessReality.to_string(),
             core_type: CoreType::Xray.to_string(),
         },
@@ -162,7 +163,12 @@ pub fn expand_preset(
                 "network": "tcp",
             });
             let tls = default_tls_settings(sni);
-            (ProtocolType::VlessVision, CoreType::Xray, settings, Some(tls))
+            (
+                ProtocolType::VlessVision,
+                CoreType::Xray,
+                settings,
+                Some(tls),
+            )
         }
         ProtocolPreset::VlessWsTls => {
             let settings = json!({
@@ -173,7 +179,12 @@ pub fn expand_preset(
                 "host": sni,
             });
             let tls = default_tls_settings(sni);
-            (ProtocolType::VlessVision, CoreType::Both, settings, Some(tls))
+            (
+                ProtocolType::VlessVision,
+                CoreType::Both,
+                settings,
+                Some(tls),
+            )
         }
         ProtocolPreset::VlessGrpcTls => {
             let settings = json!({
@@ -184,7 +195,12 @@ pub fn expand_preset(
                 "host": sni,
             });
             let tls = default_tls_settings(sni);
-            (ProtocolType::VlessVision, CoreType::Both, settings, Some(tls))
+            (
+                ProtocolType::VlessVision,
+                CoreType::Both,
+                settings,
+                Some(tls),
+            )
         }
         ProtocolPreset::VlessXhttpTls => {
             let settings = json!({
@@ -196,7 +212,12 @@ pub fn expand_preset(
                 "xhttp_mode": "auto",
             });
             let tls = default_tls_settings(sni);
-            (ProtocolType::VlessXhttp, CoreType::Xray, settings, Some(tls))
+            (
+                ProtocolType::VlessXhttp,
+                CoreType::Xray,
+                settings,
+                Some(tls),
+            )
         }
         ProtocolPreset::VmessWsTls => {
             let settings = json!({
@@ -244,7 +265,12 @@ pub fn expand_preset(
                 "password": "",
                 "network": "tcp,udp",
             });
-            (ProtocolType::Shadowsocks2022, CoreType::Both, settings, None)
+            (
+                ProtocolType::Shadowsocks2022,
+                CoreType::Both,
+                settings,
+                None,
+            )
         }
     };
 
@@ -305,7 +331,10 @@ pub async fn apply_preset(
     Json(payload): Json<ApplyPresetPayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "preset name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "preset name is required",
+        ));
     }
 
     let preset = payload
@@ -323,7 +352,10 @@ pub async fn apply_preset(
     let protocol_type = expanded["protocol_type"].as_str().unwrap_or("").to_string();
     let core_type = expanded["core_type"].as_str().unwrap_or("").to_string();
     let listen_port = expanded["listen_port"].as_u64().unwrap_or(443) as i32;
-    let listen_address = expanded["listen_address"].as_str().unwrap_or("0.0.0.0").to_string();
+    let listen_address = expanded["listen_address"]
+        .as_str()
+        .unwrap_or("0.0.0.0")
+        .to_string();
     let settings = expanded["settings"].clone();
     let tls_settings = expanded["tls_settings"].clone();
 
@@ -380,7 +412,12 @@ mod tests {
 
     #[test]
     fn vless_reality_preset_has_reality_fields() {
-        let payload = expand_preset(ProtocolPreset::VlessReality, "test", Some("example.com"), None);
+        let payload = expand_preset(
+            ProtocolPreset::VlessReality,
+            "test",
+            Some("example.com"),
+            None,
+        );
         assert_eq!(payload["protocol_type"], "vless_reality");
         assert_eq!(payload["core_type"], "xray");
         assert_eq!(payload["listen_port"], 443);
@@ -389,7 +426,12 @@ mod tests {
 
     #[test]
     fn vmess_ws_tls_preset_has_ws_fields() {
-        let payload = expand_preset(ProtocolPreset::VmessWsTls, "test", Some("cdn.example.com"), None);
+        let payload = expand_preset(
+            ProtocolPreset::VmessWsTls,
+            "test",
+            Some("cdn.example.com"),
+            None,
+        );
         assert_eq!(payload["protocol_type"], "vmess");
         assert_eq!(payload["settings"]["network"], "ws");
         assert_eq!(payload["settings"]["host"], "cdn.example.com");

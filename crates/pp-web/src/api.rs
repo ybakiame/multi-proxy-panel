@@ -19,7 +19,10 @@ pub enum ApiError {
     #[default]
     Unknown,
     Network(String),
-    Api { status: u16, message: String },
+    Api {
+        status: u16,
+        message: String,
+    },
     Unauthorized,
 }
 
@@ -49,7 +52,9 @@ pub fn get_api_key() -> Option<String> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::env::var("PROXYPANEL_API_KEY").ok().filter(|s| !s.is_empty())
+        std::env::var("PROXYPANEL_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())
     }
 }
 
@@ -163,7 +168,9 @@ async fn get_json(path: &str) -> ApiResult<Value> {
         .await
         .map_err(|e| ApiError::Network(e.to_string()))?;
     if resp.status().is_success() {
-        resp.json().await.map_err(|e| ApiError::Network(e.to_string()))
+        resp.json()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))
     } else {
         Err(parse_error(resp).await)
     }
@@ -178,7 +185,9 @@ async fn post_json(path: &str, body: Value) -> ApiResult<Value> {
         .await
         .map_err(|e| ApiError::Network(e.to_string()))?;
     if resp.status().is_success() {
-        resp.json().await.map_err(|e| ApiError::Network(e.to_string()))
+        resp.json()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))
     } else {
         Err(parse_error(resp).await)
     }
@@ -193,7 +202,9 @@ async fn put_json(path: &str, body: Value) -> ApiResult<Value> {
         .await
         .map_err(|e| ApiError::Network(e.to_string()))?;
     if resp.status().is_success() {
-        resp.json().await.map_err(|e| ApiError::Network(e.to_string()))
+        resp.json()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))
     } else {
         Err(parse_error(resp).await)
     }
@@ -245,7 +256,11 @@ pub async fn get_nodes() -> ApiResult<Value> {
 }
 
 pub async fn get_nodes_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/nodes?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/nodes?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_node(
@@ -286,7 +301,11 @@ pub async fn push_config(id: &str, config: Value) -> ApiResult<Value> {
 // ===== Protocol Configs =====
 
 pub async fn get_protocols(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/protocols?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/protocols?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn get_all_protocols() -> ApiResult<Value> {
@@ -335,7 +354,11 @@ pub async fn get_bindings() -> ApiResult<Value> {
 }
 
 pub async fn get_bindings_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/bindings?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/bindings?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_binding(
@@ -371,7 +394,11 @@ pub async fn get_clients() -> ApiResult<Value> {
 }
 
 pub async fn get_clients_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/clients?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/clients?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 #[allow(dead_code)]
@@ -418,7 +445,11 @@ pub async fn get_templates() -> ApiResult<Value> {
 
 #[allow(dead_code)]
 pub async fn get_templates_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/templates?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/templates?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_template(
@@ -454,7 +485,11 @@ pub async fn delete_template(id: &str) -> ApiResult<()> {
 // ===== Subscriptions =====
 
 pub async fn get_subscriptions_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/subscriptions?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/subscriptions?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_subscription(client_id: &str, template_id: &str) -> ApiResult<Value> {
@@ -480,7 +515,11 @@ pub async fn get_groups() -> ApiResult<Value> {
 }
 
 pub async fn get_groups_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/groups?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/groups?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_group(
@@ -583,7 +622,11 @@ pub async fn get_logs_filtered(
 // ===== API Keys =====
 
 pub async fn get_api_keys_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/api-keys?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/api-keys?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_api_key(
@@ -614,7 +657,11 @@ pub async fn delete_api_key(id: &str) -> ApiResult<()> {
 // ===== Webhooks =====
 
 pub async fn get_webhooks_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/webhooks?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/webhooks?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_webhook(
@@ -653,7 +700,11 @@ pub async fn list_hosts() -> ApiResult<Value> {
 }
 
 pub async fn get_hosts_paginated(page: u64, per_page: u64) -> ApiResult<Value> {
-    get_json(&format!("/api/v1/hosts?page={}&per_page={}", page, per_page)).await
+    get_json(&format!(
+        "/api/v1/hosts?page={}&per_page={}",
+        page, per_page
+    ))
+    .await
 }
 
 pub async fn create_host(payload: Value) -> ApiResult<Value> {

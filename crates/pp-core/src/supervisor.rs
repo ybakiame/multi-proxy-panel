@@ -41,11 +41,7 @@ impl CoreSupervisor {
     }
 
     /// Initialize managers from available binaries.
-    pub async fn discover(
-        &self,
-        bin_dir: &Path,
-        config_dir: &Path,
-    ) -> PanelResult<Vec<CoreType>> {
+    pub async fn discover(&self, bin_dir: &Path, config_dir: &Path) -> PanelResult<Vec<CoreType>> {
         *self.bin_dir.write().await = Some(bin_dir.to_path_buf());
         *self.config_dir.write().await = Some(config_dir.to_path_buf());
 
@@ -110,22 +106,14 @@ impl CoreSupervisor {
         &self,
         core_type: CoreType,
     ) -> PanelResult<Arc<dyn CoreManager>> {
-        let bin_dir = self
-            .bin_dir
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| pp_common::PanelError::Core(
-                "supervisor has not been discovered with a bin_dir".into(),
-            ))?;
-        let config_dir = self
-            .config_dir
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| pp_common::PanelError::Core(
+        let bin_dir = self.bin_dir.read().await.clone().ok_or_else(|| {
+            pp_common::PanelError::Core("supervisor has not been discovered with a bin_dir".into())
+        })?;
+        let config_dir = self.config_dir.read().await.clone().ok_or_else(|| {
+            pp_common::PanelError::Core(
                 "supervisor has not been discovered with a config_dir".into(),
-            ))?;
+            )
+        })?;
         self.ensure_manager(core_type, &bin_dir, &config_dir).await
     }
 

@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
 
-use crate::{AppState, HubConfig, build_app, ensure_bootstrap_api_key};
 use crate::rate_limiter::RateLimiter;
+use crate::{AppState, HubConfig, build_app, ensure_bootstrap_api_key};
 
 async fn setup_db() -> sea_orm::DatabaseConnection {
     let db = sea_orm::Database::connect("sqlite::memory:")
@@ -28,7 +28,9 @@ fn test_state(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
 async fn bootstrap_app() -> (Router, Arc<AppState>, String) {
     let db = setup_db().await;
     let state = test_state(db);
-    ensure_bootstrap_api_key(&state.db).await.expect("bootstrap key");
+    ensure_bootstrap_api_key(&state.db)
+        .await
+        .expect("bootstrap key");
 
     // Retrieve the bootstrap key hash so we can authenticate. Since the raw key
     // is printed to stderr, we recreate it by hashing the generated token.
@@ -92,7 +94,12 @@ async fn health_endpoint_returns_healthy() {
     let (app, _state, _key) = bootstrap_app().await;
 
     let response = app
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .expect("response");
 
@@ -152,7 +159,12 @@ async fn nodes_crud_lifecycle() {
     // Get
     let get_response = app
         .clone()
-        .oneshot(api_request("GET", &format!("/api/v1/nodes/{}", node_id), &key, None))
+        .oneshot(api_request(
+            "GET",
+            &format!("/api/v1/nodes/{}", node_id),
+            &key,
+            None,
+        ))
         .await
         .expect("get");
     assert_eq!(get_response.status(), StatusCode::OK);
@@ -187,7 +199,12 @@ async fn nodes_crud_lifecycle() {
 
     // Get after delete
     let get_response = app
-        .oneshot(api_request("GET", &format!("/api/v1/nodes/{}", node_id), &key, None))
+        .oneshot(api_request(
+            "GET",
+            &format!("/api/v1/nodes/{}", node_id),
+            &key,
+            None,
+        ))
         .await
         .expect("get after delete");
     assert_eq!(get_response.status(), StatusCode::NOT_FOUND);

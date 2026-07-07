@@ -1,10 +1,7 @@
 use dioxus::prelude::*;
 
 #[component]
-pub fn DataTable(
-    headers: Vec<String>,
-    children: Element,
-) -> Element {
+pub fn DataTable(headers: Vec<String>, children: Element) -> Element {
     rsx! {
         div { class: "table-wrapper",
             table { class: "data-table",

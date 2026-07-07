@@ -32,8 +32,8 @@ async fn query_singbox_online_users_grpc() -> PanelResult<Vec<OnlineUser>> {
     use pp_proto::singbox_daemon::{
         SubscribeConnectionsRequest, started_service_client::StartedServiceClient,
     };
-    use tonic::transport::Channel;
     use tonic::metadata::MetadataValue;
+    use tonic::transport::Channel;
 
     let endpoint = std::env::var("PROXYPANEL_SINGBOX_API_LISTEN")
         .unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
@@ -69,7 +69,9 @@ async fn query_singbox_online_users_grpc() -> PanelResult<Vec<OnlineUser>> {
     let first = stream
         .message()
         .await
-        .map_err(|e| pp_common::PanelError::Core(format!("sing-box connection stream error: {}", e)))?
+        .map_err(|e| {
+            pp_common::PanelError::Core(format!("sing-box connection stream error: {}", e))
+        })?
         .ok_or_else(|| pp_common::PanelError::Core("sing-box connection stream closed".into()))?;
 
     let mut users = Vec::new();
@@ -78,7 +80,9 @@ async fn query_singbox_online_users_grpc() -> PanelResult<Vec<OnlineUser>> {
             // CONNECTION_EVENT_CLOSED
             continue;
         }
-        let Some(conn) = event.connection else { continue };
+        let Some(conn) = event.connection else {
+            continue;
+        };
         if conn.user.is_empty() {
             continue;
         }
@@ -101,11 +105,7 @@ async fn query_singbox_online_users_http() -> PanelResult<Vec<OnlineUser>> {
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
-    let resp = match client
-        .get("http://127.0.0.1:9090/connections")
-        .send()
-        .await
-    {
+    let resp = match client.get("http://127.0.0.1:9090/connections").send().await {
         Ok(r) => r,
         Err(e) => {
             tracing::debug!("sing-box connections API unreachable: {}", e);
@@ -114,10 +114,7 @@ async fn query_singbox_online_users_http() -> PanelResult<Vec<OnlineUser>> {
     };
 
     if !resp.status().is_success() {
-        tracing::debug!(
-            "sing-box connections API returned status {}",
-            resp.status()
-        );
+        tracing::debug!("sing-box connections API returned status {}", resp.status());
         return Ok(vec![]);
     }
 
@@ -173,9 +170,7 @@ async fn query_singbox_online_users_http() -> PanelResult<Vec<OnlineUser>> {
 /// Query online users from xray StatsService gRPC.
 /// Returns empty list if the API is unreachable.
 pub async fn query_xray_online_users() -> PanelResult<Vec<OnlineUser>> {
-    use pp_proto::xray_stats::{
-        QueryStatsRequest, stats_service_client::StatsServiceClient,
-    };
+    use pp_proto::xray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
     use tonic::transport::Channel;
 
     let channel = match Channel::from_shared("http://127.0.0.1:8080")

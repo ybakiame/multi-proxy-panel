@@ -54,10 +54,21 @@ pub fn Groups() -> Element {
     };
 
     let mut load_form = move |g: &Value| {
-        new_name.set(g.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        new_description.set(g.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        new_name.set(
+            g.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        new_description.set(
+            g.get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
         if let Some(labels) = g.get("labels").and_then(|v| v.as_object()) {
-            new_labels.set(serde_json::to_string_pretty(labels).unwrap_or_else(|_| "{}".to_string()));
+            new_labels
+                .set(serde_json::to_string_pretty(labels).unwrap_or_else(|_| "{}".to_string()));
         } else {
             new_labels.set("{}".to_string());
         }

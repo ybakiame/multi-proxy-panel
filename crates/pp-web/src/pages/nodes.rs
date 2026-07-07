@@ -3,7 +3,9 @@ use dioxus_i18n::t;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Alert, ConfirmDialog, FormInput, FormTextarea, Modal, Pagination, SearchInput, StatusBadge};
+use crate::components::{
+    Alert, ConfirmDialog, FormInput, FormTextarea, Modal, Pagination, SearchInput, StatusBadge,
+};
 
 fn parse_json_object(s: &str) -> Result<Value, String> {
     if s.trim().is_empty() {
@@ -86,9 +88,24 @@ pub fn Nodes() -> Element {
     };
 
     let mut load_edit_form = move |node: &Value| {
-        edit_name.set(node.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        edit_hostname.set(node.get("hostname").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        edit_address.set(node.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        edit_name.set(
+            node.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        edit_hostname.set(
+            node.get("hostname")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        edit_address.set(
+            node.get("address")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
         edit_usage_coefficient.set(
             node.get("usage_coefficient")
                 .and_then(|v| v.as_f64())
@@ -96,17 +113,26 @@ pub fn Nodes() -> Element {
                 .unwrap_or_else(|| "1.0".to_string()),
         );
         if let Some(labels) = node.get("labels").and_then(|v| v.as_object()) {
-            edit_labels.set(serde_json::to_string_pretty(labels).unwrap_or_else(|_| "{}".to_string()));
+            edit_labels
+                .set(serde_json::to_string_pretty(labels).unwrap_or_else(|_| "{}".to_string()));
         } else {
             edit_labels.set("{}".to_string());
         }
         let gids: Vec<String> = node
             .get("group_ids")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
         edit_selected_group_ids.set(gids);
-        let pid = node.get("parent_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let pid = node
+            .get("parent_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         edit_parent_id.set(pid);
         edit_clear_parent.set(false);
     };
@@ -127,12 +153,28 @@ pub fn Nodes() -> Element {
     let filtered_nodes: Vec<Value> = if query.is_empty() {
         nodes_data.clone()
     } else {
-        nodes_data.iter().filter(|n| {
-            let name = n.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-            let hostname = n.get("hostname").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-            let address = n.get("address").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-            name.contains(&query) || hostname.contains(&query) || address.contains(&query)
-        }).cloned().collect()
+        nodes_data
+            .iter()
+            .filter(|n| {
+                let name = n
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let hostname = n
+                    .get("hostname")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let address = n
+                    .get("address")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                name.contains(&query) || hostname.contains(&query) || address.contains(&query)
+            })
+            .cloned()
+            .collect()
     };
 
     rsx! {

@@ -3,7 +3,9 @@ use dioxus_i18n::t;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Alert, ConfirmDialog, FormDate, FormInput, FormSelect, Modal, Pagination, StatusBadge};
+use crate::components::{
+    Alert, ConfirmDialog, FormDate, FormInput, FormSelect, Modal, Pagination, StatusBadge,
+};
 
 fn format_bytes(bytes: i64) -> String {
     if bytes < 1024 {
@@ -87,20 +89,80 @@ pub fn Clients() -> Element {
     };
 
     let mut load_form = move |c: &Value| {
-        new_name.set(c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        new_email.set(c.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        new_user_id.set(c.get("user_id").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        new_limit.set(c.get("traffic_limit_bytes").and_then(|v| v.as_i64()).unwrap_or(0).to_string());
-        new_expiry.set(c.get("expiry_date").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        new_reset_day.set(c.get("reset_day").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default());
-        new_reset_strategy.set(c.get("data_limit_reset_strategy").and_then(|v| v.as_str()).unwrap_or("no_reset").to_string());
-        new_max_devices.set(c.get("max_devices").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default());
-        new_status.set(c.get("status").and_then(|v| v.as_str()).unwrap_or("active").to_string());
-        new_on_hold_duration.set(c.get("on_hold_expire_duration_secs").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default());
-        new_on_hold_timeout.set(c.get("on_hold_timeout").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        let gids: Vec<String> = c.get("group_ids")
+        new_name.set(
+            c.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        new_email.set(
+            c.get("email")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        new_user_id.set(
+            c.get("user_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        new_limit.set(
+            c.get("traffic_limit_bytes")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .to_string(),
+        );
+        new_expiry.set(
+            c.get("expiry_date")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        new_reset_day.set(
+            c.get("reset_day")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+        );
+        new_reset_strategy.set(
+            c.get("data_limit_reset_strategy")
+                .and_then(|v| v.as_str())
+                .unwrap_or("no_reset")
+                .to_string(),
+        );
+        new_max_devices.set(
+            c.get("max_devices")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+        );
+        new_status.set(
+            c.get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("active")
+                .to_string(),
+        );
+        new_on_hold_duration.set(
+            c.get("on_hold_expire_duration_secs")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+        );
+        new_on_hold_timeout.set(
+            c.get("on_hold_timeout")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        let gids: Vec<String> = c
+            .get("group_ids")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
         selected_group_ids.set(gids);
     };

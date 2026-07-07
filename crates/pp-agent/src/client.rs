@@ -380,7 +380,10 @@ fn collect_host_metrics() -> Option<HostMetrics> {
 fn collect_disk_usage() -> (u64, u64) {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     match disks.iter().next() {
-        Some(disk) => (disk.total_space() - disk.available_space(), disk.total_space()),
+        Some(disk) => (
+            disk.total_space() - disk.available_space(),
+            disk.total_space(),
+        ),
         None => (0, 0),
     }
 }

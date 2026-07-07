@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 
 use dioxus_icons::lucide::ChevronDown;
 use dioxus_primitives::{
+    ContentAlign,
     calendar::DateRange,
     date_picker::{
         self, DatePickerDaySegmentProps, DatePickerInputProps, DatePickerMonthSegmentProps,
@@ -11,7 +12,6 @@ use dioxus_primitives::{
     dioxus_attributes::attributes,
     merge_attributes,
     popover::{PopoverContentProps, PopoverTriggerProps},
-    ContentAlign,
 };
 use time::{Date, Month};
 
@@ -446,5 +446,4 @@ mod tests {
         assert!(html.contains("11"));
         assert!(html.contains("Show Calendar"));
     }
-
 }

@@ -28,26 +28,27 @@ pub async fn list_configs(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (configs, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = protocol_config::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = protocol_config::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = protocol_config::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (configs, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = protocol_config::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = protocol_config::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = protocol_config::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = configs.into_iter().map(config_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -66,7 +67,9 @@ pub async fn get_config(
     Ok(ApiResponse::new(config_to_json(cfg)))
 }
 
-fn validate_protocol(payload: &Value) -> Result<(pp_common::ProtocolType, pp_common::CoreType), ApiError> {
+fn validate_protocol(
+    payload: &Value,
+) -> Result<(pp_common::ProtocolType, pp_common::CoreType), ApiError> {
     let protocol_str = payload
         .get("protocol_type")
         .and_then(|v| v.as_str())
@@ -120,7 +123,9 @@ pub async fn create_config(
         protocol_type: Set(protocol_type.to_string()),
         core_type: Set(core_type.to_string()),
         listen_port: Set(payload.listen_port.unwrap_or(443) as i32),
-        listen_address: Set(payload.listen_address.unwrap_or_else(|| "0.0.0.0".to_string())),
+        listen_address: Set(payload
+            .listen_address
+            .unwrap_or_else(|| "0.0.0.0".to_string())),
         settings: Set(payload.settings.unwrap_or_else(|| json!({}))),
         tls_settings: Set(payload.tls_settings),
         created_at: Set(chrono::Utc::now().into()),
@@ -162,7 +167,10 @@ pub async fn update_config(
     if payload.protocol_type.is_some() || payload.core_type.is_some() {
         let existing_protocol = active.protocol_type.clone().unwrap();
         let existing_core = active.core_type.clone().unwrap();
-        let protocol_type = payload.protocol_type.as_deref().unwrap_or(&existing_protocol);
+        let protocol_type = payload
+            .protocol_type
+            .as_deref()
+            .unwrap_or(&existing_protocol);
         let core_type = payload.core_type.as_deref().unwrap_or(&existing_core);
         let _ = validate_protocol(&json!({
             "protocol_type": protocol_type,

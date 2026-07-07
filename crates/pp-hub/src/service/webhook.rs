@@ -3,11 +3,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 
 /// Trigger webhooks for a specific event.
-pub async fn trigger_event(
-    db: &DatabaseConnection,
-    event: &str,
-    payload: &Value,
-) {
+pub async fn trigger_event(db: &DatabaseConnection, event: &str, payload: &Value) {
     let hooks = match webhook::Entity::find()
         .filter(webhook::Column::IsActive.eq(true))
         .all(db)
@@ -45,7 +41,8 @@ pub async fn trigger_event(
             use hmac::{Hmac, Mac};
             use sha2::Sha256;
             type HmacSha256 = Hmac<Sha256>;
-            let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+            let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+                .expect("HMAC can take key of any size");
             mac.update(body.to_string().as_bytes());
             let result = mac.finalize();
             format!("sha256={}", hex::encode(result.into_bytes()))

@@ -3,21 +3,25 @@ use dioxus_i18n::t;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Alert, ConfirmDialog, FormDate, FormInput, FormSelect, FormTextarea, Modal, Pagination};
+use crate::components::{
+    Alert, ConfirmDialog, FormDate, FormInput, FormSelect, FormTextarea, Modal, Pagination,
+};
 
 fn parse_json_object(s: &str) -> Result<Option<Value>, String> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
-    serde_json::from_str(trimmed).map(Some).map_err(|e| format!("Invalid JSON: {}", e))
+    serde_json::from_str(trimmed)
+        .map(Some)
+        .map_err(|e| format!("Invalid JSON: {}", e))
 }
 
 fn mask_token(s: &str) -> String {
     if s.len() <= 8 {
         s.to_string()
     } else {
-        format!("{}••••{}", &s[..4], &s[s.len()-4..])
+        format!("{}••••{}", &s[..4], &s[s.len() - 4..])
     }
 }
 

@@ -4,11 +4,13 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use pp_db::entities::{
-    client, client_group_binding, inbound_host, node, node_binding, node_group,
-    node_group_binding, protocol_config, subscription, subscription_template,
+    client, client_group_binding, inbound_host, node, node_binding, node_group, node_group_binding,
+    protocol_config, subscription, subscription_template,
 };
 use pp_subscription::{ProxyNode, SubscriptionFormat, generate_subscription};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,26 +38,27 @@ pub async fn list_templates(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (templates, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = subscription_template::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = subscription_template::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = subscription_template::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (templates, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = subscription_template::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = subscription_template::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = subscription_template::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = templates.into_iter().map(template_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -75,7 +78,10 @@ pub async fn create_template(
     Json(payload): Json<CreateTemplatePayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "template name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "template name is required",
+        ));
     }
 
     let active = subscription_template::ActiveModel {
@@ -88,10 +94,7 @@ pub async fn create_template(
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
     };
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
     Ok(ApiResponse::new(template_to_json(inserted)))
 }
 
@@ -130,26 +133,27 @@ pub async fn list_subscriptions(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (subs, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = subscription::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = subscription::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = subscription::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (subs, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = subscription::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = subscription::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = subscription::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = subs.into_iter().map(subscription_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -179,10 +183,7 @@ pub async fn create_subscription(
         last_accessed_at: Set(None),
         created_at: Set(chrono::Utc::now().into()),
     };
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
     Ok(ApiResponse::new(json!({
         "id": inserted.id,
@@ -220,10 +221,7 @@ pub async fn update_subscription(
         active.expire_at = Set(expire_at);
     }
 
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
     Ok(ApiResponse::new(subscription_to_json(updated)))
 }
@@ -259,7 +257,11 @@ pub async fn serve_subscription(
         .ok_or_else(|| ApiError::not_found("subscription not found"))?;
 
     if !sub.is_active {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "subscription_inactive", "subscription is inactive"));
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "subscription_inactive",
+            "subscription is inactive",
+        ));
     }
 
     // Update last_accessed_at
@@ -372,18 +374,17 @@ async fn build_proxy_nodes(
         .unwrap_or_default();
 
     // Resolve group names to IDs for filtering
-    let allowed_node_group_ids: std::collections::HashSet<Uuid> = if !allowed_node_group_names.is_empty() {
-        let all_groups = node_group::Entity::find()
-            .all(db)
-            .await?;
-        all_groups
-            .into_iter()
-            .filter(|g| allowed_node_group_names.contains(&g.name))
-            .map(|g| g.id)
-            .collect()
-    } else {
-        std::collections::HashSet::new()
-    };
+    let allowed_node_group_ids: std::collections::HashSet<Uuid> =
+        if !allowed_node_group_names.is_empty() {
+            let all_groups = node_group::Entity::find().all(db).await?;
+            all_groups
+                .into_iter()
+                .filter(|g| allowed_node_group_names.contains(&g.name))
+                .map(|g| g.id)
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
 
     let bindings = node_binding::Entity::find()
         .filter(node_binding::Column::IsActive.eq(true))
@@ -481,7 +482,10 @@ async fn build_proxy_nodes(
                             new_tls.insert("serverName".to_string(), json!(sni));
                         }
                         if let Some(alpn) = &host.alpn {
-                            new_tls.insert("alpn".to_string(), json!(alpn.split(',').collect::<Vec<_>>()));
+                            new_tls.insert(
+                                "alpn".to_string(),
+                                json!(alpn.split(',').collect::<Vec<_>>()),
+                            );
                         }
                         if let Some(fp) = &host.fingerprint {
                             new_tls.insert("fingerprint".to_string(), json!(fp));
@@ -602,7 +606,10 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
                 });
                 if let Some(limit) = client.max_devices {
                     if limit > 0 {
-                        client_obj.as_object_mut().unwrap().insert("limitIp".to_string(), json!(limit));
+                        client_obj
+                            .as_object_mut()
+                            .unwrap()
+                            .insert("limitIp".to_string(), json!(limit));
                     }
                 }
                 // Also expose the current client's id at top level for link generators.
@@ -722,10 +729,7 @@ pub async fn serve_subscription_qr(
     active.last_accessed_at = Set(Some(chrono::Utc::now().into()));
     let _ = active.update(&state.db).await;
 
-    let format = params
-        .get("format")
-        .map(|s| s.as_str())
-        .unwrap_or("base64");
+    let format = params.get("format").map(|s| s.as_str()).unwrap_or("base64");
 
     let content = build_subscription_link(&state, &token, format).await?;
 
@@ -739,11 +743,7 @@ pub async fn serve_subscription_qr(
         .light_color(qrcode::render::svg::Color("#ffffff"))
         .build();
 
-    Ok((
-        [(header::CONTENT_TYPE, "image/svg+xml")],
-        svg,
-    )
-        .into_response())
+    Ok(([(header::CONTENT_TYPE, "image/svg+xml")], svg).into_response())
 }
 
 #[cfg(test)]

@@ -102,13 +102,19 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
             .and_then(|v| v.as_str())
             .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
         if public_key.is_empty() {
-            return Err(PanelError::Subscription("missing REALITY public_key".into()));
+            return Err(PanelError::Subscription(
+                "missing REALITY public_key".into(),
+            ));
         }
         let server_name = node
             .settings
             .get("server_names")
             .and_then(|v| v.as_str())
-            .or_else(|| node.settings.get("reality_server_names").and_then(|v| v.as_str()))
+            .or_else(|| {
+                node.settings
+                    .get("reality_server_names")
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .split(',')
             .next()
@@ -119,7 +125,11 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
             .settings
             .get("short_id")
             .and_then(|v| v.as_str())
-            .or_else(|| node.settings.get("reality_short_id").and_then(|v| v.as_str()))
+            .or_else(|| {
+                node.settings
+                    .get("reality_short_id")
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .split(',')
             .map(|s| s.trim().to_string())
@@ -268,10 +278,7 @@ mod tests {
             outbound["tls"]["reality"]["public_key"],
             "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
         );
-        assert_eq!(
-            outbound["tls"]["utls"]["fingerprint"],
-            "chrome"
-        );
+        assert_eq!(outbound["tls"]["utls"]["fingerprint"], "chrome");
     }
 
     #[test]

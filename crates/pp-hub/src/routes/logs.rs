@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Query, State},
-};
+use axum::extract::{Query, State};
 use pp_db::entities::system_log;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{Value, json};
@@ -26,30 +24,35 @@ pub async fn query_logs(
         query = query.filter(system_log::Column::Source.contains(s));
     }
 
-    let (records, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = query.clone().count(&state.db).await.map_err(ApiError::from)? as u64;
-        let items = query
-            .order_by_desc(system_log::Column::CreatedAt)
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let limit = params
-            .get("limit")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(100);
-        let items = query
-            .order_by_desc(system_log::Column::CreatedAt)
-            .limit(limit)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (records, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = query
+                .clone()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = query
+                .order_by_desc(system_log::Column::CreatedAt)
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let limit = params
+                .get("limit")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(100);
+            let items = query
+                .order_by_desc(system_log::Column::CreatedAt)
+                .limit(limit)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = records
         .into_iter()

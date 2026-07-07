@@ -139,10 +139,11 @@ fn build_vless_inbound(
     match protocol {
         ProtocolType::VlessReality => {
             inbound["streamSettings"]["security"] = "reality".into();
-            let reality_cfg = build_xray_reality_settings(settings)
-                .ok_or_else(|| PanelError::Validation(
-                    "VLESS+REALITY requires reality_dest and reality_private_key".into()
-                ))?;
+            let reality_cfg = build_xray_reality_settings(settings).ok_or_else(|| {
+                PanelError::Validation(
+                    "VLESS+REALITY requires reality_dest and reality_private_key".into(),
+                )
+            })?;
             inbound["streamSettings"]["realitySettings"] = reality_cfg;
             // REALITY uses its own handshake; do not merge traditional TLS settings.
         }
@@ -205,8 +206,14 @@ fn apply_xray_transport_settings(
             }
         }
         "kcp" | "mkcp" => {
-            let mtu = settings.get("kcp_mtu").and_then(|v| v.as_u64()).unwrap_or(1350);
-            let tti = settings.get("kcp_tti").and_then(|v| v.as_u64()).unwrap_or(50);
+            let mtu = settings
+                .get("kcp_mtu")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1350);
+            let tti = settings
+                .get("kcp_tti")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(50);
             let uplink_capacity = settings
                 .get("kcp_uplink_capacity")
                 .and_then(|v| v.as_u64())
@@ -464,7 +471,8 @@ mod tests {
             .build_inbound(ProtocolType::VlessReality, &settings, None)
             .unwrap_err();
         assert!(
-            err.to_string().contains("reality_dest and reality_private_key"),
+            err.to_string()
+                .contains("reality_dest and reality_private_key"),
             "unexpected error: {}",
             err
         );

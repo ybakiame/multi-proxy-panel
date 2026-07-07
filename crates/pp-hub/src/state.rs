@@ -40,10 +40,7 @@ impl AppState {
     }
 
     /// Register a new agent connection.
-    pub async fn register_agent(&self,
-        agent_id: Uuid,
-        sender: mpsc::Sender<pp_proto::HubMessage>,
-    ) {
+    pub async fn register_agent(&self, agent_id: Uuid, sender: mpsc::Sender<pp_proto::HubMessage>) {
         let mut agents = self.agents.write().await;
         agents.insert(agent_id, AgentConnection { agent_id, sender });
         tracing::info!(

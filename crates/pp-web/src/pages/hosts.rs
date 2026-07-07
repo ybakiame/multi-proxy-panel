@@ -60,14 +60,54 @@ pub fn Hosts() -> Element {
     };
 
     let mut load_form = move |h: &Value| {
-        host_protocol_config_id.set(h.get("protocol_config_id").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_node_id.set(h.get("node_id").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_remark.set(h.get("remark").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_address.set(h.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_port.set(h.get("port").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_else(|| "443".to_string()));
-        host_sni.set(h.get("sni").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_host.set(h.get("host").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        host_path.set(h.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        host_protocol_config_id.set(
+            h.get("protocol_config_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_node_id.set(
+            h.get("node_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_remark.set(
+            h.get("remark")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_address.set(
+            h.get("address")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_port.set(
+            h.get("port")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "443".to_string()),
+        );
+        host_sni.set(
+            h.get("sni")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_host.set(
+            h.get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        host_path.set(
+            h.get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
         host_is_active.set(h.get("is_active").and_then(|v| v.as_bool()).unwrap_or(true));
     };
 

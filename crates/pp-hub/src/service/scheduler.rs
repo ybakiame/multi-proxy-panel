@@ -62,7 +62,10 @@ async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> 
         .exec(db)
         .await?;
     if deleted_logs.rows_affected > 0 {
-        tracing::info!("cleaned up {} old system log records", deleted_logs.rows_affected);
+        tracing::info!(
+            "cleaned up {} old system log records",
+            deleted_logs.rows_affected
+        );
     }
 
     // Delete online sessions older than 10 minutes (stale sessions)
@@ -72,7 +75,10 @@ async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> 
         .exec(db)
         .await?;
     if deleted_sessions.rows_affected > 0 {
-        tracing::info!("cleaned up {} stale online sessions", deleted_sessions.rows_affected);
+        tracing::info!(
+            "cleaned up {} stale online sessions",
+            deleted_sessions.rows_affected
+        );
     }
 
     Ok(())
@@ -80,9 +86,7 @@ async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> 
 
 /// Check all active clients for traffic reset conditions based on `data_limit_reset_strategy`.
 /// Returns the set of client IDs whose traffic was reset.
-async fn check_client_traffic_resets(
-    db: &DatabaseConnection,
-) -> Result<HashSet<Uuid>, PanelError> {
+async fn check_client_traffic_resets(db: &DatabaseConnection) -> Result<HashSet<Uuid>, PanelError> {
     let clients = client::Entity::find()
         .filter(
             Condition::any()
@@ -102,31 +106,28 @@ async fn check_client_traffic_resets(
         }
 
         let should_reset = match strategy {
-            "daily" => {
-                c.last_traffic_reset_time
-                    .map(|t| t.date_naive() != now.date_naive())
-                    .unwrap_or(true)
-            }
+            "daily" => c
+                .last_traffic_reset_time
+                .map(|t| t.date_naive() != now.date_naive())
+                .unwrap_or(true),
             "weekly" => {
                 let current_week = now.date_naive().format("%G-%V").to_string();
                 c.last_traffic_reset_time
                     .map(|t| t.date_naive().format("%G-%V").to_string() != current_week)
                     .unwrap_or(true)
             }
-            "monthly" => {
-                c.last_traffic_reset_time
-                    .map(|t| {
-                        let last_date = t.date_naive();
-                        last_date.year() != now.date_naive().year()
-                            || last_date.month() != now.date_naive().month()
-                    })
-                    .unwrap_or(true)
-            }
-            "yearly" => {
-                c.last_traffic_reset_time
-                    .map(|t| t.date_naive().year() != now.date_naive().year())
-                    .unwrap_or(true)
-            }
+            "monthly" => c
+                .last_traffic_reset_time
+                .map(|t| {
+                    let last_date = t.date_naive();
+                    last_date.year() != now.date_naive().year()
+                        || last_date.month() != now.date_naive().month()
+                })
+                .unwrap_or(true),
+            "yearly" => c
+                .last_traffic_reset_time
+                .map(|t| t.date_naive().year() != now.date_naive().year())
+                .unwrap_or(true),
             _ => false,
         };
 
@@ -331,7 +332,11 @@ async fn push_updated_configs_for_clients(
 
 /// Generate and push config for a specific core type, but only if the node
 /// has active bindings for that core type (avoids pushing empty configs).
-async fn push_config_for_core(state: &Arc<AppState>, node_id: Uuid, core_type: pp_common::CoreType) {
+async fn push_config_for_core(
+    state: &Arc<AppState>,
+    node_id: Uuid,
+    core_type: pp_common::CoreType,
+) {
     // First check if there are any bindings that target this core type on this node
     let has_bindings = match check_bindings_for_core(&state.db, node_id, core_type).await {
         Ok(true) => true,
@@ -379,11 +384,21 @@ async fn push_config_for_core(state: &Arc<AppState>, node_id: Uuid, core_type: p
             };
 
             if let Err(e) = state.send_to_agent(node_id, message).await {
-                tracing::warn!("failed to push {:?} config to node {}: {}", core_type, node_id, e);
+                tracing::warn!(
+                    "failed to push {:?} config to node {}: {}",
+                    core_type,
+                    node_id,
+                    e
+                );
             }
         }
         Err(e) => {
-            tracing::warn!("failed to generate {:?} config for node {}: {}", core_type, node_id, e);
+            tracing::warn!(
+                "failed to generate {:?} config for node {}: {}",
+                core_type,
+                node_id,
+                e
+            );
         }
     }
 }
@@ -422,11 +437,7 @@ async fn check_bindings_for_core(
 }
 
 /// Write an event to system_logs.
-async fn log_event(
-    db: &DatabaseConnection,
-    source: &str,
-    message: &str,
-) -> Result<(), PanelError> {
+async fn log_event(db: &DatabaseConnection, source: &str, message: &str) -> Result<(), PanelError> {
     use pp_db::entities::system_log;
     let active = system_log::ActiveModel {
         id: Set(Uuid::new_v4()),

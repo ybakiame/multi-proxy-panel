@@ -28,7 +28,10 @@ pub async fn login(
     Json(payload): Json<LoginPayload>,
 ) -> ApiResult<Value> {
     if payload.username.trim().is_empty() || payload.password.is_empty() {
-        return Err(ApiError::bad_request("invalid_input", "username and password are required"));
+        return Err(ApiError::bad_request(
+            "invalid_input",
+            "username and password are required",
+        ));
     }
 
     let user_record = user::Entity::find()
@@ -44,8 +47,8 @@ pub async fn login(
             )
         })?;
 
-    let valid = pp_common::verify_secret(&payload.password, &user_record.password_hash)
-        .unwrap_or(false);
+    let valid =
+        pp_common::verify_secret(&payload.password, &user_record.password_hash).unwrap_or(false);
     if !valid {
         return Err(ApiError::new(
             axum::http::StatusCode::UNAUTHORIZED,
@@ -75,9 +78,7 @@ pub async fn login(
 }
 
 /// GET /api/v1/me — Get current authenticated user info.
-pub async fn me(
-    auth: crate::middleware::auth::AuthUser,
-) -> ApiResult<Value> {
+pub async fn me(auth: crate::middleware::auth::AuthUser) -> ApiResult<Value> {
     Ok(ApiResponse::new(json!({
         "user_id": auth.user_id,
         "username": auth.username,
@@ -107,11 +108,17 @@ pub async fn create_user(
     }
 
     if payload.username.trim().is_empty() || payload.password.is_empty() {
-        return Err(ApiError::bad_request("invalid_input", "username and password are required"));
+        return Err(ApiError::bad_request(
+            "invalid_input",
+            "username and password are required",
+        ));
     }
 
     if payload.password.len() < 8 {
-        return Err(ApiError::bad_request("weak_password", "password must be at least 8 characters"));
+        return Err(ApiError::bad_request(
+            "weak_password",
+            "password must be at least 8 characters",
+        ));
     }
 
     let password_hash = pp_common::hash_secret(&payload.password)

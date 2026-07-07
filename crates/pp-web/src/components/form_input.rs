@@ -57,7 +57,12 @@ pub fn FormTextarea(
 }
 
 #[component]
-pub fn FormSelect(label: String, value: Signal<String>, options: Vec<(String, String)>, error: Option<String>) -> Element {
+pub fn FormSelect(
+    label: String,
+    value: Signal<String>,
+    options: Vec<(String, String)>,
+    error: Option<String>,
+) -> Element {
     let has_error = error.is_some();
     rsx! {
         div { class: "form-group",

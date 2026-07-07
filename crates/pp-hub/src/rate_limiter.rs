@@ -40,10 +40,12 @@ impl RateLimiter {
             buckets.retain(|_, bucket| now.duration_since(bucket.last_update) < BUCKET_MAX_AGE);
         }
 
-        let bucket = buckets.entry(key.to_string()).or_insert_with(|| BucketState {
-            tokens: limit,
-            last_update: now,
-        });
+        let bucket = buckets
+            .entry(key.to_string())
+            .or_insert_with(|| BucketState {
+                tokens: limit,
+                last_update: now,
+            });
 
         let elapsed = now.duration_since(bucket.last_update);
         let replenish = (elapsed.as_secs_f64() / window.as_secs_f64() * limit as f64) as u64;

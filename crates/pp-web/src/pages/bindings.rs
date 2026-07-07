@@ -3,14 +3,18 @@ use dioxus_i18n::t;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Alert, ConfirmDialog, FormSelect, FormTextarea, Modal, Pagination, StatusBadge};
+use crate::components::{
+    Alert, ConfirmDialog, FormSelect, FormTextarea, Modal, Pagination, StatusBadge,
+};
 
 fn parse_json_object(s: &str) -> Result<Option<Value>, String> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
-    serde_json::from_str(trimmed).map(Some).map_err(|e| format!("Invalid JSON: {}", e))
+    serde_json::from_str(trimmed)
+        .map(Some)
+        .map_err(|e| format!("Invalid JSON: {}", e))
 }
 
 #[component]

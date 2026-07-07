@@ -82,8 +82,8 @@ async fn main() -> anyhow::Result<()> {
             let key_hash = pp_common::hash_secret(&raw_key)
                 .map_err(|e| anyhow::anyhow!("failed to hash API key: {}", e))?;
 
-            use sea_orm::Set;
             use pp_db::entities::api_key;
+            use sea_orm::Set;
             let active = api_key::ActiveModel {
                 id: Set(uuid::Uuid::new_v4()),
                 name: Set(name),
@@ -110,8 +110,8 @@ async fn main() -> anyhow::Result<()> {
             let token_hash = pp_common::hash_secret(&raw_token)
                 .map_err(|e| anyhow::anyhow!("failed to hash agent token: {}", e))?;
 
-            use sea_orm::Set;
             use pp_db::entities::node;
+            use sea_orm::Set;
             let active = node::ActiveModel {
                 id: Set(uuid::Uuid::new_v4()),
                 name: Set(name),

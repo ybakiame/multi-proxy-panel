@@ -38,9 +38,9 @@ const ARGON2_P_COST: u32 = 4;
 /// Hash a secret token (API key or agent token) using Argon2id.
 /// The returned string includes the encoded salt and parameters.
 pub fn hash_secret(secret: &str) -> Result<String, argon2::password_hash::Error> {
-    use argon2::{Argon2, PasswordHasher};
     use argon2::password_hash::SaltString;
     use argon2::password_hash::rand_core::OsRng;
+    use argon2::{Argon2, PasswordHasher};
 
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::new(
@@ -52,10 +52,7 @@ pub fn hash_secret(secret: &str) -> Result<String, argon2::password_hash::Error>
 }
 
 /// Verify a secret against an Argon2id hash.
-pub fn verify_secret(
-    secret: &str,
-    hash: &str,
-) -> Result<bool, argon2::password_hash::Error> {
+pub fn verify_secret(secret: &str, hash: &str) -> Result<bool, argon2::password_hash::Error> {
     use argon2::{Argon2, PasswordHash, PasswordVerifier};
 
     let parsed = PasswordHash::new(hash)?;

@@ -4,7 +4,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{DecodingKey, Validation, decode, encode, errors::ErrorKind, Header};
+use jsonwebtoken::{DecodingKey, Header, Validation, decode, encode, errors::ErrorKind};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -69,8 +69,8 @@ pub async fn require_auth(
     match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(token_data) => {
             let claims = token_data.claims;
-            let user_id = uuid::Uuid::parse_str(&claims.sub)
-                .map_err(|_| StatusCode::UNAUTHORIZED)?;
+            let user_id =
+                uuid::Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
             let auth_user = AuthUser {
                 user_id,

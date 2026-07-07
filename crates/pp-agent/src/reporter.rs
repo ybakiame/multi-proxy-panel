@@ -68,10 +68,8 @@ async fn collect_traffic_report() -> TrafficReport {
 }
 
 /// Collect traffic stats from sing-box HTTP API.
-async fn collect_singbox_traffic() -> pp_common::PanelResult<(
-    Vec<InboundTraffic>,
-    Vec<UserTraffic>,
-)> {
+async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)>
+{
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -144,13 +142,8 @@ async fn collect_singbox_traffic() -> pp_common::PanelResult<(
 }
 
 /// Collect traffic stats from xray StatsService gRPC.
-async fn collect_xray_traffic() -> pp_common::PanelResult<(
-    Vec<InboundTraffic>,
-    Vec<UserTraffic>,
-)> {
-    use pp_proto::xray_stats::{
-        QueryStatsRequest, stats_service_client::StatsServiceClient,
-    };
+async fn collect_xray_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)> {
+    use pp_proto::xray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
     use tonic::transport::Channel;
 
     let channel = match Channel::from_shared("http://127.0.0.1:8080")

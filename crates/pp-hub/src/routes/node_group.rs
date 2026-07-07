@@ -26,26 +26,27 @@ pub async fn list_groups(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (groups, total) = if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-        let total = node_group::Entity::find()
-            .count(&state.db)
-            .await
-            .map_err(ApiError::from)? as u64;
-        let items = node_group::Entity::find()
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        (items, total)
-    } else {
-        let items = node_group::Entity::find()
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-        let total = items.len() as u64;
-        (items, total)
-    };
+    let (groups, total) =
+        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
+            let total = node_group::Entity::find()
+                .count(&state.db)
+                .await
+                .map_err(ApiError::from)? as u64;
+            let items = node_group::Entity::find()
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            (items, total)
+        } else {
+            let items = node_group::Entity::find()
+                .all(&state.db)
+                .await
+                .map_err(ApiError::from)?;
+            let total = items.len() as u64;
+            (items, total)
+        };
 
     let data: Vec<Value> = groups.into_iter().map(group_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
@@ -76,7 +77,10 @@ pub async fn create_group(
     Json(payload): Json<CreateGroupPayload>,
 ) -> ApiResult<Value> {
     if payload.name.trim().is_empty() {
-        return Err(ApiError::bad_request("invalid_name", "group name is required"));
+        return Err(ApiError::bad_request(
+            "invalid_name",
+            "group name is required",
+        ));
     }
 
     let active = node_group::ActiveModel {
@@ -88,10 +92,7 @@ pub async fn create_group(
         updated_at: Set(chrono::Utc::now().into()),
     };
 
-    let inserted = active
-        .insert(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
     Ok(ApiResponse::new(group_to_json(inserted)))
 }
@@ -118,7 +119,10 @@ pub async fn update_group(
 
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
-            return Err(ApiError::bad_request("invalid_name", "group name cannot be empty"));
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "group name cannot be empty",
+            ));
         }
         active.name = Set(name);
     }
@@ -128,10 +132,7 @@ pub async fn update_group(
     }
     active.updated_at = Set(chrono::Utc::now().into());
 
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_err(ApiError::from)?;
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
     Ok(ApiResponse::new(group_to_json(updated)))
 }
 
