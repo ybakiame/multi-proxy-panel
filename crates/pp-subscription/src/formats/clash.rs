@@ -329,3 +329,56 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
 
     Ok(proxy)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generator::ProxyNode;
+    use serde_json::json;
+
+    fn reality_node() -> ProxyNode {
+        ProxyNode {
+            name: "test-reality".into(),
+            protocol: ProtocolType::VlessReality,
+            server: "1.2.3.4".into(),
+            port: 443,
+            settings: json!({
+                "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4",
+                "flow": "xtls-rprx-vision",
+                "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                "server_names": "example.com,www.example.com",
+                "short_id": "0123456789abcdef",
+                "fingerprint": "chrome"
+            }),
+            tls: None,
+        }
+    }
+
+    #[test]
+    fn clash_default_output_is_yaml() {
+        let out = generate(&[reality_node()], None).unwrap();
+        assert!(out.starts_with("proxies:"));
+        assert!(out.contains("type: vless"));
+        assert!(out.contains("reality-opts:"));
+    }
+
+    #[test]
+    fn clash_template_replaces_placeholders() {
+        let base = json!({
+            "port": 7890,
+            "proxies": "<PROXY_REPLACE>",
+            "proxy-groups": [
+                {
+                    "name": "Proxy",
+                    "type": "select",
+                    "proxies": "<NODE_REPLACE>"
+                }
+            ]
+        });
+        let out = generate(&[reality_node()], Some(&base)).unwrap();
+        assert!(out.starts_with("port: 7890"));
+        assert!(out.contains("type: vless"));
+        assert!(out.contains("name: test-reality"));
+        assert!(out.contains("- test-reality"));
+    }
+}
