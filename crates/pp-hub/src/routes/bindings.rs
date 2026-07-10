@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{node, node_binding, protocol_config};
+use pp_db::entities::{node, node_binding, node_binding_group_binding, protocol_config};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
@@ -13,13 +13,25 @@ use uuid::Uuid;
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
-fn binding_to_json(b: node_binding::Model) -> Value {
+async fn get_binding_group_ids(
+    db: &sea_orm::DatabaseConnection,
+    binding_id: Uuid,
+) -> Result<Vec<Uuid>, sea_orm::DbErr> {
+    let bindings = node_binding_group_binding::Entity::find()
+        .filter(node_binding_group_binding::Column::NodeBindingId.eq(binding_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
+}
+
+fn binding_to_json(b: node_binding::Model, group_ids: Vec<Uuid>) -> Value {
     json!({
         "id": b.id,
         "node_id": b.node_id,
         "protocol_config_id": b.protocol_config_id,
         "is_active": b.is_active,
         "override_settings": b.override_settings,
+        "group_ids": group_ids,
     })
 }
 
@@ -60,7 +72,13 @@ pub async fn list_bindings(
             (items, total)
         };
 
-    let data: Vec<Value> = bindings.into_iter().map(binding_to_json).collect();
+    let mut data = Vec::with_capacity(bindings.len());
+    for b in bindings {
+        let group_ids = get_binding_group_ids(&state.db, b.id)
+            .await
+            .map_err(ApiError::from)?;
+        data.push(binding_to_json(b, group_ids));
+    }
     Ok(PaginatedResponse::new(data, total))
 }
 
@@ -105,7 +123,7 @@ pub async fn create_binding(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
-    Ok(ApiResponse::new(binding_to_json(inserted)))
+    Ok(ApiResponse::new(binding_to_json(inserted, Vec::new())))
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -135,13 +153,21 @@ pub async fn update_binding(
     }
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
-    Ok(ApiResponse::new(binding_to_json(updated)))
+    let group_ids = get_binding_group_ids(&state.db, updated.id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(ApiResponse::new(binding_to_json(updated, group_ids)))
 }
 
 pub async fn delete_binding(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    let _ = node_binding_group_binding::Entity::delete_many()
+        .filter(node_binding_group_binding::Column::NodeBindingId.eq(id))
+        .exec(&state.db)
+        .await;
+
     let res = node_binding::Entity::delete_by_id(id)
         .exec(&state.db)
         .await

@@ -5,7 +5,7 @@ export interface CreateGroupPayload {
   name: string;
   description?: string;
   labels?: Record<string, string>;
-  node_ids?: string[];
+  binding_ids?: string[];
 }
 
 export const getGroups = () => get<Group[]>("/api/v1/groups");

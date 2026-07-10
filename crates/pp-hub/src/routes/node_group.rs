@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{node_group, node_group_binding};
+use pp_db::entities::{node_binding_group_binding, node_group};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
@@ -24,21 +24,21 @@ fn group_to_json(g: node_group::Model) -> Value {
     })
 }
 
-async fn sync_group_nodes(
+async fn sync_group_bindings(
     db: &sea_orm::DatabaseConnection,
     group_id: Uuid,
-    node_ids: &[Uuid],
+    binding_ids: &[Uuid],
 ) -> Result<(), sea_orm::DbErr> {
-    node_group_binding::Entity::delete_many()
-        .filter(node_group_binding::Column::GroupId.eq(group_id))
+    node_binding_group_binding::Entity::delete_many()
+        .filter(node_binding_group_binding::Column::GroupId.eq(group_id))
         .exec(db)
         .await?;
 
-    for &node_id in node_ids {
-        let binding = node_group_binding::ActiveModel {
+    for &binding_id in binding_ids {
+        let binding = node_binding_group_binding::ActiveModel {
             id: Set(Uuid::new_v4()),
             group_id: Set(group_id),
-            node_id: Set(node_id),
+            node_binding_id: Set(binding_id),
             created_at: Set(chrono::Utc::now().into()),
         };
         binding.insert(db).await?;
@@ -95,7 +95,7 @@ pub struct CreateGroupPayload {
     pub name: String,
     pub description: Option<String>,
     pub labels: Option<Value>,
-    pub node_ids: Option<Vec<Uuid>>,
+    pub binding_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn create_group(
@@ -120,8 +120,8 @@ pub async fn create_group(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
-    if let Some(node_ids) = payload.node_ids {
-        sync_group_nodes(&state.db, inserted.id, &node_ids)
+    if let Some(binding_ids) = payload.binding_ids {
+        sync_group_bindings(&state.db, inserted.id, &binding_ids)
             .await
             .map_err(ApiError::from)?;
     }
@@ -134,7 +134,7 @@ pub struct UpdateGroupPayload {
     pub name: Option<String>,
     pub description: Option<String>,
     pub labels: Option<Value>,
-    pub node_ids: Option<Vec<Uuid>>,
+    pub binding_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn update_group(
@@ -167,9 +167,9 @@ pub async fn update_group(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    if payload.node_ids.is_some() {
-        let node_ids = payload.node_ids.unwrap_or_default();
-        sync_group_nodes(&state.db, updated.id, &node_ids)
+    if payload.binding_ids.is_some() {
+        let binding_ids = payload.binding_ids.unwrap_or_default();
+        sync_group_bindings(&state.db, updated.id, &binding_ids)
             .await
             .map_err(ApiError::from)?;
     }

@@ -22,6 +22,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250703_000003_add_rate_to_usage_records::Migration),
             Box::new(m20250710_000001_remove_subscription_template_id::Migration),
             Box::new(m20250710_000002_add_protocol_config_core_version::Migration),
+            Box::new(m20250710_000003_binding_level_groups::Migration),
         ]
     }
 }
@@ -40,3 +41,4 @@ mod m20250703_000002_create_inbound_hosts;
 mod m20250703_000003_add_rate_to_usage_records;
 mod m20250710_000001_remove_subscription_template_id;
 mod m20250710_000002_add_protocol_config_core_version;
+mod m20250710_000003_binding_level_groups;

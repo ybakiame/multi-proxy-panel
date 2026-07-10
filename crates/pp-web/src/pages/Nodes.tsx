@@ -8,18 +8,15 @@ import {
   StatusBadge,
   FormInput,
   FormTextArea,
-  FormCheckbox,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getNodesPaginated, createNode, updateNode, deleteNode, pushConfig } from "../api/nodes";
-import { getGroups } from "../api/groups";
-import { Node, Group } from "../api/types";
+import { Node } from "../api/types";
 
 export function Nodes() {
   const { t } = useTranslation();
   const { page, perPage, setTotal } = usePagination();
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editNode, setEditNode] = useState<Node | null>(null);
@@ -32,19 +29,14 @@ export function Nodes() {
     usage_coefficient: 1,
     labels: "{}",
     parent_id: "",
-    selectedGroups: new Set<string>(),
   });
 
   const fetch = async () => {
     setLoading(true);
     try {
-      const [nodesRes, groupsRes] = await Promise.all([
-        getNodesPaginated(page, perPage),
-        getGroups(),
-      ]);
+      const nodesRes = await getNodesPaginated(page, perPage);
       setNodes(nodesRes.data);
       setTotal(nodesRes.pagination.total);
-      setGroups(groupsRes);
     } finally {
       setLoading(false);
     }
@@ -63,7 +55,6 @@ export function Nodes() {
         usage_coefficient: node.usage_coefficient,
         labels: JSON.stringify(node.labels || {}),
         parent_id: node.parent_id || "",
-        selectedGroups: new Set(node.group_ids || []),
       });
     } else {
       setForm({
@@ -73,7 +64,6 @@ export function Nodes() {
         usage_coefficient: 1,
         labels: "{}",
         parent_id: "",
-        selectedGroups: new Set<string>(),
       });
     }
   };
@@ -90,7 +80,6 @@ export function Nodes() {
         address: form.address,
         usage_coefficient: form.usage_coefficient,
         labels,
-        group_ids: Array.from(form.selectedGroups),
         parent_id: form.parent_id || undefined,
       });
       setNewToken(res.token || null);
@@ -115,7 +104,6 @@ export function Nodes() {
         address: form.address,
         usage_coefficient: form.usage_coefficient,
         labels,
-        group_ids: Array.from(form.selectedGroups),
         parent_id: form.parent_id || undefined,
       });
       setEditNode(null);
@@ -286,25 +274,6 @@ export function Nodes() {
                 onChange={(value) => setForm({ ...form, labels: value })}
                 className="font-mono"
               />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("nodes.groups")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <FormCheckbox
-                      key={g.id}
-                      isSelected={form.selectedGroups.has(g.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedGroups);
-                        if (selected) next.add(g.id);
-                        else next.delete(g.id);
-                        setForm({ ...form, selectedGroups: next });
-                      }}
-                    >
-                      {g.name}
-                    </FormCheckbox>
-                  ))}
-                </div>
-              </div>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
@@ -361,25 +330,6 @@ export function Nodes() {
                 onChange={(value) => setForm({ ...form, labels: value })}
                 className="font-mono"
               />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("nodes.groups")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <FormCheckbox
-                      key={g.id}
-                      isSelected={form.selectedGroups.has(g.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedGroups);
-                        if (selected) next.add(g.id);
-                        else next.delete(g.id);
-                        setForm({ ...form, selectedGroups: next });
-                      }}
-                    >
-                      {g.name}
-                    </FormCheckbox>
-                  ))}
-                </div>
-              </div>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="ghost" onPress={() => setEditNode(null)}>

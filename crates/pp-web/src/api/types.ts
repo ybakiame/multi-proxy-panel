@@ -28,7 +28,6 @@ export interface Node {
   usage_coefficient: number;
   status: string;
   parent_id: string | null;
-  group_ids: string[];
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;
@@ -55,6 +54,7 @@ export interface Binding {
   protocol_config_id: string;
   is_active: boolean;
   override_settings: Record<string, unknown> | null;
+  group_ids: string[];
   created_at: string;
 }
 
@@ -104,6 +104,7 @@ export interface Group {
   name: string;
   description: string | null;
   labels: Record<string, string> | null;
+  binding_ids: string[];
   created_at: string;
   updated_at: string;
 }

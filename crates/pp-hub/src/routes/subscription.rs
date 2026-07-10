@@ -4,8 +4,8 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use pp_db::entities::{
-    client, client_group_binding, inbound_host, node, node_binding, node_group, node_group_binding,
-    protocol_config, subscription, subscription_template,
+    client, client_group_binding, inbound_host, node, node_binding, node_binding_group_binding,
+    node_group, protocol_config, subscription, subscription_template,
 };
 use pp_subscription::{ProxyNode, SubscriptionFormat, generate_subscription};
 use sea_orm::{
@@ -436,13 +436,13 @@ async fn get_client_group_ids(
     Ok(bindings.into_iter().map(|b| b.group_id).collect())
 }
 
-/// Fetch group IDs assigned to a node.
-async fn get_node_group_ids(
+/// Fetch group IDs assigned to a node binding.
+async fn get_binding_group_ids(
     db: &sea_orm::DatabaseConnection,
-    node_id: Uuid,
+    node_binding_id: Uuid,
 ) -> Result<Vec<Uuid>, sea_orm::DbErr> {
-    let bindings = node_group_binding::Entity::find()
-        .filter(node_group_binding::Column::NodeId.eq(node_id))
+    let bindings = node_binding_group_binding::Entity::find()
+        .filter(node_binding_group_binding::Column::NodeBindingId.eq(node_binding_id))
         .all(db)
         .await?;
     Ok(bindings.into_iter().map(|b| b.group_id).collect())
@@ -521,23 +521,27 @@ async fn build_proxy_nodes(
             }
 
             // Group-based access control.
-            // A client must belong to at least one group. It can only access nodes
+            // A client must belong to at least one group. It can only access bindings
             // that share at least one group with it. No groups for the client means
-            // no node access.
-            let node_group_ids = get_node_group_ids(db, node.id).await?;
-            let node_has_groups = !node_group_ids.is_empty();
+            // no binding access.
+            let binding_group_ids = get_binding_group_ids(db, binding.id).await?;
+            let binding_has_groups = !binding_group_ids.is_empty();
 
             if client_group_ids.is_empty() {
                 continue;
             }
 
-            if !node_has_groups || !node_group_ids.iter().any(|g| client_group_ids.contains(g)) {
+            if !binding_has_groups
+                || !binding_group_ids
+                    .iter()
+                    .any(|g| client_group_ids.contains(g))
+            {
                 continue;
             }
 
             // Apply template filter: node groups (by group name)
             if !allowed_node_group_ids.is_empty() {
-                let has_matching_group = node_group_ids
+                let has_matching_group = binding_group_ids
                     .iter()
                     .any(|gid| allowed_node_group_ids.contains(gid));
                 if !has_matching_group {

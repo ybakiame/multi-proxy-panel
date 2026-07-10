@@ -2,10 +2,8 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{node, node_group_binding};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
-};
+use pp_db::entities::node;
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, QuerySelect, Set};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -13,43 +11,7 @@ use uuid::Uuid;
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
-/// Fetch group IDs assigned to a node.
-async fn get_node_group_ids(
-    db: &sea_orm::DatabaseConnection,
-    node_id: Uuid,
-) -> Result<Vec<Uuid>, sea_orm::DbErr> {
-    let bindings = node_group_binding::Entity::find()
-        .filter(node_group_binding::Column::NodeId.eq(node_id))
-        .all(db)
-        .await?;
-    Ok(bindings.into_iter().map(|b| b.group_id).collect())
-}
-
-/// Replace a node's group bindings with the provided list.
-async fn sync_node_groups(
-    db: &sea_orm::DatabaseConnection,
-    node_id: Uuid,
-    group_ids: &[Uuid],
-) -> Result<(), sea_orm::DbErr> {
-    node_group_binding::Entity::delete_many()
-        .filter(node_group_binding::Column::NodeId.eq(node_id))
-        .exec(db)
-        .await?;
-
-    for &group_id in group_ids {
-        let binding = node_group_binding::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            node_id: Set(node_id),
-            group_id: Set(group_id),
-            created_at: Set(chrono::Utc::now().into()),
-        };
-        binding.insert(db).await?;
-    }
-
-    Ok(())
-}
-
-fn node_to_json(n: node::Model, group_ids: Vec<Uuid>) -> Value {
+fn node_to_json(n: node::Model) -> Value {
     json!({
         "id": n.id,
         "name": n.name,
@@ -60,7 +22,6 @@ fn node_to_json(n: node::Model, group_ids: Vec<Uuid>) -> Value {
         "usage_coefficient": n.usage_coefficient,
         "status": n.status,
         "parent_id": n.parent_id,
-        "group_ids": group_ids,
         "last_seen_at": n.last_seen_at,
     })
 }
@@ -91,14 +52,7 @@ pub async fn list_nodes(
             (items, total)
         };
 
-    let mut data = Vec::with_capacity(nodes.len());
-    for n in nodes {
-        let group_ids = get_node_group_ids(&state.db, n.id)
-            .await
-            .map_err(ApiError::from)?;
-        data.push(node_to_json(n, group_ids));
-    }
-
+    let data: Vec<Value> = nodes.into_iter().map(node_to_json).collect();
     Ok(PaginatedResponse::new(data, total))
 }
 
@@ -112,11 +66,7 @@ pub async fn get_node(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("node not found"))?;
 
-    let group_ids = get_node_group_ids(&state.db, n.id)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(ApiResponse::new(node_to_json(n, group_ids)))
+    Ok(ApiResponse::new(node_to_json(n)))
 }
 
 #[derive(serde::Deserialize)]
@@ -124,7 +74,6 @@ pub struct CreateNodePayload {
     pub name: String,
     pub hostname: Option<String>,
     pub address: Option<String>,
-    pub group_ids: Option<Vec<Uuid>>,
     pub parent_id: Option<Uuid>,
 }
 
@@ -162,12 +111,6 @@ pub async fn create_node(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
-    if let Some(group_ids) = payload.group_ids {
-        sync_node_groups(&state.db, inserted.id, &group_ids)
-            .await
-            .map_err(ApiError::from)?;
-    }
-
     Ok(ApiResponse::new(json!({
         "id": inserted.id,
         "name": inserted.name,
@@ -185,7 +128,6 @@ pub struct UpdateNodePayload {
     pub address: Option<String>,
     pub usage_coefficient: Option<f32>,
     pub labels: Option<Value>,
-    pub group_ids: Option<Vec<Uuid>>,
     pub parent_id: Option<Option<Uuid>>,
 }
 
@@ -230,29 +172,13 @@ pub async fn update_node(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    if payload.group_ids.is_some() {
-        let group_ids = payload.group_ids.unwrap_or_default();
-        sync_node_groups(&state.db, updated.id, &group_ids)
-            .await
-            .map_err(ApiError::from)?;
-    }
-
-    let group_ids = get_node_group_ids(&state.db, updated.id)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(ApiResponse::new(node_to_json(updated, group_ids)))
+    Ok(ApiResponse::new(node_to_json(updated)))
 }
 
 pub async fn delete_node(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let _ = node_group_binding::Entity::delete_many()
-        .filter(node_group_binding::Column::NodeId.eq(id))
-        .exec(&state.db)
-        .await;
-
     let res = node::Entity::delete_by_id(id)
         .exec(&state.db)
         .await

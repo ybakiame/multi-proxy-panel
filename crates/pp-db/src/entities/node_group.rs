@@ -16,8 +16,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::client_group_binding::Entity")]
     ClientGroupBindings,
-    #[sea_orm(has_many = "super::node_group_binding::Entity")]
-    NodeGroupBindings,
+    #[sea_orm(has_many = "super::node_binding_group_binding::Entity")]
+    NodeBindingGroupBindings,
 }
 
 impl Related<super::client_group_binding::Entity> for Entity {
@@ -26,9 +26,9 @@ impl Related<super::client_group_binding::Entity> for Entity {
     }
 }
 
-impl Related<super::node_group_binding::Entity> for Entity {
+impl Related<super::node_binding_group_binding::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::NodeGroupBindings.def()
+        Relation::NodeBindingGroupBindings.def()
     }
 }
 

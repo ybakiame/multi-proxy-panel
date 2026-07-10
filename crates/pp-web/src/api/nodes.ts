@@ -7,7 +7,6 @@ export interface CreateNodePayload {
   address?: string;
   usage_coefficient?: number;
   labels?: Record<string, string>;
-  group_ids?: string[];
   parent_id?: string | null;
 }
 

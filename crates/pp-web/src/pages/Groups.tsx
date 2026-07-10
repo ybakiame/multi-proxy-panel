@@ -11,21 +11,25 @@ import {
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getGroupsPaginated, createGroup, updateGroup, deleteGroup } from "../api/groups";
+import { getBindings } from "../api/bindings";
 import { getNodes } from "../api/nodes";
-import { Group, Node } from "../api/types";
+import { getAllProtocols } from "../api/protocols";
+import { Group, Binding, Node, ProtocolConfig } from "../api/types";
 
 interface GroupForm {
   name: string;
   description: string;
   labels: string;
-  selectedNodes: Set<string>;
+  selectedBindings: Set<string>;
 }
 
 export function Groups() {
   const { t } = useTranslation();
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [bindings, setBindings] = useState<Binding[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [configs, setConfigs] = useState<ProtocolConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editGroup, setEditGroup] = useState<Group | null>(null);
@@ -34,22 +38,30 @@ export function Groups() {
     name: "",
     description: "",
     labels: "{}",
-    selectedNodes: new Set<string>(),
+    selectedBindings: new Set<string>(),
   });
 
   const fetch = async () => {
     setLoading(true);
     try {
-      const [groupsRes, nodesRes] = await Promise.allSettled([
+      const [groupsRes, bindingsRes, nodesRes, configsRes] = await Promise.allSettled([
         getGroupsPaginated(page, perPage),
+        getBindings(),
         getNodes(),
+        getAllProtocols(),
       ]);
       if (groupsRes.status === "fulfilled") {
         setGroups(groupsRes.value.data);
         setTotal(groupsRes.value.pagination.total);
       }
+      if (bindingsRes.status === "fulfilled") {
+        setBindings(bindingsRes.value);
+      }
       if (nodesRes.status === "fulfilled") {
         setNodes(nodesRes.value);
+      }
+      if (configsRes.status === "fulfilled") {
+        setConfigs(configsRes.value);
       }
     } finally {
       setLoading(false);
@@ -62,21 +74,18 @@ export function Groups() {
 
   const resetForm = (group?: Group) => {
     if (group) {
-      const nodeIds = new Set(
-        nodes.filter((n) => n.group_ids?.includes(group.id)).map((n) => n.id),
-      );
       setForm({
         name: group.name,
         description: group.description || "",
         labels: JSON.stringify(group.labels || {}),
-        selectedNodes: nodeIds,
+        selectedBindings: new Set(group.binding_ids || []),
       });
     } else {
       setForm({
         name: "",
         description: "",
         labels: "{}",
-        selectedNodes: new Set<string>(),
+        selectedBindings: new Set<string>(),
       });
     }
   };
@@ -95,7 +104,7 @@ export function Groups() {
         name: form.name,
         description: form.description || undefined,
         labels: parseLabels(),
-        node_ids: Array.from(form.selectedNodes),
+        binding_ids: Array.from(form.selectedBindings),
       });
       setCreateOpen(false);
       resetForm();
@@ -112,7 +121,7 @@ export function Groups() {
         name: form.name,
         description: form.description || undefined,
         labels: parseLabels(),
-        node_ids: Array.from(form.selectedNodes),
+        binding_ids: Array.from(form.selectedBindings),
       });
       setEditGroup(null);
       fetch();
@@ -137,11 +146,17 @@ export function Groups() {
     setEditGroup(group);
   };
 
-  const nodeNamesForGroup = (groupId: string) => {
+  const bindingDisplayName = (binding: Binding) => {
+    const node = nodes.find((n) => n.id === binding.node_id);
+    const cfg = configs.find((c) => c.id === binding.protocol_config_id);
+    return `${node?.name || binding.node_id} - ${cfg?.name || binding.protocol_config_id}`;
+  };
+
+  const bindingNamesForGroup = (groupId: string) => {
     return (
-      nodes
-        .filter((n) => n.group_ids?.includes(groupId))
-        .map((n) => n.name)
+      bindings
+        .filter((b) => b.group_ids?.includes(groupId))
+        .map(bindingDisplayName)
         .join(", ") || "-"
     );
   };
@@ -172,7 +187,7 @@ export function Groups() {
                   <Table.Header>
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("groups.description")}</Table.Column>
-                    <Table.Column>{t("groups.nodes")}</Table.Column>
+                    <Table.Column>{t("groups.bindings")}</Table.Column>
                     <Table.Column>{t("common.labels")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
                   </Table.Header>
@@ -188,7 +203,7 @@ export function Groups() {
                         <Table.Cell>{group.name}</Table.Cell>
                         <Table.Cell>{group.description || "-"}</Table.Cell>
                         <Table.Cell className="max-w-xs truncate">
-                          {nodeNamesForGroup(group.id)}
+                          {bindingNamesForGroup(group.id)}
                         </Table.Cell>
                         <Table.Cell className="max-w-xs truncate">
                           {JSON.stringify(group.labels || {})}
@@ -260,20 +275,20 @@ export function Groups() {
                 className="font-mono"
               />
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t("groups.nodes")}</p>
+                <p className="text-sm font-medium">{t("groups.bindings")}</p>
                 <div className="flex flex-wrap gap-2">
-                  {nodes.map((node) => (
+                  {bindings.map((binding) => (
                     <FormCheckbox
-                      key={node.id}
-                      isSelected={form.selectedNodes.has(node.id)}
+                      key={binding.id}
+                      isSelected={form.selectedBindings.has(binding.id)}
                       onChange={(selected) => {
-                        const next = new Set(form.selectedNodes);
-                        if (selected) next.add(node.id);
-                        else next.delete(node.id);
-                        setForm({ ...form, selectedNodes: next });
+                        const next = new Set(form.selectedBindings);
+                        if (selected) next.add(binding.id);
+                        else next.delete(binding.id);
+                        setForm({ ...form, selectedBindings: next });
                       }}
                     >
-                      {node.name}
+                      {bindingDisplayName(binding)}
                     </FormCheckbox>
                   ))}
                 </div>
@@ -318,20 +333,20 @@ export function Groups() {
                 className="font-mono"
               />
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t("groups.nodes")}</p>
+                <p className="text-sm font-medium">{t("groups.bindings")}</p>
                 <div className="flex flex-wrap gap-2">
-                  {nodes.map((node) => (
+                  {bindings.map((binding) => (
                     <FormCheckbox
-                      key={node.id}
-                      isSelected={form.selectedNodes.has(node.id)}
+                      key={binding.id}
+                      isSelected={form.selectedBindings.has(binding.id)}
                       onChange={(selected) => {
-                        const next = new Set(form.selectedNodes);
-                        if (selected) next.add(node.id);
-                        else next.delete(node.id);
-                        setForm({ ...form, selectedNodes: next });
+                        const next = new Set(form.selectedBindings);
+                        if (selected) next.add(binding.id);
+                        else next.delete(binding.id);
+                        setForm({ ...form, selectedBindings: next });
                       }}
                     >
-                      {node.name}
+                      {bindingDisplayName(binding)}
                     </FormCheckbox>
                   ))}
                 </div>
