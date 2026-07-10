@@ -2,8 +2,10 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::node_group;
-use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, QuerySelect, Set};
+use pp_db::entities::{node_group, node_group_binding};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -20,6 +22,29 @@ fn group_to_json(g: node_group::Model) -> Value {
         "created_at": g.created_at,
         "updated_at": g.updated_at,
     })
+}
+
+async fn sync_group_nodes(
+    db: &sea_orm::DatabaseConnection,
+    group_id: Uuid,
+    node_ids: &[Uuid],
+) -> Result<(), sea_orm::DbErr> {
+    node_group_binding::Entity::delete_many()
+        .filter(node_group_binding::Column::GroupId.eq(group_id))
+        .exec(db)
+        .await?;
+
+    for &node_id in node_ids {
+        let binding = node_group_binding::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            group_id: Set(group_id),
+            node_id: Set(node_id),
+            created_at: Set(chrono::Utc::now().into()),
+        };
+        binding.insert(db).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn list_groups(
@@ -70,6 +95,7 @@ pub struct CreateGroupPayload {
     pub name: String,
     pub description: Option<String>,
     pub labels: Option<Value>,
+    pub node_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn create_group(
@@ -94,6 +120,12 @@ pub async fn create_group(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
+    if let Some(node_ids) = payload.node_ids {
+        sync_group_nodes(&state.db, inserted.id, &node_ids)
+            .await
+            .map_err(ApiError::from)?;
+    }
+
     Ok(ApiResponse::new(group_to_json(inserted)))
 }
 
@@ -102,6 +134,7 @@ pub struct UpdateGroupPayload {
     pub name: Option<String>,
     pub description: Option<String>,
     pub labels: Option<Value>,
+    pub node_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn update_group(
@@ -133,6 +166,14 @@ pub async fn update_group(
     active.updated_at = Set(chrono::Utc::now().into());
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
+
+    if payload.node_ids.is_some() {
+        let node_ids = payload.node_ids.unwrap_or_default();
+        sync_group_nodes(&state.db, updated.id, &node_ids)
+            .await
+            .map_err(ApiError::from)?;
+    }
+
     Ok(ApiResponse::new(group_to_json(updated)))
 }
 

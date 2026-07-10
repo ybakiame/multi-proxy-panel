@@ -1,21 +1,31 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination, FormInput, FormTextArea } from "../components/ui";
+import {
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormTextArea,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getGroupsPaginated, createGroup, updateGroup, deleteGroup } from "../api/groups";
-import { Group } from "../api/types";
+import { getNodes } from "../api/nodes";
+import { Group, Node } from "../api/types";
 
 interface GroupForm {
   name: string;
   description: string;
   labels: string;
+  selectedNodes: Set<string>;
 }
 
 export function Groups() {
   const { t } = useTranslation();
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editGroup, setEditGroup] = useState<Group | null>(null);
@@ -24,14 +34,23 @@ export function Groups() {
     name: "",
     description: "",
     labels: "{}",
+    selectedNodes: new Set<string>(),
   });
 
   const fetch = async () => {
     setLoading(true);
     try {
-      const res = await getGroupsPaginated(page, perPage);
-      setGroups(res.data);
-      setTotal(res.pagination.total);
+      const [groupsRes, nodesRes] = await Promise.allSettled([
+        getGroupsPaginated(page, perPage),
+        getNodes(),
+      ]);
+      if (groupsRes.status === "fulfilled") {
+        setGroups(groupsRes.value.data);
+        setTotal(groupsRes.value.pagination.total);
+      }
+      if (nodesRes.status === "fulfilled") {
+        setNodes(nodesRes.value);
+      }
     } finally {
       setLoading(false);
     }
@@ -43,16 +62,21 @@ export function Groups() {
 
   const resetForm = (group?: Group) => {
     if (group) {
+      const nodeIds = new Set(
+        nodes.filter((n) => n.group_ids?.includes(group.id)).map((n) => n.id),
+      );
       setForm({
         name: group.name,
         description: group.description || "",
         labels: JSON.stringify(group.labels || {}),
+        selectedNodes: nodeIds,
       });
     } else {
       setForm({
         name: "",
         description: "",
         labels: "{}",
+        selectedNodes: new Set<string>(),
       });
     }
   };
@@ -71,6 +95,7 @@ export function Groups() {
         name: form.name,
         description: form.description || undefined,
         labels: parseLabels(),
+        node_ids: Array.from(form.selectedNodes),
       });
       setCreateOpen(false);
       resetForm();
@@ -87,6 +112,7 @@ export function Groups() {
         name: form.name,
         description: form.description || undefined,
         labels: parseLabels(),
+        node_ids: Array.from(form.selectedNodes),
       });
       setEditGroup(null);
       fetch();
@@ -109,6 +135,15 @@ export function Groups() {
   const openEdit = (group: Group) => {
     resetForm(group);
     setEditGroup(group);
+  };
+
+  const nodeNamesForGroup = (groupId: string) => {
+    return (
+      nodes
+        .filter((n) => n.group_ids?.includes(groupId))
+        .map((n) => n.name)
+        .join(", ") || "-"
+    );
   };
 
   return (
@@ -137,6 +172,7 @@ export function Groups() {
                   <Table.Header>
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("groups.description")}</Table.Column>
+                    <Table.Column>{t("groups.nodes")}</Table.Column>
                     <Table.Column>{t("common.labels")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
                   </Table.Header>
@@ -151,6 +187,9 @@ export function Groups() {
                       <Table.Row key={group.id}>
                         <Table.Cell>{group.name}</Table.Cell>
                         <Table.Cell>{group.description || "-"}</Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">
+                          {nodeNamesForGroup(group.id)}
+                        </Table.Cell>
                         <Table.Cell className="max-w-xs truncate">
                           {JSON.stringify(group.labels || {})}
                         </Table.Cell>
@@ -220,6 +259,25 @@ export function Groups() {
                 onChange={(value) => setForm({ ...form, labels: value })}
                 className="font-mono"
               />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t("groups.nodes")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {nodes.map((node) => (
+                    <FormCheckbox
+                      key={node.id}
+                      isSelected={form.selectedNodes.has(node.id)}
+                      onChange={(selected) => {
+                        const next = new Set(form.selectedNodes);
+                        if (selected) next.add(node.id);
+                        else next.delete(node.id);
+                        setForm({ ...form, selectedNodes: next });
+                      }}
+                    >
+                      {node.name}
+                    </FormCheckbox>
+                  ))}
+                </div>
+              </div>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
@@ -259,6 +317,25 @@ export function Groups() {
                 onChange={(value) => setForm({ ...form, labels: value })}
                 className="font-mono"
               />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t("groups.nodes")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {nodes.map((node) => (
+                    <FormCheckbox
+                      key={node.id}
+                      isSelected={form.selectedNodes.has(node.id)}
+                      onChange={(selected) => {
+                        const next = new Set(form.selectedNodes);
+                        if (selected) next.add(node.id);
+                        else next.delete(node.id);
+                        setForm({ ...form, selectedNodes: next });
+                      }}
+                    >
+                      {node.name}
+                    </FormCheckbox>
+                  ))}
+                </div>
+              </div>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="ghost" onPress={() => setEditGroup(null)}>
