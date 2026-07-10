@@ -28,6 +28,7 @@ fn build_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         ProtocolType::Vmess => build_vmess_outbound(node),
         ProtocolType::Trojan => build_trojan_outbound(node),
         ProtocolType::Shadowsocks2022 => build_shadowsocks_outbound(node),
+        ProtocolType::Hysteria2 => build_hysteria2_outbound(node),
         _ => Err(PanelError::Subscription(format!(
             "protocol {:?} not supported in sing-box subscription",
             node.protocol
@@ -239,6 +240,64 @@ fn build_shadowsocks_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         "method": method,
         "password": password,
     }))
+}
+
+fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
+    let password = node
+        .settings
+        .get("password")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.settings
+                .get("clients")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("password"))
+                .and_then(|v| v.as_str())
+        })
+        .ok_or_else(|| PanelError::Subscription("missing hysteria2 password".into()))?;
+
+    let server_name = node
+        .tls
+        .as_ref()
+        .and_then(|t| t.get("serverName"))
+        .and_then(|v| v.as_str())
+        .or_else(|| node.settings.get("sni").and_then(|v| v.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    let mut outbound = serde_json::json!({
+        "type": "hysteria2",
+        "tag": node.name,
+        "server": node.server,
+        "server_port": node.port,
+        "password": password,
+        "tls": {
+            "enabled": true,
+            "server_name": server_name,
+            "insecure": true,
+        },
+    });
+
+    if let Some(up) = node.settings.get("up_mbps").and_then(|v| v.as_u64()) {
+        outbound["up_mbps"] = serde_json::json!(up);
+    }
+    if let Some(down) = node.settings.get("down_mbps").and_then(|v| v.as_u64()) {
+        outbound["down_mbps"] = serde_json::json!(down);
+    }
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
+        if obfs_type != "none" {
+            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
+            {
+                outbound["obfs"] = serde_json::json!({
+                    "type": obfs_type,
+                    "password": obfs_password,
+                });
+            }
+        }
+    }
+
+    Ok(outbound)
 }
 
 #[cfg(test)]

@@ -53,6 +53,7 @@ fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         ProtocolType::Vmess => build_vmess_proxy(node),
         ProtocolType::Trojan => build_trojan_proxy(node),
         ProtocolType::Shadowsocks2022 => build_shadowsocks_proxy(node),
+        ProtocolType::Hysteria2 => build_hysteria2_proxy(node),
         _ => Err(PanelError::Subscription(format!(
             "protocol {:?} not supported in clash subscription",
             node.protocol
@@ -244,4 +245,57 @@ fn build_shadowsocks_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         "cipher": method,
         "password": password,
     }))
+}
+
+fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
+    let password = node
+        .settings
+        .get("password")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.settings
+                .get("clients")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("password"))
+                .and_then(|v| v.as_str())
+        })
+        .ok_or_else(|| PanelError::Subscription("missing hysteria2 password".into()))?;
+
+    let server_name = node
+        .tls
+        .as_ref()
+        .and_then(|t| t.get("serverName"))
+        .and_then(|v| v.as_str())
+        .or_else(|| node.settings.get("sni").and_then(|v| v.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    let mut proxy = serde_json::json!({
+        "name": node.name,
+        "type": "hysteria2",
+        "server": node.server,
+        "port": node.port,
+        "password": password,
+        "sni": server_name,
+        "skip-cert-verify": true,
+    });
+
+    if let Some(up) = node.settings.get("up_mbps").and_then(|v| v.as_u64()) {
+        proxy["up"] = serde_json::json!(up);
+    }
+    if let Some(down) = node.settings.get("down_mbps").and_then(|v| v.as_u64()) {
+        proxy["down"] = serde_json::json!(down);
+    }
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
+        if obfs_type != "none" {
+            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
+            {
+                proxy["obfs"] = serde_json::json!(obfs_type);
+                proxy["obfs-password"] = serde_json::json!(obfs_password);
+            }
+        }
+    }
+
+    Ok(proxy)
 }
