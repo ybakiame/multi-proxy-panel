@@ -16,7 +16,7 @@ ExecStart=/usr/local/bin/proxy-panel-agent \
     --hub-url ${PROXYPANEL_HUB_URL} \
     --token ${PROXYPANEL_AGENT_TOKEN} \
     --data-dir /var/lib/proxy-panel/agent \
-    --bin-dir /usr/local/bin
+    --bin-dir /opt/proxy-panel/bin
 
 Restart=on-failure
 RestartSec=5

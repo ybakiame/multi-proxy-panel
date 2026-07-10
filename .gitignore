@@ -12,5 +12,7 @@ Cargo.lock
 /claude
 /.claude
 /scripts/.*
+/scripts/deploy-test-server.py
+/scripts/deploy-server.py
 node_modules/
 crates/pp-web/dist/
