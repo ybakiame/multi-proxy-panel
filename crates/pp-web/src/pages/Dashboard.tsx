@@ -52,17 +52,32 @@ export function Dashboard() {
           getOnlineCount(),
         ]);
 
-        if (nodesRes.status === "fulfilled") setNodes(nodesRes.value);
+        if (nodesRes.status === "fulfilled")
+          setNodes(Array.isArray(nodesRes.value) ? nodesRes.value : []);
         if (protocolsRes.status === "fulfilled")
-          setProtocols(protocolsRes.value);
+          setProtocols(Array.isArray(protocolsRes.value) ? protocolsRes.value : []);
         if (clientsRes.status === "fulfilled")
-          setClients(clientsRes.value.data);
-        if (bindingsRes.status === "fulfilled") setBindings(bindingsRes.value);
+          setClients(
+            clientsRes.value && Array.isArray(clientsRes.value.data)
+              ? clientsRes.value.data
+              : [],
+          );
+        if (bindingsRes.status === "fulfilled")
+          setBindings(Array.isArray(bindingsRes.value) ? bindingsRes.value : []);
         if (metricsRes.status === "fulfilled")
-          setMetrics(metricsRes.value.data);
-        if (logsRes.status === "fulfilled") setLogs(logsRes.value.data);
+          setMetrics(
+            metricsRes.value && Array.isArray(metricsRes.value.data)
+              ? metricsRes.value.data
+              : [],
+          );
+        if (logsRes.status === "fulfilled")
+          setLogs(
+            logsRes.value && Array.isArray(logsRes.value.data)
+              ? logsRes.value.data
+              : [],
+          );
         if (countRes.status === "fulfilled")
-          setOnlineCount(countRes.value.count);
+          setOnlineCount(countRes.value?.count ?? 0);
 
         const failed = [
           nodesRes,

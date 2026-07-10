@@ -27,8 +27,8 @@ export function Metrics() {
     setLoading(true);
     try {
       const res = await getMetrics(nodeId || undefined);
-      setMetrics(res.data);
-      setTotal(res.data.length);
+      setMetrics(Array.isArray(res.data) ? res.data : []);
+      setTotal(res.pagination?.total ?? res.data.length ?? 0);
     } finally {
       setLoading(false);
     }
@@ -109,19 +109,19 @@ export function Metrics() {
                             <Table.Cell>
                               {node ? node.name : m.node_id}
                             </Table.Cell>
-                            <Table.Cell>{m.cpu_percent.toFixed(2)}%</Table.Cell>
+                            <Table.Cell>{(m.cpu_percent ?? 0).toFixed(2)}%</Table.Cell>
                             <Table.Cell>
-                              {formatBytes(m.mem_used)} /{" "}
-                              {formatBytes(m.mem_total)}
+                              {formatBytes(m.mem_used ?? 0)} /{" "}
+                              {formatBytes(m.mem_total ?? 0)}
                             </Table.Cell>
                             <Table.Cell>
-                              {formatBytes(m.disk_used)} /{" "}
-                              {formatBytes(m.disk_total)}
+                              {formatBytes(m.disk_used ?? 0)} /{" "}
+                              {formatBytes(m.disk_total ?? 0)}
                             </Table.Cell>
                             <Table.Cell>
-                              {m.load_avg1.toFixed(2)} /{" "}
-                              {m.load_avg5.toFixed(2)} /{" "}
-                              {m.load_avg15.toFixed(2)}
+                              {(m.load_avg1 ?? 0).toFixed(2)} /{" "}
+                              {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
+                              {(m.load_avg15 ?? 0).toFixed(2)}
                             </Table.Cell>
                             <Table.Cell>
                               {formatDateTime(m.timestamp)}
