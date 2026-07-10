@@ -265,6 +265,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         )
         .route(
             "/api/v1/templates/{id}",
+            put(subscription::update_template)
+                .route_layer(middleware::api_key::scope_layer(scopes::TEMPLATES_WRITE)),
+        )
+        .route(
+            "/api/v1/templates/{id}",
             delete(subscription::delete_template)
                 .route_layer(middleware::api_key::scope_layer(scopes::TEMPLATES_WRITE)),
         )

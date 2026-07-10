@@ -33,7 +33,9 @@
     "close": "关闭",
     "copy": "复制",
     "copied": "已复制",
-    "submitting": "提交中..."
+    "submitting": "提交中...",
+    "yes": "是",
+    "no": "否"
   },
   "pagination": {
     "prev": "上一页",
@@ -205,11 +207,15 @@
   },
   "subscriptions": {
     "title": "订阅",
+    "templates": "订阅模板",
     "create": "+ 创建订阅",
     "createTitle": "创建订阅",
     "editTitle": "编辑订阅",
     "deleteTitle": "删除订阅",
     "deleteConfirm": "确定要删除该订阅吗？",
+    "templateDeleteTitle": "删除订阅模板",
+    "templateDeleteConfirm": "确定要删除该订阅模板吗？",
+    "templateEditTitle": "编辑模板",
     "client": "客户端",
     "template": "模板",
     "token": "令牌",
@@ -222,7 +228,9 @@
     "customHeaders": "自定义头（JSON）",
     "createTemplate": "+ 创建模板",
     "templateCreateTitle": "创建模板",
-    "format": "格式"
+    "format": "格式",
+    "copyLink": "复制链接",
+    "qrCode": "二维码"
   },
   "metrics": {
     "title": "主机指标",

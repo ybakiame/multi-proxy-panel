@@ -7,6 +7,26 @@
     <title>ProxyPanel</title>
   </head>
   <body>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("pp-settings");
+          var theme = "dark";
+          var lang = "zh-CN";
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed.state) {
+              if (parsed.state.theme === "light" || parsed.state.theme === "dark") theme = parsed.state.theme;
+              if (parsed.state.language === "en-US" || parsed.state.language === "zh-CN") lang = parsed.state.language;
+            }
+          }
+          document.documentElement.classList.remove("dark", "light");
+          document.documentElement.classList.add(theme);
+          document.documentElement.setAttribute("data-theme", theme);
+          document.documentElement.lang = lang;
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

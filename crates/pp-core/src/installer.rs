@@ -253,8 +253,13 @@ fn set_executable(path: &Path) -> PanelResult<()> {
 }
 
 /// Ensure the requested core binary exists in `bin_dir`, downloading it from
-/// GitHub releases if necessary.
-pub async fn ensure_core_binary(bin_dir: &Path, core_type: CoreType) -> PanelResult<PathBuf> {
+/// GitHub releases if necessary. `version` overrides the default (latest/env)
+/// when provided and is non-empty.
+pub async fn ensure_core_binary(
+    bin_dir: &Path,
+    core_type: CoreType,
+    version: Option<&str>,
+) -> PanelResult<PathBuf> {
     if core_type == CoreType::Both {
         return Err(PanelError::Core("Cannot install 'Both' core type".into()));
     }
@@ -264,7 +269,15 @@ pub async fn ensure_core_binary(bin_dir: &Path, core_type: CoreType) -> PanelRes
         return Ok(on_disk);
     }
 
-    let version = resolve_version(core_type).await?;
+    let version = if let Some(v) = version {
+        if v.is_empty() {
+            resolve_version(core_type).await?
+        } else {
+            v.to_string()
+        }
+    } else {
+        resolve_version(core_type).await?
+    };
     let (asset, binary_inside) = asset_name(core_type, &version)?;
     let info = release_info(core_type);
     let url = format!(

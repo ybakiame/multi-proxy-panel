@@ -20,6 +20,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250703_000001_add_on_hold_and_node_parent::Migration),
             Box::new(m20250703_000002_create_inbound_hosts::Migration),
             Box::new(m20250703_000003_add_rate_to_usage_records::Migration),
+            Box::new(m20250710_000001_remove_subscription_template_id::Migration),
+            Box::new(m20250710_000002_add_protocol_config_core_version::Migration),
         ]
     }
 }
@@ -36,3 +38,5 @@ mod m20250702_000001_add_constraints_and_indexes;
 mod m20250703_000001_add_on_hold_and_node_parent;
 mod m20250703_000002_create_inbound_hosts;
 mod m20250703_000003_add_rate_to_usage_records;
+mod m20250710_000001_remove_subscription_template_id;
+mod m20250710_000002_add_protocol_config_core_version;

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Button, Select, ListBox, Label, useTheme } from "@heroui/react";
+import { Button, Select, ListBox, Label } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { navItems } from "./nav";
 import { useAuth } from "../context/AuthContext";
+import { useSettingsStore } from "../stores/settings";
 import {
   SunIcon,
   MoonIcon,
@@ -16,15 +17,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { logout } = useAuth();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { theme, setTheme } = useTheme("dark");
+  const { language, theme, setLanguage, toggleTheme } = useSettingsStore();
   const isDark = theme === "dark";
 
   const changeLanguage = (lang: string) => {
-    i18n.changeLanguage(lang);
-  };
-
-  const toggleTheme = () => {
-    setTheme(isDark ? "light" : "dark");
+    setLanguage(lang as "zh-CN" | "en-US");
   };
 
   return (

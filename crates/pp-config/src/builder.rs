@@ -30,6 +30,7 @@ pub struct InboundConfig {
     pub settings: Value,
     pub tls: Option<Value>,
     pub sniffing: Option<Value>,
+    pub core_version: Option<String>,
 }
 
 /// Registry of available builders.

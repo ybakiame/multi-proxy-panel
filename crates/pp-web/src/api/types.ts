@@ -40,6 +40,7 @@ export interface ProtocolConfig {
   name: string;
   protocol_type: string;
   core_type: string;
+  core_version: string | null;
   listen_address: string;
   listen_port: number;
   settings: Record<string, unknown>;
@@ -121,7 +122,6 @@ export interface SubscriptionTemplate {
 export interface Subscription {
   id: string;
   client_id: string;
-  template_id: string;
   token: string;
   url_path: string;
   is_active: boolean;

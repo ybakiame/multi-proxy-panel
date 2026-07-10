@@ -7,11 +7,18 @@ import type {
 
 export interface CreateSubscriptionPayload {
   client_id: string;
-  template_id: string;
 }
 
 export interface CreateTemplatePayload {
   name: string;
+  format?: string;
+  base_config?: Record<string, unknown>;
+  filter_rules?: Record<string, unknown>;
+  custom_headers?: Record<string, string>;
+}
+
+export interface UpdateTemplatePayload {
+  name?: string;
   format?: string;
   base_config?: Record<string, unknown>;
   filter_rules?: Record<string, unknown>;
@@ -34,4 +41,6 @@ export const getTemplates = () =>
   get<SubscriptionTemplate[]>("/api/v1/templates");
 export const createTemplate = (payload: CreateTemplatePayload) =>
   post<SubscriptionTemplate>("/api/v1/templates", payload);
+export const updateTemplate = (id: string, payload: UpdateTemplatePayload) =>
+  put<SubscriptionTemplate>(`/api/v1/templates/${id}`, payload);
 export const deleteTemplate = (id: string) => del(`/api/v1/templates/${id}`);

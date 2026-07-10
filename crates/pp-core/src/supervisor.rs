@@ -88,12 +88,13 @@ impl CoreSupervisor {
         core_type: CoreType,
         bin_dir: &Path,
         config_dir: &Path,
+        version: Option<&str>,
     ) -> PanelResult<Arc<dyn CoreManager>> {
         if let Some(manager) = self.get(core_type).await {
             return Ok(manager);
         }
 
-        let binary_path = ensure_core_binary(bin_dir, core_type).await?;
+        let binary_path = ensure_core_binary(bin_dir, core_type, version).await?;
         let manager = CoreManagerFactory::create(core_type, &binary_path, config_dir)?;
         let manager: Arc<dyn CoreManager> = Arc::from(manager);
         self.register(manager.clone()).await;
@@ -105,6 +106,7 @@ impl CoreSupervisor {
     pub async fn ensure_manager_from_discovered(
         &self,
         core_type: CoreType,
+        version: Option<&str>,
     ) -> PanelResult<Arc<dyn CoreManager>> {
         let bin_dir = self.bin_dir.read().await.clone().ok_or_else(|| {
             pp_common::PanelError::Core("supervisor has not been discovered with a bin_dir".into())
@@ -114,7 +116,8 @@ impl CoreSupervisor {
                 "supervisor has not been discovered with a config_dir".into(),
             )
         })?;
-        self.ensure_manager(core_type, &bin_dir, &config_dir).await
+        self.ensure_manager(core_type, &bin_dir, &config_dir, version)
+            .await
     }
 
     /// Stop all managed cores.

@@ -98,6 +98,54 @@ pub async fn create_template(
     Ok(ApiResponse::new(template_to_json(inserted)))
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct UpdateTemplatePayload {
+    pub name: Option<String>,
+    pub format: Option<String>,
+    pub base_config: Option<Value>,
+    pub filter_rules: Option<Value>,
+    pub custom_headers: Option<Value>,
+}
+
+pub async fn update_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateTemplatePayload>,
+) -> ApiResult<Value> {
+    let template = subscription_template::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("subscription template not found"))?;
+
+    let mut active: subscription_template::ActiveModel = template.into();
+    if let Some(name) = payload.name {
+        if name.trim().is_empty() {
+            return Err(ApiError::bad_request(
+                "invalid_name",
+                "template name is required",
+            ));
+        }
+        active.name = Set(name);
+    }
+    if let Some(format) = payload.format {
+        active.format = Set(format);
+    }
+    if payload.base_config.is_some() {
+        active.base_config = Set(payload.base_config);
+    }
+    if payload.filter_rules.is_some() {
+        active.filter_rules = Set(payload.filter_rules);
+    }
+    if payload.custom_headers.is_some() {
+        active.custom_headers = Set(payload.custom_headers);
+    }
+    active.updated_at = Set(chrono::Utc::now().into());
+
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
+    Ok(ApiResponse::new(template_to_json(updated)))
+}
+
 pub async fn delete_template(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
@@ -119,7 +167,6 @@ fn subscription_to_json(s: subscription::Model) -> Value {
     json!({
         "id": s.id,
         "client_id": s.client_id,
-        "template_id": s.template_id,
         "token": s.token,
         "url_path": s.url_path,
         "is_active": s.is_active,
@@ -162,7 +209,6 @@ pub async fn list_subscriptions(
 #[derive(serde::Deserialize)]
 pub struct CreateSubscriptionPayload {
     pub client_id: Uuid,
-    pub template_id: Uuid,
 }
 
 pub async fn create_subscription(
@@ -175,7 +221,6 @@ pub async fn create_subscription(
     let active = subscription::ActiveModel {
         id: Set(Uuid::new_v4()),
         client_id: Set(payload.client_id),
-        template_id: Set(payload.template_id),
         token: Set(token.clone()),
         url_path: Set(url_path.clone()),
         expire_at: Set(None),
@@ -247,6 +292,7 @@ pub async fn serve_subscription(
     State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
     Query(params): Query<HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Response, ApiError> {
     // Find subscription by token
     let sub = subscription::Entity::find()
@@ -269,19 +315,18 @@ pub async fn serve_subscription(
     active.last_accessed_at = Set(Some(chrono::Utc::now().into()));
     let _ = active.update(&state.db).await;
 
-    // Get template
-    let template = subscription_template::Entity::find_by_id(sub.template_id)
-        .one(&state.db)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| ApiError::not_found("subscription template not found"))?;
+    // Determine format from query param or User-Agent
+    let format = detect_subscription_format(&params, headers.get(axum::http::header::USER_AGENT));
 
-    // Determine format
-    let format_param = params
-        .get("format")
-        .map(|s| s.as_str())
-        .unwrap_or(&template.format);
-    let format = format_param
+    // Find template matching the requested format
+    let template = find_template_for_format(
+        &state.db,
+        format.as_str(),
+        params.get("template").map(|s| s.as_str()),
+    )
+    .await?;
+
+    let target_format = format
         .parse::<SubscriptionFormat>()
         .map_err(|_| ApiError::bad_request("invalid_format", "unknown subscription format"))?;
 
@@ -299,12 +344,12 @@ pub async fn serve_subscription(
         .map_err(ApiError::from)?;
 
     let base_config = template.base_config.as_ref();
-    let content = generate_subscription(format, &proxy_nodes, base_config).map_err(|e| {
+    let content = generate_subscription(target_format, &proxy_nodes, base_config).map_err(|e| {
         tracing::warn!("subscription generation error: {}", e);
         ApiError::internal(format!("subscription generation failed: {e}"))
     })?;
 
-    let content_type = match format {
+    let content_type = match target_format {
         SubscriptionFormat::Json | SubscriptionFormat::SingBox | SubscriptionFormat::V2RayNG => {
             "application/json"
         }
@@ -313,6 +358,70 @@ pub async fn serve_subscription(
     };
 
     Ok(([(header::CONTENT_TYPE, content_type)], content).into_response())
+}
+
+/// Detect subscription format from query parameter or User-Agent string.
+fn detect_subscription_format(
+    params: &HashMap<String, String>,
+    user_agent: Option<&axum::http::HeaderValue>,
+) -> String {
+    if let Some(format) = params.get("format") {
+        return format.to_ascii_lowercase();
+    }
+
+    let ua = user_agent
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ua.contains("clash") || ua.contains("mihomo") {
+        "clash".to_string()
+    } else if ua.contains("sing-box") || ua.contains("singbox") {
+        "sing-box".to_string()
+    } else if ua.contains("v2rayng") || ua.contains("v2ray") {
+        "v2rayng".to_string()
+    } else {
+        "base64".to_string()
+    }
+}
+
+/// Find a subscription template matching the requested format.
+/// If `template_name` is provided, try to find a template with that name
+/// and fallback to the first template of the requested format.
+async fn find_template_for_format(
+    db: &sea_orm::DatabaseConnection,
+    format: &str,
+    template_name: Option<&str>,
+) -> Result<subscription_template::Model, ApiError> {
+    let format_lower = format.to_ascii_lowercase();
+
+    if let Some(name) = template_name {
+        if let Some(t) = subscription_template::Entity::find()
+            .filter(subscription_template::Column::Name.eq(name))
+            .one(db)
+            .await
+            .map_err(ApiError::from)?
+        {
+            return Ok(t);
+        }
+    }
+
+    let templates = subscription_template::Entity::find()
+        .filter(subscription_template::Column::Format.eq(&format_lower))
+        .all(db)
+        .await
+        .map_err(ApiError::from)?;
+
+    templates.into_iter().next().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "template_not_found",
+            format!(
+                "no subscription template found for format '{}'",
+                format_lower
+            ),
+        )
+    })
 }
 
 /// Fetch group IDs assigned to a client.
@@ -793,6 +902,7 @@ mod tests {
             name: "vless-reality".to_string(),
             protocol_type: "vless_reality".to_string(),
             core_type: "xray".to_string(),
+            core_version: None,
             listen_port: 443,
             listen_address: "0.0.0.0".to_string(),
             settings: serde_json::json!({"network": "tcp"}),

@@ -540,6 +540,7 @@ mod tests {
             settings: reality_settings(),
             tls: None,
             sniffing: None,
+            core_version: None,
         };
 
         let config = builder.build_full_config(&[inbound]).unwrap();

@@ -17,6 +17,7 @@ fn config_to_json(c: protocol_config::Model) -> Value {
         "name": c.name,
         "protocol_type": c.protocol_type,
         "core_type": c.core_type,
+        "core_version": c.core_version,
         "listen_port": c.listen_port,
         "listen_address": c.listen_address,
         "settings": c.settings,
@@ -102,6 +103,7 @@ pub struct CreateConfigPayload {
     pub name: String,
     pub protocol_type: String,
     pub core_type: String,
+    pub core_version: Option<String>,
     pub listen_port: Option<u64>,
     pub listen_address: Option<String>,
     pub settings: Option<Value>,
@@ -122,6 +124,7 @@ pub async fn create_config(
         name: Set(payload.name),
         protocol_type: Set(protocol_type.to_string()),
         core_type: Set(core_type.to_string()),
+        core_version: Set(payload.core_version),
         listen_port: Set(payload.listen_port.unwrap_or(443) as i32),
         listen_address: Set(payload
             .listen_address
@@ -142,6 +145,7 @@ pub struct UpdateConfigPayload {
     pub name: Option<String>,
     pub protocol_type: Option<String>,
     pub core_type: Option<String>,
+    pub core_version: Option<String>,
     pub listen_port: Option<u64>,
     pub listen_address: Option<String>,
     pub settings: Option<Value>,
@@ -189,6 +193,9 @@ pub async fn update_config(
     }
     if let Some(addr) = payload.listen_address {
         active.listen_address = Set(addr);
+    }
+    if payload.core_version.is_some() {
+        active.core_version = Set(payload.core_version);
     }
     if let Some(settings) = payload.settings {
         active.settings = Set(settings);

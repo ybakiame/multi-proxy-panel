@@ -8,6 +8,7 @@ pub struct Model {
     pub name: String,
     pub protocol_type: String,
     pub core_type: String,
+    pub core_version: Option<String>,
     pub listen_port: i32,
     pub listen_address: String,
     pub settings: Json,

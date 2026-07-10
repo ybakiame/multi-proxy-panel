@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
+import {
+  Button,
+  Card,
+  Badge,
+  Modal,
+  Spinner,
+  Table,
+  Tabs,
+} from "@heroui/react";
 import {
   ConfirmDialog,
   CopyableSecret,
@@ -18,12 +26,21 @@ import {
   deleteSubscription,
   getTemplates,
   createTemplate,
+  updateTemplate,
+  deleteTemplate,
 } from "../api/subscriptions";
 import { getClients } from "../api/clients";
 import { Client, Subscription, SubscriptionTemplate } from "../api/types";
 import { formatDateTime } from "../utils/format";
+import { baseUrl } from "../api/config";
 
 const FORMAT_OPTIONS = ["base64", "json", "clash", "sing-box", "v2rayng"];
+const QR_FORMATS = [
+  { id: "base64", label: "Base64" },
+  { id: "clash", label: "Clash" },
+  { id: "sing-box", label: "Sing-box" },
+  { id: "v2rayng", label: "V2RayNG" },
+];
 
 function maskToken(token: string) {
   if (!token) return "-";
@@ -35,29 +52,43 @@ function toDatetimeLocalValue(iso: string | null) {
   return iso.slice(0, 16);
 }
 
+function formatJson(obj: Record<string, unknown> | null) {
+  return JSON.stringify(obj || {}, null, 2);
+}
+
+// HeroUI's compound Tabs.Tab accepts a `title` prop at runtime but the shipped
+// TypeScript definitions omit it. Cast to a component with the expected props.
+const TabsTab = Tabs.Tab as React.FC<React.PropsWithChildren<{ title: string }>>;
+
 export function Subscriptions() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const [activeTab, setActiveTab] = useState("subscriptions");
+
+  // Subscriptions state
+  const subsPagination = usePagination();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [templates, setTemplates] = useState<SubscriptionTemplate[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingSubs, setLoadingSubs] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [templateCreateOpen, setTemplateCreateOpen] = useState(false);
   const [editSubscription, setEditSubscription] = useState<Subscription | null>(
     null,
   );
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteSubId, setDeleteSubId] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    client_id: "",
-    template_id: "",
-  });
-  const [editForm, setEditForm] = useState({
+  const [subForm, setSubForm] = useState({ client_id: "" });
+  const [subEditForm, setSubEditForm] = useState({
     is_active: true,
     expire_at: "",
   });
+
+  // Templates state
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateFormOpen, setTemplateFormOpen] = useState(false);
+  const [editTemplate, setEditTemplate] = useState<SubscriptionTemplate | null>(
+    null,
+  );
+  const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
   const [templateForm, setTemplateForm] = useState({
     name: "",
     format: "base64",
@@ -66,32 +97,110 @@ export function Subscriptions() {
     custom_headers: "{}",
   });
 
-  const fetchData = async () => {
-    setLoading(true);
+  // QR state
+  const [qrSub, setQrSub] = useState<Subscription | null>(null);
+  const [qrFormat, setQrFormat] = useState("base64");
+
+  const fetchSubscriptions = async () => {
+    setLoadingSubs(true);
     try {
-      const [subsRes, clientsRes, templatesRes] = await Promise.all([
-        getSubscriptions(page, perPage),
-        getClients(1, 1000),
-        getTemplates(),
-      ]);
-      setSubscriptions(subsRes.data);
-      setTotal(subsRes.pagination.total);
-      setClients(clientsRes.data);
-      setTemplates(templatesRes);
+      const res = await getSubscriptions(
+        subsPagination.page,
+        subsPagination.perPage,
+      );
+      setSubscriptions(res.data);
+      subsPagination.setTotal(res.pagination.total);
     } finally {
-      setLoading(false);
+      setLoadingSubs(false);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true);
+    try {
+      const res = await getTemplates();
+      setTemplates(res);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      const res = await getClients(1, 1000);
+      setClients(res.data);
+    } catch {
+      // handled by interceptor
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [page, perPage]);
+    fetchClients();
+    fetchTemplates();
+  }, []);
 
-  const resetForm = () => {
-    setForm({ client_id: "", template_id: "" });
+  useEffect(() => {
+    if (activeTab === "subscriptions") {
+      fetchSubscriptions();
+    }
+  }, [activeTab, subsPagination.page, subsPagination.perPage]);
+
+  useEffect(() => {
+    if (activeTab === "templates") {
+      fetchTemplates();
+    }
+  }, [activeTab]);
+
+  // Subscription handlers
+  const resetSubForm = () => setSubForm({ client_id: "" });
+
+  const handleCreateSubscription = async () => {
+    try {
+      const res = await createSubscription({ client_id: subForm.client_id });
+      setNewToken(res.token || null);
+      setCreateOpen(false);
+      resetSubForm();
+      fetchSubscriptions();
+    } catch {
+      // handled by interceptor
+    }
   };
 
-  const resetTemplateForm = () => {
+  const openEditSubscription = (sub: Subscription) => {
+    setEditSubscription(sub);
+    setSubEditForm({
+      is_active: sub.is_active,
+      expire_at: toDatetimeLocalValue(sub.expire_at),
+    });
+  };
+
+  const handleUpdateSubscription = async () => {
+    if (!editSubscription) return;
+    try {
+      await updateSubscription(editSubscription.id, {
+        is_active: subEditForm.is_active,
+        expire_at: subEditForm.expire_at || undefined,
+      });
+      setEditSubscription(null);
+      fetchSubscriptions();
+    } catch {
+      // handled by interceptor
+    }
+  };
+
+  const handleDeleteSubscription = async () => {
+    if (!deleteSubId) return;
+    try {
+      await deleteSubscription(deleteSubId);
+      setDeleteSubId(null);
+      fetchSubscriptions();
+    } catch {
+      // handled by interceptor
+    }
+  };
+
+  // Template handlers
+  const resetTemplateFormState = () => {
     setTemplateForm({
       name: "",
       format: "base64",
@@ -101,223 +210,347 @@ export function Subscriptions() {
     });
   };
 
-  const handleCreate = async () => {
-    try {
-      const res = await createSubscription({
-        client_id: form.client_id,
-        template_id: form.template_id,
-      });
-      setNewToken(res.token || null);
-      setCreateOpen(false);
-      resetForm();
-      fetchData();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const openCreateTemplate = () => {
+    setEditTemplate(null);
+    resetTemplateFormState();
+    setTemplateFormOpen(true);
   };
 
-  const handleUpdate = async () => {
-    if (!editSubscription) return;
-    try {
-      await updateSubscription(editSubscription.id, {
-        is_active: editForm.is_active,
-        expire_at: editForm.expire_at || undefined,
-      });
-      setEditSubscription(null);
-      fetchData();
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await deleteSubscription(deleteId);
-      setDeleteId(null);
-      fetchData();
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
-
-  const handleCreateTemplate = async () => {
-    try {
-      let baseConfig: Record<string, unknown> = {};
-      let filterRules: Record<string, unknown> = {};
-      let customHeaders: Record<string, string> = {};
-      try {
-        baseConfig = JSON.parse(templateForm.base_config);
-      } catch {}
-      try {
-        filterRules = JSON.parse(templateForm.filter_rules);
-      } catch {}
-      try {
-        customHeaders = JSON.parse(templateForm.custom_headers);
-      } catch {}
-      await createTemplate({
-        name: templateForm.name,
-        format: templateForm.format,
-        base_config: baseConfig,
-        filter_rules: filterRules,
-        custom_headers: customHeaders,
-      });
-      setTemplateCreateOpen(false);
-      resetTemplateForm();
-      const templatesRes = await getTemplates();
-      setTemplates(templatesRes);
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
-
-  const openEdit = (sub: Subscription) => {
-    setEditSubscription(sub);
-    setEditForm({
-      is_active: sub.is_active,
-      expire_at: toDatetimeLocalValue(sub.expire_at),
+  const openEditTemplate = (tmpl: SubscriptionTemplate) => {
+    setEditTemplate(tmpl);
+    setTemplateForm({
+      name: tmpl.name,
+      format: tmpl.format,
+      base_config: formatJson(tmpl.base_config),
+      filter_rules: formatJson(tmpl.filter_rules),
+      custom_headers: formatJson(tmpl.custom_headers),
     });
+    setTemplateFormOpen(true);
   };
 
+  const parseTemplateFormJson = () => {
+    let baseConfig: Record<string, unknown> = {};
+    let filterRules: Record<string, unknown> = {};
+    let customHeaders: Record<string, string> = {};
+    try {
+      baseConfig = JSON.parse(templateForm.base_config);
+    } catch {}
+    try {
+      filterRules = JSON.parse(templateForm.filter_rules);
+    } catch {}
+    try {
+      customHeaders = JSON.parse(templateForm.custom_headers);
+    } catch {}
+    return { baseConfig, filterRules, customHeaders };
+  };
+
+  const handleSaveTemplate = async () => {
+    const { baseConfig, filterRules, customHeaders } = parseTemplateFormJson();
+    const payload = {
+      name: templateForm.name,
+      format: templateForm.format,
+      base_config: baseConfig,
+      filter_rules: filterRules,
+      custom_headers: customHeaders,
+    };
+    try {
+      if (editTemplate) {
+        await updateTemplate(editTemplate.id, payload);
+      } else {
+        await createTemplate(payload);
+      }
+      setTemplateFormOpen(false);
+      resetTemplateFormState();
+      setEditTemplate(null);
+      fetchTemplates();
+    } catch {
+      // handled by interceptor
+    }
+  };
+
+  const handleDeleteTemplate = async () => {
+    if (!deleteTemplateId) return;
+    try {
+      await deleteTemplate(deleteTemplateId);
+      setDeleteTemplateId(null);
+      fetchTemplates();
+    } catch {
+      // handled by interceptor
+    }
+  };
+
+  // Helpers
   const clientName = (clientId: string) => {
     const client = clients.find((c) => c.id === clientId);
     return client?.name || clientId;
   };
 
-  const templateName = (templateId: string) => {
-    const template = templates.find((t) => t.id === templateId);
-    return template?.name || templateId;
+  const templateFormatBadge = (format: string) => {
+    const colors: Record<string, string> = {
+      base64: "default",
+      json: "secondary",
+      clash: "primary",
+      "sing-box": "success",
+      v2rayng: "warning",
+    };
+    return (
+      <Badge color={(colors[format] as never) || "default"} size="sm">
+        {format}
+      </Badge>
+    );
+  };
+
+  const buildSubUrl = (sub: Subscription, format?: string) => {
+    const origin = baseUrl() || window.location.origin;
+    let url = `${origin}${sub.url_path}`;
+    if (format) {
+      url += `?format=${encodeURIComponent(format)}`;
+    }
+    return url;
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
   };
 
   return (
     <div className="space-y-4">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("subscriptions.title")}</h1>
-        <div className="flex gap-2">
-          <Button
-            onPress={() => {
-              setNewToken(null);
-              resetForm();
-              setCreateOpen(true);
-            }}
-          >
-            {t("subscriptions.create")}
-          </Button>
-          <Button
-            variant="ghost"
-            onPress={() => {
-              resetTemplateForm();
-              setTemplateCreateOpen(true);
-            }}
-          >
-            {t("subscriptions.createTemplate")}
-          </Button>
-        </div>
-      </div>
-
-      {newToken && (
-        <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />
-      )}
-
-      <Card>
-        <Card.Content>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <>
-              <Table aria-label="subscriptions">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>
-                        {t("subscriptions.client")}
-                      </Table.Column>
-                      <Table.Column>{t("subscriptions.template")}</Table.Column>
-                      <Table.Column>{t("subscriptions.token")}</Table.Column>
-                      <Table.Column>{t("subscriptions.urlPath")}</Table.Column>
-                      <Table.Column>{t("subscriptions.isActive")}</Table.Column>
-                      <Table.Column>
-                        {t("subscriptions.expiresAt")}
-                      </Table.Column>
-                      <Table.Column>
-                        {t("subscriptions.lastAccessed")}
-                      </Table.Column>
-                      <Table.Column>{t("common.actions")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("common.empty")}
-                        </div>
-                      )}
-                    >
-                      {subscriptions.map((sub) => (
-                        <Table.Row key={sub.id}>
-                          <Table.Cell>{clientName(sub.client_id)}</Table.Cell>
-                          <Table.Cell>
-                            {templateName(sub.template_id)}
-                          </Table.Cell>
-                          <Table.Cell>{maskToken(sub.token)}</Table.Cell>
-                          <Table.Cell>{sub.url_path}</Table.Cell>
-                          <Table.Cell>
-                            {sub.is_active
-                              ? t("common.enabled")
-                              : t("common.disabled")}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {formatDateTime(sub.expire_at)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {formatDateTime(sub.last_accessed_at)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onPress={() => openEdit(sub)}
-                              >
-                                {t("common.edit")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onPress={() => setDeleteId(sub.id)}
-                              >
-                                {t("common.delete")}
-                              </Button>
-                            </div>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
-              </Table>
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                perPage={perPage}
-                total={total}
-                onPageChange={setPage}
-                onPerPageChange={setPerPage}
-              />
-            </>
-          )}
-        </Card.Content>
-      </Card>
-
-      <ConfirmDialog
-        title={t("subscriptions.deleteTitle")}
-        isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
+      <Tabs
+        aria-label="subscription tabs"
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(key as string)}
       >
-        {t("subscriptions.deleteConfirm")}
-      </ConfirmDialog>
+        <TabsTab key="subscriptions" title={t("subscriptions.title")}>
+          <div className="mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold">{t("subscriptions.title")}</h1>
+              <Button
+                onPress={() => {
+                  setNewToken(null);
+                  resetSubForm();
+                  setCreateOpen(true);
+                }}
+              >
+                {t("subscriptions.create")}
+              </Button>
+            </div>
 
+            {newToken && (
+              <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />
+            )}
+
+            <Card>
+              <Card.Content>
+                {loadingSubs ? (
+                  <div className="flex h-32 items-center justify-center">
+                    <Spinner />
+                  </div>
+                ) : (
+                  <>
+                    <Table aria-label="subscriptions">
+                      <Table.ScrollContainer>
+                        <Table.Content>
+                          <Table.Header>
+                            <Table.Column isRowHeader>
+                              {t("subscriptions.client")}
+                            </Table.Column>
+                            <Table.Column>
+                              {t("subscriptions.token")}
+                            </Table.Column>
+                            <Table.Column>
+                              {t("subscriptions.urlPath")}
+                            </Table.Column>
+                            <Table.Column>
+                              {t("subscriptions.isActive")}
+                            </Table.Column>
+                            <Table.Column>
+                              {t("subscriptions.expiresAt")}
+                            </Table.Column>
+                            <Table.Column>
+                              {t("subscriptions.lastAccessed")}
+                            </Table.Column>
+                            <Table.Column>{t("common.actions")}</Table.Column>
+                          </Table.Header>
+                          <Table.Body
+                            renderEmptyState={() => (
+                              <div className="p-4 text-center text-muted-foreground">
+                                {t("common.empty")}
+                              </div>
+                            )}
+                          >
+                            {subscriptions.map((sub) => (
+                              <Table.Row key={sub.id}>
+                                <Table.Cell>{clientName(sub.client_id)}</Table.Cell>
+                                <Table.Cell>{maskToken(sub.token)}</Table.Cell>
+                                <Table.Cell className="max-w-xs truncate">
+                                  {sub.url_path}
+                                </Table.Cell>
+                                <Table.Cell>
+                                  {sub.is_active
+                                    ? t("common.enabled")
+                                    : t("common.disabled")}
+                                </Table.Cell>
+                                <Table.Cell>
+                                  {formatDateTime(sub.expire_at)}
+                                </Table.Cell>
+                                <Table.Cell>
+                                  {formatDateTime(sub.last_accessed_at)}
+                                </Table.Cell>
+                                <Table.Cell>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onPress={() =>
+                                        copyToClipboard(buildSubUrl(sub))
+                                      }
+                                    >
+                                      {t("subscriptions.copyLink")}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onPress={() => {
+                                        setQrSub(sub);
+                                        setQrFormat("base64");
+                                      }}
+                                    >
+                                      {t("subscriptions.qrCode")}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onPress={() => openEditSubscription(sub)}
+                                    >
+                                      {t("common.edit")}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="danger"
+                                      onPress={() => setDeleteSubId(sub.id)}
+                                    >
+                                      {t("common.delete")}
+                                    </Button>
+                                  </div>
+                                </Table.Cell>
+                              </Table.Row>
+                            ))}
+                          </Table.Body>
+                        </Table.Content>
+                      </Table.ScrollContainer>
+                    </Table>
+                    <Pagination
+                      page={subsPagination.page}
+                      totalPages={subsPagination.totalPages}
+                      perPage={subsPagination.perPage}
+                      total={subsPagination.total}
+                      onPageChange={subsPagination.setPage}
+                      onPerPageChange={subsPagination.setPerPage}
+                    />
+                  </>
+                )}
+              </Card.Content>
+            </Card>
+          </div>
+        </TabsTab>
+
+        <TabsTab key="templates" title={t("subscriptions.templates")}>
+          <div className="mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold">
+                {t("subscriptions.templates")}
+              </h1>
+              <Button onPress={openCreateTemplate}>
+                {t("subscriptions.createTemplate")}
+              </Button>
+            </div>
+
+            <Card>
+              <Card.Content>
+                {loadingTemplates ? (
+                  <div className="flex h-32 items-center justify-center">
+                    <Spinner />
+                  </div>
+                ) : (
+                  <Table aria-label="subscription templates">
+                    <Table.ScrollContainer>
+                      <Table.Content>
+                        <Table.Header>
+                          <Table.Column isRowHeader>
+                            {t("common.name")}
+                          </Table.Column>
+                          <Table.Column>
+                            {t("subscriptions.format")}
+                          </Table.Column>
+                          <Table.Column>
+                            {t("subscriptions.baseConfig")}
+                          </Table.Column>
+                          <Table.Column>
+                            {t("subscriptions.filterRules")}
+                          </Table.Column>
+                          <Table.Column>
+                            {t("subscriptions.customHeaders")}
+                          </Table.Column>
+                          <Table.Column>{t("common.actions")}</Table.Column>
+                        </Table.Header>
+                        <Table.Body
+                          renderEmptyState={() => (
+                            <div className="p-4 text-center text-muted-foreground">
+                              {t("common.empty")}
+                            </div>
+                          )}
+                        >
+                          {templates.map((tmpl) => (
+                            <Table.Row key={tmpl.id}>
+                              <Table.Cell>{tmpl.name}</Table.Cell>
+                              <Table.Cell>
+                                {templateFormatBadge(tmpl.format)}
+                              </Table.Cell>
+                              <Table.Cell>
+                                {tmpl.base_config ? t("common.yes") : t("common.no")}
+                              </Table.Cell>
+                              <Table.Cell>
+                                {tmpl.filter_rules
+                                  ? t("common.yes")
+                                  : t("common.no")}
+                              </Table.Cell>
+                              <Table.Cell>
+                                {tmpl.custom_headers
+                                  ? t("common.yes")
+                                  : t("common.no")}
+                              </Table.Cell>
+                              <Table.Cell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onPress={() => openEditTemplate(tmpl)}
+                                  >
+                                    {t("common.edit")}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="danger"
+                                    onPress={() => setDeleteTemplateId(tmpl.id)}
+                                  >
+                                    {t("common.delete")}
+                                  </Button>
+                                </div>
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
+                )}
+              </Card.Content>
+            </Card>
+          </div>
+        </TabsTab>
+      </Tabs>
+
+      {/* Create subscription modal */}
       <Modal.Backdrop
         isOpen={createOpen}
         onOpenChange={(open) => setCreateOpen(open)}
@@ -330,21 +563,13 @@ export function Subscriptions() {
             <Modal.Body className="space-y-4">
               <FormSelect
                 label={t("subscriptions.client")}
-                value={form.client_id}
-                onChange={(value) => setForm({ ...form, client_id: value })}
+                value={subForm.client_id}
+                onChange={(value) =>
+                  setSubForm({ ...subForm, client_id: value })
+                }
                 options={clients.map((client) => ({
                   id: client.id,
                   label: client.name,
-                }))}
-                isRequired
-              />
-              <FormSelect
-                label={t("subscriptions.template")}
-                value={form.template_id}
-                onChange={(value) => setForm({ ...form, template_id: value })}
-                options={templates.map((template) => ({
-                  id: template.id,
-                  label: template.name,
                 }))}
                 isRequired
               />
@@ -357,12 +582,15 @@ export function Subscriptions() {
               >
                 {t("common.cancel")}
               </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
+              <Button onPress={handleCreateSubscription}>
+                {t("common.create")}
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
 
+      {/* Edit subscription modal */}
       <Modal.Backdrop
         isOpen={!!editSubscription}
         onOpenChange={(open) => {
@@ -376,9 +604,9 @@ export function Subscriptions() {
             </Modal.Header>
             <Modal.Body className="space-y-4">
               <FormCheckbox
-                isSelected={editForm.is_active}
+                isSelected={subEditForm.is_active}
                 onChange={(selected) =>
-                  setEditForm({ ...editForm, is_active: selected })
+                  setSubEditForm({ ...subEditForm, is_active: selected })
                 }
               >
                 {t("subscriptions.isActive")}
@@ -386,9 +614,9 @@ export function Subscriptions() {
               <FormInput
                 type="datetime-local"
                 label={t("subscriptions.expiresAt")}
-                value={editForm.expire_at}
+                value={subEditForm.expire_at}
                 onChange={(value) =>
-                  setEditForm({ ...editForm, expire_at: value })
+                  setSubEditForm({ ...subEditForm, expire_at: value })
                 }
               />
             </Modal.Body>
@@ -400,21 +628,32 @@ export function Subscriptions() {
               >
                 {t("common.cancel")}
               </Button>
-              <Button onPress={handleUpdate}>{t("common.update")}</Button>
+              <Button onPress={handleUpdateSubscription}>
+                {t("common.update")}
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
 
+      {/* Template form modal */}
       <Modal.Backdrop
-        isOpen={templateCreateOpen}
-        onOpenChange={(open) => setTemplateCreateOpen(open)}
+        isOpen={templateFormOpen}
+        onOpenChange={(open) => {
+          setTemplateFormOpen(open);
+          if (!open) {
+            setEditTemplate(null);
+            resetTemplateFormState();
+          }
+        }}
       >
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
               <Modal.Heading>
-                {t("subscriptions.templateCreateTitle")}
+                {editTemplate
+                  ? t("subscriptions.templateEditTitle")
+                  : t("subscriptions.templateCreateTitle")}
               </Modal.Heading>
             </Modal.Header>
             <Modal.Body className="space-y-4">
@@ -430,10 +669,7 @@ export function Subscriptions() {
                 label={t("subscriptions.format")}
                 value={templateForm.format}
                 onChange={(value) =>
-                  setTemplateForm({
-                    ...templateForm,
-                    format: value || "base64",
-                  })
+                  setTemplateForm({ ...templateForm, format: value || "base64" })
                 }
                 options={FORMAT_OPTIONS.map((format) => ({
                   id: format,
@@ -469,17 +705,85 @@ export function Subscriptions() {
               <Button
                 slot="close"
                 variant="ghost"
-                onPress={() => setTemplateCreateOpen(false)}
+                onPress={() => setTemplateFormOpen(false)}
               >
                 {t("common.cancel")}
               </Button>
-              <Button onPress={handleCreateTemplate}>
-                {t("common.create")}
+              <Button onPress={handleSaveTemplate}>
+                {editTemplate ? t("common.update") : t("common.create")}
               </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+
+      {/* QR modal */}
+      <Modal.Backdrop
+        isOpen={!!qrSub}
+        onOpenChange={(open) => {
+          if (!open) setQrSub(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("subscriptions.qrCode")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormSelect
+                label={t("subscriptions.format")}
+                value={qrFormat}
+                onChange={(value) => setQrFormat(value || "base64")}
+                options={QR_FORMATS}
+              />
+              {qrSub && (
+                <div className="flex flex-col items-center gap-3">
+                  <img
+                    src={`${baseUrl()}${qrSub.url_path}/qr?format=${encodeURIComponent(qrFormat)}`}
+                    alt="subscription qr"
+                    className="rounded border"
+                  />
+                  <p className="break-all text-center text-sm text-muted-foreground">
+                    {buildSubUrl(qrSub, qrFormat)}
+                  </p>
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                variant="ghost"
+                onPress={() => qrSub && copyToClipboard(buildSubUrl(qrSub, qrFormat))}
+              >
+                {t("subscriptions.copyLink")}
+              </Button>
+              <Button
+                slot="close"
+                onPress={() => setQrSub(null)}
+              >
+                {t("common.close")}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <ConfirmDialog
+        title={t("subscriptions.deleteTitle")}
+        isOpen={!!deleteSubId}
+        onClose={() => setDeleteSubId(null)}
+        onConfirm={handleDeleteSubscription}
+      >
+        {t("subscriptions.deleteConfirm")}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        title={t("subscriptions.templateDeleteTitle")}
+        isOpen={!!deleteTemplateId}
+        onClose={() => setDeleteTemplateId(null)}
+        onConfirm={handleDeleteTemplate}
+      >
+        {t("subscriptions.templateDeleteConfirm")}
+      </ConfirmDialog>
     </div>
   );
 }

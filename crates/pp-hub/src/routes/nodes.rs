@@ -301,12 +301,13 @@ pub async fn push_config(
             )
         })?;
 
-    let config_json = crate::service::protocol::generate_node_config(&state.db, id, core_type)
-        .await
-        .map_err(|e| {
-            tracing::warn!("failed to generate config for node {}: {}", id, e);
-            ApiError::internal(format!("failed to generate config: {e}"))
-        })?;
+    let (config_json, core_version) =
+        crate::service::protocol::generate_node_config(&state.db, id, core_type)
+            .await
+            .map_err(|e| {
+                tracing::warn!("failed to generate config for node {}: {}", id, e);
+                ApiError::internal(format!("failed to generate config: {e}"))
+            })?;
 
     let config_str = serde_json::to_string(&config_json)
         .map_err(|e| ApiError::internal(format!("failed to serialize config: {e}")))?;
@@ -324,6 +325,7 @@ pub async fn push_config(
                 target_core: proto_core as i32,
                 restart_required: payload.restart.unwrap_or(true),
                 config_version: payload.version.unwrap_or_else(|| "1".to_string()),
+                core_version: core_version.unwrap_or_default(),
             },
         )),
     };

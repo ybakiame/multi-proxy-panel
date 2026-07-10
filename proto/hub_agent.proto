@@ -136,6 +136,7 @@ message ConfigPush {
   CoreType target_core = 2;
   bool restart_required = 3;
   string config_version = 4;
+  string core_version = 5;
 }
 
 // 配置热重载
@@ -143,6 +144,7 @@ message ConfigReload {
   string config_json = 1;
   CoreType target_core = 2;
   string config_version = 3;
+  string core_version = 4;
 }
 
 // 核心命令

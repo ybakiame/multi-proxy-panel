@@ -8,9 +8,24 @@ const resources = {
   "en-US": { translation: enUS },
 };
 
+function getInitialLanguage(): "zh-CN" | "en-US" {
+  try {
+    const raw = localStorage.getItem("pp-settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.state?.language === "en-US" || parsed.state?.language === "zh-CN") {
+        return parsed.state.language;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return "zh-CN";
+}
+
 i18n.use(initReactI18next).init({
   resources,
-  lng: "zh-CN",
+  lng: getInitialLanguage(),
   fallbackLng: "zh-CN",
   interpolation: {
     escapeValue: false,

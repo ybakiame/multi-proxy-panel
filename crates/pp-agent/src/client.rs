@@ -199,6 +199,7 @@ async fn handle_hub_message(
                 target_core: reload.target_core,
                 restart_required: false,
                 config_version: reload.config_version,
+                core_version: reload.core_version,
             };
             handle_config_push(supervisor, push).await?;
         }
@@ -229,8 +230,13 @@ async fn handle_config_push(supervisor: &CoreSupervisor, push: ConfigPush) -> an
         manager
     } else {
         tracing::info!("core {:?} not registered; installing on demand", core_type);
+        let version = if push.core_version.is_empty() {
+            None
+        } else {
+            Some(push.core_version.as_str())
+        };
         supervisor
-            .ensure_manager_from_discovered(core_type)
+            .ensure_manager_from_discovered(core_type, version)
             .await
             .map_err(|e| anyhow::anyhow!("failed to install {:?}: {}", core_type, e))?
     };
@@ -263,7 +269,7 @@ async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> a
                 mgr
             } else {
                 supervisor
-                    .ensure_manager_from_discovered(core_type)
+                    .ensure_manager_from_discovered(core_type, None)
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to prepare {:?}: {}", core_type, e))?
             };
@@ -293,7 +299,7 @@ async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> a
                 mgr
             } else {
                 supervisor
-                    .ensure_manager_from_discovered(core_type)
+                    .ensure_manager_from_discovered(core_type, None)
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to prepare {:?}: {}", core_type, e))?
             };

@@ -46,6 +46,7 @@ interface ProtocolForm {
   name: string;
   protocol_type: string;
   core_type: string;
+  core_version: string;
   listen_address: string;
   listen_port: string;
   tls_settings: string;
@@ -74,6 +75,7 @@ const defaultForm: ProtocolForm = {
   name: "",
   protocol_type: "vless_reality",
   core_type: "xray",
+  core_version: "",
   listen_address: "",
   listen_port: "",
   tls_settings: "{}",
@@ -164,6 +166,7 @@ export function Protocols() {
         name: protocol.name,
         protocol_type: protocol.protocol_type,
         core_type: protocol.core_type,
+        core_version: protocol.core_version || "",
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
         tls_settings: protocol.tls_settings
@@ -251,6 +254,7 @@ export function Protocols() {
       name: form.name,
       protocol_type: form.protocol_type,
       core_type: form.core_type,
+      core_version: form.core_version || undefined,
       listen_address: form.listen_address,
       listen_port: Number(form.listen_port) || 0,
       settings: buildSettings(),
@@ -585,6 +589,7 @@ export function Protocols() {
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("protocols.type")}</Table.Column>
                     <Table.Column>{t("protocols.core")}</Table.Column>
+                    <Table.Column>Version</Table.Column>
                     <Table.Column>{t("protocols.listen")}</Table.Column>
                     <Table.Column>{t("protocols.port")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
@@ -601,6 +606,7 @@ export function Protocols() {
                         <Table.Cell>{protocol.name}</Table.Cell>
                         <Table.Cell>{protocol.protocol_type}</Table.Cell>
                         <Table.Cell>{protocol.core_type}</Table.Cell>
+                        <Table.Cell>{protocol.core_version || "-"}</Table.Cell>
                         <Table.Cell>{protocol.listen_address}</Table.Cell>
                         <Table.Cell>{protocol.listen_port}</Table.Cell>
                         <Table.Cell>
@@ -685,6 +691,12 @@ export function Protocols() {
                 onChange={(value) => setForm({ ...form, core_type: value })}
                 options={CORE_TYPES.map((core) => ({ id: core, label: core }))}
                 isRequired
+              />
+              <FormInput
+                label={"Core Version"}
+                value={form.core_version}
+                onChange={(value) => setForm({ ...form, core_version: value })}
+                placeholder="e.g. 1.14.0-beta.5 (leave empty for default)"
               />
               <FormInput
                 label={t("protocols.listen")}

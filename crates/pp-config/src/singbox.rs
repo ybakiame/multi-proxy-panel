@@ -40,7 +40,8 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             )?);
         }
 
-        let experimental = build_api_services();
+        let effective_version = effective_singbox_version(inbounds);
+        let use_new_api = version_gte(&effective_version, "1.14.0");
         let route = build_singbox_route();
 
         let mut config = json!({
@@ -62,9 +63,19 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             "route": route
         });
 
-        if let Some(exp_obj) = experimental.as_object() {
-            if !exp_obj.is_empty() {
-                config["experimental"] = experimental;
+        if use_new_api {
+            let services = build_api_service();
+            if let Some(arr) = services.as_array() {
+                if !arr.is_empty() {
+                    config["services"] = services;
+                }
+            }
+        } else {
+            let experimental = build_legacy_api_services();
+            if let Some(exp_obj) = experimental.as_object() {
+                if !exp_obj.is_empty() {
+                    config["experimental"] = experimental;
+                }
             }
         }
 
@@ -84,8 +95,57 @@ fn build_singbox_route() -> Value {
     })
 }
 
-/// Build the sing-box experimental clash_api definition.
-fn build_api_services() -> Value {
+fn effective_singbox_version(inbounds: &[InboundConfig]) -> String {
+    let requested: Vec<&str> = inbounds
+        .iter()
+        .filter_map(|i| i.core_version.as_deref())
+        .filter(|v| !v.is_empty())
+        .collect();
+
+    if requested.is_empty() {
+        return "1.14.0".to_string();
+    }
+
+    requested
+        .into_iter()
+        .max_by(|a, b| compare_versions(a, b))
+        .unwrap_or("1.14.0")
+        .to_string()
+}
+
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    fn parse(v: &str) -> Vec<u32> {
+        v.split(|c: char| !c.is_ascii_digit())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    }
+    parse(a).cmp(&parse(b))
+}
+
+fn version_gte(version: &str, target: &str) -> bool {
+    compare_versions(version, target) != std::cmp::Ordering::Less
+}
+
+/// Build the sing-box 1.14.0+ API service definition.
+fn build_api_service() -> Value {
+    let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
+
+    let mut api = json!({
+        "type": "api",
+        "listen": http_listen,
+    });
+    if !secret.is_empty() {
+        api["secret"] = serde_json::json!(secret);
+    }
+
+    json!([api])
+}
+
+/// Build the legacy sing-box experimental clash_api definition (pre-1.14.0).
+fn build_legacy_api_services() -> Value {
     let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
         .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
     let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
@@ -657,6 +717,7 @@ mod tests {
             settings: reality_settings(),
             tls: None,
             sniffing: None,
+            core_version: None,
         };
 
         let config = builder.build_full_config(&[inbound]).unwrap();

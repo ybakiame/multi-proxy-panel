@@ -6,11 +6,13 @@ use serde_json::Value;
 use uuid::Uuid;
 
 /// Generate core configuration for a specific node based on its bindings.
+/// Returns the config JSON and the effective core binary version (for sing-box
+/// only) derived from the active protocol configs.
 pub async fn generate_node_config(
     db: &DatabaseConnection,
     node_id: Uuid,
     target_core: CoreType,
-) -> PanelResult<Value> {
+) -> PanelResult<(Value, Option<String>)> {
     let bindings = node_binding::Entity::find()
         .filter(node_binding::Column::NodeId.eq(node_id))
         .filter(node_binding::Column::IsActive.eq(true))
@@ -58,15 +60,55 @@ pub async fn generate_node_config(
             settings,
             tls: config.tls_settings.clone(),
             sniffing: None,
+            core_version: config.core_version.clone(),
         });
     }
+
+    let effective_version = effective_core_version(target_core, &inbounds);
 
     let registry = BuilderRegistry::default();
     let builder = registry.get(target_core).ok_or_else(|| {
         pp_common::PanelError::Config(format!("no builder registered for {:?}", target_core))
     })?;
 
-    builder.build_full_config(&inbounds)
+    let config = builder.build_full_config(&inbounds)?;
+    Ok((config, effective_version))
+}
+
+/// Determine the effective core binary version for a set of inbounds.
+/// For sing-box, returns the highest explicitly requested version or a default
+/// of 1.14.0 so that new server deployments use the modern API service.
+fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Option<String> {
+    if core_type != CoreType::SingBox {
+        return None;
+    }
+
+    let requested: Vec<&str> = inbounds
+        .iter()
+        .filter_map(|i| i.core_version.as_deref())
+        .filter(|v| !v.is_empty())
+        .collect();
+
+    if requested.is_empty() {
+        return Some("1.14.0".to_string());
+    }
+
+    requested
+        .into_iter()
+        .max_by(|a, b| compare_versions(a, b))
+        .map(|v| v.to_string())
+}
+
+/// Simple semver-like comparison. Returns `Ordering` for two version strings.
+/// Pre-release segments (e.g. `-beta.5`) are treated as lower than release.
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    fn parse(v: &str) -> Vec<u32> {
+        v.split(|c: char| !c.is_ascii_digit())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    }
+    parse(a).cmp(&parse(b))
 }
 
 /// Validate that active bindings on a node do not ask two cores to listen on the

@@ -348,7 +348,7 @@ async fn push_config_for_core(
     }
 
     match crate::service::protocol::generate_node_config(&state.db, node_id, core_type).await {
-        Ok(config) => {
+        Ok((config, core_version)) => {
             // Verify the generated config has inbounds (the core needs at least one)
             let has_inbounds = config
                 .get("inbounds")
@@ -379,6 +379,7 @@ async fn push_config_for_core(
                         target_core: proto_core as i32,
                         restart_required: false,
                         config_version: "1".to_string(),
+                        core_version: core_version.unwrap_or_default(),
                     },
                 )),
             };
