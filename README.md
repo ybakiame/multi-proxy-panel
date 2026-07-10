@@ -93,7 +93,16 @@ cargo run --bin proxy-panel -- init-db \
   --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
 ```
 
-### 4. 启动 Hub
+### 4. 创建首个管理员
+
+```bash
+cargo run --bin proxy-panel -- create-user \
+  --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel" \
+  --username admin \
+  --password "STRONG_PASSWORD"
+```
+
+### 5. 启动 Hub
 
 ```bash
 cargo run --release --bin proxy-panel-hub
@@ -103,7 +112,7 @@ Hub 将监听：
 - HTTP API: `http://localhost:8081`
 - gRPC: `http://localhost:50052`
 
-### 5. 构建 Web 前端
+### 6. 构建 Web 前端
 
 ```bash
 cd crates/pp-web
@@ -120,7 +129,7 @@ cd crates/pp-web
 npm run dev
 ```
 
-### 6. 启动 Agent（在节点服务器上）
+### 7. 启动 Agent（在节点服务器上）
 
 ```bash
 cargo run --release --bin proxy-panel-agent \

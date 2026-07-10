@@ -37,6 +37,16 @@ npm run preview
 npx tsc --noEmit
 ```
 
+## 发布构建验证
+
+```bash
+cd crates/pp-web
+npm install
+npm run build:prod
+```
+
+成功后会输出到 `dist/` 目录。Hub 默认从 `crates/pp-web/dist` 托管静态文件，也可通过 `--static-dir` 指定其他路径。
+
 ## 项目结构
 
 ```
