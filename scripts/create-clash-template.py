@@ -79,7 +79,8 @@ def main():
         print(f"Removed old template '{TEMPLATE_NAME}' ({existing_id})")
 
     result = api_request("POST", "/api/v1/templates", payload)
-    print(f"Created template '{TEMPLATE_NAME}' ({result['id']})")
+    template_id = result.get("data", result).get("id")
+    print(f"Created template '{TEMPLATE_NAME}' ({template_id})")
 
 
 if __name__ == "__main__":
