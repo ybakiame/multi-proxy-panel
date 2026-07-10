@@ -26,3 +26,5 @@ pnpm-debug.log*
 *.sln
 *.sw?
 *.tsbuildinfo
+# heroui-agents-md
+.heroui-docs/

@@ -1,12 +1,5 @@
 import { useTranslation } from "react-i18next";
-import {
-  Button,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-} from "@heroui/react";
+import { Button, Modal } from "@heroui/react";
 
 interface ConfirmDialogProps {
   title: string;
@@ -29,19 +22,28 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      <ModalContent>
-        <ModalHeader>{title}</ModalHeader>
-        <ModalBody>{children}</ModalBody>
-        <ModalFooter>
-          <Button variant="flat" onPress={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button color="danger" onPress={onConfirm} isLoading={isLoading}>
-            {confirmText || t("common.delete")}
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    <Modal.Backdrop
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Modal.Container>
+        <Modal.Dialog>
+          <Modal.Header>
+            <Modal.Heading>{title}</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body>{children}</Modal.Body>
+          <Modal.Footer>
+            <Button slot="close" variant="ghost" onPress={onClose}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onPress={onConfirm} isPending={isLoading}>
+              {confirmText || t("common.delete")}
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   );
 }

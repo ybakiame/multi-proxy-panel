@@ -1,26 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Select,
-  SelectItem,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Spinner,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination, JsonEditor } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  JsonEditor,
+  FormInput,
+  FormSelect,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import {
   getProtocols,
@@ -112,11 +100,14 @@ const defaultForm: ProtocolForm = {
 
 export function Protocols() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
+  const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(
+    null,
+  );
   const [deleteProtocolId, setDeleteProtocolId] = useState<string | null>(null);
   const [form, setForm] = useState<ProtocolForm>(defaultForm);
 
@@ -135,7 +126,9 @@ export function Protocols() {
     fetch();
   }, [page, perPage]);
 
-  const parseSettings = (settings: Record<string, unknown>): Partial<ProtocolForm> => {
+  const parseSettings = (
+    settings: Record<string, unknown>,
+  ): Partial<ProtocolForm> => {
     return {
       uuid: (settings.uuid as string) || "",
       password: (settings.password as string) || "",
@@ -153,10 +146,12 @@ export function Protocols() {
       obfs_type: (settings.obfs_type as string) || "none",
       obfs_password: (settings.obfs_password as string) || "",
       up_mbps: settings.up_mbps !== undefined ? String(settings.up_mbps) : "",
-      down_mbps: settings.down_mbps !== undefined ? String(settings.down_mbps) : "",
+      down_mbps:
+        settings.down_mbps !== undefined ? String(settings.down_mbps) : "",
       masquerade: (settings.masquerade as string) || "",
       congestion_control: (settings.congestion_control as string) || "bbr",
-      alter_id: settings.alter_id !== undefined ? String(settings.alter_id) : "",
+      alter_id:
+        settings.alter_id !== undefined ? String(settings.alter_id) : "",
       method: (settings.method as string) || "2022-blake3-aes-256-gcm",
     };
   };
@@ -329,162 +324,153 @@ export function Protocols() {
       case "vless_reality":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.uuid")}
               value={form.uuid}
-              onChange={(e) => setForm({ ...form, uuid: e.target.value })}
+              onChange={(value) => setForm({ ...form, uuid: value })}
               isRequired
             />
-            <Select
+            <FormSelect
               label={t("protocols.flow")}
-              selectedKeys={[form.flow]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, flow: Array.from(keys)[0] as string })
-              }
-            >
-              {FLOW_OPTIONS.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
-            <Input
+              value={form.flow}
+              onChange={(value) => setForm({ ...form, flow: value })}
+              options={FLOW_OPTIONS.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
+            <FormInput
               label={t("protocols.dest")}
               value={form.dest}
-              onChange={(e) => setForm({ ...form, dest: e.target.value })}
+              onChange={(value) => setForm({ ...form, dest: value })}
               isRequired
             />
-            <Input
+            <FormInput
               label={t("protocols.serverNames")}
               value={form.server_names}
-              onChange={(e) => setForm({ ...form, server_names: e.target.value })}
+              onChange={(value) => setForm({ ...form, server_names: value })}
               placeholder="example.com, example.net"
               isRequired
             />
             <div className="flex gap-2">
-              <Input
+              <FormInput
                 className="flex-1"
                 label={t("protocols.privateKey")}
                 value={form.private_key}
-                onChange={(e) => setForm({ ...form, private_key: e.target.value })}
+                onChange={(value) => setForm({ ...form, private_key: value })}
               />
               <Button
                 className="self-end"
-                color="secondary"
-                variant="flat"
+                variant="ghost"
                 onPress={handleGenerateRealityKeys}
               >
                 {t("protocols.generateKeys")}
               </Button>
             </div>
-            <Input
+            <FormInput
               label={t("protocols.publicKey")}
               value={form.public_key}
-              onChange={(e) => setForm({ ...form, public_key: e.target.value })}
+              onChange={(value) => setForm({ ...form, public_key: value })}
             />
-            <Input
+            <FormInput
               label={t("protocols.shortId")}
               value={form.short_id}
-              onChange={(e) => setForm({ ...form, short_id: e.target.value })}
+              onChange={(value) => setForm({ ...form, short_id: value })}
             />
           </>
         );
       case "vless_vision":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.uuid")}
               value={form.uuid}
-              onChange={(e) => setForm({ ...form, uuid: e.target.value })}
+              onChange={(value) => setForm({ ...form, uuid: value })}
               isRequired
             />
-            <Select
+            <FormSelect
               label={t("protocols.flow")}
-              selectedKeys={[form.flow]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, flow: Array.from(keys)[0] as string })
-              }
-            >
-              {FLOW_OPTIONS.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
+              value={form.flow}
+              onChange={(value) => setForm({ ...form, flow: value })}
+              options={FLOW_OPTIONS.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
           </>
         );
       case "vless_xhttp":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.uuid")}
               value={form.uuid}
-              onChange={(e) => setForm({ ...form, uuid: e.target.value })}
+              onChange={(value) => setForm({ ...form, uuid: value })}
               isRequired
             />
-            <Input
+            <FormInput
               label={t("protocols.path")}
               value={form.path}
-              onChange={(e) => setForm({ ...form, path: e.target.value })}
+              onChange={(value) => setForm({ ...form, path: value })}
             />
-            <Input
+            <FormInput
               label={t("protocols.host")}
               value={form.host}
-              onChange={(e) => setForm({ ...form, host: e.target.value })}
+              onChange={(value) => setForm({ ...form, host: value })}
             />
-            <Select
+            <FormSelect
               label={t("protocols.mode")}
-              selectedKeys={[form.mode]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, mode: Array.from(keys)[0] as string })
-              }
-            >
-              {XHTTP_MODES.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
+              value={form.mode}
+              onChange={(value) => setForm({ ...form, mode: value })}
+              options={XHTTP_MODES.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
           </>
         );
       case "vmess":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.uuid")}
               value={form.uuid}
-              onChange={(e) => setForm({ ...form, uuid: e.target.value })}
+              onChange={(value) => setForm({ ...form, uuid: value })}
               isRequired
             />
-            <Input
+            <FormInput
               type="number"
               label={t("protocols.alterId")}
               value={form.alter_id}
-              onChange={(e) => setForm({ ...form, alter_id: e.target.value })}
+              onChange={(value) => setForm({ ...form, alter_id: value })}
             />
           </>
         );
       case "trojan":
         return (
-          <Input
+          <FormInput
             label={t("protocols.password")}
             value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            onChange={(value) => setForm({ ...form, password: value })}
             isRequired
           />
         );
       case "shadowsocks2022":
         return (
           <>
-            <Select
+            <FormSelect
               label={t("protocols.method")}
-              selectedKeys={[form.method]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, method: Array.from(keys)[0] as string })
-              }
-            >
-              {SHADOWSOCKS2022_METHODS.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
-            <Input
+              value={form.method}
+              onChange={(value) => setForm({ ...form, method: value })}
+              options={SHADOWSOCKS2022_METHODS.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
+            <FormInput
               label={t("protocols.password")}
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(value) => setForm({ ...form, password: value })}
               isRequired
             />
           </>
@@ -492,84 +478,82 @@ export function Protocols() {
       case "hysteria2":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.password")}
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(value) => setForm({ ...form, password: value })}
               isRequired
             />
-            <Select
+            <FormSelect
               label={t("protocols.obfsType")}
-              selectedKeys={[form.obfs_type]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, obfs_type: Array.from(keys)[0] as string })
-              }
-            >
-              {OBFS_TYPES.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
-            <Input
+              value={form.obfs_type}
+              onChange={(value) => setForm({ ...form, obfs_type: value })}
+              options={OBFS_TYPES.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
+            <FormInput
               label={t("protocols.obfsPassword")}
               value={form.obfs_password}
-              onChange={(e) => setForm({ ...form, obfs_password: e.target.value })}
+              onChange={(value) => setForm({ ...form, obfs_password: value })}
             />
-            <Input
+            <FormInput
               type="number"
               label={t("protocols.upMbps")}
               value={form.up_mbps}
-              onChange={(e) => setForm({ ...form, up_mbps: e.target.value })}
+              onChange={(value) => setForm({ ...form, up_mbps: value })}
             />
-            <Input
+            <FormInput
               type="number"
               label={t("protocols.downMbps")}
               value={form.down_mbps}
-              onChange={(e) => setForm({ ...form, down_mbps: e.target.value })}
+              onChange={(value) => setForm({ ...form, down_mbps: value })}
             />
           </>
         );
       case "anytls":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.password")}
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(value) => setForm({ ...form, password: value })}
               isRequired
             />
-            <Input
+            <FormInput
               label={t("protocols.masquerade")}
               value={form.masquerade}
-              onChange={(e) => setForm({ ...form, masquerade: e.target.value })}
+              onChange={(value) => setForm({ ...form, masquerade: value })}
             />
           </>
         );
       case "tuic":
         return (
           <>
-            <Input
+            <FormInput
               label={t("protocols.uuid")}
               value={form.uuid}
-              onChange={(e) => setForm({ ...form, uuid: e.target.value })}
+              onChange={(value) => setForm({ ...form, uuid: value })}
               isRequired
             />
-            <Input
+            <FormInput
               label={t("protocols.password")}
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(value) => setForm({ ...form, password: value })}
               isRequired
             />
-            <Select
+            <FormSelect
               label={t("protocols.congestionControl")}
-              selectedKeys={[form.congestion_control]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, congestion_control: Array.from(keys)[0] as string })
+              value={form.congestion_control}
+              onChange={(value) =>
+                setForm({ ...form, congestion_control: value })
               }
-            >
-              {TUIC_CONGESTION.map((option) => (
-                <SelectItem key={option}>{option}</SelectItem>
-              ))}
-            </Select>
+              options={TUIC_CONGESTION.map((option) => ({
+                id: option,
+                label: option,
+              }))}
+            />
           </>
         );
       default:
@@ -588,50 +572,63 @@ export function Protocols() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table removeWrapper aria-label="protocols">
-              <TableHeader>
-                <TableColumn>{t("common.name")}</TableColumn>
-                <TableColumn>{t("protocols.type")}</TableColumn>
-                <TableColumn>{t("protocols.core")}</TableColumn>
-                <TableColumn>{t("protocols.listen")}</TableColumn>
-                <TableColumn>{t("protocols.port")}</TableColumn>
-                <TableColumn>{t("common.actions")}</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent={t("common.empty")}>
-                {protocols.map((protocol) => (
-                  <TableRow key={protocol.id}>
-                    <TableCell>{protocol.name}</TableCell>
-                    <TableCell>{protocol.protocol_type}</TableCell>
-                    <TableCell>{protocol.core_type}</TableCell>
-                    <TableCell>{protocol.listen_address}</TableCell>
-                    <TableCell>{protocol.listen_port}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openEdit(protocol)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteProtocolId(protocol.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label="protocols">
+                  <Table.Header>
+                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
+                    <Table.Column>{t("protocols.type")}</Table.Column>
+                    <Table.Column>{t("protocols.core")}</Table.Column>
+                    <Table.Column>{t("protocols.listen")}</Table.Column>
+                    <Table.Column>{t("protocols.port")}</Table.Column>
+                    <Table.Column>{t("common.actions")}</Table.Column>
+                  </Table.Header>
+                  <Table.Body
+                    renderEmptyState={() => (
+                      <div className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                    )}
+                  >
+                    {protocols.map((protocol) => (
+                      <Table.Row key={protocol.id}>
+                        <Table.Cell>{protocol.name}</Table.Cell>
+                        <Table.Cell>{protocol.protocol_type}</Table.Cell>
+                        <Table.Cell>{protocol.core_type}</Table.Cell>
+                        <Table.Cell>{protocol.listen_address}</Table.Cell>
+                        <Table.Cell>{protocol.listen_port}</Table.Cell>
+                        <Table.Cell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openEdit(protocol)}
+                            >
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteProtocolId(protocol.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
             </Table>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <Pagination
@@ -652,72 +649,80 @@ export function Protocols() {
         {t("protocols.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
-        <ModalContent>
-          <ModalHeader>
-            {editingProtocol ? t("protocols.editTitle") : t("protocols.createTitle")}
-          </ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              isRequired
-            />
-            <Select
-              label={t("protocols.type")}
-              selectedKeys={[form.protocol_type]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, protocol_type: Array.from(keys)[0] as string })
-              }
-              isRequired
-            >
-              {PROTOCOL_TYPES.map((type) => (
-                <SelectItem key={type}>{type}</SelectItem>
-              ))}
-            </Select>
-            <Select
-              label={t("protocols.core")}
-              selectedKeys={[form.core_type]}
-              onSelectionChange={(keys) =>
-                setForm({ ...form, core_type: Array.from(keys)[0] as string })
-              }
-              isRequired
-            >
-              {CORE_TYPES.map((core) => (
-                <SelectItem key={core}>{core}</SelectItem>
-              ))}
-            </Select>
-            <Input
-              label={t("protocols.listen")}
-              value={form.listen_address}
-              onChange={(e) => setForm({ ...form, listen_address: e.target.value })}
-              isRequired
-            />
-            <Input
-              type="number"
-              label={t("protocols.port")}
-              value={form.listen_port}
-              onChange={(e) => setForm({ ...form, listen_port: e.target.value })}
-              isRequired
-            />
-            <JsonEditor
-              label={t("protocols.tlsSettings")}
-              value={form.tls_settings}
-              onChange={(value) => setForm({ ...form, tls_settings: value })}
-            />
-            {renderDynamicFields()}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setIsModalOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={editingProtocol ? handleUpdate : handleCreate}>
-              {editingProtocol ? t("common.update") : t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={isModalOpen}
+        onOpenChange={(open) => setIsModalOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {editingProtocol
+                  ? t("protocols.editTitle")
+                  : t("protocols.createTitle")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+                isRequired
+              />
+              <FormSelect
+                label={t("protocols.type")}
+                value={form.protocol_type}
+                onChange={(value) => setForm({ ...form, protocol_type: value })}
+                options={PROTOCOL_TYPES.map((type) => ({
+                  id: type,
+                  label: type,
+                }))}
+                isRequired
+              />
+              <FormSelect
+                label={t("protocols.core")}
+                value={form.core_type}
+                onChange={(value) => setForm({ ...form, core_type: value })}
+                options={CORE_TYPES.map((core) => ({ id: core, label: core }))}
+                isRequired
+              />
+              <FormInput
+                label={t("protocols.listen")}
+                value={form.listen_address}
+                onChange={(value) =>
+                  setForm({ ...form, listen_address: value })
+                }
+                isRequired
+              />
+              <FormInput
+                type="number"
+                label={t("protocols.port")}
+                value={form.listen_port}
+                onChange={(value) => setForm({ ...form, listen_port: value })}
+                isRequired
+              />
+              <JsonEditor
+                label={t("protocols.tlsSettings")}
+                value={form.tls_settings}
+                onChange={(value) => setForm({ ...form, tls_settings: value })}
+              />
+              {renderDynamicFields()}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setIsModalOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={editingProtocol ? handleUpdate : handleCreate}>
+                {editingProtocol ? t("common.update") : t("common.create")}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

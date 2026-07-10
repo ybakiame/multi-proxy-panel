@@ -33,7 +33,7 @@ export function Pagination({
       <div className="flex items-center gap-2">
         <Button
           isIconOnly
-          variant="flat"
+          variant="ghost"
           size="sm"
           isDisabled={page <= 1}
           onPress={() => onPageChange(1)}
@@ -42,7 +42,7 @@ export function Pagination({
         </Button>
         <Button
           isIconOnly
-          variant="flat"
+          variant="ghost"
           size="sm"
           isDisabled={page <= 1}
           onPress={() => onPageChange(page - 1)}
@@ -51,7 +51,7 @@ export function Pagination({
         </Button>
         <Button
           isIconOnly
-          variant="flat"
+          variant="ghost"
           size="sm"
           isDisabled={page >= totalPages}
           onPress={() => onPageChange(page + 1)}
@@ -60,7 +60,7 @@ export function Pagination({
         </Button>
         <Button
           isIconOnly
-          variant="flat"
+          variant="ghost"
           size="sm"
           isDisabled={page >= totalPages}
           onPress={() => onPageChange(totalPages)}

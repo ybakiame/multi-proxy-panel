@@ -1,34 +1,22 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Chip,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Textarea,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormTextArea,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getWebhooks, createWebhook, deleteWebhook } from "../api/webhooks";
 import { Webhook } from "../api/types";
 
 export function Webhooks() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -112,52 +100,71 @@ export function Webhooks() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <>
-              <Table removeWrapper aria-label="webhooks">
-                <TableHeader>
-                  <TableColumn>{t("common.name")}</TableColumn>
-                  <TableColumn>{t("webhooks.url")}</TableColumn>
-                  <TableColumn>{t("webhooks.events")}</TableColumn>
-                  <TableColumn>{t("common.active")}</TableColumn>
-                  <TableColumn>{t("common.actions")}</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent={t("common.empty")}>
-                  {webhooks.map((webhook) => (
-                    <TableRow key={webhook.id}>
-                      <TableCell>{webhook.name}</TableCell>
-                      <TableCell className="max-w-xs truncate">{webhook.url}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {webhook.events.slice(0, 2).map((event) => (
-                            <Chip key={event} size="sm" variant="flat">
-                              {event}
-                            </Chip>
-                          ))}
-                          {webhook.events.length > 2 && (
-                            <Chip size="sm" variant="flat">+{webhook.events.length - 2}</Chip>
-                          )}
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="webhooks">
+                    <Table.Header>
+                      <Table.Column isRowHeader>
+                        {t("common.name")}
+                      </Table.Column>
+                      <Table.Column>{t("webhooks.url")}</Table.Column>
+                      <Table.Column>{t("webhooks.events")}</Table.Column>
+                      <Table.Column>{t("common.active")}</Table.Column>
+                      <Table.Column>{t("common.actions")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body
+                      renderEmptyState={() => (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("common.empty")}
                         </div>
-                      </TableCell>
-                      <TableCell>{webhook.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteId(webhook.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+                      )}
+                    >
+                      {webhooks.map((webhook) => (
+                        <Table.Row key={webhook.id}>
+                          <Table.Cell>{webhook.name}</Table.Cell>
+                          <Table.Cell className="max-w-xs truncate">
+                            {webhook.url}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <div className="flex flex-wrap gap-1">
+                              {webhook.events.slice(0, 2).map((event) => (
+                                <Badge key={event} size="sm" variant="soft">
+                                  {event}
+                                </Badge>
+                              ))}
+                              {webhook.events.length > 2 && (
+                                <Badge size="sm" variant="soft">
+                                  +{webhook.events.length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                          </Table.Cell>
+                          <Table.Cell>
+                            {webhook.is_active
+                              ? t("common.enabled")
+                              : t("common.disabled")}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteId(webhook.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
               <Pagination
                 page={page}
@@ -169,7 +176,7 @@ export function Webhooks() {
               />
             </>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <ConfirmDialog
@@ -181,51 +188,62 @@ export function Webhooks() {
         {t("webhooks.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("webhooks.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              isRequired
-            />
-            <Input
-              label={t("webhooks.url")}
-              value={form.url}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-              isRequired
-            />
-            <Textarea
-              label={t("webhooks.events")}
-              value={form.events}
-              onChange={(e) => setForm({ ...form, events: e.target.value })}
-              className="font-mono"
-            />
-            <Input
-              type="password"
-              label={t("webhooks.secret")}
-              value={form.secret}
-              onChange={(e) => setForm({ ...form, secret: e.target.value })}
-            />
-            <Checkbox
-              isSelected={form.is_active}
-              onValueChange={(selected) => setForm({ ...form, is_active: selected })}
-            >
-              {t("common.active")}
-            </Checkbox>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("webhooks.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+                isRequired
+              />
+              <FormInput
+                label={t("webhooks.url")}
+                value={form.url}
+                onChange={(value) => setForm({ ...form, url: value })}
+                isRequired
+              />
+              <FormTextArea
+                label={t("webhooks.events")}
+                value={form.events}
+                onChange={(value) => setForm({ ...form, events: value })}
+                className="font-mono"
+              />
+              <FormInput
+                type="password"
+                label={t("webhooks.secret")}
+                value={form.secret}
+                onChange={(value) => setForm({ ...form, secret: value })}
+              />
+              <FormCheckbox
+                isSelected={form.is_active}
+                onChange={(selected) =>
+                  setForm({ ...form, is_active: selected })
+                }
+              >
+                {t("common.active")}
+              </FormCheckbox>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

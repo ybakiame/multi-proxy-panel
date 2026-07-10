@@ -1,28 +1,20 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Select,
-  SelectItem,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Spinner,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination, JsonEditor } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  JsonEditor,
+  FormSelect,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import { getBindingsPaginated, createBinding, deleteBinding } from "../api/bindings";
+import {
+  getBindingsPaginated,
+  createBinding,
+  deleteBinding,
+} from "../api/bindings";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
 import { Binding, Node, ProtocolConfig } from "../api/types";
@@ -36,7 +28,8 @@ interface BindingForm {
 
 export function Bindings() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [bindings, setBindings] = useState<Binding[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
@@ -143,49 +136,66 @@ export function Bindings() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table removeWrapper aria-label="bindings">
-              <TableHeader>
-                <TableColumn>{t("bindings.node")}</TableColumn>
-                <TableColumn>{t("bindings.protocol")}</TableColumn>
-                <TableColumn>{t("common.active")}</TableColumn>
-                <TableColumn>{t("bindings.overrideSettings")}</TableColumn>
-                <TableColumn>{t("common.actions")}</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent={t("common.empty")}>
-                {bindings.map((binding) => (
-                  <TableRow key={binding.id}>
-                    <TableCell>{getNodeName(binding.node_id)}</TableCell>
-                    <TableCell>{getProtocolName(binding.protocol_config_id)}</TableCell>
-                    <TableCell>
-                      {binding.is_active ? t("common.enabled") : t("common.disabled")}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate font-mono">
-                      {binding.override_settings
-                        ? JSON.stringify(binding.override_settings)
-                        : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        color="danger"
-                        variant="flat"
-                        onPress={() => setDeleteBindingId(binding.id)}
-                      >
-                        {t("common.delete")}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label="bindings">
+                  <Table.Header>
+                    <Table.Column isRowHeader>
+                      {t("bindings.node")}
+                    </Table.Column>
+                    <Table.Column>{t("bindings.protocol")}</Table.Column>
+                    <Table.Column>{t("common.active")}</Table.Column>
+                    <Table.Column>
+                      {t("bindings.overrideSettings")}
+                    </Table.Column>
+                    <Table.Column>{t("common.actions")}</Table.Column>
+                  </Table.Header>
+                  <Table.Body
+                    renderEmptyState={() => (
+                      <div className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
+                      </div>
+                    )}
+                  >
+                    {bindings.map((binding) => (
+                      <Table.Row key={binding.id}>
+                        <Table.Cell>{getNodeName(binding.node_id)}</Table.Cell>
+                        <Table.Cell>
+                          {getProtocolName(binding.protocol_config_id)}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {binding.is_active
+                            ? t("common.enabled")
+                            : t("common.disabled")}
+                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate font-mono">
+                          {binding.override_settings
+                            ? JSON.stringify(binding.override_settings)
+                            : "-"}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onPress={() => setDeleteBindingId(binding.id)}
+                          >
+                            {t("common.delete")}
+                          </Button>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
             </Table>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <Pagination
@@ -206,58 +216,67 @@ export function Bindings() {
         {t("bindings.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("bindings.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Select
-              label={t("bindings.node")}
-              selectedKeys={form.node_id ? [form.node_id] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, node_id: value || "" });
-              }}
-              isRequired
-            >
-              {nodes.map((node) => (
-                <SelectItem key={node.id}>{node.name}</SelectItem>
-              ))}
-            </Select>
-            <Select
-              label={t("bindings.protocol")}
-              selectedKeys={form.protocol_config_id ? [form.protocol_config_id] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, protocol_config_id: value || "" });
-              }}
-              isRequired
-            >
-              {protocols.map((protocol) => (
-                <SelectItem key={protocol.id}>{protocol.name}</SelectItem>
-              ))}
-            </Select>
-            <Checkbox
-              isSelected={form.is_active}
-              onValueChange={(selected) => setForm({ ...form, is_active: selected })}
-            >
-              {t("common.active")}
-            </Checkbox>
-            <JsonEditor
-              label={t("bindings.overrideSettings")}
-              value={form.override_settings}
-              onChange={(value) => setForm({ ...form, override_settings: value })}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("bindings.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormSelect
+                label={t("bindings.node")}
+                value={form.node_id}
+                onChange={(value) => setForm({ ...form, node_id: value })}
+                options={nodes.map((node) => ({
+                  id: node.id,
+                  label: node.name,
+                }))}
+                isRequired
+              />
+              <FormSelect
+                label={t("bindings.protocol")}
+                value={form.protocol_config_id}
+                onChange={(value) =>
+                  setForm({ ...form, protocol_config_id: value })
+                }
+                options={protocols.map((protocol) => ({
+                  id: protocol.id,
+                  label: protocol.name,
+                }))}
+                isRequired
+              />
+              <FormCheckbox
+                isSelected={form.is_active}
+                onChange={(selected) =>
+                  setForm({ ...form, is_active: selected })
+                }
+              >
+                {t("common.active")}
+              </FormCheckbox>
+              <JsonEditor
+                label={t("bindings.overrideSettings")}
+                value={form.override_settings}
+                onChange={(value) =>
+                  setForm({ ...form, override_settings: value })
+                }
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

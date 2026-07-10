@@ -5,3 +5,7 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { CopyableSecret } from "./CopyableSecret";
 export { JsonEditor } from "./JsonEditor";
 export { Pagination } from "./Pagination";
+export { FormInput } from "./FormInput";
+export { FormTextArea } from "./FormTextArea";
+export { FormCheckbox } from "./FormCheckbox";
+export { FormSelect } from "./FormSelect";

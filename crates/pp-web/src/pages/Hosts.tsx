@@ -1,25 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Spinner,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getHosts, createHost, updateHost, deleteHost } from "../api/hosts";
 import type { CreateHostPayload } from "../api/hosts";
@@ -39,7 +27,8 @@ interface HostForm {
 
 export function Hosts() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [hosts, setHosts] = useState<InboundHost[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -176,58 +165,79 @@ export function Hosts() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table removeWrapper aria-label="hosts">
-              <TableHeader>
-                <TableColumn>{t("hosts.remark")}</TableColumn>
-                <TableColumn>{t("hosts.address")}</TableColumn>
-                <TableColumn>{t("hosts.port")}</TableColumn>
-                <TableColumn>{t("hosts.sni")}</TableColumn>
-                <TableColumn>{t("hosts.host")}</TableColumn>
-                <TableColumn>{t("hosts.path")}</TableColumn>
-                <TableColumn>{t("hosts.isActive")}</TableColumn>
-                <TableColumn>{t("hosts.protocolConfig")}</TableColumn>
-                <TableColumn>{t("hosts.node")}</TableColumn>
-                <TableColumn>{t("common.actions")}</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent={t("common.empty")}>
-                {hosts.map((host) => (
-                  <TableRow key={host.id}>
-                    <TableCell>{host.remark}</TableCell>
-                    <TableCell>{host.address}</TableCell>
-                    <TableCell>{host.port}</TableCell>
-                    <TableCell>{host.sni || "-"}</TableCell>
-                    <TableCell>{host.host || "-"}</TableCell>
-                    <TableCell>{host.path || "-"}</TableCell>
-                    <TableCell>{host.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
-                    <TableCell className="max-w-xs truncate">{host.protocol_config_id}</TableCell>
-                    <TableCell className="max-w-xs truncate">{host.node_id}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openEdit(host)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteHostId(host.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label="hosts">
+                  <Table.Header>
+                    <Table.Column isRowHeader>{t("hosts.remark")}</Table.Column>
+                    <Table.Column>{t("hosts.address")}</Table.Column>
+                    <Table.Column>{t("hosts.port")}</Table.Column>
+                    <Table.Column>{t("hosts.sni")}</Table.Column>
+                    <Table.Column>{t("hosts.host")}</Table.Column>
+                    <Table.Column>{t("hosts.path")}</Table.Column>
+                    <Table.Column>{t("hosts.isActive")}</Table.Column>
+                    <Table.Column>{t("hosts.protocolConfig")}</Table.Column>
+                    <Table.Column>{t("hosts.node")}</Table.Column>
+                    <Table.Column>{t("common.actions")}</Table.Column>
+                  </Table.Header>
+                  <Table.Body
+                    renderEmptyState={() => (
+                      <div className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                    )}
+                  >
+                    {hosts.map((host) => (
+                      <Table.Row key={host.id}>
+                        <Table.Cell>{host.remark}</Table.Cell>
+                        <Table.Cell>{host.address}</Table.Cell>
+                        <Table.Cell>{host.port}</Table.Cell>
+                        <Table.Cell>{host.sni || "-"}</Table.Cell>
+                        <Table.Cell>{host.host || "-"}</Table.Cell>
+                        <Table.Cell>{host.path || "-"}</Table.Cell>
+                        <Table.Cell>
+                          {host.is_active
+                            ? t("common.enabled")
+                            : t("common.disabled")}
+                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">
+                          {host.protocol_config_id}
+                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">
+                          {host.node_id}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openEdit(host)}
+                            >
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteHostId(host.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
             </Table>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <Pagination
@@ -248,140 +258,168 @@ export function Hosts() {
         {t("hosts.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("hosts.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("hosts.protocolConfig")}
-              value={form.protocol_config_id}
-              onChange={(e) => setForm({ ...form, protocol_config_id: e.target.value })}
-              placeholder="UUID"
-              isRequired
-            />
-            <Input
-              label={t("hosts.node")}
-              value={form.node_id}
-              onChange={(e) => setForm({ ...form, node_id: e.target.value })}
-              placeholder="UUID"
-              isRequired
-            />
-            <Input
-              label={t("hosts.remark")}
-              value={form.remark}
-              onChange={(e) => setForm({ ...form, remark: e.target.value })}
-              isRequired
-            />
-            <Input
-              label={t("hosts.address")}
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-              isRequired
-            />
-            <Input
-              type="number"
-              label={t("hosts.port")}
-              value={form.port}
-              onChange={(e) => setForm({ ...form, port: e.target.value })}
-              isRequired
-            />
-            <Input
-              label={t("hosts.sni")}
-              value={form.sni}
-              onChange={(e) => setForm({ ...form, sni: e.target.value })}
-            />
-            <Input
-              label={t("hosts.host")}
-              value={form.host}
-              onChange={(e) => setForm({ ...form, host: e.target.value })}
-            />
-            <Input
-              label={t("hosts.path")}
-              value={form.path}
-              onChange={(e) => setForm({ ...form, path: e.target.value })}
-            />
-            <Checkbox
-              isSelected={form.is_active}
-              onValueChange={(selected) => setForm({ ...form, is_active: selected })}
-            >
-              {t("hosts.isActive")}
-            </Checkbox>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("hosts.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("hosts.protocolConfig")}
+                value={form.protocol_config_id}
+                onChange={(value) =>
+                  setForm({ ...form, protocol_config_id: value })
+                }
+                placeholder="UUID"
+                isRequired
+              />
+              <FormInput
+                label={t("hosts.node")}
+                value={form.node_id}
+                onChange={(value) => setForm({ ...form, node_id: value })}
+                placeholder="UUID"
+                isRequired
+              />
+              <FormInput
+                label={t("hosts.remark")}
+                value={form.remark}
+                onChange={(value) => setForm({ ...form, remark: value })}
+                isRequired
+              />
+              <FormInput
+                label={t("hosts.address")}
+                value={form.address}
+                onChange={(value) => setForm({ ...form, address: value })}
+                isRequired
+              />
+              <FormInput
+                type="number"
+                label={t("hosts.port")}
+                value={form.port}
+                onChange={(value) => setForm({ ...form, port: value })}
+                isRequired
+              />
+              <FormInput
+                label={t("hosts.sni")}
+                value={form.sni}
+                onChange={(value) => setForm({ ...form, sni: value })}
+              />
+              <FormInput
+                label={t("hosts.host")}
+                value={form.host}
+                onChange={(value) => setForm({ ...form, host: value })}
+              />
+              <FormInput
+                label={t("hosts.path")}
+                value={form.path}
+                onChange={(value) => setForm({ ...form, path: value })}
+              />
+              <FormCheckbox
+                isSelected={form.is_active}
+                onChange={(selected) =>
+                  setForm({ ...form, is_active: selected })
+                }
+              >
+                {t("hosts.isActive")}
+              </FormCheckbox>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Modal isOpen={!!editHost} onClose={() => setEditHost(null)}>
-        <ModalContent>
-          <ModalHeader>{t("hosts.editTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("hosts.protocolConfig")}
-              value={form.protocol_config_id}
-              onChange={(e) => setForm({ ...form, protocol_config_id: e.target.value })}
-              placeholder="UUID"
-            />
-            <Input
-              label={t("hosts.node")}
-              value={form.node_id}
-              onChange={(e) => setForm({ ...form, node_id: e.target.value })}
-              placeholder="UUID"
-            />
-            <Input
-              label={t("hosts.remark")}
-              value={form.remark}
-              onChange={(e) => setForm({ ...form, remark: e.target.value })}
-            />
-            <Input
-              label={t("hosts.address")}
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("hosts.port")}
-              value={form.port}
-              onChange={(e) => setForm({ ...form, port: e.target.value })}
-            />
-            <Input
-              label={t("hosts.sni")}
-              value={form.sni}
-              onChange={(e) => setForm({ ...form, sni: e.target.value })}
-            />
-            <Input
-              label={t("hosts.host")}
-              value={form.host}
-              onChange={(e) => setForm({ ...form, host: e.target.value })}
-            />
-            <Input
-              label={t("hosts.path")}
-              value={form.path}
-              onChange={(e) => setForm({ ...form, path: e.target.value })}
-            />
-            <Checkbox
-              isSelected={form.is_active}
-              onValueChange={(selected) => setForm({ ...form, is_active: selected })}
-            >
-              {t("hosts.isActive")}
-            </Checkbox>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setEditHost(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleUpdate}>
-              {t("common.update")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={!!editHost}
+        onOpenChange={(open) => {
+          if (!open) setEditHost(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("hosts.editTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("hosts.protocolConfig")}
+                value={form.protocol_config_id}
+                onChange={(value) =>
+                  setForm({ ...form, protocol_config_id: value })
+                }
+                placeholder="UUID"
+              />
+              <FormInput
+                label={t("hosts.node")}
+                value={form.node_id}
+                onChange={(value) => setForm({ ...form, node_id: value })}
+                placeholder="UUID"
+              />
+              <FormInput
+                label={t("hosts.remark")}
+                value={form.remark}
+                onChange={(value) => setForm({ ...form, remark: value })}
+              />
+              <FormInput
+                label={t("hosts.address")}
+                value={form.address}
+                onChange={(value) => setForm({ ...form, address: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("hosts.port")}
+                value={form.port}
+                onChange={(value) => setForm({ ...form, port: value })}
+              />
+              <FormInput
+                label={t("hosts.sni")}
+                value={form.sni}
+                onChange={(value) => setForm({ ...form, sni: value })}
+              />
+              <FormInput
+                label={t("hosts.host")}
+                value={form.host}
+                onChange={(value) => setForm({ ...form, host: value })}
+              />
+              <FormInput
+                label={t("hosts.path")}
+                value={form.path}
+                onChange={(value) => setForm({ ...form, path: value })}
+              />
+              <FormCheckbox
+                isSelected={form.is_active}
+                onChange={(selected) =>
+                  setForm({ ...form, is_active: selected })
+                }
+              >
+                {t("hosts.isActive")}
+              </FormCheckbox>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setEditHost(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

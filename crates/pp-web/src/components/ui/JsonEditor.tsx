@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Textarea } from "@heroui/react";
+import { TextField, Label, TextArea, FieldError } from "@heroui/react";
 
 interface JsonEditorProps {
   value: string;
@@ -9,7 +9,13 @@ interface JsonEditorProps {
   placeholder?: string;
 }
 
-export function JsonEditor({ value, onChange, error, label, placeholder }: JsonEditorProps) {
+export function JsonEditor({
+  value,
+  onChange,
+  error,
+  label,
+  placeholder,
+}: JsonEditorProps) {
   const [isValid, setIsValid] = useState(true);
 
   const handleChange = (newValue: string) => {
@@ -26,18 +32,20 @@ export function JsonEditor({ value, onChange, error, label, placeholder }: JsonE
     }
   };
 
+  const invalid = !isValid || !!error;
+  const errorMessage = error || (!isValid ? "Invalid JSON" : undefined);
+
   return (
-    <div className="space-y-1">
-      {label && <label className="text-sm font-medium">{label}</label>}
-      <Textarea
+    <TextField isInvalid={invalid}>
+      {label && <Label>{label}</Label>}
+      <TextArea
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder || "{}"}
-        isInvalid={!isValid || !!error}
-        errorMessage={error || (!isValid ? "Invalid JSON" : undefined)}
         className="font-mono"
-        minRows={4}
+        rows={4}
       />
-    </div>
+      {errorMessage && <FieldError>{errorMessage}</FieldError>}
+    </TextField>
   );
 }

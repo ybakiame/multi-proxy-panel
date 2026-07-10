@@ -1,28 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Select,
-  SelectItem,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Textarea,
-} from "@heroui/react";
-import { ConfirmDialog, CopyableSecret, Pagination } from "../components/ui";
+  ConfirmDialog,
+  CopyableSecret,
+  Pagination,
+  FormInput,
+  FormSelect,
+  FormTextArea,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import {
   getSubscriptions,
@@ -50,14 +37,17 @@ function toDatetimeLocalValue(iso: string | null) {
 
 export function Subscriptions() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [templates, setTemplates] = useState<SubscriptionTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [templateCreateOpen, setTemplateCreateOpen] = useState(false);
-  const [editSubscription, setEditSubscription] = useState<Subscription | null>(null);
+  const [editSubscription, setEditSubscription] = useState<Subscription | null>(
+    null,
+  );
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -204,69 +194,107 @@ export function Subscriptions() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t("subscriptions.title")}</h1>
         <div className="flex gap-2">
-          <Button color="primary" onPress={() => { setNewToken(null); resetForm(); setCreateOpen(true); }}>
+          <Button
+            onPress={() => {
+              setNewToken(null);
+              resetForm();
+              setCreateOpen(true);
+            }}
+          >
             {t("subscriptions.create")}
           </Button>
-          <Button variant="flat" onPress={() => { resetTemplateForm(); setTemplateCreateOpen(true); }}>
+          <Button
+            variant="ghost"
+            onPress={() => {
+              resetTemplateForm();
+              setTemplateCreateOpen(true);
+            }}
+          >
             {t("subscriptions.createTemplate")}
           </Button>
         </div>
       </div>
 
       {newToken && (
-        <CopyableSecret
-          secret={newToken}
-          label={t("nodes.tokenWarning")}
-        />
+        <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />
       )}
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <>
-              <Table removeWrapper aria-label="subscriptions">
-                <TableHeader>
-                  <TableColumn>{t("subscriptions.client")}</TableColumn>
-                  <TableColumn>{t("subscriptions.template")}</TableColumn>
-                  <TableColumn>{t("subscriptions.token")}</TableColumn>
-                  <TableColumn>{t("subscriptions.urlPath")}</TableColumn>
-                  <TableColumn>{t("subscriptions.isActive")}</TableColumn>
-                  <TableColumn>{t("subscriptions.expiresAt")}</TableColumn>
-                  <TableColumn>{t("subscriptions.lastAccessed")}</TableColumn>
-                  <TableColumn>{t("common.actions")}</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent={t("common.empty")}>
-                  {subscriptions.map((sub) => (
-                    <TableRow key={sub.id}>
-                      <TableCell>{clientName(sub.client_id)}</TableCell>
-                      <TableCell>{templateName(sub.template_id)}</TableCell>
-                      <TableCell>{maskToken(sub.token)}</TableCell>
-                      <TableCell>{sub.url_path}</TableCell>
-                      <TableCell>{sub.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
-                      <TableCell>{formatDateTime(sub.expire_at)}</TableCell>
-                      <TableCell>{formatDateTime(sub.last_accessed_at)}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="flat" onPress={() => openEdit(sub)}>
-                            {t("common.edit")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            color="danger"
-                            variant="flat"
-                            onPress={() => setDeleteId(sub.id)}
-                          >
-                            {t("common.delete")}
-                          </Button>
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="subscriptions">
+                    <Table.Header>
+                      <Table.Column isRowHeader>
+                        {t("subscriptions.client")}
+                      </Table.Column>
+                      <Table.Column>{t("subscriptions.template")}</Table.Column>
+                      <Table.Column>{t("subscriptions.token")}</Table.Column>
+                      <Table.Column>{t("subscriptions.urlPath")}</Table.Column>
+                      <Table.Column>{t("subscriptions.isActive")}</Table.Column>
+                      <Table.Column>
+                        {t("subscriptions.expiresAt")}
+                      </Table.Column>
+                      <Table.Column>
+                        {t("subscriptions.lastAccessed")}
+                      </Table.Column>
+                      <Table.Column>{t("common.actions")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body
+                      renderEmptyState={() => (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("common.empty")}
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+                      )}
+                    >
+                      {subscriptions.map((sub) => (
+                        <Table.Row key={sub.id}>
+                          <Table.Cell>{clientName(sub.client_id)}</Table.Cell>
+                          <Table.Cell>
+                            {templateName(sub.template_id)}
+                          </Table.Cell>
+                          <Table.Cell>{maskToken(sub.token)}</Table.Cell>
+                          <Table.Cell>{sub.url_path}</Table.Cell>
+                          <Table.Cell>
+                            {sub.is_active
+                              ? t("common.enabled")
+                              : t("common.disabled")}
+                          </Table.Cell>
+                          <Table.Cell>
+                            {formatDateTime(sub.expire_at)}
+                          </Table.Cell>
+                          <Table.Cell>
+                            {formatDateTime(sub.last_accessed_at)}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onPress={() => openEdit(sub)}
+                              >
+                                {t("common.edit")}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onPress={() => setDeleteId(sub.id)}
+                              >
+                                {t("common.delete")}
+                              </Button>
+                            </div>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
               <Pagination
                 page={page}
@@ -278,7 +306,7 @@ export function Subscriptions() {
               />
             </>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <ConfirmDialog
@@ -290,127 +318,168 @@ export function Subscriptions() {
         {t("subscriptions.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("subscriptions.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Select
-              label={t("subscriptions.client")}
-              selectedKeys={form.client_id ? [form.client_id] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, client_id: value || "" });
-              }}
-              isRequired
-            >
-              {clients.map((client) => (
-                <SelectItem key={client.id}>{client.name}</SelectItem>
-              ))}
-            </Select>
-            <Select
-              label={t("subscriptions.template")}
-              selectedKeys={form.template_id ? [form.template_id] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, template_id: value || "" });
-              }}
-              isRequired
-            >
-              {templates.map((template) => (
-                <SelectItem key={template.id}>{template.name}</SelectItem>
-              ))}
-            </Select>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("subscriptions.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormSelect
+                label={t("subscriptions.client")}
+                value={form.client_id}
+                onChange={(value) => setForm({ ...form, client_id: value })}
+                options={clients.map((client) => ({
+                  id: client.id,
+                  label: client.name,
+                }))}
+                isRequired
+              />
+              <FormSelect
+                label={t("subscriptions.template")}
+                value={form.template_id}
+                onChange={(value) => setForm({ ...form, template_id: value })}
+                options={templates.map((template) => ({
+                  id: template.id,
+                  label: template.name,
+                }))}
+                isRequired
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Modal isOpen={!!editSubscription} onClose={() => setEditSubscription(null)}>
-        <ModalContent>
-          <ModalHeader>{t("subscriptions.editTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Checkbox
-              isSelected={editForm.is_active}
-              onValueChange={(selected) => setEditForm({ ...editForm, is_active: selected })}
-            >
-              {t("subscriptions.isActive")}
-            </Checkbox>
-            <Input
-              type="datetime-local"
-              label={t("subscriptions.expiresAt")}
-              value={editForm.expire_at}
-              onChange={(e) => setEditForm({ ...editForm, expire_at: e.target.value })}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setEditSubscription(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleUpdate}>
-              {t("common.update")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={!!editSubscription}
+        onOpenChange={(open) => {
+          if (!open) setEditSubscription(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("subscriptions.editTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormCheckbox
+                isSelected={editForm.is_active}
+                onChange={(selected) =>
+                  setEditForm({ ...editForm, is_active: selected })
+                }
+              >
+                {t("subscriptions.isActive")}
+              </FormCheckbox>
+              <FormInput
+                type="datetime-local"
+                label={t("subscriptions.expiresAt")}
+                value={editForm.expire_at}
+                onChange={(value) =>
+                  setEditForm({ ...editForm, expire_at: value })
+                }
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setEditSubscription(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Modal isOpen={templateCreateOpen} onClose={() => setTemplateCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("subscriptions.templateCreateTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={templateForm.name}
-              onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
-              isRequired
-            />
-            <Select
-              label={t("subscriptions.format")}
-              selectedKeys={[templateForm.format]}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setTemplateForm({ ...templateForm, format: value || "base64" });
-              }}
-            >
-              {FORMAT_OPTIONS.map((format) => (
-                <SelectItem key={format}>{format}</SelectItem>
-              ))}
-            </Select>
-            <Textarea
-              label={t("subscriptions.baseConfig")}
-              value={templateForm.base_config}
-              onChange={(e) => setTemplateForm({ ...templateForm, base_config: e.target.value })}
-              className="font-mono"
-            />
-            <Textarea
-              label={t("subscriptions.filterRules")}
-              value={templateForm.filter_rules}
-              onChange={(e) => setTemplateForm({ ...templateForm, filter_rules: e.target.value })}
-              className="font-mono"
-            />
-            <Textarea
-              label={t("subscriptions.customHeaders")}
-              value={templateForm.custom_headers}
-              onChange={(e) => setTemplateForm({ ...templateForm, custom_headers: e.target.value })}
-              className="font-mono"
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setTemplateCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreateTemplate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={templateCreateOpen}
+        onOpenChange={(open) => setTemplateCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {t("subscriptions.templateCreateTitle")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={templateForm.name}
+                onChange={(value) =>
+                  setTemplateForm({ ...templateForm, name: value })
+                }
+                isRequired
+              />
+              <FormSelect
+                label={t("subscriptions.format")}
+                value={templateForm.format}
+                onChange={(value) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    format: value || "base64",
+                  })
+                }
+                options={FORMAT_OPTIONS.map((format) => ({
+                  id: format,
+                  label: format,
+                }))}
+              />
+              <FormTextArea
+                label={t("subscriptions.baseConfig")}
+                value={templateForm.base_config}
+                onChange={(value) =>
+                  setTemplateForm({ ...templateForm, base_config: value })
+                }
+                className="font-mono"
+              />
+              <FormTextArea
+                label={t("subscriptions.filterRules")}
+                value={templateForm.filter_rules}
+                onChange={(value) =>
+                  setTemplateForm({ ...templateForm, filter_rules: value })
+                }
+                className="font-mono"
+              />
+              <FormTextArea
+                label={t("subscriptions.customHeaders")}
+                value={templateForm.custom_headers}
+                onChange={(value) =>
+                  setTemplateForm({ ...templateForm, custom_headers: value })
+                }
+                className="font-mono"
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setTemplateCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreateTemplate}>
+                {t("common.create")}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

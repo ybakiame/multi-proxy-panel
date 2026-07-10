@@ -1,46 +1,48 @@
 import { useState } from "react";
-import {
-  Navbar,
-  NavbarBrand,
-  NavbarContent,
-  NavbarMenuToggle,
-  Button,
-  Select,
-  SelectItem,
-} from "@heroui/react";
+import { Button, Select, ListBox, Label, useTheme } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { navItems } from "./nav";
 import { useAuth } from "../context/AuthContext";
-import { SunIcon, MoonIcon } from "@heroicons/react/24/outline";
+import {
+  SunIcon,
+  MoonIcon,
+  Bars3Icon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { t, i18n } = useTranslation();
   const { logout } = useAuth();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const { theme, setTheme } = useTheme("dark");
+  const isDark = theme === "dark";
 
   const changeLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
   };
 
   const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle("dark", !isDark);
+    setTheme(isDark ? "light" : "dark");
   };
 
   return (
     <div className="flex h-screen w-screen flex-col md:flex-row overflow-hidden bg-background">
-      <div className="md:hidden">
-        <Navbar isMenuOpen={isMenuOpen} onMenuOpenChange={setIsMenuOpen}>
-          <NavbarBrand>
-            <span className="font-bold text-xl">ProxyPanel</span>
-          </NavbarBrand>
-          <NavbarContent justify="end">
-            <NavbarMenuToggle />
-          </NavbarContent>
-        </Navbar>
+      <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+        <span className="font-bold text-xl">ProxyPanel</span>
+        <button
+          type="button"
+          className="p-2 rounded-md hover:bg-muted"
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          aria-label={isMenuOpen ? t("common.closeMenu") : t("common.openMenu")}
+        >
+          {isMenuOpen ? (
+            <XMarkIcon className="h-6 w-6" />
+          ) : (
+            <Bars3Icon className="h-6 w-6" />
+          )}
+        </button>
       </div>
 
       <aside
@@ -77,28 +79,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-t border-border p-4 space-y-3">
           <Select
-            label={t("common.language")}
-            selectedKeys={[i18n.language]}
-            onSelectionChange={(keys) => changeLanguage(Array.from(keys)[0] as string)}
-            size="sm"
+            value={i18n.language}
+            onChange={(value) => changeLanguage(value as string)}
           >
-            <SelectItem key="zh-CN">中文</SelectItem>
-            <SelectItem key="en-US">English</SelectItem>
+            <Label>{t("common.language")}</Label>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="zh-CN" textValue="中文">
+                  中文
+                </ListBox.Item>
+                <ListBox.Item id="en-US" textValue="English">
+                  English
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
           </Select>
           <div className="flex gap-2">
-            <Button isIconOnly variant="flat" onPress={toggleTheme} className="flex-1">
-              {isDark ? <MoonIcon className="h-4 w-4" /> : <SunIcon className="h-4 w-4" />}
+            <Button
+              isIconOnly
+              variant="ghost"
+              onPress={toggleTheme}
+              className="flex-1"
+            >
+              {isDark ? (
+                <MoonIcon className="h-4 w-4" />
+              ) : (
+                <SunIcon className="h-4 w-4" />
+              )}
             </Button>
-            <Button color="danger" variant="flat" onPress={logout} className="flex-[2]">
+            <Button variant="danger" onPress={logout} className="flex-[2]">
               {t("common.logout")}
             </Button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6">
-        {children}
-      </main>
+      <main className="flex-1 overflow-y-auto p-6">{children}</main>
     </div>
   );
 }

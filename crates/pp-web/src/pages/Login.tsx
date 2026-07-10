@@ -1,17 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Input,
-} from "@heroui/react";
+import { Button, Card } from "@heroui/react";
 import { KeyIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext";
 import { parseError } from "../api/client";
 import { AxiosError } from "axios";
+import { FormInput } from "../components/ui";
 
 export function Login() {
   const { t } = useTranslation();
@@ -39,35 +34,30 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="flex flex-col items-center gap-2 pb-2">
+        <Card.Header className="flex flex-col items-center gap-2 pb-2">
           <div className="rounded-full bg-primary/10 p-3">
             <KeyIcon className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold">{t("login.title")}</h1>
           <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
-        </CardHeader>
-        <CardBody>
+        </Card.Header>
+        <Card.Content>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
+            <FormInput
               type="password"
               label={t("login.apiKey")}
               placeholder={t("login.apiKeyPlaceholder")}
               value={key}
-              onChange={(e) => setKey(e.target.value)}
+              onChange={setKey}
               isInvalid={!!error}
               errorMessage={error}
               isRequired
             />
-            <Button
-              type="submit"
-              color="primary"
-              className="w-full"
-              isLoading={isLoading}
-            >
+            <Button type="submit" className="w-full" isPending={isLoading}>
               {t("login.verify")}
             </Button>
           </form>
-        </CardBody>
+        </Card.Content>
       </Card>
     </div>
   );

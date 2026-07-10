@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Input } from "@heroui/react";
+import { Button, TextField, Label, Input } from "@heroui/react";
 
 interface CopyableSecretProps {
   secret: string;
@@ -19,13 +19,16 @@ export function CopyableSecret({ secret, label }: CopyableSecretProps) {
     <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
       {label && <p className="text-sm font-medium text-warning">{label}</p>}
       <div className="mt-2 flex items-center gap-2">
-        <Input
-          isReadOnly
-          value={secret}
-          className="flex-1 font-mono"
+        <TextField className="flex-1 font-mono">
+          <Label className="sr-only">{label || "Secret"}</Label>
+          <Input readOnly value={secret} />
+        </TextField>
+        <Button
+          variant="secondary"
           size="sm"
-        />
-        <Button color="warning" size="sm" onPress={copy}>
+          onPress={copy}
+          className="text-warning"
+        >
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

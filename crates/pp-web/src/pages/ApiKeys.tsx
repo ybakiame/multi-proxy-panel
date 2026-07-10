@@ -1,26 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Chip,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Textarea,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, CopyableSecret, Pagination } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  CopyableSecret,
+  Pagination,
+  FormInput,
+  FormTextArea,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getApiKeys, createApiKey, deleteApiKey } from "../api/apiKeys";
 import { ApiKey } from "../api/types";
@@ -31,7 +19,8 @@ interface ApiKeyWithToken extends ApiKey {
 
 export function ApiKeys() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -39,7 +28,7 @@ export function ApiKeys() {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
-    scopes: "[\"*\"]",
+    scopes: '["*"]',
     ip_allowlist: "[]",
     rate_limit: "",
   });
@@ -60,7 +49,7 @@ export function ApiKeys() {
   }, [page, perPage]);
 
   const resetForm = () => {
-    setForm({ name: "", scopes: "[\"*\"]", ip_allowlist: "[]", rate_limit: "" });
+    setForm({ name: "", scopes: '["*"]', ip_allowlist: "[]", rate_limit: "" });
   };
 
   const handleCreate = async () => {
@@ -119,57 +108,71 @@ export function ApiKeys() {
       />
 
       {newToken && (
-        <CopyableSecret
-          secret={newToken}
-          label={t("apiKeys.tokenWarning")}
-        />
+        <CopyableSecret secret={newToken} label={t("apiKeys.tokenWarning")} />
       )}
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <>
-              <Table removeWrapper aria-label="api keys">
-                <TableHeader>
-                  <TableColumn>{t("common.name")}</TableColumn>
-                  <TableColumn>{t("apiKeys.scopes")}</TableColumn>
-                  <TableColumn>{t("common.active")}</TableColumn>
-                  <TableColumn>{t("common.actions")}</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent={t("common.empty")}>
-                  {apiKeys.map((key) => (
-                    <TableRow key={key.id}>
-                      <TableCell>{key.name}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {key.scopes.slice(0, 3).map((scope) => (
-                            <Chip key={scope} size="sm" variant="flat">
-                              {scope}
-                            </Chip>
-                          ))}
-                          {key.scopes.length > 3 && (
-                            <Chip size="sm" variant="flat">+{key.scopes.length - 3}</Chip>
-                          )}
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="api keys">
+                    <Table.Header>
+                      <Table.Column isRowHeader>
+                        {t("common.name")}
+                      </Table.Column>
+                      <Table.Column>{t("apiKeys.scopes")}</Table.Column>
+                      <Table.Column>{t("common.active")}</Table.Column>
+                      <Table.Column>{t("common.actions")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body
+                      renderEmptyState={() => (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("common.empty")}
                         </div>
-                      </TableCell>
-                      <TableCell>{key.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteId(key.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+                      )}
+                    >
+                      {apiKeys.map((key) => (
+                        <Table.Row key={key.id}>
+                          <Table.Cell>{key.name}</Table.Cell>
+                          <Table.Cell>
+                            <div className="flex flex-wrap gap-1">
+                              {key.scopes.slice(0, 3).map((scope) => (
+                                <Badge key={scope} size="sm" variant="soft">
+                                  {scope}
+                                </Badge>
+                              ))}
+                              {key.scopes.length > 3 && (
+                                <Badge size="sm" variant="soft">
+                                  +{key.scopes.length - 3}
+                                </Badge>
+                              )}
+                            </div>
+                          </Table.Cell>
+                          <Table.Cell>
+                            {key.is_active
+                              ? t("common.enabled")
+                              : t("common.disabled")}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteId(key.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
               <Pagination
                 page={page}
@@ -181,7 +184,7 @@ export function ApiKeys() {
               />
             </>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <ConfirmDialog
@@ -193,45 +196,54 @@ export function ApiKeys() {
         {t("apiKeys.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("apiKeys.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              isRequired
-            />
-            <Textarea
-              label={t("apiKeys.scopes")}
-              value={form.scopes}
-              onChange={(e) => setForm({ ...form, scopes: e.target.value })}
-              className="font-mono"
-            />
-            <Textarea
-              label={t("apiKeys.ipAllowlist")}
-              value={form.ip_allowlist}
-              onChange={(e) => setForm({ ...form, ip_allowlist: e.target.value })}
-              className="font-mono"
-            />
-            <Input
-              type="number"
-              label={t("apiKeys.rateLimit")}
-              value={form.rate_limit}
-              onChange={(e) => setForm({ ...form, rate_limit: e.target.value })}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("apiKeys.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+                isRequired
+              />
+              <FormTextArea
+                label={t("apiKeys.scopes")}
+                value={form.scopes}
+                onChange={(value) => setForm({ ...form, scopes: value })}
+                className="font-mono"
+              />
+              <FormTextArea
+                label={t("apiKeys.ipAllowlist")}
+                value={form.ip_allowlist}
+                onChange={(value) => setForm({ ...form, ip_allowlist: value })}
+                className="font-mono"
+              />
+              <FormInput
+                type="number"
+                label={t("apiKeys.rateLimit")}
+                value={form.rate_limit}
+                onChange={(value) => setForm({ ...form, rate_limit: value })}
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

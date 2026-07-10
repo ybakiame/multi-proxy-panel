@@ -1,30 +1,23 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Chip,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Select,
-  SelectItem,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Spinner,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, StatusBadge, Pagination } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  StatusBadge,
+  Pagination,
+  FormInput,
+  FormSelect,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import { getClients, createClient, updateClient, deleteClient, resetClientTraffic } from "../api/clients";
+import {
+  getClients,
+  createClient,
+  updateClient,
+  deleteClient,
+  resetClientTraffic,
+} from "../api/clients";
 import type { CreateClientPayload } from "../api/clients";
 import { getGroups } from "../api/groups";
 import { Client, Group } from "../api/types";
@@ -82,7 +75,8 @@ function formatDuration(seconds: number | null): string {
 
 export function Clients() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,8 +129,10 @@ export function Clients() {
         expiry_date: toDateTimeLocal(client.expiry_date),
         reset_day: client.reset_day?.toString() || "",
         max_devices: client.max_devices?.toString() || "",
-        data_limit_reset_strategy: client.data_limit_reset_strategy || "no_reset",
-        on_hold_expire_duration_secs: client.on_hold_expire_duration_secs?.toString() || "",
+        data_limit_reset_strategy:
+          client.data_limit_reset_strategy || "no_reset",
+        on_hold_expire_duration_secs:
+          client.on_hold_expire_duration_secs?.toString() || "",
         on_hold_timeout: toDateTimeLocal(client.on_hold_timeout),
         status: client.status || "active",
         selectedGroups: new Set(client.group_ids || []),
@@ -162,7 +158,9 @@ export function Clients() {
     return {
       name: form.name,
       email: form.email || undefined,
-      traffic_limit_bytes: form.traffic_limit_bytes ? Number(form.traffic_limit_bytes) : undefined,
+      traffic_limit_bytes: form.traffic_limit_bytes
+        ? Number(form.traffic_limit_bytes)
+        : undefined,
       expiry_date: fromDateTimeLocal(form.expiry_date),
       reset_day: form.reset_day ? Number(form.reset_day) : undefined,
       max_devices: form.max_devices ? Number(form.max_devices) : undefined,
@@ -225,13 +223,16 @@ export function Clients() {
   };
 
   const groupNames = (ids: string[]) => {
-    return ids
-      .map((id) => groups.find((g) => g.id === id)?.name || id)
-      .join(", ") || "-";
+    return (
+      ids.map((id) => groups.find((g) => g.id === id)?.name || id).join(", ") ||
+      "-"
+    );
   };
 
   const resetStrategyLabel = (strategy: string) => {
-    const key = strategy.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    const key = strategy.replace(/_([a-z])/g, (_, letter) =>
+      letter.toUpperCase(),
+    );
     return t(`clients.strategy.${key}` as any) || strategy;
   };
 
@@ -249,94 +250,126 @@ export function Clients() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table removeWrapper aria-label="clients">
-              <TableHeader>
-                <TableColumn>{t("common.name")}</TableColumn>
-                <TableColumn>{t("clients.email")}</TableColumn>
-                <TableColumn>{t("common.status")}</TableColumn>
-                <TableColumn>{t("clients.trafficUsed")} / {t("clients.trafficLimit")}</TableColumn>
-                <TableColumn>{t("clients.allTimeUsed")}</TableColumn>
-                <TableColumn>{t("clients.onHold")}</TableColumn>
-                <TableColumn>{t("clients.expiryDate")}</TableColumn>
-                <TableColumn>{t("clients.resetStrategy")}</TableColumn>
-                <TableColumn>{t("clients.maxDevices")}</TableColumn>
-                <TableColumn>{t("clients.groups")}</TableColumn>
-                <TableColumn>{t("common.actions")}</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent={t("common.empty")}>
-                {clients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {client.name}
-                        {client.is_exceeded && (
-                          <Chip color="danger" size="sm" variant="flat">
-                            {t("clients.exceeded")}
-                          </Chip>
-                        )}
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label="clients">
+                  <Table.Header>
+                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
+                    <Table.Column>{t("clients.email")}</Table.Column>
+                    <Table.Column>{t("common.status")}</Table.Column>
+                    <Table.Column>
+                      {t("clients.trafficUsed")} / {t("clients.trafficLimit")}
+                    </Table.Column>
+                    <Table.Column>{t("clients.allTimeUsed")}</Table.Column>
+                    <Table.Column>{t("clients.onHold")}</Table.Column>
+                    <Table.Column>{t("clients.expiryDate")}</Table.Column>
+                    <Table.Column>{t("clients.resetStrategy")}</Table.Column>
+                    <Table.Column>{t("clients.maxDevices")}</Table.Column>
+                    <Table.Column>{t("clients.groups")}</Table.Column>
+                    <Table.Column>{t("common.actions")}</Table.Column>
+                  </Table.Header>
+                  <Table.Body
+                    renderEmptyState={() => (
+                      <div className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
                       </div>
-                    </TableCell>
-                    <TableCell>{client.email || "-"}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={client.status} />
-                    </TableCell>
-                    <TableCell>
-                      {formatBytes(client.traffic_used_bytes)} / {formatBytes(client.traffic_limit_bytes)}
-                    </TableCell>
-                    <TableCell>{formatBytes(client.all_time_used_bytes)}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {client.status === "on_hold" && (
-                          <Chip color="warning" size="sm" variant="flat">
-                            {t("clients.onHold")}
-                          </Chip>
-                        )}
-                        {client.on_hold_timeout && (
-                          <p className="text-xs text-muted-foreground">
-                            {t("clients.onHoldTimeout")}: {formatDateTime(client.on_hold_timeout)}
-                          </p>
-                        )}
-                        {client.on_hold_expire_duration_secs !== null && (
-                          <p className="text-xs text-muted-foreground">
-                            {t("clients.onHoldDuration")}: {formatDuration(client.on_hold_expire_duration_secs)}
-                          </p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatDateTime(client.expiry_date)}</TableCell>
-                    <TableCell>{resetStrategyLabel(client.data_limit_reset_strategy)}</TableCell>
-                    <TableCell>{client.max_devices ?? "-"}</TableCell>
-                    <TableCell className="max-w-xs truncate">{groupNames(client.group_ids || [])}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openEdit(client)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button size="sm" variant="flat" onPress={() => handleResetTraffic(client)}>
-                          {t("clients.resetTraffic")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteClientId(client.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                    )}
+                  >
+                    {clients.map((client) => (
+                      <Table.Row key={client.id}>
+                        <Table.Cell>
+                          <div className="flex items-center gap-2">
+                            {client.name}
+                            {client.is_exceeded && (
+                              <Badge color="danger" size="sm" variant="soft">
+                                {t("clients.exceeded")}
+                              </Badge>
+                            )}
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell>{client.email || "-"}</Table.Cell>
+                        <Table.Cell>
+                          <StatusBadge status={client.status} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          {formatBytes(client.traffic_used_bytes)} /{" "}
+                          {formatBytes(client.traffic_limit_bytes)}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {formatBytes(client.all_time_used_bytes)}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="space-y-1">
+                            {client.status === "on_hold" && (
+                              <Badge color="warning" size="sm" variant="soft">
+                                {t("clients.onHold")}
+                              </Badge>
+                            )}
+                            {client.on_hold_timeout && (
+                              <p className="text-xs text-muted-foreground">
+                                {t("clients.onHoldTimeout")}:{" "}
+                                {formatDateTime(client.on_hold_timeout)}
+                              </p>
+                            )}
+                            {client.on_hold_expire_duration_secs !== null && (
+                              <p className="text-xs text-muted-foreground">
+                                {t("clients.onHoldDuration")}:{" "}
+                                {formatDuration(
+                                  client.on_hold_expire_duration_secs,
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell>
+                          {formatDateTime(client.expiry_date)}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {resetStrategyLabel(client.data_limit_reset_strategy)}
+                        </Table.Cell>
+                        <Table.Cell>{client.max_devices ?? "-"}</Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">
+                          {groupNames(client.group_ids || [])}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openEdit(client)}
+                            >
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => handleResetTraffic(client)}
+                            >
+                              {t("clients.resetTraffic")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteClientId(client.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
             </Table>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <Pagination
@@ -357,204 +390,231 @@ export function Clients() {
         {t("clients.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("clients.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              isRequired
-            />
-            <Input
-              label={t("clients.email")}
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("clients.trafficLimit")}
-              value={form.traffic_limit_bytes}
-              onChange={(e) => setForm({ ...form, traffic_limit_bytes: e.target.value })}
-            />
-            <Input
-              type="datetime-local"
-              label={t("clients.expiryDate")}
-              value={form.expiry_date}
-              onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("clients.resetDay")}
-              value={form.reset_day}
-              onChange={(e) => setForm({ ...form, reset_day: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("clients.maxDevices")}
-              value={form.max_devices}
-              onChange={(e) => setForm({ ...form, max_devices: e.target.value })}
-            />
-            <Select
-              label={t("clients.resetStrategy")}
-              selectedKeys={[form.data_limit_reset_strategy]}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, data_limit_reset_strategy: value });
-              }}
-            >
-              {RESET_STRATEGIES.map((strategy) => (
-                <SelectItem key={strategy}>{resetStrategyLabel(strategy)}</SelectItem>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              label={t("clients.onHoldDuration")}
-              value={form.on_hold_expire_duration_secs}
-              onChange={(e) => setForm({ ...form, on_hold_expire_duration_secs: e.target.value })}
-            />
-            <Input
-              type="datetime-local"
-              label={t("clients.onHoldTimeout")}
-              value={form.on_hold_timeout}
-              onChange={(e) => setForm({ ...form, on_hold_timeout: e.target.value })}
-            />
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{t("clients.groups")}</p>
-              <div className="flex flex-wrap gap-2">
-                {groups.map((g) => (
-                  <Checkbox
-                    key={g.id}
-                    isSelected={form.selectedGroups.has(g.id)}
-                    onValueChange={(selected) => {
-                      const next = new Set(form.selectedGroups);
-                      if (selected) next.add(g.id);
-                      else next.delete(g.id);
-                      setForm({ ...form, selectedGroups: next });
-                    }}
-                  >
-                    {g.name}
-                  </Checkbox>
-                ))}
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("clients.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+                isRequired
+              />
+              <FormInput
+                label={t("clients.email")}
+                value={form.email}
+                onChange={(value) => setForm({ ...form, email: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.trafficLimit")}
+                value={form.traffic_limit_bytes}
+                onChange={(value) =>
+                  setForm({ ...form, traffic_limit_bytes: value })
+                }
+              />
+              <FormInput
+                type="datetime-local"
+                label={t("clients.expiryDate")}
+                value={form.expiry_date}
+                onChange={(value) => setForm({ ...form, expiry_date: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.resetDay")}
+                value={form.reset_day}
+                onChange={(value) => setForm({ ...form, reset_day: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.maxDevices")}
+                value={form.max_devices}
+                onChange={(value) => setForm({ ...form, max_devices: value })}
+              />
+              <FormSelect
+                label={t("clients.resetStrategy")}
+                value={form.data_limit_reset_strategy}
+                onChange={(value) =>
+                  setForm({ ...form, data_limit_reset_strategy: value })
+                }
+                options={RESET_STRATEGIES.map((strategy) => ({
+                  id: strategy,
+                  label: resetStrategyLabel(strategy),
+                }))}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.onHoldDuration")}
+                value={form.on_hold_expire_duration_secs}
+                onChange={(value) =>
+                  setForm({ ...form, on_hold_expire_duration_secs: value })
+                }
+              />
+              <FormInput
+                type="datetime-local"
+                label={t("clients.onHoldTimeout")}
+                value={form.on_hold_timeout}
+                onChange={(value) =>
+                  setForm({ ...form, on_hold_timeout: value })
+                }
+              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t("clients.groups")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {groups.map((g) => (
+                    <FormCheckbox
+                      key={g.id}
+                      isSelected={form.selectedGroups.has(g.id)}
+                      onChange={(selected) => {
+                        const next = new Set(form.selectedGroups);
+                        if (selected) next.add(g.id);
+                        else next.delete(g.id);
+                        setForm({ ...form, selectedGroups: next });
+                      }}
+                    >
+                      {g.name}
+                    </FormCheckbox>
+                  ))}
+                </div>
               </div>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Modal isOpen={!!editClient} onClose={() => setEditClient(null)}>
-        <ModalContent>
-          <ModalHeader>{t("clients.editTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-            <Input
-              label={t("clients.email")}
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-            <Select
-              label={t("common.status")}
-              selectedKeys={[form.status]}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, status: value });
-              }}
-            >
-              {CLIENT_STATUSES.map((status) => (
-                <SelectItem key={status}>{status}</SelectItem>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              label={t("clients.trafficLimit")}
-              value={form.traffic_limit_bytes}
-              onChange={(e) => setForm({ ...form, traffic_limit_bytes: e.target.value })}
-            />
-            <Input
-              type="datetime-local"
-              label={t("clients.expiryDate")}
-              value={form.expiry_date}
-              onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("clients.resetDay")}
-              value={form.reset_day}
-              onChange={(e) => setForm({ ...form, reset_day: e.target.value })}
-            />
-            <Input
-              type="number"
-              label={t("clients.maxDevices")}
-              value={form.max_devices}
-              onChange={(e) => setForm({ ...form, max_devices: e.target.value })}
-            />
-            <Select
-              label={t("clients.resetStrategy")}
-              selectedKeys={[form.data_limit_reset_strategy]}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setForm({ ...form, data_limit_reset_strategy: value });
-              }}
-            >
-              {RESET_STRATEGIES.map((strategy) => (
-                <SelectItem key={strategy}>{resetStrategyLabel(strategy)}</SelectItem>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              label={t("clients.onHoldDuration")}
-              value={form.on_hold_expire_duration_secs}
-              onChange={(e) => setForm({ ...form, on_hold_expire_duration_secs: e.target.value })}
-            />
-            <Input
-              type="datetime-local"
-              label={t("clients.onHoldTimeout")}
-              value={form.on_hold_timeout}
-              onChange={(e) => setForm({ ...form, on_hold_timeout: e.target.value })}
-            />
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{t("clients.groups")}</p>
-              <div className="flex flex-wrap gap-2">
-                {groups.map((g) => (
-                  <Checkbox
-                    key={g.id}
-                    isSelected={form.selectedGroups.has(g.id)}
-                    onValueChange={(selected) => {
-                      const next = new Set(form.selectedGroups);
-                      if (selected) next.add(g.id);
-                      else next.delete(g.id);
-                      setForm({ ...form, selectedGroups: next });
-                    }}
-                  >
-                    {g.name}
-                  </Checkbox>
-                ))}
+      <Modal.Backdrop
+        isOpen={!!editClient}
+        onOpenChange={(open) => {
+          if (!open) setEditClient(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("clients.editTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+              />
+              <FormInput
+                label={t("clients.email")}
+                value={form.email}
+                onChange={(value) => setForm({ ...form, email: value })}
+              />
+              <FormSelect
+                label={t("common.status")}
+                value={form.status}
+                onChange={(value) => setForm({ ...form, status: value })}
+                options={CLIENT_STATUSES.map((status) => ({
+                  id: status,
+                  label: status,
+                }))}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.trafficLimit")}
+                value={form.traffic_limit_bytes}
+                onChange={(value) =>
+                  setForm({ ...form, traffic_limit_bytes: value })
+                }
+              />
+              <FormInput
+                type="datetime-local"
+                label={t("clients.expiryDate")}
+                value={form.expiry_date}
+                onChange={(value) => setForm({ ...form, expiry_date: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.resetDay")}
+                value={form.reset_day}
+                onChange={(value) => setForm({ ...form, reset_day: value })}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.maxDevices")}
+                value={form.max_devices}
+                onChange={(value) => setForm({ ...form, max_devices: value })}
+              />
+              <FormSelect
+                label={t("clients.resetStrategy")}
+                value={form.data_limit_reset_strategy}
+                onChange={(value) =>
+                  setForm({ ...form, data_limit_reset_strategy: value })
+                }
+                options={RESET_STRATEGIES.map((strategy) => ({
+                  id: strategy,
+                  label: resetStrategyLabel(strategy),
+                }))}
+              />
+              <FormInput
+                type="number"
+                label={t("clients.onHoldDuration")}
+                value={form.on_hold_expire_duration_secs}
+                onChange={(value) =>
+                  setForm({ ...form, on_hold_expire_duration_secs: value })
+                }
+              />
+              <FormInput
+                type="datetime-local"
+                label={t("clients.onHoldTimeout")}
+                value={form.on_hold_timeout}
+                onChange={(value) =>
+                  setForm({ ...form, on_hold_timeout: value })
+                }
+              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t("clients.groups")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {groups.map((g) => (
+                    <FormCheckbox
+                      key={g.id}
+                      isSelected={form.selectedGroups.has(g.id)}
+                      onChange={(selected) => {
+                        const next = new Set(form.selectedGroups);
+                        if (selected) next.add(g.id);
+                        else next.delete(g.id);
+                        setForm({ ...form, selectedGroups: next });
+                      }}
+                    >
+                      {g.name}
+                    </FormCheckbox>
+                  ))}
+                </div>
               </div>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setEditClient(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleUpdate}>
-              {t("common.update")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setEditClient(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

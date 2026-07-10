@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
-import path from "path";
+import path from "node:path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -14,7 +14,14 @@ export default defineConfig({
       output: {
         manualChunks: {
           heroui: ["@heroui/react"],
-          vendor: ["react", "react-dom", "react-router-dom", "axios", "i18next", "react-i18next"],
+          vendor: [
+            "react",
+            "react-dom",
+            "react-router-dom",
+            "axios",
+            "i18next",
+            "react-i18next",
+          ],
         },
       },
     },

@@ -25,12 +25,13 @@ api.interceptors.response.use(
       window.location.href = "/login";
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export function parseError(error: AxiosError): ApiError {
   const status = error.response?.status || 0;
-  const data = error.response?.data as { type?: string; message?: string } | undefined;
+  const data = error.response?.data as
+    { type?: string; message?: string } | undefined;
 
   return {
     type: data?.type || "unknown",
@@ -39,14 +40,42 @@ export function parseError(error: AxiosError): ApiError {
   };
 }
 
-export async function get<T>(path: string, config?: AxiosRequestConfig): Promise<T> {
+export async function get<T>(
+  path: string,
+  config?: AxiosRequestConfig,
+): Promise<T> {
   const resp = await api.get<ApiResponse<T>>(path, config);
   return resp.data.data;
 }
 
-export async function getPaginated<T>(path: string, config?: AxiosRequestConfig): Promise<PaginatedResponse<T>> {
-  const resp = await api.get<PaginatedResponse<T>>(path, config);
-  return resp.data;
+export async function getPaginated<T>(
+  path: string,
+  config?: AxiosRequestConfig,
+): Promise<PaginatedResponse<T>> {
+  const resp = await api.get<PaginatedResponse<T> | T[]>(path, config);
+  const payload = resp.data;
+
+  if (Array.isArray(payload)) {
+    return {
+      data: payload,
+      pagination: {
+        page: 1,
+        per_page: payload.length,
+        total: payload.length,
+        total_pages: 1,
+      },
+    };
+  }
+
+  const items = payload.data ?? [];
+  const pagination = payload.pagination ?? {
+    page: 1,
+    per_page: items.length,
+    total: items.length,
+    total_pages: 1,
+  };
+
+  return { data: items, pagination };
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {

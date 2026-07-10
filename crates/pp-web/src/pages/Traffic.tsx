@@ -1,16 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Card,
-  CardBody,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-} from "@heroui/react";
+import { Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getTraffic } from "../api/traffic";
@@ -19,7 +9,8 @@ import { formatBytes } from "../utils/format";
 
 export function Traffic() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination(1, 20);
   const [records, setRecords] = useState<TrafficRecord[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -44,34 +35,50 @@ export function Traffic() {
     <div className="space-y-4">
       <PageHeader title={t("traffic.title")} />
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <>
-              <Table removeWrapper aria-label="traffic">
-                <TableHeader>
-                  <TableColumn>{t("traffic.hour")}</TableColumn>
-                  <TableColumn>{t("traffic.node")}</TableColumn>
-                  <TableColumn>{t("traffic.client")}</TableColumn>
-                  <TableColumn>{t("traffic.upload")}</TableColumn>
-                  <TableColumn>{t("traffic.download")}</TableColumn>
-                  <TableColumn>{t("traffic.total")}</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent={t("traffic.empty")}>
-                  {display.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell>{r.hour_bucket}</TableCell>
-                      <TableCell>{r.node_id || "-"}</TableCell>
-                      <TableCell>{r.client_id || "-"}</TableCell>
-                      <TableCell>{formatBytes(r.upload_bytes)}</TableCell>
-                      <TableCell>{formatBytes(r.download_bytes)}</TableCell>
-                      <TableCell>{formatBytes(r.upload_bytes + r.download_bytes)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="traffic">
+                    <Table.Header>
+                      <Table.Column isRowHeader>
+                        {t("traffic.hour")}
+                      </Table.Column>
+                      <Table.Column>{t("traffic.node")}</Table.Column>
+                      <Table.Column>{t("traffic.client")}</Table.Column>
+                      <Table.Column>{t("traffic.upload")}</Table.Column>
+                      <Table.Column>{t("traffic.download")}</Table.Column>
+                      <Table.Column>{t("traffic.total")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body
+                      renderEmptyState={() => (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("traffic.empty")}
+                        </div>
+                      )}
+                    >
+                      {display.map((r) => (
+                        <Table.Row key={r.id}>
+                          <Table.Cell>{r.hour_bucket}</Table.Cell>
+                          <Table.Cell>{r.node_id || "-"}</Table.Cell>
+                          <Table.Cell>{r.client_id || "-"}</Table.Cell>
+                          <Table.Cell>{formatBytes(r.upload_bytes)}</Table.Cell>
+                          <Table.Cell>
+                            {formatBytes(r.download_bytes)}
+                          </Table.Cell>
+                          <Table.Cell>
+                            {formatBytes(r.upload_bytes + r.download_bytes)}
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
               <Pagination
                 page={page}
@@ -83,7 +90,7 @@ export function Traffic() {
               />
             </>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
     </div>
   );

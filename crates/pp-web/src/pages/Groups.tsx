@@ -1,27 +1,20 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Textarea,
-  Spinner,
-} from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination } from "../components/ui";
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormTextArea,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import { getGroupsPaginated, createGroup, updateGroup, deleteGroup } from "../api/groups";
+import {
+  getGroupsPaginated,
+  createGroup,
+  updateGroup,
+  deleteGroup,
+} from "../api/groups";
 import { Group } from "../api/types";
 
 interface GroupForm {
@@ -32,7 +25,8 @@ interface GroupForm {
 
 export function Groups() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -143,48 +137,61 @@ export function Groups() {
       />
 
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table removeWrapper aria-label="groups">
-              <TableHeader>
-                <TableColumn>{t("common.name")}</TableColumn>
-                <TableColumn>{t("groups.description")}</TableColumn>
-                <TableColumn>{t("common.labels")}</TableColumn>
-                <TableColumn>{t("common.actions")}</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent={t("common.empty")}>
-                {groups.map((group) => (
-                  <TableRow key={group.id}>
-                    <TableCell>{group.name}</TableCell>
-                    <TableCell>{group.description || "-"}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {JSON.stringify(group.labels || {})}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openEdit(group)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="flat"
-                          onPress={() => setDeleteGroupId(group.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label="groups">
+                  <Table.Header>
+                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
+                    <Table.Column>{t("groups.description")}</Table.Column>
+                    <Table.Column>{t("common.labels")}</Table.Column>
+                    <Table.Column>{t("common.actions")}</Table.Column>
+                  </Table.Header>
+                  <Table.Body
+                    renderEmptyState={() => (
+                      <div className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                    )}
+                  >
+                    {groups.map((group) => (
+                      <Table.Row key={group.id}>
+                        <Table.Cell>{group.name}</Table.Cell>
+                        <Table.Cell>{group.description || "-"}</Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">
+                          {JSON.stringify(group.labels || {})}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openEdit(group)}
+                            >
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteGroupId(group.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
             </Table>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
 
       <Pagination
@@ -205,70 +212,90 @@ export function Groups() {
         {t("groups.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)}>
-        <ModalContent>
-          <ModalHeader>{t("groups.createTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              isRequired
-            />
-            <Input
-              label={t("groups.description")}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-            <Textarea
-              label={t("groups.labels")}
-              value={form.labels}
-              onChange={(e) => setForm({ ...form, labels: e.target.value })}
-              className="font-mono"
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => setCreateOpen(open)}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("groups.createTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+                isRequired
+              />
+              <FormInput
+                label={t("groups.description")}
+                value={form.description}
+                onChange={(value) => setForm({ ...form, description: value })}
+              />
+              <FormTextArea
+                label={t("groups.labels")}
+                value={form.labels}
+                onChange={(value) => setForm({ ...form, labels: value })}
+                className="font-mono"
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Modal isOpen={!!editGroup} onClose={() => setEditGroup(null)}>
-        <ModalContent>
-          <ModalHeader>{t("groups.editTitle")}</ModalHeader>
-          <ModalBody className="space-y-4">
-            <Input
-              label={t("common.name")}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-            <Input
-              label={t("groups.description")}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-            <Textarea
-              label={t("groups.labels")}
-              value={form.labels}
-              onChange={(e) => setForm({ ...form, labels: e.target.value })}
-              className="font-mono"
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setEditGroup(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button color="primary" onPress={handleUpdate}>
-              {t("common.update")}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <Modal.Backdrop
+        isOpen={!!editGroup}
+        onOpenChange={(open) => {
+          if (!open) setEditGroup(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("groups.editTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormInput
+                label={t("common.name")}
+                value={form.name}
+                onChange={(value) => setForm({ ...form, name: value })}
+              />
+              <FormInput
+                label={t("groups.description")}
+                value={form.description}
+                onChange={(value) => setForm({ ...form, description: value })}
+              />
+              <FormTextArea
+                label={t("groups.labels")}
+                value={form.labels}
+                onChange={(value) => setForm({ ...form, labels: value })}
+                className="font-mono"
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                slot="close"
+                variant="ghost"
+                onPress={() => setEditGroup(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

@@ -1,21 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Card, Spinner, Table } from "@heroui/react";
 import {
-  Button,
-  Card,
-  CardBody,
-  Checkbox,
-  Select,
-  SelectItem,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-} from "@heroui/react";
-import { PageHeader, Pagination } from "../components/ui";
+  PageHeader,
+  Pagination,
+  FormSelect,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getMetrics } from "../api/metrics";
 import { getNodes } from "../api/nodes";
@@ -24,7 +15,8 @@ import { formatBytes, formatDateTime } from "../utils/format";
 
 export function Metrics() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
+    usePagination(1, 20);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [nodeId, setNodeId] = useState("");
@@ -53,75 +45,93 @@ export function Metrics() {
   }, [autoRefresh, nodeId]);
 
   useEffect(() => {
-    getNodes().then(setNodes).catch(() => {});
+    getNodes()
+      .then(setNodes)
+      .catch(() => {});
   }, []);
 
   const display = metrics.slice((page - 1) * perPage, page * perPage);
+
+  const nodeOptions = [
+    { id: "", label: t("common.all") },
+    ...nodes.map((node) => ({ id: node.id, label: node.name })),
+  ];
 
   return (
     <div className="space-y-4">
       <PageHeader title={t("metrics.title")} />
       <div className="flex flex-wrap items-end gap-4">
-        <Select
+        <FormSelect
           label={t("metrics.filterByNode")}
-          items={[
-            { id: "", name: t("common.all") },
-            ...nodes.map((node) => ({ id: node.id, name: node.name })),
-          ]}
-          selectedKeys={nodeId ? [nodeId] : []}
-          onSelectionChange={(keys) => {
-            const value = (Array.from(keys)[0] as string) || "";
+          value={nodeId}
+          onChange={(value) => {
             setNodeId(value);
             setPage(1);
           }}
+          options={nodeOptions}
           className="min-w-[240px]"
-        >
-          {(item) => <SelectItem key={item.id}>{item.name}</SelectItem>}
-        </Select>
-        <Checkbox isSelected={autoRefresh} onValueChange={setAutoRefresh}>
+        />
+        <FormCheckbox isSelected={autoRefresh} onChange={setAutoRefresh}>
           {t("metrics.autoRefresh")}
-        </Checkbox>
+        </FormCheckbox>
         <Button onPress={fetch}>{t("common.refresh")}</Button>
       </div>
       <Card>
-        <CardBody>
+        <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <>
-              <Table removeWrapper aria-label="metrics">
-                <TableHeader>
-                  <TableColumn>{t("nodes.name")}</TableColumn>
-                  <TableColumn>{t("metrics.cpu")}</TableColumn>
-                  <TableColumn>{t("metrics.memory")}</TableColumn>
-                  <TableColumn>{t("metrics.disk")}</TableColumn>
-                  <TableColumn>{t("metrics.loadAvg")}</TableColumn>
-                  <TableColumn>{t("metrics.timestamp")}</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent={t("metrics.empty")}>
-                  {display.map((m) => {
-                    const node = nodes.find((n) => n.id === m.node_id);
-                    return (
-                      <TableRow key={m.id}>
-                        <TableCell>{node ? node.name : m.node_id}</TableCell>
-                        <TableCell>{m.cpu_percent.toFixed(2)}%</TableCell>
-                        <TableCell>
-                          {formatBytes(m.mem_used)} / {formatBytes(m.mem_total)}
-                        </TableCell>
-                        <TableCell>
-                          {formatBytes(m.disk_used)} / {formatBytes(m.disk_total)}
-                        </TableCell>
-                        <TableCell>
-                          {m.load_avg1.toFixed(2)} / {m.load_avg5.toFixed(2)} /{" "}
-                          {m.load_avg15.toFixed(2)}
-                        </TableCell>
-                        <TableCell>{formatDateTime(m.timestamp)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="metrics">
+                    <Table.Header>
+                      <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
+                      <Table.Column>{t("metrics.cpu")}</Table.Column>
+                      <Table.Column>{t("metrics.memory")}</Table.Column>
+                      <Table.Column>{t("metrics.disk")}</Table.Column>
+                      <Table.Column>{t("metrics.loadAvg")}</Table.Column>
+                      <Table.Column>{t("metrics.timestamp")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body
+                      renderEmptyState={() => (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("metrics.empty")}
+                        </div>
+                      )}
+                    >
+                      {display.map((m) => {
+                        const node = nodes.find((n) => n.id === m.node_id);
+                        return (
+                          <Table.Row key={m.id}>
+                            <Table.Cell>
+                              {node ? node.name : m.node_id}
+                            </Table.Cell>
+                            <Table.Cell>{m.cpu_percent.toFixed(2)}%</Table.Cell>
+                            <Table.Cell>
+                              {formatBytes(m.mem_used)} /{" "}
+                              {formatBytes(m.mem_total)}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {formatBytes(m.disk_used)} /{" "}
+                              {formatBytes(m.disk_total)}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {m.load_avg1.toFixed(2)} /{" "}
+                              {m.load_avg5.toFixed(2)} /{" "}
+                              {m.load_avg15.toFixed(2)}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {formatDateTime(m.timestamp)}
+                            </Table.Cell>
+                          </Table.Row>
+                        );
+                      })}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
               <Pagination
                 page={page}
@@ -133,7 +143,7 @@ export function Metrics() {
               />
             </>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
     </div>
   );
