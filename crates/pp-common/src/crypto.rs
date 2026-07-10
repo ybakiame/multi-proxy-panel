@@ -6,7 +6,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 pub fn generate_secure_token() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// Generate a random UUID v4 string.
@@ -19,8 +19,8 @@ pub fn generate_uuid() -> String {
 pub fn generate_x25519_keypair() -> (String, String) {
     let secret = StaticSecret::random();
     let public = PublicKey::from(&secret);
-    let private_b64 = base64::engine::general_purpose::STANDARD.encode(secret.as_bytes());
-    let public_b64 = base64::engine::general_purpose::STANDARD.encode(public.as_bytes());
+    let private_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret.as_bytes());
+    let public_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public.as_bytes());
     (private_b64, public_b64)
 }
 
