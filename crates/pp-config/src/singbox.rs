@@ -267,7 +267,6 @@ fn build_singbox_transport(network: &str, settings: &Value) -> Value {
 /// Insert a transport object into an inbound config if it is not null.
 /// This keeps "tcp" inbounds valid for sing-box 1.11+ which rejects
 /// `{"type":"tcp"}` as a transport.
-
 /// Convert VLESS clients array (id, email, flow) to sing-box users array (uuid, name, flow).
 fn vless_clients_to_users(settings: &Value) -> Value {
     if let Some(clients) = settings.get("clients").and_then(|v| v.as_array()) {

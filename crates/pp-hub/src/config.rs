@@ -97,8 +97,7 @@ impl HubConfig {
             hub_config.auto_register_agents = auto;
         }
 
-        validate_jwt_secret(&hub_config.jwt_secret)
-            .map_err(|msg| config::ConfigError::Message(msg))?;
+        validate_jwt_secret(&hub_config.jwt_secret).map_err(config::ConfigError::Message)?;
 
         Ok(hub_config)
     }
