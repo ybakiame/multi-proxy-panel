@@ -49,7 +49,8 @@ impl TrafficAggregator {
         let now = chrono::Utc::now();
         let hour = chrono::Utc
             .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), 0, 0)
-            .unwrap();
+            .single()
+            .unwrap_or(now);
         let key = TrafficKey {
             node_id,
             config_id,

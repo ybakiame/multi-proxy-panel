@@ -8,6 +8,8 @@ use std::sync::Arc;
 use crate::response::{ApiError, ApiResponse, ApiResult};
 use crate::state::AppState;
 
+const LOGIN_RATE_LIMIT_PER_MINUTE: u64 = 5;
+
 #[derive(Deserialize)]
 pub struct LoginPayload {
     pub username: String,
@@ -35,6 +37,20 @@ pub async fn login(
         ));
     }
 
+    // Brute-force protection: limit login attempts per username.
+    let rate_key = format!("login:user:{}", payload.username.trim().to_lowercase());
+    if !state
+        .rate_limiter
+        .check(&rate_key, LOGIN_RATE_LIMIT_PER_MINUTE)
+        .await
+    {
+        return Err(ApiError::new(
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "too many login attempts; try again later",
+        ));
+    }
+
     let user_record = user::Entity::find()
         .filter(user::Column::Username.eq(&payload.username))
         .one(&state.db)
@@ -48,8 +64,9 @@ pub async fn login(
             )
         })?;
 
-    let valid =
-        pp_common::verify_secret(&payload.password, &user_record.password_hash).unwrap_or(false);
+    let valid = pp_common::verify_secret_async(payload.password.clone(), user_record.password_hash)
+        .await
+        .unwrap_or(false);
     if !valid {
         return Err(ApiError::new(
             axum::http::StatusCode::UNAUTHORIZED,
@@ -122,7 +139,8 @@ pub async fn create_user(
         ));
     }
 
-    let password_hash = pp_common::hash_secret(&payload.password)
+    let password_hash = pp_common::hash_secret_async(payload.password.clone())
+        .await
         .map_err(|e| ApiError::internal(format!("failed to hash password: {e}")))?;
 
     let active = user::ActiveModel {

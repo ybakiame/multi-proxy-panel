@@ -578,9 +578,9 @@ export function Protocols() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="protocols">
               <Table.ScrollContainer>
-                <Table.Content aria-label="protocols">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("protocols.type")}</Table.Column>

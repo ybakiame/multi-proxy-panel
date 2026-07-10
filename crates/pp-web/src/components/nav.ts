@@ -23,7 +23,11 @@ export const navItems = [
   { path: "/hosts", labelKey: "nav.hosts", icon: GlobeAltIcon },
   { path: "/clients", labelKey: "nav.clients", icon: UsersIcon },
   { path: "/groups", labelKey: "nav.groups", icon: UserGroupIcon },
-  { path: "/subscriptions", labelKey: "nav.subscriptions", icon: NewspaperIcon },
+  {
+    path: "/subscriptions",
+    labelKey: "nav.subscriptions",
+    icon: NewspaperIcon,
+  },
   { path: "/metrics", labelKey: "nav.metrics", icon: ChartBarIcon },
   { path: "/logs", labelKey: "nav.logs", icon: DocumentTextIcon },
   { path: "/api-keys", labelKey: "nav.apiKeys", icon: KeyIcon },

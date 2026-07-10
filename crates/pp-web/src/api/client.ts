@@ -31,12 +31,12 @@ api.interceptors.response.use(
 export function parseError(error: AxiosError): ApiError {
   const status = error.response?.status || 0;
   const data = error.response?.data as
-    { type?: string; message?: string } | undefined;
+    { error?: { code?: string; message?: string } } | undefined;
 
   return {
-    type: data?.type || "unknown",
+    code: data?.error?.code || "unknown",
     status,
-    message: data?.message || error.message || "Unknown error",
+    message: data?.error?.message || error.message || "Unknown error",
   };
 }
 
@@ -52,7 +52,10 @@ export async function getPaginated<T>(
   path: string,
   config?: AxiosRequestConfig,
 ): Promise<PaginatedResponse<T>> {
-  const resp = await api.get<PaginatedResponse<T> | T[]>(path, config);
+  const resp = await api.get<
+    | { data: T[]; meta?: { total?: number }; pagination?: { total?: number } }
+    | T[]
+  >(path, config);
   const payload = resp.data;
 
   if (Array.isArray(payload)) {
@@ -68,14 +71,19 @@ export async function getPaginated<T>(
   }
 
   const items = payload.data ?? [];
-  const pagination = payload.pagination ?? {
-    page: 1,
-    per_page: items.length,
-    total: items.length,
-    total_pages: 1,
-  };
+  const total =
+    payload.meta?.total ?? payload.pagination?.total ?? items.length;
+  const perPage = items.length || 1;
 
-  return { data: items, pagination };
+  return {
+    data: items,
+    pagination: {
+      page: 1,
+      per_page: items.length,
+      total,
+      total_pages: Math.max(1, Math.ceil(total / perPage)),
+    },
+  };
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {

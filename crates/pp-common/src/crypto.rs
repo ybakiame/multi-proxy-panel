@@ -64,6 +64,23 @@ pub fn verify_secret(secret: &str, hash: &str) -> Result<bool, argon2::password_
     Ok(argon2.verify_password(secret.as_bytes(), &parsed).is_ok())
 }
 
+/// Async version of [`hash_secret`] that runs Argon2 on a blocking thread pool.
+pub async fn hash_secret_async(secret: String) -> Result<String, argon2::password_hash::Error> {
+    tokio::task::spawn_blocking(move || hash_secret(&secret))
+        .await
+        .map_err(|_| argon2::password_hash::Error::PhcStringField)?
+}
+
+/// Async version of [`verify_secret`] that runs Argon2 on a blocking thread pool.
+pub async fn verify_secret_async(
+    secret: String,
+    hash: String,
+) -> Result<bool, argon2::password_hash::Error> {
+    tokio::task::spawn_blocking(move || verify_secret(&secret, &hash))
+        .await
+        .map_err(|_| argon2::password_hash::Error::PhcStringField)?
+}
+
 /// Constant-time equality comparison for two equal-length byte strings.
 pub fn secure_eq(a: &[u8], b: &[u8]) -> bool {
     use subtle::ConstantTimeEq;

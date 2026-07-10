@@ -186,9 +186,9 @@ export function Nodes() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="nodes">
               <Table.ScrollContainer>
-                <Table.Content aria-label="nodes">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
                     <Table.Column>{t("nodes.hostname")}</Table.Column>

@@ -44,6 +44,17 @@ enum Commands {
         #[arg(long)]
         address: Option<String>,
     },
+    /// Create an admin user directly in the database
+    CreateUser {
+        #[arg(long, env = "PROXYPANEL_DATABASE_URL")]
+        database_url: String,
+        #[arg(long)]
+        username: String,
+        #[arg(long)]
+        password: String,
+        #[arg(long, default_value = "admin")]
+        role: String,
+    },
     /// Database diagnostic check
     Diagnose {
         #[arg(long, env = "PROXYPANEL_DATABASE_URL")]
@@ -130,6 +141,33 @@ async fn main() -> anyhow::Result<()> {
             let inserted = active.insert(&db).await?;
             println!("node_id: {}", inserted.id);
             println!("token: {}", raw_token);
+        }
+        Commands::CreateUser {
+            database_url,
+            username,
+            password,
+            role,
+        } => {
+            if password.len() < 8 {
+                anyhow::bail!("password must be at least 8 characters");
+            }
+            let db = pp_db::init_db(&database_url).await?;
+            let password_hash = pp_common::hash_secret(&password)
+                .map_err(|e| anyhow::anyhow!("failed to hash password: {}", e))?;
+
+            use pp_db::entities::user;
+            use sea_orm::Set;
+            let active = user::ActiveModel {
+                id: Set(uuid::Uuid::new_v4()),
+                username: Set(username),
+                password_hash: Set(password_hash),
+                role: Set(role),
+                status: Set("active".to_string()),
+                created_at: Set(chrono::Utc::now().into()),
+                updated_at: Set(chrono::Utc::now().into()),
+            };
+            active.insert(&db).await?;
+            println!("User created successfully.");
         }
         Commands::Diagnose { database_url } => {
             println!("Checking database connection...");

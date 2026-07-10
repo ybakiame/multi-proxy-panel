@@ -19,6 +19,7 @@ hex = "0.4"
 sha2 = { workspace = true }
 argon2 = { workspace = true }
 sea-orm = { workspace = true }
+tokio = { workspace = true }
 tonic = { workspace = true }
 subtle = "2.6"
 x25519-dalek = { version = "2.0", features = ["static_secrets", "getrandom"] }

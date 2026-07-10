@@ -4,6 +4,14 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
+/// Minimum length for a production JWT secret.
+const MIN_JWT_SECRET_LEN: usize = 32;
+/// Placeholder secrets that must not be used in production.
+const JWT_SECRET_PLACEHOLDERS: &[&str] = &[
+    "change-me-to-a-random-secret",
+    "change-me-to-a-long-random-secret-string",
+];
+
 #[derive(Clone, Debug)]
 pub struct HubConfig {
     pub listen: String,
@@ -28,7 +36,7 @@ impl Default for HubConfig {
             cors_origins: None,
             trusted_proxy_ips: None,
             auto_register_agents: false,
-            jwt_secret: "change-me-to-a-random-secret".to_string(),
+            jwt_secret: JWT_SECRET_PLACEHOLDERS[0].to_string(),
             http_tls_cert: None,
             http_tls_key: None,
         }
@@ -89,6 +97,9 @@ impl HubConfig {
             hub_config.auto_register_agents = auto;
         }
 
+        validate_jwt_secret(&hub_config.jwt_secret)
+            .map_err(|msg| config::ConfigError::Message(msg))?;
+
         Ok(hub_config)
     }
 
@@ -132,6 +143,25 @@ fn parse_ips(value: Option<&str>) -> Option<HashSet<IpAddr>> {
             .collect();
         if ips.is_empty() { None } else { Some(ips) }
     })
+}
+
+fn validate_jwt_secret(secret: &str) -> Result<(), String> {
+    if secret.is_empty() {
+        return Err("jwt_secret is required. Set PROXYPANEL_JWT_SECRET or add jwt_secret to the config file.".into());
+    }
+    if secret.len() < MIN_JWT_SECRET_LEN {
+        return Err(format!(
+            "jwt_secret is too short ({} < {} characters). Use a long, randomly-generated secret.",
+            secret.len(),
+            MIN_JWT_SECRET_LEN
+        ));
+    }
+    for placeholder in JWT_SECRET_PLACEHOLDERS {
+        if secret == *placeholder {
+            return Err("jwt_secret is set to the default placeholder. Change it to a long, randomly-generated secret before starting in production.".into());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

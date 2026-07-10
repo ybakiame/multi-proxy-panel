@@ -3,10 +3,11 @@ grpc_listen = "0.0.0.0:50052"
 database_url = "postgres://proxypanel:proxypanel@localhost/proxypanel"
 static_dir = "crates/pp-web/dist"
 cors_origins = "http://localhost:8085,http://127.0.0.1:8085"
-auto_register_agents = true
+auto_register_agents = false
 
-# JWT secret for admin authentication — CHANGE THIS in production
-jwt_secret = "change-me-to-a-long-random-secret-string"
+# JWT secret for admin authentication — CHANGE THIS before starting Hub.
+# The secret must be at least 32 characters long and should be randomly generated.
+jwt_secret = "change-me-to-a-random-secret"
 
 # HTTP TLS (uncomment for HTTPS)
 # http_tls_cert = "/path/to/cert.pem"

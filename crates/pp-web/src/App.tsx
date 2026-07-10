@@ -28,9 +28,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, navigate]);
 
-  return isAuthenticated ? (
-    <Layout>{children}</Layout>
-  ) : null;
+  return isAuthenticated ? <Layout>{children}</Layout> : null;
 }
 
 export default function App() {

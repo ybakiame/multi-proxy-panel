@@ -42,9 +42,9 @@ export function Onlines() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="onlines">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="onlines">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>
                         {t("onlines.client")}

@@ -724,7 +724,8 @@ async fn ensure_bootstrap_api_key(db: &sea_orm::DatabaseConnection) -> anyhow::R
         anyhow::bail!("bootstrap API key is empty");
     }
 
-    let key_hash = pp_common::hash_secret(&raw_key)
+    let key_hash = pp_common::hash_secret_async(raw_key.clone())
+        .await
         .map_err(|e| anyhow::anyhow!("failed to hash bootstrap key: {}", e))?;
 
     let active = api_key_entity::ActiveModel {

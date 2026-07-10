@@ -80,9 +80,9 @@ export function Logs() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="logs">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="logs">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>{t("logs.level")}</Table.Column>
                       <Table.Column>{t("logs.source")}</Table.Column>

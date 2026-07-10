@@ -84,9 +84,9 @@ export function Metrics() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="metrics">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="metrics">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
                       <Table.Column>{t("metrics.cpu")}</Table.Column>

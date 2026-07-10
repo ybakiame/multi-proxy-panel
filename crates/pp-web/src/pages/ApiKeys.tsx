@@ -119,9 +119,9 @@ export function ApiKeys() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="api keys">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="api keys">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>
                         {t("common.name")}

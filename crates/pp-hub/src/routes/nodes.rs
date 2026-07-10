@@ -140,7 +140,8 @@ pub async fn create_node(
     }
 
     let raw_token = pp_common::generate_secure_token();
-    let token_hash = pp_common::hash_secret(&raw_token)
+    let token_hash = pp_common::hash_secret_async(raw_token.clone())
+        .await
         .map_err(|e| ApiError::internal(format!("failed to hash token: {e}")))?;
 
     let active = node::ActiveModel {

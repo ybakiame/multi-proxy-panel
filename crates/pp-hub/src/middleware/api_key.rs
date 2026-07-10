@@ -152,16 +152,24 @@ pub async fn require_api_key(
         return Ok(next.run(req).await);
     }
 
+    let key_str_owned = key_str.clone();
     let key_record = api_key::Entity::find()
         .filter(api_key::Column::IsActive.eq(true))
         .all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let key_record = key_record
-        .into_iter()
-        .find(|k| pp_common::verify_secret(&key_str, &k.key_hash).unwrap_or(false))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let mut matched = None;
+    for k in key_record {
+        if pp_common::verify_secret_async(key_str_owned.clone(), k.key_hash.clone())
+            .await
+            .unwrap_or(false)
+        {
+            matched = Some(k);
+            break;
+        }
+    }
+    let key_record = matched.ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Check expiration
     if let Some(expires) = key_record.expires_at {

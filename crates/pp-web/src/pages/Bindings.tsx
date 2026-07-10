@@ -142,9 +142,9 @@ export function Bindings() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="bindings">
               <Table.ScrollContainer>
-                <Table.Content aria-label="bindings">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>
                       {t("bindings.node")}

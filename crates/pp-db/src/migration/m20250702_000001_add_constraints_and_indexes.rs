@@ -141,14 +141,25 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Index for API key auth middleware (filters by is_active)
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_api_keys_is_active")
+                    .table(ApiKeys::Table)
+                    .col(ApiKeys::IsActive)
+                    .to_owned(),
+            )
+            .await?;
+
         // CHECK constraints for status and type enums.
         // Sea-ORM does not expose a first-class CHECK builder, so we use raw SQL.
         // SQLite does not support ALTER TABLE ADD CONSTRAINT, so we skip CHECKs on SQLite.
         if manager.get_database_backend() != sea_orm::DbBackend::Sqlite {
             for stmt in [
-                "ALTER TABLE nodes ADD CONSTRAINT chk_nodes_status CHECK (status IN ('online', 'offline', 'maintenance'))",
-                "ALTER TABLE clients ADD CONSTRAINT chk_clients_status CHECK (status IN ('active', 'inactive', 'expired', 'disabled'))",
-                "ALTER TABLE protocol_configs ADD CONSTRAINT chk_protocol_configs_type CHECK (protocol_type IN ('vmess', 'vless', 'trojan', 'shadowsocks', 'shadowsocksr', 'hysteria2', 'tuic', 'wireguard', 'vless_reality'))",
+                "ALTER TABLE nodes ADD CONSTRAINT chk_nodes_status CHECK (status IN ('connecting', 'online', 'degraded', 'offline'))",
+                "ALTER TABLE clients ADD CONSTRAINT chk_clients_status CHECK (status IN ('active', 'disabled', 'limited', 'expired', 'on_hold'))",
+                "ALTER TABLE protocol_configs ADD CONSTRAINT chk_protocol_configs_type CHECK (protocol_type IN ('vmess', 'vless_reality', 'vless_vision', 'vless_xhttp', 'trojan', 'shadowsocks2022', 'hysteria2', 'tuic_v5', 'anytls'))",
                 "ALTER TABLE protocol_configs ADD CONSTRAINT chk_protocol_configs_core CHECK (core_type IN ('xray', 'sing-box'))",
             ] {
                 manager.get_connection().execute_unprepared(stmt).await?;
@@ -285,6 +296,15 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_api_keys_is_active")
+                    .table(ApiKeys::Table)
+                    .to_owned(),
+            )
+            .await?;
+
         for (table, chk) in [
             ("nodes", "chk_nodes_status"),
             ("clients", "chk_clients_status"),
@@ -348,6 +368,12 @@ enum TrafficRecords {
     Table,
     NodeId,
     ClientId,
+}
+
+#[derive(Iden)]
+enum ApiKeys {
+    Table,
+    IsActive,
 }
 
 #[derive(Iden)]

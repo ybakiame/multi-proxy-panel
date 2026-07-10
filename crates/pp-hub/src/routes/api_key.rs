@@ -87,7 +87,8 @@ pub async fn create_key(
     }
 
     let raw_key = format!("ck_{}", Uuid::new_v4().simple());
-    let key_hash = pp_common::hash_secret(&raw_key)
+    let key_hash = pp_common::hash_secret_async(raw_key.clone())
+        .await
         .map_err(|e| ApiError::internal(format!("failed to hash key: {e}")))?;
 
     let scopes = json_array(payload.scopes.as_ref());

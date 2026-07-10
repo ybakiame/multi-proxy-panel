@@ -171,9 +171,9 @@ export function Hosts() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="hosts">
               <Table.ScrollContainer>
-                <Table.Content aria-label="hosts">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("hosts.remark")}</Table.Column>
                     <Table.Column>{t("hosts.address")}</Table.Column>

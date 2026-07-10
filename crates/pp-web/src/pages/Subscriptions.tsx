@@ -227,9 +227,9 @@ export function Subscriptions() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="subscriptions">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="subscriptions">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>
                         {t("subscriptions.client")}

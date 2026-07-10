@@ -107,9 +107,9 @@ export function Webhooks() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="webhooks">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="webhooks">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>
                         {t("common.name")}

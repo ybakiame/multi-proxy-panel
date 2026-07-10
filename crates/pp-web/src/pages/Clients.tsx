@@ -256,9 +256,9 @@ export function Clients() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="clients">
               <Table.ScrollContainer>
-                <Table.Content aria-label="clients">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("clients.email")}</Table.Column>

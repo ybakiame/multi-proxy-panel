@@ -133,9 +133,9 @@ export function Dashboard() {
             </h3>
           </Card.Header>
           <Card.Content>
-            <Table>
+            <Table aria-label="recent logs">
               <Table.ScrollContainer>
-                <Table.Content aria-label="recent logs">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("logs.level")}</Table.Column>
                     <Table.Column>{t("logs.source")}</Table.Column>
@@ -175,9 +175,9 @@ export function Dashboard() {
             </h3>
           </Card.Header>
           <Card.Content>
-            <Table>
+            <Table aria-label="node status">
               <Table.ScrollContainer>
-                <Table.Content aria-label="node status">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
                     <Table.Column>{t("nodes.hostname")}</Table.Column>

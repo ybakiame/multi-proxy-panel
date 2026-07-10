@@ -42,9 +42,9 @@ export function Traffic() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="traffic">
                 <Table.ScrollContainer>
-                  <Table.Content aria-label="traffic">
+                  <Table.Content>
                     <Table.Header>
                       <Table.Column isRowHeader>
                         {t("traffic.hour")}

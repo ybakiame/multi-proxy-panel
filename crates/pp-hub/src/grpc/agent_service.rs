@@ -180,7 +180,10 @@ async fn handle_register(
                 "node token is not set; provision a token first",
             ));
         }
-        let token_valid = pp_common::verify_secret(&req.token, &node.token_hash).unwrap_or(false);
+        let token_valid =
+            pp_common::verify_secret_async(req.token.clone(), node.token_hash.clone())
+                .await
+                .unwrap_or(false);
         if !token_valid {
             tracing::warn!("agent {} provided invalid token", agent_id);
             return Err(Status::unauthenticated("invalid agent token"));
@@ -199,7 +202,8 @@ async fn handle_register(
             .await
             .map_err(|e| Status::internal(format!("database error: {}", e)))?;
     } else if auto_register {
-        let token_hash = pp_common::hash_secret(&req.token)
+        let token_hash = pp_common::hash_secret_async(req.token.clone())
+            .await
             .map_err(|_| Status::internal("failed to hash agent token"))?;
 
         let new_node = node::ActiveModel {

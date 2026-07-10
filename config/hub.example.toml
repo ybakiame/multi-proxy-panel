@@ -16,3 +16,7 @@ trusted_proxy_ips = "127.0.0.1,::1"
 # Allow any agent with a valid token to auto-register as a new node.
 # WARNING: enable only for development. Always disable in production.
 auto_register_agents = true
+
+# JWT secret for admin authentication — required, at least 32 characters.
+# Generate a random value, e.g.: openssl rand -base64 42
+jwt_secret = "change-me-to-a-random-secret"

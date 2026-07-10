@@ -143,9 +143,9 @@ export function Groups() {
               <Spinner />
             </div>
           ) : (
-            <Table>
+            <Table aria-label="groups">
               <Table.ScrollContainer>
-                <Table.Content aria-label="groups">
+                <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                     <Table.Column>{t("groups.description")}</Table.Column>

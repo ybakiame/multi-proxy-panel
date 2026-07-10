@@ -400,12 +400,10 @@ async fn build_proxy_nodes(
         let node_model = node::Entity::find_by_id(binding.node_id).one(db).await?;
 
         if let (Some(cfg), Some(node)) = (config, node_model) {
-            let protocol = parse_protocol_type(&cfg.protocol_type);
-            if protocol.is_err() {
-                continue;
-            }
-
-            let protocol_type = protocol.unwrap();
+            let protocol_type = match parse_protocol_type(&cfg.protocol_type) {
+                Ok(pt) => pt,
+                Err(_) => continue,
+            };
 
             // Apply filter: protocol type
             if !allowed_protocols.is_empty()
@@ -606,10 +604,9 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
                 });
                 if let Some(limit) = client.max_devices {
                     if limit > 0 {
-                        client_obj
-                            .as_object_mut()
-                            .unwrap()
-                            .insert("limitIp".to_string(), json!(limit));
+                        if let Some(obj) = client_obj.as_object_mut() {
+                            obj.insert("limitIp".to_string(), json!(limit));
+                        }
                     }
                 }
                 // Also expose the current client's id at top level for link generators.

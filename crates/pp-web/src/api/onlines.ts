@@ -1,7 +1,8 @@
 import { get, getPaginated } from "./client";
 import type { OnlineSession, PaginatedResponse } from "./types";
 
-export const getOnlineCount = () => get<{ count: number }>("/api/v1/onlines/count");
+export const getOnlineCount = () =>
+  get<{ count: number }>("/api/v1/onlines/count");
 export const getOnlines = (nodeId?: string, clientId?: string) => {
   const params = new URLSearchParams();
   if (nodeId) params.append("node_id", nodeId);
