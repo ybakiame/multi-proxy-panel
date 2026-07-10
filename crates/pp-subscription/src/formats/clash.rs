@@ -13,18 +13,14 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
         proxies.push(build_proxy(node)?);
     }
 
-    let mut output = serde_json::json!({
-        "proxies": proxies,
-        "proxy-groups": [
-            {
-                "name": "Proxy",
-                "type": "select",
-                "proxies": proxy_names
-            }
-        ]
-    });
-
     if let Some(base) = base_config {
+        let base_str = serde_json::to_string(base)?;
+        if base_str.contains("\"<PROXY_REPLACE>\"") || base_str.contains("\"<NODE_REPLACE>\"") {
+            let rendered = render_template(base_str, &proxies, &proxy_names)?;
+            return Ok(serde_yaml::to_string(&rendered)?);
+        }
+
+        let mut output = default_output(&proxies, &proxy_names);
         if let Some(base_proxies) = base.get("proxies").and_then(|v| v.as_array()) {
             let mut merged = base_proxies.clone();
             merged.extend(proxies.clone());
@@ -40,9 +36,43 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
             );
             output["proxy-groups"] = serde_json::Value::Array(merged);
         }
+        return Ok(serde_yaml::to_string(&output)?);
     }
 
-    Ok(serde_json::to_string_pretty(&output)?)
+    Ok(serde_yaml::to_string(&default_output(
+        &proxies,
+        &proxy_names,
+    ))?)
+}
+
+fn default_output(proxies: &[Value], proxy_names: &[String]) -> Value {
+    serde_json::json!({
+        "proxies": proxies,
+        "proxy-groups": [
+            {
+                "name": "Proxy",
+                "type": "select",
+                "proxies": proxy_names
+            }
+        ]
+    })
+}
+
+fn render_template(
+    base_str: String,
+    proxies: &[Value],
+    proxy_names: &[String],
+) -> PanelResult<Value> {
+    let proxies_json = serde_json::to_string(&proxies)?;
+    let names_json = serde_json::to_string(&proxy_names)?;
+
+    let rendered = base_str
+        .replace("\"<PROXY_REPLACE>\"", &proxies_json)
+        .replace("\"<NODE_REPLACE>\"", &names_json);
+
+    serde_json::from_str(&rendered).map_err(|e| {
+        PanelError::Subscription(format!("failed to render subscription template: {e}"))
+    })
 }
 
 fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {

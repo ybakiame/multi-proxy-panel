@@ -10,6 +10,16 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
         .map(build_outbound)
         .collect::<Result<Vec<_>, _>>()?;
 
+    let node_names: Vec<String> = nodes.iter().map(|n| n.name.clone()).collect();
+
+    if let Some(base) = base_config {
+        let base_str = serde_json::to_string(base)?;
+        if base_str.contains("\"<OUTBOUND_REPLACE>\"") || base_str.contains("\"<NODE_REPLACE>\"") {
+            let rendered = render_template(base_str, &outbounds, &node_names)?;
+            return Ok(serde_json::to_string_pretty(&rendered)?);
+        }
+    }
+
     let mut config = if let Some(base) = base_config {
         base.clone()
     } else {
@@ -18,6 +28,23 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
 
     config["outbounds"] = serde_json::Value::Array(outbounds);
     Ok(serde_json::to_string_pretty(&config)?)
+}
+
+fn render_template(
+    base_str: String,
+    outbounds: &[Value],
+    node_names: &[String],
+) -> PanelResult<Value> {
+    let outbounds_json = serde_json::to_string(&outbounds)?;
+    let names_json = serde_json::to_string(&node_names)?;
+
+    let rendered = base_str
+        .replace("\"<OUTBOUND_REPLACE>\"", &outbounds_json)
+        .replace("\"<NODE_REPLACE>\"", &names_json);
+
+    serde_json::from_str(&rendered).map_err(|e| {
+        PanelError::Subscription(format!("failed to render subscription template: {e}"))
+    })
 }
 
 fn build_outbound(node: &ProxyNode) -> Result<Value, PanelError> {

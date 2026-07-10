@@ -36,6 +36,9 @@ pub enum PanelError {
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    #[error("yaml serialization error: {0}")]
+    YamlSerialization(#[from] serde_yaml::Error),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
