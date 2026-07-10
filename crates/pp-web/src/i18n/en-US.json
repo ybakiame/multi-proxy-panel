@@ -119,7 +119,9 @@
     "tlsSettings": "TLS Settings (JSON)",
     "generateKeys": "Generate Keys",
     "uuid": "UUID",
+    "uuidDescription": "Used as a placeholder in the server inbound; actual client UUIDs are injected into subscriptions.",
     "password": "Password",
+    "passwordDescription": "Used as a placeholder in the server inbound; actual client passwords are injected into subscriptions.",
     "flow": "Flow",
     "dest": "Reality Dest",
     "serverNames": "Server Names",
@@ -203,7 +205,8 @@
     "createTitle": "Create Group",
     "editTitle": "Edit Group",
     "description": "Description",
-    "labels": "Labels (JSON)"
+    "labels": "Labels (JSON)",
+    "bindings": "Bindings"
   },
   "subscriptions": {
     "title": "Subscriptions",

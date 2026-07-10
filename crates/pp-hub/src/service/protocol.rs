@@ -3,6 +3,7 @@ use pp_config::{BuilderRegistry, InboundConfig};
 use pp_db::entities::{node_binding, protocol_config};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::Value;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 /// Generate core configuration for a specific node based on its bindings.
@@ -75,7 +76,65 @@ pub async fn generate_node_config(
     Ok((config, effective_version))
 }
 
-/// Determine the effective core binary version for a set of inbounds.
+/// Push generated core config to the agent running on a node.
+/// Returns Ok(()) on successful delivery, or an error describing the failure.
+pub async fn push_node_config(
+    state: &crate::state::AppState,
+    node_id: Uuid,
+    core_type: CoreType,
+    restart: bool,
+    version: Option<String>,
+) -> PanelResult<()> {
+    validate_node_port_conflicts(&state.db, node_id)
+        .await
+        .map_err(|e| {
+            pp_common::PanelError::Validation(format!("node {} port conflict: {}", node_id, e))
+        })?;
+
+    let (config_json, core_version) = generate_node_config(&state.db, node_id, core_type).await?;
+    let config_str = serde_json::to_string(&config_json)
+        .map_err(|e| pp_common::PanelError::Config(format!("failed to serialize config: {e}")))?;
+
+    let proto_core = match core_type {
+        CoreType::Xray => pp_proto::CoreType::Xray,
+        CoreType::SingBox => pp_proto::CoreType::SingBox,
+        CoreType::Both => pp_proto::CoreType::Both,
+    };
+
+    let message = pp_proto::HubMessage {
+        payload: Some(pp_proto::hub_message::Payload::ConfigPush(
+            pp_proto::ConfigPush {
+                config_json: config_str,
+                target_core: proto_core as i32,
+                restart_required: restart,
+                config_version: version.unwrap_or_else(|| "1".to_string()),
+                core_version: core_version.unwrap_or_default(),
+            },
+        )),
+    };
+
+    state
+        .send_to_agent(node_id, message)
+        .await
+        .map_err(|e| pp_common::PanelError::Internal(format!("failed to push config: {e}")))?;
+
+    Ok(())
+}
+
+/// Find all node IDs that have an active binding to a given protocol config.
+pub async fn nodes_using_config(
+    db: &DatabaseConnection,
+    config_id: Uuid,
+) -> PanelResult<Vec<Uuid>> {
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::ProtocolConfigId.eq(config_id))
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    let node_ids: HashSet<Uuid> = bindings.into_iter().map(|b| b.node_id).collect();
+    Ok(node_ids.into_iter().collect())
+}
 /// For sing-box, returns the highest explicitly requested version or a default
 /// of 1.14.0 so that new server deployments use the modern API service.
 fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Option<String> {

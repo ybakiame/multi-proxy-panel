@@ -119,7 +119,9 @@
     "tlsSettings": "TLS 设置（JSON）",
     "generateKeys": "生成密钥",
     "uuid": "UUID",
+    "uuidDescription": "用作服务端入站的占位符；实际客户端 UUID 会在生成订阅时注入。",
     "password": "密码",
+    "passwordDescription": "用作服务端入站的占位符；实际客户端密码会在生成订阅时注入。",
     "flow": "Flow",
     "dest": "REALITY 目标",
     "serverNames": "服务端名称",
@@ -203,7 +205,8 @@
     "createTitle": "创建分组",
     "editTitle": "编辑分组",
     "description": "描述",
-    "labels": "标签（JSON）"
+    "labels": "标签（JSON）",
+    "bindings": "关联绑定"
   },
   "subscriptions": {
     "title": "订阅",

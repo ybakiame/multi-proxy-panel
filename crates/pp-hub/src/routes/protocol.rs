@@ -205,6 +205,39 @@ pub async fn update_config(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
+    // Push updated config to all nodes that have an active binding using this config.
+    // Failures are logged but do not fail the HTTP request, so the config change is
+    // persisted even if an agent is temporarily offline.
+    match crate::service::protocol::nodes_using_config(&state.db, updated.id).await {
+        Ok(node_ids) => {
+            let core_type = updated
+                .core_type
+                .parse::<pp_common::CoreType>()
+                .unwrap_or(pp_common::CoreType::Both);
+            for node_id in node_ids {
+                if let Err(e) = crate::service::protocol::push_node_config(
+                    &state,
+                    node_id,
+                    core_type,
+                    true,
+                    updated.core_version.clone(),
+                )
+                .await
+                {
+                    tracing::warn!(
+                        "failed to push config to node {} after updating config {}: {}",
+                        node_id,
+                        updated.id,
+                        e
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("failed to find nodes using config {}: {}", updated.id, e);
+        }
+    }
+
     Ok(ApiResponse::new(config_to_json(updated)))
 }
 

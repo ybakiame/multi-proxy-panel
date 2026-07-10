@@ -216,47 +216,15 @@ pub async fn push_config(
         }
     };
 
-    crate::service::protocol::validate_node_port_conflicts(&state.db, id)
-        .await
-        .map_err(|e| {
-            tracing::warn!("node {} port conflict: {}", id, e);
-            ApiError::new(
-                axum::http::StatusCode::CONFLICT,
-                "port_conflict",
-                e.to_string(),
-            )
-        })?;
-
-    let (config_json, core_version) =
-        crate::service::protocol::generate_node_config(&state.db, id, core_type)
-            .await
-            .map_err(|e| {
-                tracing::warn!("failed to generate config for node {}: {}", id, e);
-                ApiError::internal(format!("failed to generate config: {e}"))
-            })?;
-
-    let config_str = serde_json::to_string(&config_json)
-        .map_err(|e| ApiError::internal(format!("failed to serialize config: {e}")))?;
-
-    let proto_core = match core_type {
-        pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
-        pp_common::CoreType::SingBox => pp_proto::CoreType::SingBox,
-        pp_common::CoreType::Both => pp_proto::CoreType::Both,
-    };
-
-    let message = pp_proto::HubMessage {
-        payload: Some(pp_proto::hub_message::Payload::ConfigPush(
-            pp_proto::ConfigPush {
-                config_json: config_str,
-                target_core: proto_core as i32,
-                restart_required: payload.restart.unwrap_or(true),
-                config_version: payload.version.unwrap_or_else(|| "1".to_string()),
-                core_version: core_version.unwrap_or_default(),
-            },
-        )),
-    };
-
-    state.send_to_agent(id, message).await.map_err(|e| {
+    crate::service::protocol::push_node_config(
+        &state,
+        id,
+        core_type,
+        payload.restart.unwrap_or(true),
+        payload.version,
+    )
+    .await
+    .map_err(|e| {
         tracing::warn!("failed to push config to agent {}: {}", id, e);
         ApiError::new(
             axum::http::StatusCode::BAD_GATEWAY,

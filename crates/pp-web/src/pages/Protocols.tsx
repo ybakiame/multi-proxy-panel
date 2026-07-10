@@ -323,6 +323,7 @@ export function Protocols() {
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => setForm({ ...form, uuid: value })}
+              description={t("protocols.uuidDescription")}
               isRequired
             />
             <FormSelect
@@ -377,6 +378,7 @@ export function Protocols() {
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => setForm({ ...form, uuid: value })}
+              description={t("protocols.uuidDescription")}
               isRequired
             />
             <FormSelect
@@ -397,6 +399,7 @@ export function Protocols() {
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => setForm({ ...form, uuid: value })}
+              description={t("protocols.uuidDescription")}
               isRequired
             />
             <FormInput
@@ -427,6 +430,7 @@ export function Protocols() {
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => setForm({ ...form, uuid: value })}
+              description={t("protocols.uuidDescription")}
               isRequired
             />
             <FormInput
@@ -443,6 +447,7 @@ export function Protocols() {
             label={t("protocols.password")}
             value={form.password}
             onChange={(value) => setForm({ ...form, password: value })}
+            description={t("protocols.passwordDescription")}
             isRequired
           />
         );
@@ -462,6 +467,7 @@ export function Protocols() {
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => setForm({ ...form, password: value })}
+              description={t("protocols.passwordDescription")}
               isRequired
             />
           </>
@@ -473,6 +479,7 @@ export function Protocols() {
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => setForm({ ...form, password: value })}
+              description={t("protocols.passwordDescription")}
               isRequired
             />
             <FormSelect
@@ -510,6 +517,7 @@ export function Protocols() {
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => setForm({ ...form, password: value })}
+              description={t("protocols.passwordDescription")}
               isRequired
             />
             <FormInput
@@ -526,12 +534,14 @@ export function Protocols() {
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => setForm({ ...form, uuid: value })}
+              description={t("protocols.uuidDescription")}
               isRequired
             />
             <FormInput
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => setForm({ ...form, password: value })}
+              description={t("protocols.passwordDescription")}
               isRequired
             />
             <FormSelect

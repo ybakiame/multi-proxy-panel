@@ -99,6 +99,7 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         "server": node.server,
         "server_port": node.port,
         "uuid": uuid,
+        "packet_encoding": "xudp",
     });
 
     if !flow.is_empty() {
@@ -149,7 +150,7 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
             .map(|s| s.trim())
             .unwrap_or("")
             .to_string();
-        let short_ids: Vec<String> = node
+        let short_id = node
             .settings
             .get("short_id")
             .and_then(|v| v.as_str())
@@ -161,8 +162,8 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
             .unwrap_or("")
             .split(',')
             .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+            .find(|s| !s.is_empty())
+            .unwrap_or_default();
         let spider_x = node
             .settings
             .get("spider_x")
@@ -177,7 +178,7 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         let mut reality = serde_json::json!({
             "enabled": true,
             "public_key": public_key,
-            "short_id": if short_ids.is_empty() { serde_json::json!([""]) } else { serde_json::json!(short_ids) },
+            "short_id": short_id,
         });
         if !spider_x.is_empty() {
             reality["spider_x"] = serde_json::json!(spider_x);
@@ -358,12 +359,14 @@ mod tests {
         assert_eq!(outbound["server"], "1.2.3.4");
         assert_eq!(outbound["server_port"], 443);
         assert_eq!(outbound["flow"], "xtls-rprx-vision");
+        assert_eq!(outbound["packet_encoding"], "xudp");
         assert_eq!(outbound["tls"]["enabled"], true);
         assert_eq!(outbound["tls"]["server_name"], "example.com");
         assert_eq!(
             outbound["tls"]["reality"]["public_key"],
             "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
         );
+        assert_eq!(outbound["tls"]["reality"]["short_id"], "0123456789abcdef");
         assert_eq!(outbound["tls"]["utls"]["fingerprint"], "chrome");
     }
 

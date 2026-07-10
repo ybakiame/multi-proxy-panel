@@ -1,4 +1,4 @@
-import { TextField, Label, Input, FieldError } from "@heroui/react";
+import { TextField, Label, Input, FieldError, Description } from "@heroui/react";
 
 interface FormInputProps {
   label?: string;
@@ -6,6 +6,7 @@ interface FormInputProps {
   onChange?: (value: string) => void;
   type?: string;
   placeholder?: string;
+  description?: string;
   isRequired?: boolean;
   isInvalid?: boolean;
   errorMessage?: string;
@@ -19,6 +20,7 @@ export function FormInput({
   onChange,
   type,
   placeholder,
+  description,
   isRequired,
   isInvalid,
   errorMessage,
@@ -35,6 +37,7 @@ export function FormInput({
     >
       {label && <Label>{label}</Label>}
       <Input type={type} placeholder={placeholder} readOnly={isReadOnly} />
+      {description && <Description>{description}</Description>}
       {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </TextField>
   );
