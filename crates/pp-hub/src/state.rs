@@ -1,10 +1,66 @@
+use chrono::{DateTime, FixedOffset};
 use sea_orm::DatabaseConnection;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 use crate::{HubConfig, rate_limiter::RateLimiter, routes::metrics_export::MetricsHandle};
+
+/// TTL for cached API key authentication entries.
+const API_KEY_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+/// Cached result of a successful API key verification.
+#[derive(Clone)]
+pub struct CachedApiKey {
+    pub key_id: Uuid,
+    pub name: String,
+    pub scopes: Vec<String>,
+    pub expires_at: Option<DateTime<FixedOffset>>,
+    pub ip_allowlist: Option<Value>,
+    pub rate_limit: Option<i32>,
+    pub cached_at: Instant,
+}
+
+impl CachedApiKey {
+    pub fn is_expired(&self) -> bool {
+        Instant::now().duration_since(self.cached_at) > API_KEY_CACHE_TTL
+    }
+}
+
+/// In-memory cache for verified API keys to avoid expensive Argon2 verification
+/// on every request.
+#[derive(Clone, Default)]
+pub struct ApiKeyCache {
+    entries: Arc<std::sync::Mutex<HashMap<String, CachedApiKey>>>,
+}
+
+impl ApiKeyCache {
+    pub fn get(&self, cache_key: &str) -> Option<CachedApiKey> {
+        let entries = self.entries.lock().unwrap();
+        entries.get(cache_key).cloned().filter(|e| !e.is_expired())
+    }
+
+    pub fn insert(&self, cache_key: String, entry: CachedApiKey) {
+        let mut entries = self.entries.lock().unwrap();
+        entries.insert(cache_key, entry);
+    }
+
+    pub fn invalidate(&self) {
+        let mut entries = self.entries.lock().unwrap();
+        entries.clear();
+    }
+
+    /// Compute a cache key from the raw API key string using SHA-256.
+    pub fn compute_key(raw_key: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(raw_key.as_bytes());
+        hex::encode(hasher.finalize())
+    }
+}
 
 /// Connection handle for a single Agent.
 pub struct AgentConnection {
@@ -21,6 +77,7 @@ pub struct AppState {
     pub rate_limiter: RateLimiter,
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
     pub metrics_handle: Option<Arc<MetricsHandle>>,
+    pub api_key_cache: ApiKeyCache,
 }
 
 impl AppState {
@@ -36,6 +93,7 @@ impl AppState {
             rate_limiter,
             agents: Arc::new(RwLock::new(HashMap::new())),
             metrics_handle,
+            api_key_cache: ApiKeyCache::default(),
         })
     }
 

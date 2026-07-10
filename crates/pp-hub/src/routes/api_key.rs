@@ -108,6 +108,8 @@ pub async fn create_key(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
+    state.api_key_cache.invalidate();
+
     Ok(ApiResponse::new(json!({
         "id": inserted.id,
         "name": inserted.name,
@@ -167,6 +169,8 @@ pub async fn update_key(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
+    state.api_key_cache.invalidate();
+
     Ok(ApiResponse::new(key_to_json(updated)))
 }
 
@@ -183,6 +187,7 @@ pub async fn delete_key(
     if res.rows_affected == 0 {
         Err(ApiError::not_found("API key not found"))
     } else {
+        state.api_key_cache.invalidate();
         Ok(axum::http::StatusCode::NO_CONTENT)
     }
 }

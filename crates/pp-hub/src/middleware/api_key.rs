@@ -105,6 +105,53 @@ pub async fn require_api_key(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
+    // Check in-memory cache first to avoid expensive Argon2 verification on every request.
+    let cache_key = crate::state::ApiKeyCache::compute_key(&key_str);
+    if let Some(cached) = state.api_key_cache.get(&cache_key) {
+        // Re-validate expiration since it may have changed.
+        if let Some(expires) = cached.expires_at {
+            if expires < chrono::Utc::now() {
+                state.api_key_cache.invalidate();
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        }
+
+        // Re-validate IP allowlist since it may have changed.
+        if let Some(ref allowlist) = cached.ip_allowlist {
+            let client_ip = extract_client_ip(&req, state.config.trusted_proxy_ips.as_ref());
+
+            if let Some(ips) = allowlist.as_array() {
+                let allowed: Vec<String> = ips
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                if !allowed.is_empty() && !allowed.iter().any(|ip| ip_matches(&client_ip, ip)) {
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
+        }
+
+        // Rate limit check
+        if let Some(limit) = cached.rate_limit {
+            if limit > 0 {
+                let key = format!("rate:apikey:{}", cached.key_id);
+                let allowed = state.rate_limiter.check(&key, limit as u64).await;
+                if !allowed {
+                    return Err(StatusCode::TOO_MANY_REQUESTS);
+                }
+            }
+        }
+
+        let auth = ApiKeyAuth {
+            key_id: cached.key_id,
+            name: cached.name,
+            scopes: cached.scopes,
+        };
+
+        req.extensions_mut().insert(auth);
+        return Ok(next.run(req).await);
+    }
+
     let key_record = api_key::Entity::find()
         .filter(api_key::Column::IsActive.eq(true))
         .all(&state.db)
@@ -124,7 +171,7 @@ pub async fn require_api_key(
     }
 
     // Check IP allowlist
-    if let Some(allowlist) = key_record.ip_allowlist {
+    if let Some(allowlist) = key_record.ip_allowlist.clone() {
         let client_ip = extract_client_ip(&req, state.config.trusted_proxy_ips.as_ref());
 
         if let Some(ips) = allowlist.as_array() {
@@ -149,7 +196,7 @@ pub async fn require_api_key(
         }
     }
 
-    let scopes = key_record
+    let scopes: Vec<String> = key_record
         .scopes
         .as_array()
         .map(|arr| {
@@ -161,9 +208,23 @@ pub async fn require_api_key(
 
     let auth = ApiKeyAuth {
         key_id: key_record.id,
-        name: key_record.name,
-        scopes,
+        name: key_record.name.clone(),
+        scopes: scopes.clone(),
     };
+
+    // Cache successful verification.
+    state.api_key_cache.insert(
+        cache_key,
+        crate::state::CachedApiKey {
+            key_id: key_record.id,
+            name: key_record.name,
+            scopes,
+            expires_at: key_record.expires_at,
+            ip_allowlist: key_record.ip_allowlist,
+            rate_limit: key_record.rate_limit,
+            cached_at: std::time::Instant::now(),
+        },
+    );
 
     req.extensions_mut().insert(auth);
     Ok(next.run(req).await)
