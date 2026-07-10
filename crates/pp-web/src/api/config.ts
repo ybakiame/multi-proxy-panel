@@ -18,7 +18,7 @@ export function baseUrl(): string {
   }
 
   if (import.meta.env.PROD) {
-    return `${window.location.origin}/api`;
+    return window.location.origin;
   }
 
   return import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
