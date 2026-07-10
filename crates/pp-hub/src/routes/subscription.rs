@@ -521,18 +521,17 @@ async fn build_proxy_nodes(
             }
 
             // Group-based access control.
-            // A client can only access nodes that share at least one group with it.
-            // Clients without groups may only access nodes without groups.
+            // A client must belong to at least one group. It can only access nodes
+            // that share at least one group with it. No groups for the client means
+            // no node access.
             let node_group_ids = get_node_group_ids(db, node.id).await?;
             let node_has_groups = !node_group_ids.is_empty();
 
-            if !client_group_ids.is_empty() {
-                if !node_has_groups || !node_group_ids.iter().any(|g| client_group_ids.contains(g))
-                {
-                    continue;
-                }
-            } else if node_has_groups {
-                // Group-restricted nodes are not available to clients without groups.
+            if client_group_ids.is_empty() {
+                continue;
+            }
+
+            if !node_has_groups || !node_group_ids.iter().any(|g| client_group_ids.contains(g)) {
                 continue;
             }
 
