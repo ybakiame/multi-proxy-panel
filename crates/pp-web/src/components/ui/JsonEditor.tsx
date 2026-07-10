@@ -9,13 +9,7 @@ interface JsonEditorProps {
   placeholder?: string;
 }
 
-export function JsonEditor({
-  value,
-  onChange,
-  error,
-  label,
-  placeholder,
-}: JsonEditorProps) {
+export function JsonEditor({ value, onChange, error, label, placeholder }: JsonEditorProps) {
   const [isValid, setIsValid] = useState(true);
 
   const handleChange = (newValue: string) => {

@@ -52,16 +52,34 @@ cargo fmt --all
 
 ### 2.3 Web 前端构建
 
+`crates/pp-web` 使用 Bun 作为包管理器（见 `packageManager` 字段）。
+
 ```bash
 cd crates/pp-web
 # 安装依赖
-npm install
+bun install
 # 开发模式
-npm run dev
+bun run dev
 # 发布构建
-npm run build
+bun run build
 # 产物位于 crates/pp-web/dist/
 ```
+
+前端代码检查与格式化已集成 oxc 工具链：
+
+```bash
+cd crates/pp-web
+# Linter（oxlint + React / a11y / import 插件）
+bun run lint
+# 格式化（Prettier 处理 JSON/CSS，oxfmt 处理 TS/TSX）
+bun run format
+# 格式检查
+bun run format:check
+# 最终核验：构建 + Linter + 格式检查
+bun run verify
+```
+
+提交前必须在 `crates/pp-web` 目录执行 `bun run verify` 并全部通过。
 
 ---
 

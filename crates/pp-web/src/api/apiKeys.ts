@@ -1,5 +1,5 @@
 import { getPaginated, post, del } from "./client";
-import type { ApiKey, PaginatedResponse } from "./types";
+import type { ApiKey } from "./types";
 
 export interface CreateApiKeyPayload {
   name: string;

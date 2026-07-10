@@ -1,5 +1,5 @@
 import { getPaginated } from "./client";
-import type { TrafficRecord, PaginatedResponse } from "./types";
+import type { TrafficRecord } from "./types";
 
 export const getTraffic = (nodeId?: string, clientId?: string) => {
   const params = new URLSearchParams();

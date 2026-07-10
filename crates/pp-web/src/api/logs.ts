@@ -1,12 +1,7 @@
-import { get, getPaginated } from "./client";
-import type { Log, PaginatedResponse } from "./types";
+import { getPaginated } from "./client";
+import type { Log } from "./types";
 
-export const getLogs = (
-  page: number,
-  perPage: number,
-  level?: string,
-  source?: string,
-) => {
+export const getLogs = (page: number, perPage: number, level?: string, source?: string) => {
   const params = new URLSearchParams();
   params.append("page", page.toString());
   params.append("per_page", perPage.toString());

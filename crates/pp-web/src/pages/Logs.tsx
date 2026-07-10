@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Spinner, Table } from "@heroui/react";
-import {
-  PageHeader,
-  Pagination,
-  SearchInput,
-  FormSelect,
-} from "../components/ui";
+import { PageHeader, Pagination, SearchInput, FormSelect } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getLogs } from "../api/logs";
 import { Log } from "../api/types";
@@ -16,16 +11,10 @@ const LEVELS = ["all", "info", "warn", "error", "debug"];
 
 export function Logs() {
   const { t } = useTranslation();
-  const {
-    page,
-    perPage,
-    setPage,
-    setPerPage,
-    total,
-    setTotal,
-    totalPages,
-    reset,
-  } = usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages, reset } = usePagination(
+    1,
+    20,
+  );
   const [logs, setLogs] = useState<Log[]>([]);
   const [level, setLevel] = useState("all");
   const [source, setSource] = useState("");
@@ -65,11 +54,7 @@ export function Logs() {
           options={LEVELS.map((l) => ({ id: l, label: l.toUpperCase() }))}
           className="min-w-[160px]"
         />
-        <SearchInput
-          value={source}
-          onChange={setSource}
-          placeholder={t("logs.source")}
-        />
+        <SearchInput value={source} onChange={setSource} placeholder={t("logs.source")} />
         <Button onPress={handleFilter}>{t("common.filter")}</Button>
       </div>
       <Card>
@@ -100,12 +85,8 @@ export function Logs() {
                         <Table.Row key={log.id}>
                           <Table.Cell>{log.level}</Table.Cell>
                           <Table.Cell>{log.source}</Table.Cell>
-                          <Table.Cell className="max-w-xs truncate">
-                            {log.message}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {formatDateTime(log.created_at)}
-                          </Table.Cell>
+                          <Table.Cell className="max-w-xs truncate">{log.message}</Table.Cell>
+                          <Table.Cell>{formatDateTime(log.created_at)}</Table.Cell>
                         </Table.Row>
                       ))}
                     </Table.Body>

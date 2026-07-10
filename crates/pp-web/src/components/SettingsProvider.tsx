@@ -6,8 +6,8 @@ import { languageAtom, themeAtom } from "../atoms/settings";
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const { i18n } = useTranslation();
-  const [language, setLanguage] = useAtom(languageAtom);
-  const [theme, setTheme] = useAtom(themeAtom);
+  const [_language, setLanguage] = useAtom(languageAtom);
+  const [_theme, setTheme] = useAtom(themeAtom);
 
   useEffect(() => {
     const unsubscribe = useSettingsStore.subscribe((state, prevState) => {

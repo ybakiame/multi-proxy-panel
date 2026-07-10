@@ -10,14 +10,7 @@ import { getBindings } from "../api/bindings";
 import { getMetrics } from "../api/metrics";
 import { getOnlineCount } from "../api/onlines";
 import { getLogs } from "../api/logs";
-import {
-  Node,
-  ProtocolConfig,
-  Client,
-  Binding,
-  Metric,
-  Log,
-} from "../api/types";
+import { Node, ProtocolConfig, Client, Binding, Metric, Log } from "../api/types";
 
 export function Dashboard() {
   const { t } = useTranslation();
@@ -34,23 +27,16 @@ export function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [
-          nodesRes,
-          protocolsRes,
-          clientsRes,
-          bindingsRes,
-          metricsRes,
-          logsRes,
-          countRes,
-        ] = await Promise.allSettled([
-          getNodes(),
-          getAllProtocols(),
-          getClients(1, 1000),
-          getBindings(),
-          getMetrics(),
-          getLogs(1, 5),
-          getOnlineCount(),
-        ]);
+        const [nodesRes, protocolsRes, clientsRes, bindingsRes, metricsRes, logsRes, countRes] =
+          await Promise.allSettled([
+            getNodes(),
+            getAllProtocols(),
+            getClients(1, 1000),
+            getBindings(),
+            getMetrics(),
+            getLogs(1, 5),
+            getOnlineCount(),
+          ]);
 
         if (nodesRes.status === "fulfilled")
           setNodes(Array.isArray(nodesRes.value) ? nodesRes.value : []);
@@ -58,26 +44,17 @@ export function Dashboard() {
           setProtocols(Array.isArray(protocolsRes.value) ? protocolsRes.value : []);
         if (clientsRes.status === "fulfilled")
           setClients(
-            clientsRes.value && Array.isArray(clientsRes.value.data)
-              ? clientsRes.value.data
-              : [],
+            clientsRes.value && Array.isArray(clientsRes.value.data) ? clientsRes.value.data : [],
           );
         if (bindingsRes.status === "fulfilled")
           setBindings(Array.isArray(bindingsRes.value) ? bindingsRes.value : []);
         if (metricsRes.status === "fulfilled")
           setMetrics(
-            metricsRes.value && Array.isArray(metricsRes.value.data)
-              ? metricsRes.value.data
-              : [],
+            metricsRes.value && Array.isArray(metricsRes.value.data) ? metricsRes.value.data : [],
           );
         if (logsRes.status === "fulfilled")
-          setLogs(
-            logsRes.value && Array.isArray(logsRes.value.data)
-              ? logsRes.value.data
-              : [],
-          );
-        if (countRes.status === "fulfilled")
-          setOnlineCount(countRes.value?.count ?? 0);
+          setLogs(logsRes.value && Array.isArray(logsRes.value.data) ? logsRes.value.data : []);
+        if (countRes.status === "fulfilled") setOnlineCount(countRes.value?.count ?? 0);
 
         const failed = [
           nodesRes,
@@ -112,9 +89,7 @@ export function Dashboard() {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <Spinner />
-        <span className="text-sm text-muted-foreground">
-          {t("dashboard.loading")}
-        </span>
+        <span className="text-sm text-muted-foreground">{t("dashboard.loading")}</span>
       </div>
     );
   }
@@ -143,9 +118,7 @@ export function Dashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <Card.Header>
-            <h3 className="text-lg font-semibold">
-              {t("dashboard.recentLogs")}
-            </h3>
+            <h3 className="text-lg font-semibold">{t("dashboard.recentLogs")}</h3>
           </Card.Header>
           <Card.Content>
             <Table aria-label="recent logs">
@@ -159,21 +132,15 @@ export function Dashboard() {
                   </Table.Header>
                   <Table.Body
                     renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("logs.empty")}
-                      </div>
+                      <div className="p-4 text-center text-muted-foreground">{t("logs.empty")}</div>
                     )}
                   >
                     {logs.map((log) => (
                       <Table.Row key={log.id}>
                         <Table.Cell>{log.level}</Table.Cell>
                         <Table.Cell>{log.source}</Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {log.message}
-                        </Table.Cell>
-                        <Table.Cell>
-                          {formatDateTime(log.created_at)}
-                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">{log.message}</Table.Cell>
+                        <Table.Cell>{formatDateTime(log.created_at)}</Table.Cell>
                       </Table.Row>
                     ))}
                   </Table.Body>
@@ -185,9 +152,7 @@ export function Dashboard() {
 
         <Card>
           <Card.Header>
-            <h3 className="text-lg font-semibold">
-              {t("dashboard.nodeStatus")}
-            </h3>
+            <h3 className="text-lg font-semibold">{t("dashboard.nodeStatus")}</h3>
           </Card.Header>
           <Card.Content>
             <Table aria-label="node status">

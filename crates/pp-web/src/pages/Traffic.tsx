@@ -9,8 +9,7 @@ import { formatBytes } from "../utils/format";
 
 export function Traffic() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
   const [records, setRecords] = useState<TrafficRecord[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -46,9 +45,7 @@ export function Traffic() {
                 <Table.ScrollContainer>
                   <Table.Content>
                     <Table.Header>
-                      <Table.Column isRowHeader>
-                        {t("traffic.hour")}
-                      </Table.Column>
+                      <Table.Column isRowHeader>{t("traffic.hour")}</Table.Column>
                       <Table.Column>{t("traffic.node")}</Table.Column>
                       <Table.Column>{t("traffic.client")}</Table.Column>
                       <Table.Column>{t("traffic.upload")}</Table.Column>
@@ -68,12 +65,8 @@ export function Traffic() {
                           <Table.Cell>{r.node_id || "-"}</Table.Cell>
                           <Table.Cell>{r.client_id || "-"}</Table.Cell>
                           <Table.Cell>{formatBytes(r.upload_bytes)}</Table.Cell>
-                          <Table.Cell>
-                            {formatBytes(r.download_bytes)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {formatBytes(r.upload_bytes + r.download_bytes)}
-                          </Table.Cell>
+                          <Table.Cell>{formatBytes(r.download_bytes)}</Table.Cell>
+                          <Table.Cell>{formatBytes(r.upload_bytes + r.download_bytes)}</Table.Cell>
                         </Table.Row>
                       ))}
                     </Table.Body>

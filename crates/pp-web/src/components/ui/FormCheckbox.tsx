@@ -6,11 +6,7 @@ interface FormCheckboxProps {
   children?: React.ReactNode;
 }
 
-export function FormCheckbox({
-  isSelected,
-  onChange,
-  children,
-}: FormCheckboxProps) {
+export function FormCheckbox({ isSelected, onChange, children }: FormCheckboxProps) {
   return (
     <Checkbox isSelected={isSelected} onChange={onChange}>
       <Checkbox.Content>

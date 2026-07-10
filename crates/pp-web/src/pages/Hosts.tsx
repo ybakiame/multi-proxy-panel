@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
-import {
-  PageHeader,
-  ConfirmDialog,
-  Pagination,
-  FormInput,
-  FormCheckbox,
-} from "../components/ui";
+import { PageHeader, ConfirmDialog, Pagination, FormInput, FormCheckbox } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getHosts, createHost, updateHost, deleteHost } from "../api/hosts";
 import type { CreateHostPayload } from "../api/hosts";
@@ -27,8 +21,7 @@ interface HostForm {
 
 export function Hosts() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [hosts, setHosts] = useState<InboundHost[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -202,23 +195,15 @@ export function Hosts() {
                         <Table.Cell>{host.host || "-"}</Table.Cell>
                         <Table.Cell>{host.path || "-"}</Table.Cell>
                         <Table.Cell>
-                          {host.is_active
-                            ? t("common.enabled")
-                            : t("common.disabled")}
+                          {host.is_active ? t("common.enabled") : t("common.disabled")}
                         </Table.Cell>
                         <Table.Cell className="max-w-xs truncate">
                           {host.protocol_config_id}
                         </Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {host.node_id}
-                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate">{host.node_id}</Table.Cell>
                         <Table.Cell>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(host)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(host)}>
                               {t("common.edit")}
                             </Button>
                             <Button
@@ -258,10 +243,7 @@ export function Hosts() {
         {t("hosts.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -271,9 +253,7 @@ export function Hosts() {
               <FormInput
                 label={t("hosts.protocolConfig")}
                 value={form.protocol_config_id}
-                onChange={(value) =>
-                  setForm({ ...form, protocol_config_id: value })
-                }
+                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
                 placeholder="UUID"
                 isRequired
               />
@@ -320,19 +300,13 @@ export function Hosts() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) =>
-                  setForm({ ...form, is_active: selected })
-                }
+                onChange={(selected) => setForm({ ...form, is_active: selected })}
               >
                 {t("hosts.isActive")}
               </FormCheckbox>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>
@@ -356,9 +330,7 @@ export function Hosts() {
               <FormInput
                 label={t("hosts.protocolConfig")}
                 value={form.protocol_config_id}
-                onChange={(value) =>
-                  setForm({ ...form, protocol_config_id: value })
-                }
+                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
                 placeholder="UUID"
               />
               <FormInput
@@ -400,19 +372,13 @@ export function Hosts() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) =>
-                  setForm({ ...form, is_active: selected })
-                }
+                onChange={(selected) => setForm({ ...form, is_active: selected })}
               >
                 {t("hosts.isActive")}
               </FormCheckbox>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setEditHost(null)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setEditHost(null)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>

@@ -1,20 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
-import {
-  PageHeader,
-  ConfirmDialog,
-  Pagination,
-  FormInput,
-  FormTextArea,
-} from "../components/ui";
+import { PageHeader, ConfirmDialog, Pagination, FormInput, FormTextArea } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import {
-  getGroupsPaginated,
-  createGroup,
-  updateGroup,
-  deleteGroup,
-} from "../api/groups";
+import { getGroupsPaginated, createGroup, updateGroup, deleteGroup } from "../api/groups";
 import { Group } from "../api/types";
 
 interface GroupForm {
@@ -25,8 +14,7 @@ interface GroupForm {
 
 export function Groups() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -168,11 +156,7 @@ export function Groups() {
                         </Table.Cell>
                         <Table.Cell>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(group)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(group)}>
                               {t("common.edit")}
                             </Button>
                             <Button
@@ -212,10 +196,7 @@ export function Groups() {
         {t("groups.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -241,11 +222,7 @@ export function Groups() {
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>
@@ -284,11 +261,7 @@ export function Groups() {
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setEditGroup(null)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setEditGroup(null)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>

@@ -6,11 +6,7 @@ interface SearchInputProps {
   placeholder?: string;
 }
 
-export function SearchInput({
-  value,
-  onChange,
-  placeholder,
-}: SearchInputProps) {
+export function SearchInput({ value, onChange, placeholder }: SearchInputProps) {
   return (
     <TextField value={value} onChange={onChange} className="max-w-xs">
       <Label className="sr-only">{placeholder || "Search..."}</Label>

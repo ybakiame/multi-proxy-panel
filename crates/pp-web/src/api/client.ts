@@ -30,8 +30,7 @@ api.interceptors.response.use(
 
 export function parseError(error: AxiosError): ApiError {
   const status = error.response?.status || 0;
-  const data = error.response?.data as
-    { error?: { code?: string; message?: string } } | undefined;
+  const data = error.response?.data as { error?: { code?: string; message?: string } } | undefined;
 
   return {
     code: data?.error?.code || "unknown",
@@ -40,10 +39,7 @@ export function parseError(error: AxiosError): ApiError {
   };
 }
 
-export async function get<T>(
-  path: string,
-  config?: AxiosRequestConfig,
-): Promise<T> {
+export async function get<T>(path: string, config?: AxiosRequestConfig): Promise<T> {
   const resp = await api.get<ApiResponse<T>>(path, config);
   return resp.data.data;
 }
@@ -53,8 +49,7 @@ export async function getPaginated<T>(
   config?: AxiosRequestConfig,
 ): Promise<PaginatedResponse<T>> {
   const resp = await api.get<
-    | { data: T[]; meta?: { total?: number }; pagination?: { total?: number } }
-    | T[]
+    { data: T[]; meta?: { total?: number }; pagination?: { total?: number } } | T[]
   >(path, config);
   const payload = resp.data;
 
@@ -71,8 +66,7 @@ export async function getPaginated<T>(
   }
 
   const items = payload.data ?? [];
-  const total =
-    payload.meta?.total ?? payload.pagination?.total ?? items.length;
+  const total = payload.meta?.total ?? payload.pagination?.total ?? items.length;
   const perPage = items.length || 1;
 
   return {

@@ -75,8 +75,7 @@ function formatDuration(seconds: number | null): string {
 
 export function Clients() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
@@ -129,10 +128,8 @@ export function Clients() {
         expiry_date: toDateTimeLocal(client.expiry_date),
         reset_day: client.reset_day?.toString() || "",
         max_devices: client.max_devices?.toString() || "",
-        data_limit_reset_strategy:
-          client.data_limit_reset_strategy || "no_reset",
-        on_hold_expire_duration_secs:
-          client.on_hold_expire_duration_secs?.toString() || "",
+        data_limit_reset_strategy: client.data_limit_reset_strategy || "no_reset",
+        on_hold_expire_duration_secs: client.on_hold_expire_duration_secs?.toString() || "",
         on_hold_timeout: toDateTimeLocal(client.on_hold_timeout),
         status: client.status || "active",
         selectedGroups: new Set(client.group_ids || []),
@@ -158,9 +155,7 @@ export function Clients() {
     return {
       name: form.name,
       email: form.email || undefined,
-      traffic_limit_bytes: form.traffic_limit_bytes
-        ? Number(form.traffic_limit_bytes)
-        : undefined,
+      traffic_limit_bytes: form.traffic_limit_bytes ? Number(form.traffic_limit_bytes) : undefined,
       expiry_date: fromDateTimeLocal(form.expiry_date),
       reset_day: form.reset_day ? Number(form.reset_day) : undefined,
       max_devices: form.max_devices ? Number(form.max_devices) : undefined,
@@ -223,16 +218,11 @@ export function Clients() {
   };
 
   const groupNames = (ids: string[]) => {
-    return (
-      ids.map((id) => groups.find((g) => g.id === id)?.name || id).join(", ") ||
-      "-"
-    );
+    return ids.map((id) => groups.find((g) => g.id === id)?.name || id).join(", ") || "-";
   };
 
   const resetStrategyLabel = (strategy: string) => {
-    const key = strategy.replace(/_([a-z])/g, (_, letter) =>
-      letter.toUpperCase(),
-    );
+    const key = strategy.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     return t(`clients.strategy.${key}` as any) || strategy;
   };
 
@@ -301,9 +291,7 @@ export function Clients() {
                           {formatBytes(client.traffic_used_bytes)} /{" "}
                           {formatBytes(client.traffic_limit_bytes)}
                         </Table.Cell>
-                        <Table.Cell>
-                          {formatBytes(client.all_time_used_bytes)}
-                        </Table.Cell>
+                        <Table.Cell>{formatBytes(client.all_time_used_bytes)}</Table.Cell>
                         <Table.Cell>
                           <div className="space-y-1">
                             {client.status === "on_hold" && (
@@ -320,16 +308,12 @@ export function Clients() {
                             {client.on_hold_expire_duration_secs !== null && (
                               <p className="text-xs text-muted-foreground">
                                 {t("clients.onHoldDuration")}:{" "}
-                                {formatDuration(
-                                  client.on_hold_expire_duration_secs,
-                                )}
+                                {formatDuration(client.on_hold_expire_duration_secs)}
                               </p>
                             )}
                           </div>
                         </Table.Cell>
-                        <Table.Cell>
-                          {formatDateTime(client.expiry_date)}
-                        </Table.Cell>
+                        <Table.Cell>{formatDateTime(client.expiry_date)}</Table.Cell>
                         <Table.Cell>
                           {resetStrategyLabel(client.data_limit_reset_strategy)}
                         </Table.Cell>
@@ -339,11 +323,7 @@ export function Clients() {
                         </Table.Cell>
                         <Table.Cell>
                           <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(client)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(client)}>
                               {t("common.edit")}
                             </Button>
                             <Button
@@ -390,10 +370,7 @@ export function Clients() {
         {t("clients.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -415,9 +392,7 @@ export function Clients() {
                 type="number"
                 label={t("clients.trafficLimit")}
                 value={form.traffic_limit_bytes}
-                onChange={(value) =>
-                  setForm({ ...form, traffic_limit_bytes: value })
-                }
+                onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
               />
               <FormInput
                 type="datetime-local"
@@ -440,9 +415,7 @@ export function Clients() {
               <FormSelect
                 label={t("clients.resetStrategy")}
                 value={form.data_limit_reset_strategy}
-                onChange={(value) =>
-                  setForm({ ...form, data_limit_reset_strategy: value })
-                }
+                onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
                 options={RESET_STRATEGIES.map((strategy) => ({
                   id: strategy,
                   label: resetStrategyLabel(strategy),
@@ -452,17 +425,13 @@ export function Clients() {
                 type="number"
                 label={t("clients.onHoldDuration")}
                 value={form.on_hold_expire_duration_secs}
-                onChange={(value) =>
-                  setForm({ ...form, on_hold_expire_duration_secs: value })
-                }
+                onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
               />
               <FormInput
                 type="datetime-local"
                 label={t("clients.onHoldTimeout")}
                 value={form.on_hold_timeout}
-                onChange={(value) =>
-                  setForm({ ...form, on_hold_timeout: value })
-                }
+                onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
               />
               <div className="space-y-2">
                 <p className="text-sm font-medium">{t("clients.groups")}</p>
@@ -485,11 +454,7 @@ export function Clients() {
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>
@@ -533,9 +498,7 @@ export function Clients() {
                 type="number"
                 label={t("clients.trafficLimit")}
                 value={form.traffic_limit_bytes}
-                onChange={(value) =>
-                  setForm({ ...form, traffic_limit_bytes: value })
-                }
+                onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
               />
               <FormInput
                 type="datetime-local"
@@ -558,9 +521,7 @@ export function Clients() {
               <FormSelect
                 label={t("clients.resetStrategy")}
                 value={form.data_limit_reset_strategy}
-                onChange={(value) =>
-                  setForm({ ...form, data_limit_reset_strategy: value })
-                }
+                onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
                 options={RESET_STRATEGIES.map((strategy) => ({
                   id: strategy,
                   label: resetStrategyLabel(strategy),
@@ -570,17 +531,13 @@ export function Clients() {
                 type="number"
                 label={t("clients.onHoldDuration")}
                 value={form.on_hold_expire_duration_secs}
-                onChange={(value) =>
-                  setForm({ ...form, on_hold_expire_duration_secs: value })
-                }
+                onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
               />
               <FormInput
                 type="datetime-local"
                 label={t("clients.onHoldTimeout")}
                 value={form.on_hold_timeout}
-                onChange={(value) =>
-                  setForm({ ...form, on_hold_timeout: value })
-                }
+                onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
               />
               <div className="space-y-2">
                 <p className="text-sm font-medium">{t("clients.groups")}</p>
@@ -603,11 +560,7 @@ export function Clients() {
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setEditClient(null)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setEditClient(null)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>

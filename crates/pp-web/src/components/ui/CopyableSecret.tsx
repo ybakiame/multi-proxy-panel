@@ -23,12 +23,7 @@ export function CopyableSecret({ secret, label }: CopyableSecretProps) {
           <Label className="sr-only">{label || "Secret"}</Label>
           <Input readOnly value={secret} />
         </TextField>
-        <Button
-          variant="secondary"
-          size="sm"
-          onPress={copy}
-          className="text-warning"
-        >
+        <Button variant="secondary" size="sm" onPress={copy} className="text-warning">
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

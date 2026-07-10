@@ -19,8 +19,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: "dark",
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
-      toggleTheme: () =>
-        set((state) => ({ theme: state.theme === "dark" ? "light" : "dark" })),
+      toggleTheme: () => set((state) => ({ theme: state.theme === "dark" ? "light" : "dark" })),
     }),
     {
       name: "pp-settings",

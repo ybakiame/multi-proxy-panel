@@ -1,5 +1,5 @@
-import { get, getPaginated, post, put, del } from "./client";
-import type { InboundHost, PaginatedResponse } from "./types";
+import { getPaginated, post, put, del } from "./client";
+import type { InboundHost } from "./types";
 
 export interface CreateHostPayload {
   protocol_config_id: string;

@@ -1,12 +1,6 @@
 import { getApiKey, clearApiKey } from "../api/config";
 import { validateApiKey } from "../api/client";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 interface AuthContextType {
   apiKey: string | null;

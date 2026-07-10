@@ -19,8 +19,7 @@ interface ApiKeyWithToken extends ApiKey {
 
 export function ApiKeys() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -107,9 +106,7 @@ export function ApiKeys() {
         }}
       />
 
-      {newToken && (
-        <CopyableSecret secret={newToken} label={t("apiKeys.tokenWarning")} />
-      )}
+      {newToken && <CopyableSecret secret={newToken} label={t("apiKeys.tokenWarning")} />}
 
       <Card>
         <Card.Content>
@@ -123,9 +120,7 @@ export function ApiKeys() {
                 <Table.ScrollContainer>
                   <Table.Content>
                     <Table.Header>
-                      <Table.Column isRowHeader>
-                        {t("common.name")}
-                      </Table.Column>
+                      <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                       <Table.Column>{t("apiKeys.scopes")}</Table.Column>
                       <Table.Column>{t("common.active")}</Table.Column>
                       <Table.Column>{t("common.actions")}</Table.Column>
@@ -155,16 +150,10 @@ export function ApiKeys() {
                             </div>
                           </Table.Cell>
                           <Table.Cell>
-                            {key.is_active
-                              ? t("common.enabled")
-                              : t("common.disabled")}
+                            {key.is_active ? t("common.enabled") : t("common.disabled")}
                           </Table.Cell>
                           <Table.Cell>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteId(key.id)}
-                            >
+                            <Button size="sm" variant="danger" onPress={() => setDeleteId(key.id)}>
                               {t("common.delete")}
                             </Button>
                           </Table.Cell>
@@ -196,10 +185,7 @@ export function ApiKeys() {
         {t("apiKeys.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -232,11 +218,7 @@ export function ApiKeys() {
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>

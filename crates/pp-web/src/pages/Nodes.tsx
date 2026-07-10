@@ -11,21 +11,13 @@ import {
   FormCheckbox,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import {
-  getNodesPaginated,
-  createNode,
-  updateNode,
-  deleteNode,
-  pushConfig,
-} from "../api/nodes";
+import { getNodesPaginated, createNode, updateNode, deleteNode, pushConfig } from "../api/nodes";
 import { getGroups } from "../api/groups";
 import { Node, Group } from "../api/types";
-import { formatDateTime } from "../utils/format";
 
 export function Nodes() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setTotal } = usePagination();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
@@ -175,9 +167,7 @@ export function Nodes() {
         }}
       />
 
-      {newToken && (
-        <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />
-      )}
+      {newToken && <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />}
 
       <Card>
         <Card.Content>
@@ -215,28 +205,16 @@ export function Nodes() {
                           <StatusBadge status={node.status} />
                         </Table.Cell>
                         <Table.Cell>
-                          {node.parent_id
-                            ? `${t("nodes.childOf")} ${node.parent_id}`
-                            : "-"}
+                          {node.parent_id ? `${t("nodes.childOf")} ${node.parent_id}` : "-"}
                         </Table.Cell>
-                        <Table.Cell>
-                          {(node.cores_available || []).join(", ")}
-                        </Table.Cell>
+                        <Table.Cell>{(node.cores_available || []).join(", ")}</Table.Cell>
                         <Table.Cell>{node.usage_coefficient}</Table.Cell>
                         <Table.Cell>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(node)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(node)}>
                               {t("common.edit")}
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => handlePush(node)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => handlePush(node)}>
                               {t("nodes.pushConfig")}
                             </Button>
                             <Button
@@ -267,10 +245,7 @@ export function Nodes() {
         {t("nodes.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -297,9 +272,7 @@ export function Nodes() {
                 type="number"
                 label={t("nodes.usageCoefficient")}
                 value={form.usage_coefficient.toString()}
-                onChange={(value) =>
-                  setForm({ ...form, usage_coefficient: Number(value) })
-                }
+                onChange={(value) => setForm({ ...form, usage_coefficient: Number(value) })}
               />
               <FormInput
                 label={t("nodes.parentId")}
@@ -334,11 +307,7 @@ export function Nodes() {
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>
@@ -378,9 +347,7 @@ export function Nodes() {
                 type="number"
                 label={t("nodes.usageCoefficient")}
                 value={form.usage_coefficient.toString()}
-                onChange={(value) =>
-                  setForm({ ...form, usage_coefficient: Number(value) })
-                }
+                onChange={(value) => setForm({ ...form, usage_coefficient: Number(value) })}
               />
               <FormInput
                 label={t("nodes.parentId")}
@@ -415,11 +382,7 @@ export function Nodes() {
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setEditNode(null)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setEditNode(null)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>

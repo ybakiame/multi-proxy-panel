@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Spinner, Table } from "@heroui/react";
-import {
-  PageHeader,
-  Pagination,
-  FormSelect,
-  FormCheckbox,
-} from "../components/ui";
+import { PageHeader, Pagination, FormSelect, FormCheckbox } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getMetrics } from "../api/metrics";
 import { getNodes } from "../api/nodes";
@@ -15,8 +10,7 @@ import { formatBytes, formatDateTime } from "../utils/format";
 
 export function Metrics() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [nodeId, setNodeId] = useState("");
@@ -106,26 +100,19 @@ export function Metrics() {
                         const node = nodes.find((n) => n.id === m.node_id);
                         return (
                           <Table.Row key={m.id}>
-                            <Table.Cell>
-                              {node ? node.name : m.node_id}
-                            </Table.Cell>
+                            <Table.Cell>{node ? node.name : m.node_id}</Table.Cell>
                             <Table.Cell>{(m.cpu_percent ?? 0).toFixed(2)}%</Table.Cell>
                             <Table.Cell>
-                              {formatBytes(m.mem_used ?? 0)} /{" "}
-                              {formatBytes(m.mem_total ?? 0)}
+                              {formatBytes(m.mem_used ?? 0)} / {formatBytes(m.mem_total ?? 0)}
                             </Table.Cell>
                             <Table.Cell>
-                              {formatBytes(m.disk_used ?? 0)} /{" "}
-                              {formatBytes(m.disk_total ?? 0)}
+                              {formatBytes(m.disk_used ?? 0)} / {formatBytes(m.disk_total ?? 0)}
                             </Table.Cell>
                             <Table.Cell>
-                              {(m.load_avg1 ?? 0).toFixed(2)} /{" "}
-                              {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
+                              {(m.load_avg1 ?? 0).toFixed(2)} / {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
                               {(m.load_avg15 ?? 0).toFixed(2)}
                             </Table.Cell>
-                            <Table.Cell>
-                              {formatDateTime(m.timestamp)}
-                            </Table.Cell>
+                            <Table.Cell>{formatDateTime(m.timestamp)}</Table.Cell>
                           </Table.Row>
                         );
                       })}

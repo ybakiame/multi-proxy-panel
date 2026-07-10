@@ -1,5 +1,5 @@
 import { get, getPaginated, post, del } from "./client";
-import type { Binding, PaginatedResponse } from "./types";
+import type { Binding } from "./types";
 
 export interface CreateBindingPayload {
   node_id: string;

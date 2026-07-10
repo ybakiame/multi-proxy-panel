@@ -1,14 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Button,
-  Card,
-  Badge,
-  Modal,
-  Spinner,
-  Table,
-  Tabs,
-} from "@heroui/react";
+import { Button, Card, Badge, Modal, Spinner, Table, Tabs } from "@heroui/react";
 import {
   ConfirmDialog,
   CopyableSecret,
@@ -71,9 +63,7 @@ export function Subscriptions() {
   const [templates, setTemplates] = useState<SubscriptionTemplate[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editSubscription, setEditSubscription] = useState<Subscription | null>(
-    null,
-  );
+  const [editSubscription, setEditSubscription] = useState<Subscription | null>(null);
   const [deleteSubId, setDeleteSubId] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [subForm, setSubForm] = useState({ client_id: "" });
@@ -85,9 +75,7 @@ export function Subscriptions() {
   // Templates state
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateFormOpen, setTemplateFormOpen] = useState(false);
-  const [editTemplate, setEditTemplate] = useState<SubscriptionTemplate | null>(
-    null,
-  );
+  const [editTemplate, setEditTemplate] = useState<SubscriptionTemplate | null>(null);
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
   const [templateForm, setTemplateForm] = useState({
     name: "",
@@ -104,10 +92,7 @@ export function Subscriptions() {
   const fetchSubscriptions = async () => {
     setLoadingSubs(true);
     try {
-      const res = await getSubscriptions(
-        subsPagination.page,
-        subsPagination.perPage,
-      );
+      const res = await getSubscriptions(subsPagination.page, subsPagination.perPage);
       setSubscriptions(res.data);
       subsPagination.setTotal(res.pagination.total);
     } finally {
@@ -335,9 +320,7 @@ export function Subscriptions() {
               </Button>
             </div>
 
-            {newToken && (
-              <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />
-            )}
+            {newToken && <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />}
 
             <Card>
               <Card.Content>
@@ -351,24 +334,12 @@ export function Subscriptions() {
                       <Table.ScrollContainer>
                         <Table.Content>
                           <Table.Header>
-                            <Table.Column isRowHeader>
-                              {t("subscriptions.client")}
-                            </Table.Column>
-                            <Table.Column>
-                              {t("subscriptions.token")}
-                            </Table.Column>
-                            <Table.Column>
-                              {t("subscriptions.urlPath")}
-                            </Table.Column>
-                            <Table.Column>
-                              {t("subscriptions.isActive")}
-                            </Table.Column>
-                            <Table.Column>
-                              {t("subscriptions.expiresAt")}
-                            </Table.Column>
-                            <Table.Column>
-                              {t("subscriptions.lastAccessed")}
-                            </Table.Column>
+                            <Table.Column isRowHeader>{t("subscriptions.client")}</Table.Column>
+                            <Table.Column>{t("subscriptions.token")}</Table.Column>
+                            <Table.Column>{t("subscriptions.urlPath")}</Table.Column>
+                            <Table.Column>{t("subscriptions.isActive")}</Table.Column>
+                            <Table.Column>{t("subscriptions.expiresAt")}</Table.Column>
+                            <Table.Column>{t("subscriptions.lastAccessed")}</Table.Column>
                             <Table.Column>{t("common.actions")}</Table.Column>
                           </Table.Header>
                           <Table.Body
@@ -386,24 +357,16 @@ export function Subscriptions() {
                                   {sub.url_path}
                                 </Table.Cell>
                                 <Table.Cell>
-                                  {sub.is_active
-                                    ? t("common.enabled")
-                                    : t("common.disabled")}
+                                  {sub.is_active ? t("common.enabled") : t("common.disabled")}
                                 </Table.Cell>
-                                <Table.Cell>
-                                  {formatDateTime(sub.expire_at)}
-                                </Table.Cell>
-                                <Table.Cell>
-                                  {formatDateTime(sub.last_accessed_at)}
-                                </Table.Cell>
+                                <Table.Cell>{formatDateTime(sub.expire_at)}</Table.Cell>
+                                <Table.Cell>{formatDateTime(sub.last_accessed_at)}</Table.Cell>
                                 <Table.Cell>
                                   <div className="flex flex-wrap gap-2">
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      onPress={() =>
-                                        copyToClipboard(buildSubUrl(sub))
-                                      }
+                                      onPress={() => copyToClipboard(buildSubUrl(sub))}
                                     >
                                       {t("subscriptions.copyLink")}
                                     </Button>
@@ -457,12 +420,8 @@ export function Subscriptions() {
         <TabsTab key="templates" title={t("subscriptions.templates")}>
           <div className="mt-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold">
-                {t("subscriptions.templates")}
-              </h1>
-              <Button onPress={openCreateTemplate}>
-                {t("subscriptions.createTemplate")}
-              </Button>
+              <h1 className="text-2xl font-bold">{t("subscriptions.templates")}</h1>
+              <Button onPress={openCreateTemplate}>{t("subscriptions.createTemplate")}</Button>
             </div>
 
             <Card>
@@ -476,21 +435,11 @@ export function Subscriptions() {
                     <Table.ScrollContainer>
                       <Table.Content>
                         <Table.Header>
-                          <Table.Column isRowHeader>
-                            {t("common.name")}
-                          </Table.Column>
-                          <Table.Column>
-                            {t("subscriptions.format")}
-                          </Table.Column>
-                          <Table.Column>
-                            {t("subscriptions.baseConfig")}
-                          </Table.Column>
-                          <Table.Column>
-                            {t("subscriptions.filterRules")}
-                          </Table.Column>
-                          <Table.Column>
-                            {t("subscriptions.customHeaders")}
-                          </Table.Column>
+                          <Table.Column isRowHeader>{t("common.name")}</Table.Column>
+                          <Table.Column>{t("subscriptions.format")}</Table.Column>
+                          <Table.Column>{t("subscriptions.baseConfig")}</Table.Column>
+                          <Table.Column>{t("subscriptions.filterRules")}</Table.Column>
+                          <Table.Column>{t("subscriptions.customHeaders")}</Table.Column>
                           <Table.Column>{t("common.actions")}</Table.Column>
                         </Table.Header>
                         <Table.Body
@@ -503,21 +452,15 @@ export function Subscriptions() {
                           {templates.map((tmpl) => (
                             <Table.Row key={tmpl.id}>
                               <Table.Cell>{tmpl.name}</Table.Cell>
-                              <Table.Cell>
-                                {templateFormatBadge(tmpl.format)}
-                              </Table.Cell>
+                              <Table.Cell>{templateFormatBadge(tmpl.format)}</Table.Cell>
                               <Table.Cell>
                                 {tmpl.base_config ? t("common.yes") : t("common.no")}
                               </Table.Cell>
                               <Table.Cell>
-                                {tmpl.filter_rules
-                                  ? t("common.yes")
-                                  : t("common.no")}
+                                {tmpl.filter_rules ? t("common.yes") : t("common.no")}
                               </Table.Cell>
                               <Table.Cell>
-                                {tmpl.custom_headers
-                                  ? t("common.yes")
-                                  : t("common.no")}
+                                {tmpl.custom_headers ? t("common.yes") : t("common.no")}
                               </Table.Cell>
                               <Table.Cell>
                                 <div className="flex gap-2">
@@ -551,10 +494,7 @@ export function Subscriptions() {
       </Tabs>
 
       {/* Create subscription modal */}
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -564,9 +504,7 @@ export function Subscriptions() {
               <FormSelect
                 label={t("subscriptions.client")}
                 value={subForm.client_id}
-                onChange={(value) =>
-                  setSubForm({ ...subForm, client_id: value })
-                }
+                onChange={(value) => setSubForm({ ...subForm, client_id: value })}
                 options={clients.map((client) => ({
                   id: client.id,
                   label: client.name,
@@ -575,16 +513,10 @@ export function Subscriptions() {
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
-              <Button onPress={handleCreateSubscription}>
-                {t("common.create")}
-              </Button>
+              <Button onPress={handleCreateSubscription}>{t("common.create")}</Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
@@ -605,9 +537,7 @@ export function Subscriptions() {
             <Modal.Body className="space-y-4">
               <FormCheckbox
                 isSelected={subEditForm.is_active}
-                onChange={(selected) =>
-                  setSubEditForm({ ...subEditForm, is_active: selected })
-                }
+                onChange={(selected) => setSubEditForm({ ...subEditForm, is_active: selected })}
               >
                 {t("subscriptions.isActive")}
               </FormCheckbox>
@@ -615,22 +545,14 @@ export function Subscriptions() {
                 type="datetime-local"
                 label={t("subscriptions.expiresAt")}
                 value={subEditForm.expire_at}
-                onChange={(value) =>
-                  setSubEditForm({ ...subEditForm, expire_at: value })
-                }
+                onChange={(value) => setSubEditForm({ ...subEditForm, expire_at: value })}
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setEditSubscription(null)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setEditSubscription(null)}>
                 {t("common.cancel")}
               </Button>
-              <Button onPress={handleUpdateSubscription}>
-                {t("common.update")}
-              </Button>
+              <Button onPress={handleUpdateSubscription}>{t("common.update")}</Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
@@ -660,16 +582,17 @@ export function Subscriptions() {
               <FormInput
                 label={t("common.name")}
                 value={templateForm.name}
-                onChange={(value) =>
-                  setTemplateForm({ ...templateForm, name: value })
-                }
+                onChange={(value) => setTemplateForm({ ...templateForm, name: value })}
                 isRequired
               />
               <FormSelect
                 label={t("subscriptions.format")}
                 value={templateForm.format}
                 onChange={(value) =>
-                  setTemplateForm({ ...templateForm, format: value || "base64" })
+                  setTemplateForm({
+                    ...templateForm,
+                    format: value || "base64",
+                  })
                 }
                 options={FORMAT_OPTIONS.map((format) => ({
                   id: format,
@@ -679,34 +602,24 @@ export function Subscriptions() {
               <FormTextArea
                 label={t("subscriptions.baseConfig")}
                 value={templateForm.base_config}
-                onChange={(value) =>
-                  setTemplateForm({ ...templateForm, base_config: value })
-                }
+                onChange={(value) => setTemplateForm({ ...templateForm, base_config: value })}
                 className="font-mono"
               />
               <FormTextArea
                 label={t("subscriptions.filterRules")}
                 value={templateForm.filter_rules}
-                onChange={(value) =>
-                  setTemplateForm({ ...templateForm, filter_rules: value })
-                }
+                onChange={(value) => setTemplateForm({ ...templateForm, filter_rules: value })}
                 className="font-mono"
               />
               <FormTextArea
                 label={t("subscriptions.customHeaders")}
                 value={templateForm.custom_headers}
-                onChange={(value) =>
-                  setTemplateForm({ ...templateForm, custom_headers: value })
-                }
+                onChange={(value) => setTemplateForm({ ...templateForm, custom_headers: value })}
                 className="font-mono"
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setTemplateFormOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setTemplateFormOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleSaveTemplate}>
@@ -756,10 +669,7 @@ export function Subscriptions() {
               >
                 {t("subscriptions.copyLink")}
               </Button>
-              <Button
-                slot="close"
-                onPress={() => setQrSub(null)}
-              >
+              <Button slot="close" onPress={() => setQrSub(null)}>
                 {t("common.close")}
               </Button>
             </Modal.Footer>

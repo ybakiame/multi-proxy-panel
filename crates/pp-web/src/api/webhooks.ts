@@ -1,5 +1,5 @@
 import { getPaginated, post, del } from "./client";
-import type { Webhook, PaginatedResponse } from "./types";
+import type { Webhook } from "./types";
 
 export interface CreateWebhookPayload {
   name: string;

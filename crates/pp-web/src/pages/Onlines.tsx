@@ -9,8 +9,7 @@ import { formatDateTime } from "../utils/format";
 
 export function Onlines() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination(1, 20);
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
   const [sessions, setSessions] = useState<OnlineSession[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -46,9 +45,7 @@ export function Onlines() {
                 <Table.ScrollContainer>
                   <Table.Content>
                     <Table.Header>
-                      <Table.Column isRowHeader>
-                        {t("onlines.client")}
-                      </Table.Column>
+                      <Table.Column isRowHeader>{t("onlines.client")}</Table.Column>
                       <Table.Column>{t("onlines.node")}</Table.Column>
                       <Table.Column>{t("onlines.ip")}</Table.Column>
                       <Table.Column>{t("onlines.inbound")}</Table.Column>
@@ -68,12 +65,8 @@ export function Onlines() {
                           <Table.Cell>{s.node_id}</Table.Cell>
                           <Table.Cell>{s.ip_address}</Table.Cell>
                           <Table.Cell>{s.inbound_tag || "-"}</Table.Cell>
-                          <Table.Cell>
-                            {formatDateTime(s.connected_at)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {formatDateTime(s.last_active_at)}
-                          </Table.Cell>
+                          <Table.Cell>{formatDateTime(s.connected_at)}</Table.Cell>
+                          <Table.Cell>{formatDateTime(s.last_active_at)}</Table.Cell>
                         </Table.Row>
                       ))}
                     </Table.Body>

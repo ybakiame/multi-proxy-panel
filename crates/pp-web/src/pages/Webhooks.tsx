@@ -15,8 +15,7 @@ import { Webhook } from "../api/types";
 
 export function Webhooks() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -111,9 +110,7 @@ export function Webhooks() {
                 <Table.ScrollContainer>
                   <Table.Content>
                     <Table.Header>
-                      <Table.Column isRowHeader>
-                        {t("common.name")}
-                      </Table.Column>
+                      <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                       <Table.Column>{t("webhooks.url")}</Table.Column>
                       <Table.Column>{t("webhooks.events")}</Table.Column>
                       <Table.Column>{t("common.active")}</Table.Column>
@@ -129,9 +126,7 @@ export function Webhooks() {
                       {webhooks.map((webhook) => (
                         <Table.Row key={webhook.id}>
                           <Table.Cell>{webhook.name}</Table.Cell>
-                          <Table.Cell className="max-w-xs truncate">
-                            {webhook.url}
-                          </Table.Cell>
+                          <Table.Cell className="max-w-xs truncate">{webhook.url}</Table.Cell>
                           <Table.Cell>
                             <div className="flex flex-wrap gap-1">
                               {webhook.events.slice(0, 2).map((event) => (
@@ -147,9 +142,7 @@ export function Webhooks() {
                             </div>
                           </Table.Cell>
                           <Table.Cell>
-                            {webhook.is_active
-                              ? t("common.enabled")
-                              : t("common.disabled")}
+                            {webhook.is_active ? t("common.enabled") : t("common.disabled")}
                           </Table.Cell>
                           <Table.Cell>
                             <Button
@@ -188,10 +181,7 @@ export function Webhooks() {
         {t("webhooks.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -224,19 +214,13 @@ export function Webhooks() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) =>
-                  setForm({ ...form, is_active: selected })
-                }
+                onChange={(selected) => setForm({ ...form, is_active: selected })}
               >
                 {t("common.active")}
               </FormCheckbox>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>

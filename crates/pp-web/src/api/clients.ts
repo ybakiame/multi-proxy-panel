@@ -1,5 +1,5 @@
-import { get, getPaginated, post, put, del } from "./client";
-import type { Client, PaginatedResponse } from "./types";
+import { getPaginated, post, put, del } from "./client";
+import type { Client } from "./types";
 
 export interface CreateClientPayload {
   name: string;
@@ -20,10 +20,8 @@ export const getClients = (page: number, perPage: number) =>
   getPaginated<Client>(`/api/v1/clients?page=${page}&per_page=${perPage}`);
 export const createClient = (payload: CreateClientPayload) =>
   post<Client>("/api/v1/clients", payload);
-export const updateClient = (
-  id: string,
-  payload: Partial<CreateClientPayload>,
-) => put<Client>(`/api/v1/clients/${id}`, payload);
+export const updateClient = (id: string, payload: Partial<CreateClientPayload>) =>
+  put<Client>(`/api/v1/clients/${id}`, payload);
 export const deleteClient = (id: string) => del(`/api/v1/clients/${id}`);
 export const resetClientTraffic = (id: string) =>
   post<Client>(`/api/v1/clients/${id}/reset-traffic`, {});

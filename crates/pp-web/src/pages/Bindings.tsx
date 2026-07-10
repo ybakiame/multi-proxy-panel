@@ -10,11 +10,7 @@ import {
   FormCheckbox,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import {
-  getBindingsPaginated,
-  createBinding,
-  deleteBinding,
-} from "../api/bindings";
+import { getBindingsPaginated, createBinding, deleteBinding } from "../api/bindings";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
 import { Binding, Node, ProtocolConfig } from "../api/types";
@@ -28,8 +24,7 @@ interface BindingForm {
 
 export function Bindings() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [bindings, setBindings] = useState<Binding[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
@@ -146,14 +141,10 @@ export function Bindings() {
               <Table.ScrollContainer>
                 <Table.Content>
                   <Table.Header>
-                    <Table.Column isRowHeader>
-                      {t("bindings.node")}
-                    </Table.Column>
+                    <Table.Column isRowHeader>{t("bindings.node")}</Table.Column>
                     <Table.Column>{t("bindings.protocol")}</Table.Column>
                     <Table.Column>{t("common.active")}</Table.Column>
-                    <Table.Column>
-                      {t("bindings.overrideSettings")}
-                    </Table.Column>
+                    <Table.Column>{t("bindings.overrideSettings")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
                   </Table.Header>
                   <Table.Body
@@ -166,13 +157,9 @@ export function Bindings() {
                     {bindings.map((binding) => (
                       <Table.Row key={binding.id}>
                         <Table.Cell>{getNodeName(binding.node_id)}</Table.Cell>
+                        <Table.Cell>{getProtocolName(binding.protocol_config_id)}</Table.Cell>
                         <Table.Cell>
-                          {getProtocolName(binding.protocol_config_id)}
-                        </Table.Cell>
-                        <Table.Cell>
-                          {binding.is_active
-                            ? t("common.enabled")
-                            : t("common.disabled")}
+                          {binding.is_active ? t("common.enabled") : t("common.disabled")}
                         </Table.Cell>
                         <Table.Cell className="max-w-xs truncate font-mono">
                           {binding.override_settings
@@ -216,10 +203,7 @@ export function Bindings() {
         {t("bindings.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={createOpen}
-        onOpenChange={(open) => setCreateOpen(open)}
-      >
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -239,9 +223,7 @@ export function Bindings() {
               <FormSelect
                 label={t("bindings.protocol")}
                 value={form.protocol_config_id}
-                onChange={(value) =>
-                  setForm({ ...form, protocol_config_id: value })
-                }
+                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
                 options={protocols.map((protocol) => ({
                   id: protocol.id,
                   label: protocol.name,
@@ -250,26 +232,18 @@ export function Bindings() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) =>
-                  setForm({ ...form, is_active: selected })
-                }
+                onChange={(selected) => setForm({ ...form, is_active: selected })}
               >
                 {t("common.active")}
               </FormCheckbox>
               <JsonEditor
                 label={t("bindings.overrideSettings")}
                 value={form.override_settings}
-                onChange={(value) =>
-                  setForm({ ...form, override_settings: value })
-                }
+                onChange={(value) => setForm({ ...form, override_settings: value })}
               />
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setCreateOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>

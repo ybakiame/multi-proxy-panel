@@ -5,19 +5,14 @@ import { Link, useLocation } from "react-router-dom";
 import { navItems } from "./nav";
 import { useAuth } from "../context/AuthContext";
 import { useSettingsStore } from "../stores/settings";
-import {
-  SunIcon,
-  MoonIcon,
-  Bars3Icon,
-  XMarkIcon,
-} from "@heroicons/react/24/outline";
+import { SunIcon, MoonIcon, Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { t, i18n } = useTranslation();
   const { logout } = useAuth();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { language, theme, setLanguage, toggleTheme } = useSettingsStore();
+  const { theme, setLanguage, toggleTheme } = useSettingsStore();
   const isDark = theme === "dark";
 
   const changeLanguage = (lang: string) => {
@@ -34,11 +29,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           aria-label={isMenuOpen ? t("common.closeMenu") : t("common.openMenu")}
         >
-          {isMenuOpen ? (
-            <XMarkIcon className="h-6 w-6" />
-          ) : (
-            <Bars3Icon className="h-6 w-6" />
-          )}
+          {isMenuOpen ? <XMarkIcon className="h-6 w-6" /> : <Bars3Icon className="h-6 w-6" />}
         </button>
       </div>
 
@@ -75,10 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </ul>
         </nav>
         <div className="border-t border-border p-4 space-y-3">
-          <Select
-            value={i18n.language}
-            onChange={(value) => changeLanguage(value as string)}
-          >
+          <Select value={i18n.language} onChange={(value) => changeLanguage(value as string)}>
             <Label>{t("common.language")}</Label>
             <Select.Trigger>
               <Select.Value />
@@ -96,17 +84,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </Select.Popover>
           </Select>
           <div className="flex gap-2">
-            <Button
-              isIconOnly
-              variant="ghost"
-              onPress={toggleTheme}
-              className="flex-1"
-            >
-              {isDark ? (
-                <MoonIcon className="h-4 w-4" />
-              ) : (
-                <SunIcon className="h-4 w-4" />
-              )}
+            <Button isIconOnly variant="ghost" onPress={toggleTheme} className="flex-1">
+              {isDark ? <MoonIcon className="h-4 w-4" /> : <SunIcon className="h-4 w-4" />}
             </Button>
             <Button variant="danger" onPress={logout} className="flex-[2]">
               {t("common.logout")}

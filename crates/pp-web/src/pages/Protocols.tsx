@@ -102,14 +102,11 @@ const defaultForm: ProtocolForm = {
 
 export function Protocols() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } =
-    usePagination();
+  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(
-    null,
-  );
+  const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
   const [deleteProtocolId, setDeleteProtocolId] = useState<string | null>(null);
   const [form, setForm] = useState<ProtocolForm>(defaultForm);
 
@@ -128,9 +125,7 @@ export function Protocols() {
     fetch();
   }, [page, perPage]);
 
-  const parseSettings = (
-    settings: Record<string, unknown>,
-  ): Partial<ProtocolForm> => {
+  const parseSettings = (settings: Record<string, unknown>): Partial<ProtocolForm> => {
     return {
       uuid: (settings.uuid as string) || "",
       password: (settings.password as string) || "",
@@ -148,12 +143,10 @@ export function Protocols() {
       obfs_type: (settings.obfs_type as string) || "none",
       obfs_password: (settings.obfs_password as string) || "",
       up_mbps: settings.up_mbps !== undefined ? String(settings.up_mbps) : "",
-      down_mbps:
-        settings.down_mbps !== undefined ? String(settings.down_mbps) : "",
+      down_mbps: settings.down_mbps !== undefined ? String(settings.down_mbps) : "",
       masquerade: (settings.masquerade as string) || "",
       congestion_control: (settings.congestion_control as string) || "bbr",
-      alter_id:
-        settings.alter_id !== undefined ? String(settings.alter_id) : "",
+      alter_id: settings.alter_id !== undefined ? String(settings.alter_id) : "",
       method: (settings.method as string) || "2022-blake3-aes-256-gcm",
     };
   };
@@ -169,9 +162,7 @@ export function Protocols() {
         core_version: protocol.core_version || "",
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
-        tls_settings: protocol.tls_settings
-          ? JSON.stringify(protocol.tls_settings, null, 2)
-          : "{}",
+        tls_settings: protocol.tls_settings ? JSON.stringify(protocol.tls_settings, null, 2) : "{}",
       });
     } else {
       setForm(defaultForm);
@@ -363,11 +354,7 @@ export function Protocols() {
                 value={form.private_key}
                 onChange={(value) => setForm({ ...form, private_key: value })}
               />
-              <Button
-                className="self-end"
-                variant="ghost"
-                onPress={handleGenerateRealityKeys}
-              >
+              <Button className="self-end" variant="ghost" onPress={handleGenerateRealityKeys}>
                 {t("protocols.generateKeys")}
               </Button>
             </div>
@@ -550,9 +537,7 @@ export function Protocols() {
             <FormSelect
               label={t("protocols.congestionControl")}
               value={form.congestion_control}
-              onChange={(value) =>
-                setForm({ ...form, congestion_control: value })
-              }
+              onChange={(value) => setForm({ ...form, congestion_control: value })}
               options={TUIC_CONGESTION.map((option) => ({
                 id: option,
                 label: option,
@@ -611,11 +596,7 @@ export function Protocols() {
                         <Table.Cell>{protocol.listen_port}</Table.Cell>
                         <Table.Cell>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(protocol)}
-                            >
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(protocol)}>
                               {t("common.edit")}
                             </Button>
                             <Button
@@ -655,17 +636,12 @@ export function Protocols() {
         {t("protocols.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop
-        isOpen={isModalOpen}
-        onOpenChange={(open) => setIsModalOpen(open)}
-      >
+      <Modal.Backdrop isOpen={isModalOpen} onOpenChange={(open) => setIsModalOpen(open)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
               <Modal.Heading>
-                {editingProtocol
-                  ? t("protocols.editTitle")
-                  : t("protocols.createTitle")}
+                {editingProtocol ? t("protocols.editTitle") : t("protocols.createTitle")}
               </Modal.Heading>
             </Modal.Header>
             <Modal.Body className="space-y-4">
@@ -701,9 +677,7 @@ export function Protocols() {
               <FormInput
                 label={t("protocols.listen")}
                 value={form.listen_address}
-                onChange={(value) =>
-                  setForm({ ...form, listen_address: value })
-                }
+                onChange={(value) => setForm({ ...form, listen_address: value })}
                 isRequired
               />
               <FormInput
@@ -721,11 +695,7 @@ export function Protocols() {
               {renderDynamicFields()}
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                slot="close"
-                variant="ghost"
-                onPress={() => setIsModalOpen(false)}
-              >
+              <Button slot="close" variant="ghost" onPress={() => setIsModalOpen(false)}>
                 {t("common.cancel")}
               </Button>
               <Button onPress={editingProtocol ? handleUpdate : handleCreate}>
