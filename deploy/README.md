@@ -6,6 +6,7 @@
 
 | 文件 | 说明 |
 |------|------|
+| `clash-full-template.json` | Clash Meta 完整配置订阅模板（占位符方式） |
 | `proxy-panel-hub.service` | Hub 服务单元 |
 | `proxy-panel-agent.service` | Agent 服务单元 |
 
@@ -95,6 +96,56 @@ sudo systemctl status proxy-panel-hub
 sudo systemctl status proxy-panel-agent
 sudo journalctl -u proxy-panel-hub -n 100 --no-pager
 ```
+
+## 自动化部署脚本
+
+项目根目录 `scripts/deploy-server.py` 支持一键部署 Hub 或 Agent（基于 SSH + paramiko，自动打包、上传、安装 systemd 服务）。
+
+### 前置要求
+
+- 本地已完成 Release 构建：`cargo build --release --workspace`
+- 前端已构建：`cd crates/pp-web && npm run build`
+- Python 3 + paramiko：`pip install paramiko`
+
+### 部署 Hub（含本地 Agent + Caddy）
+
+```bash
+python3 scripts/deploy-server.py \
+  --mode hub \
+  --host 192.3.150.233 \
+  --password '***REMOVED***' \
+  --domain test2-panel.ybakiame.net
+```
+
+### 部署 Agent（仅 Agent，连接远端 Hub）
+
+```bash
+python3 scripts/deploy-server.py \
+  --mode agent \
+  --host 64.188.27.110 \
+  --password '***REMOVED***' \
+  --hub-host test2-panel.ybakiame.net:50052 \
+  --agent-token your-agent-token
+```
+
+## 订阅模板
+
+### Clash 完整配置模板
+
+`deploy/clash-full-template.json` 是一个 Clash Meta / Mihomo 完整配置模板，使用占位符机制：
+
+- `"\u003cPROXY_REPLACE\u003e"` — 注入节点 proxy 列表
+- `"\u003cNODE_REPLACE\u003e"` — 注入节点名称列表
+
+通过 API 创建到 Hub：
+
+```bash
+export PANEL_API_KEY=your_api_key
+export PANEL_HOST=https://test3-panel.ybakiame.net
+python3 scripts/create-clash-template.py
+```
+
+创建后，在 Web 界面新建/编辑订阅，选择 `clash-full` 模板即可生成完整客户端配置。
 
 ## 完整部署指南
 
