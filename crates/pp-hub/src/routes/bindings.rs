@@ -108,6 +108,36 @@ pub async fn create_binding(
     Ok(ApiResponse::new(binding_to_json(inserted)))
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct UpdateBindingPayload {
+    pub is_active: Option<bool>,
+    pub override_settings: Option<Value>,
+}
+
+pub async fn update_binding(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateBindingPayload>,
+) -> ApiResult<Value> {
+    let binding = node_binding::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("binding not found"))?;
+
+    let mut active: node_binding::ActiveModel = binding.into();
+
+    if let Some(is_active) = payload.is_active {
+        active.is_active = Set(is_active);
+    }
+    if payload.override_settings.is_some() {
+        active.override_settings = Set(payload.override_settings);
+    }
+
+    let updated = active.update(&state.db).await.map_err(ApiError::from)?;
+    Ok(ApiResponse::new(binding_to_json(updated)))
+}
+
 pub async fn delete_binding(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,

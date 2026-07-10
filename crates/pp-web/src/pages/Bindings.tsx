@@ -10,7 +10,7 @@ import {
   FormCheckbox,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import { getBindingsPaginated, createBinding, deleteBinding } from "../api/bindings";
+import { getBindingsPaginated, createBinding, updateBinding, deleteBinding } from "../api/bindings";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
 import { Binding, Node, ProtocolConfig } from "../api/types";
@@ -30,6 +30,7 @@ export function Bindings() {
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editBinding, setEditBinding] = useState<Binding | null>(null);
   const [deleteBindingId, setDeleteBindingId] = useState<string | null>(null);
   const [form, setForm] = useState<BindingForm>({
     node_id: "",
@@ -107,6 +108,38 @@ export function Bindings() {
     }
   };
 
+  const openEdit = (binding: Binding) => {
+    setForm({
+      node_id: binding.node_id,
+      protocol_config_id: binding.protocol_config_id,
+      is_active: binding.is_active,
+      override_settings: binding.override_settings
+        ? JSON.stringify(binding.override_settings, null, 2)
+        : "{}",
+    });
+    setEditBinding(binding);
+  };
+
+  const handleUpdate = async () => {
+    if (!editBinding) return;
+    try {
+      let overrideSettings: Record<string, unknown> | undefined;
+      try {
+        overrideSettings = JSON.parse(form.override_settings);
+      } catch {
+        overrideSettings = undefined;
+      }
+      await updateBinding(editBinding.id, {
+        is_active: form.is_active,
+        override_settings: overrideSettings,
+      });
+      setEditBinding(null);
+      fetch();
+    } catch {
+      // error handled by axios interceptor
+    }
+  };
+
   const getNodeName = (nodeId: string) => {
     const node = nodes.find((n) => n.id === nodeId);
     return node ? node.name : nodeId;
@@ -167,13 +200,18 @@ export function Bindings() {
                             : "-"}
                         </Table.Cell>
                         <Table.Cell>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onPress={() => setDeleteBindingId(binding.id)}
-                          >
-                            {t("common.delete")}
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onPress={() => openEdit(binding)}>
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onPress={() => setDeleteBindingId(binding.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
                         </Table.Cell>
                       </Table.Row>
                     ))}
@@ -247,6 +285,60 @@ export function Bindings() {
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleCreate}>{t("common.create")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop
+        isOpen={!!editBinding}
+        onOpenChange={(open) => {
+          if (!open) setEditBinding(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>{t("bindings.editTitle")}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormSelect
+                label={t("bindings.node")}
+                value={form.node_id}
+                onChange={(value) => setForm({ ...form, node_id: value })}
+                options={nodes.map((node) => ({
+                  id: node.id,
+                  label: node.name,
+                }))}
+                isDisabled
+              />
+              <FormSelect
+                label={t("bindings.protocol")}
+                value={form.protocol_config_id}
+                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
+                options={protocols.map((protocol) => ({
+                  id: protocol.id,
+                  label: protocol.name,
+                }))}
+                isDisabled
+              />
+              <FormCheckbox
+                isSelected={form.is_active}
+                onChange={(selected) => setForm({ ...form, is_active: selected })}
+              >
+                {t("common.active")}
+              </FormCheckbox>
+              <JsonEditor
+                label={t("bindings.overrideSettings")}
+                value={form.override_settings}
+                onChange={(value) => setForm({ ...form, override_settings: value })}
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="ghost" onPress={() => setEditBinding(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handleUpdate}>{t("common.update")}</Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

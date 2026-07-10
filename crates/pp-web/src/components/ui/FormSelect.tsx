@@ -11,6 +11,7 @@ interface FormSelectProps {
   onChange: (value: string) => void;
   options: FormSelectOption[];
   isRequired?: boolean;
+  isDisabled?: boolean;
   placeholder?: string;
   className?: string;
 }
@@ -21,6 +22,7 @@ export function FormSelect({
   onChange,
   options,
   isRequired,
+  isDisabled,
   placeholder,
   className,
 }: FormSelectProps) {
@@ -29,6 +31,7 @@ export function FormSelect({
       value={value || null}
       onChange={(v) => onChange((v as string) || "")}
       isRequired={isRequired}
+      isDisabled={isDisabled}
       className={className}
       placeholder={placeholder}
     >

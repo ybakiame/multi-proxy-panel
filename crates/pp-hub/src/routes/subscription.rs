@@ -459,7 +459,6 @@ async fn build_proxy_nodes(
     }
 
     let client_group_ids = get_client_group_ids(db, client.id).await?;
-    let client_has_groups = !client_group_ids.is_empty();
 
     // Parse filter rules
     let allowed_protocols = filter_rules
@@ -521,19 +520,23 @@ async fn build_proxy_nodes(
                 continue;
             }
 
-            // Group-based access control
+            // Group-based access control.
+            // A client can only access nodes that share at least one group with it.
+            // Clients without groups may only access nodes without groups.
             let node_group_ids = get_node_group_ids(db, node.id).await?;
             let node_has_groups = !node_group_ids.is_empty();
 
-            if node_has_groups && client_has_groups {
-                // Both have groups — check intersection
-                let has_overlap = node_group_ids.iter().any(|g| client_group_ids.contains(g));
-                if !has_overlap {
-                    continue; // Skip: client has no access to this node
+            if !client_group_ids.is_empty() {
+                if !node_has_groups || !node_group_ids.iter().any(|g| client_group_ids.contains(g))
+                {
+                    continue;
                 }
+            } else if node_has_groups {
+                // Group-restricted nodes are not available to clients without groups.
+                continue;
             }
 
-            // Apply filter: node groups (by group name)
+            // Apply template filter: node groups (by group name)
             if !allowed_node_group_ids.is_empty() {
                 let has_matching_group = node_group_ids
                     .iter()
