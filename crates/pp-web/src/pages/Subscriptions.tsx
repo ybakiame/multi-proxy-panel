@@ -48,10 +48,6 @@ function formatJson(obj: Record<string, unknown> | null) {
   return JSON.stringify(obj || {}, null, 2);
 }
 
-// HeroUI's compound Tabs.Tab accepts a `title` prop at runtime but the shipped
-// TypeScript definitions omit it. Cast to a component with the expected props.
-const TabsTab = Tabs.Tab as React.FC<React.PropsWithChildren<{ title: string }>>;
-
 export function Subscriptions() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("subscriptions");
@@ -305,7 +301,13 @@ export function Subscriptions() {
         selectedKey={activeTab}
         onSelectionChange={(key) => setActiveTab(key as string)}
       >
-        <TabsTab key="subscriptions" title={t("subscriptions.title")}>
+        <Tabs.ListContainer>
+          <Tabs.List aria-label="subscription tabs">
+            <Tabs.Tab id="subscriptions">{t("subscriptions.title")}</Tabs.Tab>
+            <Tabs.Tab id="templates">{t("subscriptions.templates")}</Tabs.Tab>
+          </Tabs.List>
+        </Tabs.ListContainer>
+        <Tabs.Panel id="subscriptions">
           <div className="mt-4 space-y-4">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold">{t("subscriptions.title")}</h1>
@@ -415,9 +417,9 @@ export function Subscriptions() {
               </Card.Content>
             </Card>
           </div>
-        </TabsTab>
+        </Tabs.Panel>
 
-        <TabsTab key="templates" title={t("subscriptions.templates")}>
+        <Tabs.Panel id="templates">
           <div className="mt-4 space-y-4">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold">{t("subscriptions.templates")}</h1>
@@ -490,7 +492,7 @@ export function Subscriptions() {
               </Card.Content>
             </Card>
           </div>
-        </TabsTab>
+        </Tabs.Panel>
       </Tabs>
 
       {/* Create subscription modal */}
