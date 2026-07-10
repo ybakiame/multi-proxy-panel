@@ -40,7 +40,7 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             )?);
         }
 
-        let (services, experimental) = build_api_services();
+        let experimental = build_api_services();
         let route = build_singbox_route();
 
         let mut config = json!({
@@ -62,11 +62,6 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             "route": route
         });
 
-        if let Some(services_arr) = services.as_array() {
-            if !services_arr.is_empty() {
-                config["services"] = services;
-            }
-        }
         if let Some(exp_obj) = experimental.as_object() {
             if !exp_obj.is_empty() {
                 config["experimental"] = experimental;
@@ -84,31 +79,16 @@ fn build_singbox_route() -> Value {
             {
                 "protocol": "bittorrent",
                 "outbound": "block"
-            },
-            {
-                "rule_set": ["geosite-ads"],
-                "outbound": "block"
             }
         ]
     })
 }
 
-/// Build the sing-box API service definitions.
-/// Returns `(services, experimental)` to be merged into the top-level config.
-fn build_api_services() -> (Value, Value) {
-    let grpc_listen = std::env::var("PROXYPANEL_SINGBOX_API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:9092".to_string());
+/// Build the sing-box experimental clash_api definition.
+fn build_api_services() -> Value {
     let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
         .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
     let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
-
-    let mut api_service = json!({
-        "type": "api",
-        "listen": grpc_listen,
-    });
-    if !secret.is_empty() {
-        api_service["secret"] = serde_json::json!(secret);
-    }
 
     let mut clash_api = json!({
         "external_controller": http_listen,
@@ -117,12 +97,9 @@ fn build_api_services() -> (Value, Value) {
         clash_api["secret"] = serde_json::json!(secret);
     }
 
-    (
-        json!([api_service]),
-        json!({
-            "clash_api": clash_api,
-        }),
-    )
+    json!({
+        "clash_api": clash_api,
+    })
 }
 
 fn build_vless_inbound(
@@ -149,8 +126,12 @@ fn build_vless_inbound(
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": users,
-        "transport": build_singbox_transport(network, settings),
     });
+
+    let transport = build_singbox_transport(network, settings);
+    if !transport.is_null() {
+        inbound["transport"] = transport;
+    }
 
     if !flow.is_empty() {
         // Apply flow to all users
@@ -219,9 +200,13 @@ fn build_singbox_transport(network: &str, settings: &Value) -> Value {
                 "host": host,
             })
         }
-        _ => json!({ "type": "tcp" }),
+        _ => serde_json::Value::Null,
     }
 }
+
+/// Insert a transport object into an inbound config if it is not null.
+/// This keeps "tcp" inbounds valid for sing-box 1.11+ which rejects
+/// `{"type":"tcp"}` as a transport.
 
 /// Convert VLESS clients array (id, email, flow) to sing-box users array (uuid, name, flow).
 fn vless_clients_to_users(settings: &Value) -> Value {
@@ -329,8 +314,12 @@ fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Val
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": settings.get("clients").cloned().unwrap_or(json!([])),
-        "transport": build_singbox_transport(network, settings),
     });
+
+    let transport = build_singbox_transport(network, settings);
+    if !transport.is_null() {
+        inbound["transport"] = transport;
+    }
 
     if let Some(tls_cfg) = tls {
         inbound["tls"] = json!({
@@ -354,19 +343,25 @@ fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
         .and_then(|v| v.as_str())
         .unwrap_or("tcp");
 
-    Ok(json!({
+    let mut inbound = json!({
         "type": "trojan",
         "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("trojan-in"),
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": settings.get("clients").cloned().unwrap_or(json!([])),
-        "transport": build_singbox_transport(network, settings),
         "tls": {
             "enabled": true,
             "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
             "key_path": tls.and_then(|t| t.get("keyFile")).and_then(|v| v.as_str()).unwrap_or(""),
         }
-    }))
+    });
+
+    let transport = build_singbox_transport(network, settings);
+    if !transport.is_null() {
+        inbound["transport"] = transport;
+    }
+
+    Ok(inbound)
 }
 
 fn build_shadowsocks_inbound(settings: &Value, _tls: Option<&Value>) -> PanelResult<Value> {
