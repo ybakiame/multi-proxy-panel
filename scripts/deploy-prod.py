@@ -802,6 +802,49 @@ systemctl is-active proxy-panel-hub proxy-panel-agent
     }
 
 
+def write_agent_service(ssh, server: Server):
+    """Write the systemd service file for the agent, including optional TLS domain."""
+    tls_arg = " \\\n    --tls-domain ${PROXYPANEL_AGENT_TLS_DOMAIN}" if server.tls_domain else ""
+    service = """[Unit]
+Description=ProxyPanel Agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxy-panel
+
+Environment=RUST_LOG=proxy_panel_agent=info
+EnvironmentFile=-/etc/proxy-panel/agent.env
+
+ExecStart=/usr/local/bin/proxy-panel-agent \\
+    --agent-id ${PROXYPANEL_AGENT_ID} \\
+    --hub-url ${PROXYPANEL_HUB_URL} \\
+    --token ${PROXYPANEL_AGENT_TOKEN} \\
+    --data-dir /var/lib/proxy-panel/agent \\
+    --bin-dir /opt/proxy-panel/bin%s
+
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/proxy-panel /opt/proxy-panel/bin
+
+[Install]
+WantedBy=multi-user.target
+""" % tls_arg
+    ssh_exec(
+        ssh,
+        "cat > /etc/systemd/system/proxy-panel-agent.service <<'EOF'\n%sEOF" % service,
+        timeout=30,
+    )
+
+
 def deploy_agent(ssh, server: Server):
     server.require_agent()
     if not server.hub_url or not server.agent_token:
@@ -826,6 +869,8 @@ def deploy_agent(ssh, server: Server):
     upload_with_retries(server.host, server.user, server.port, server.key_path,
                         server.password, server.host_key_policy,
                         agent_env_local, REMOTE_ETC + "/agent.env")
+
+    write_agent_service(ssh, server)
 
     install_script = """#!/bin/bash
 set -euo pipefail
@@ -854,41 +899,6 @@ done
 
 install -m 755 "$ARCHIVE_DIR/bin/proxy-panel-agent" %s/proxy-panel-agent
 
-cat > /etc/systemd/system/proxy-panel-agent.service <<'EOF'
-[Unit]
-Description=ProxyPanel Agent
-After=network.target
-Wants=network.target
-
-[Service]
-Type=simple
-User=proxypanel
-Group=proxypanel
-WorkingDirectory=/opt/proxy-panel
-
-Environment=RUST_LOG=proxy_panel_agent=info
-EnvironmentFile=-/etc/proxy-panel/agent.env
-
-ExecStart=/usr/local/bin/proxy-panel-agent \\
-    --agent-id ${PROXYPANEL_AGENT_ID} \\
-    --hub-url ${PROXYPANEL_HUB_URL} \\
-    --token ${PROXYPANEL_AGENT_TOKEN} \\
-    --data-dir /var/lib/proxy-panel/agent \\
-    --bin-dir /opt/proxy-panel/bin%s
-
-Restart=on-failure
-RestartSec=5
-
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/var/lib/proxy-panel
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 chown -R proxypanel:proxypanel %s /var/lib/proxy-panel %s
 chmod 640 %s/agent.env
 
@@ -899,7 +909,6 @@ sleep 5
 systemctl is-active proxy-panel-agent
 """ % (
         REMOTE_BIN,
-        " \\\n    --tls-domain ${PROXYPANEL_AGENT_TLS_DOMAIN}" if server.tls_domain else "",
         REMOTE_DIR, REMOTE_ETC, REMOTE_ETC,
     )
 
@@ -933,6 +942,8 @@ def update_hub(ssh, server: Server):
         ssh_exec(ssh, "install -m 755 /tmp/proxy-panel-prod/bin/proxy-panel-agent %s/proxy-panel-agent" % REMOTE_BIN)
         ssh_exec(ssh, "install -m 755 /tmp/proxy-panel-prod/bin/proxy-panel %s/proxy-panel" % REMOTE_BIN)
         ssh_exec(ssh, "rm -rf %s && mkdir -p %s && cp -a /tmp/proxy-panel-prod/web/dist/. %s/" % (REMOTE_WEB, REMOTE_WEB, REMOTE_WEB))
+        ssh_exec(ssh, "cp -a /tmp/proxy-panel-prod/service/proxy-panel-hub.service /etc/systemd/system/proxy-panel-hub.service")
+        ssh_exec(ssh, "cp -a /tmp/proxy-panel-prod/service/proxy-panel-agent.service /etc/systemd/system/proxy-panel-agent.service")
         ssh_exec(ssh, "chown -R proxypanel:proxypanel %s /var/lib/proxy-panel %s" % (REMOTE_DIR, REMOTE_ETC))
 
         # Run migrations
@@ -1015,6 +1026,7 @@ def update_agent(ssh, server: Server):
         ssh_exec(ssh, "systemctl stop proxy-panel-agent", timeout=60)
         ssh_exec(ssh, "install -m 755 /tmp/proxy-panel-prod/bin/proxy-panel-agent %s/proxy-panel-agent" % REMOTE_BIN)
         ssh_exec(ssh, "chown -R proxypanel:proxypanel %s /var/lib/proxy-panel %s" % (REMOTE_DIR, REMOTE_ETC))
+        write_agent_service(ssh, server)
         ssh_exec(ssh, "systemctl daemon-reload")
         ssh_exec(ssh, "systemctl start proxy-panel-agent", timeout=60)
         time.sleep(5)

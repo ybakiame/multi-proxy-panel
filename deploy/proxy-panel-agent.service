@@ -26,7 +26,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/proxy-panel
+ReadWritePaths=/var/lib/proxy-panel /opt/proxy-panel/bin
 
 [Install]
 WantedBy=multi-user.target
