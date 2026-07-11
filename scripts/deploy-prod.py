@@ -349,6 +349,18 @@ def build_servers(inventory: dict) -> List[Server]:
         if mode == "hub" and not merged.get("domain"):
             raise ValueError("Server %s: domain is required for hub mode" % merged.get("name"))
 
+        # Validate local agent configuration for hub servers.
+        agent_cfg = merged.get("agent") if isinstance(merged.get("agent"), dict) else {}
+        if mode == "hub" and agent_cfg.get("hub_url"):
+            hub_url = agent_cfg["hub_url"]
+            domain = merged.get("domain", "")
+            if domain and domain in hub_url and "127.0.0.1" not in hub_url and "localhost" not in hub_url:
+                raise ValueError(
+                    "Server %s: local agent hub_url (%s) points to the public domain. "
+                    "Use 'http://127.0.0.1:50052' for the local agent instead."
+                    % (merged.get("name"), hub_url)
+                )
+
         servers.append(Server(
             name=merged["name"],
             host=merged["host"],
@@ -359,9 +371,9 @@ def build_servers(inventory: dict) -> List[Server]:
             password=merged.get("ssh_password"),
             host_key_policy=merged.get("host_key_policy", "strict"),
             domain=merged.get("domain"),
-            hub_url=merged.get("agent", {}).get("hub_url") if isinstance(merged.get("agent"), dict) else merged.get("hub_url"),
-            agent_token=merged.get("agent", {}).get("token") if isinstance(merged.get("agent"), dict) else merged.get("agent_token"),
-            agent_id=merged.get("agent", {}).get("agent_id") if isinstance(merged.get("agent"), dict) else merged.get("agent_id"),
+            hub_url=agent_cfg.get("hub_url") if agent_cfg else merged.get("hub_url"),
+            agent_token=agent_cfg.get("token") if agent_cfg else merged.get("agent_token"),
+            agent_id=agent_cfg.get("agent_id") if agent_cfg else merged.get("agent_id"),
             db_url=merged.get("db_url", "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"),
             grpc_listen=merged.get("grpc_listen", "0.0.0.0:50052"),
             listen=merged.get("listen", "127.0.0.1:8081"),

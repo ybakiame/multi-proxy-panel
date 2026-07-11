@@ -48,7 +48,12 @@ servers:
     domain: test3-panel.ybakiame.net
     jwt_secret: ${JWT_SECRET}
     admin_password: ${ADMIN_PASSWORD}
-    # Optionally provide a pre-provisioned local agent token/id:
+    # If you want to use a pre-provisioned local agent (runs on the same host as
+    # the Hub), its hub_url MUST point to the loopback address, e.g.
+    # "http://127.0.0.1:50052". Do NOT use the public domain here - that would
+    # route local agent traffic over the public network unnecessarily.
+    # If the agent block is omitted, the deploy script will provision the local
+    # agent automatically and use 127.0.0.1 for you.
     # agent:
     #   hub_url: "http://127.0.0.1:50052"
     #   token: ${TEST3_AGENT_TOKEN}
@@ -58,6 +63,7 @@ servers:
     host: 192.3.150.233
     mode: agent
     agent:
+      # Remote agents connect to the Hub's public gRPC endpoint.
       hub_url: "http://test3-panel.ybakiame.net:50052"
       token: ${TEST2_AGENT_TOKEN}
       agent_id: ${TEST2_AGENT_ID}
