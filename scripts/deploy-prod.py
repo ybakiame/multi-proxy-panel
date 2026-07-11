@@ -616,6 +616,10 @@ def update_node_metadata_on_hub(hub: Server, node_id: str, address: str,
     ssh = connect_ssh(hub.host, hub.user, hub.port, hub.key_path,
                       hub.password, hub.host_key_policy)
     try:
+        # Extract filesystem path from sqlite:// URI for Python's sqlite3.
+        from urllib.parse import urlparse
+        db_path = urlparse(hub.db_url).path
+
         set_fields = ["address = ?"]
         params = [address]
         if domain:
@@ -631,13 +635,17 @@ def update_node_metadata_on_hub(hub: Server, node_id: str, address: str,
         script = """import sqlite3, uuid
 c = sqlite3.connect('%s')
 node_id = uuid.UUID('%s').bytes
-c.execute(""%s"", (%s, node_id))
+c.execute(\"%s\", (%s, node_id))
 c.commit()
 print('updated node metadata, rows changed:', c.total_changes)
-""" % (hub.db_url, node_id, sql, param_str)
+""" % (db_path, node_id, sql, param_str)
 
         print("\n=== Updating node metadata on hub '%s' for agent '%s' ===" % (hub.name, node_id))
-        ssh_exec(ssh, "python3 -c '%s'" % script, timeout=60)
+        ssh_exec(
+            ssh,
+            "cat <<'PYEOF' | python3\n%s\nPYEOF" % script,
+            timeout=60,
+        )
     finally:
         ssh.close()
 
@@ -824,6 +832,25 @@ set -euo pipefail
 ARCHIVE_DIR=/tmp/proxy-panel-prod
 
 useradd -r -s /bin/false proxypanel 2>/dev/null || true
+
+# Ensure libbz2.so.1.0 is available (required by the bundled bzip2 crate).
+if ! ldconfig -p 2>/dev/null | grep -q 'libbz2.so.1.0 '; then
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y libbz2-1.0
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y bzip2-libs
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y bzip2-libs
+    fi
+fi
+# Fedora provides libbz2.so.1.0.8 but names it libbz2.so.1; create the expected symlink.
+for libdir in /lib64 /lib/x86_64-linux-gnu; do
+    if [ -e "$libdir/libbz2.so.1.0.8" ] && [ ! -e "$libdir/libbz2.so.1.0" ]; then
+        ln -sf libbz2.so.1.0.8 "$libdir/libbz2.so.1.0"
+        ldconfig
+        break
+    fi
+done
 
 install -m 755 "$ARCHIVE_DIR/bin/proxy-panel-agent" %s/proxy-panel-agent
 
@@ -1019,10 +1046,14 @@ def run_action(server: Server, action: str) -> Optional[Dict[str, str]]:
         ssh.close()
 
 
-def deploy_all(servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, str]]:
-    """Deploy all servers sequentially and collect generated secrets."""
+def deploy_all(servers: List[Server], all_servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, str]]:
+    """Deploy target servers sequentially and collect generated secrets.
+
+    `all_servers` is used to resolve Hub references for agents even when the Hub
+    itself is not part of the current deployment target.
+    """
     results: Dict[str, Dict[str, str]] = {}
-    hubs = [s for s in servers if s.mode == "hub"]
+    hubs = [s for s in all_servers if s.mode == "hub"]
     agents = [s for s in servers if s.mode == "agent"]
 
     # Provision remote agents that are missing credentials.
@@ -1061,9 +1092,13 @@ def deploy_all(servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, s
     return results
 
 
-def update_all(servers: List[Server]) -> Dict[str, Dict[str, str]]:
-    """Update all servers sequentially."""
-    hubs = [s for s in servers if s.mode == "hub"]
+def update_all(servers: List[Server], all_servers: List[Server]) -> Dict[str, Dict[str, str]]:
+    """Update target servers sequentially.
+
+    `all_servers` is used to resolve Hub references for agents even when the Hub
+    itself is not part of the current update target.
+    """
+    hubs = [s for s in all_servers if s.mode == "hub"]
     for server in servers:
         run_action(server, "update")
 
@@ -1117,7 +1152,8 @@ def main():
     args = parser.parse_args()
 
     inventory = load_inventory(args.inventory)
-    servers = build_servers(inventory)
+    all_servers = build_servers(inventory)
+    servers = list(all_servers)
 
     if args.limit:
         allowed = {n.strip() for n in args.limit.split(",")}
@@ -1130,9 +1166,9 @@ def main():
             s.host_key_policy = args.host_key_policy
 
     if args.action == "deploy":
-        results = deploy_all(servers, args.secrets_out)
+        results = deploy_all(servers, all_servers, args.secrets_out)
     else:
-        results = update_all(servers)
+        results = update_all(servers, all_servers)
 
     print_summary(servers, results, args.secrets_out)
 
