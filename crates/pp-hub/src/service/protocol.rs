@@ -1,8 +1,10 @@
 use pp_common::{CoreType, PanelResult};
 use pp_config::{BuilderRegistry, InboundConfig};
-use pp_db::entities::{node_binding, protocol_config};
+use pp_db::entities::{
+    client, client_group_binding, node_binding, node_binding_group_binding, protocol_config,
+};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -43,7 +45,7 @@ pub async fn generate_node_config(
         let mut settings = config.settings.clone();
 
         // Merge override settings from binding
-        if let Some(overrides) = binding.override_settings {
+        if let Some(ref overrides) = binding.override_settings {
             if let Some(obj) = settings.as_object_mut() {
                 if let Some(over_obj) = overrides.as_object() {
                     for (k, v) in over_obj {
@@ -51,6 +53,19 @@ pub async fn generate_node_config(
                     }
                 }
             }
+        }
+
+        // Inject clients bound to this binding through shared groups.
+        inject_binding_clients(db, &binding, &config.protocol_type, &mut settings).await?;
+
+        // Builders read port/listen/tag from settings, so merge InboundConfig fields.
+        if let Some(obj) = settings.as_object_mut() {
+            obj.insert("port".to_string(), json!(config.listen_port));
+            obj.insert("listen".to_string(), json!(config.listen_address.clone()));
+            obj.insert(
+                "tag".to_string(),
+                json!(format!("{}-{}", config.name, config.id)),
+            );
         }
 
         inbounds.push(InboundConfig {
@@ -74,6 +89,99 @@ pub async fn generate_node_config(
 
     let config = builder.build_full_config(&inbounds)?;
     Ok((config, effective_version))
+}
+
+/// Find active clients that share at least one group with a node binding and
+/// inject them as a `clients` array into the protocol settings.
+async fn inject_binding_clients(
+    db: &DatabaseConnection,
+    binding: &node_binding::Model,
+    protocol_type: &str,
+    settings: &mut Value,
+) -> PanelResult<()> {
+    let binding_group_ids = node_binding_group_binding::Entity::find()
+        .filter(node_binding_group_binding::Column::NodeBindingId.eq(binding.id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|g| g.group_id)
+        .collect::<Vec<_>>();
+
+    if binding_group_ids.is_empty() {
+        // No groups on the binding means no clients are authorized.
+        return Ok(());
+    }
+
+    let group_set: HashSet<Uuid> = binding_group_ids.into_iter().collect();
+
+    // Find active clients whose group memberships overlap with the binding groups.
+    let client_bindings = client_group_binding::Entity::find()
+        .filter(client_group_binding::Column::GroupId.is_in(group_set.iter().cloned()))
+        .all(db)
+        .await?;
+
+    let client_ids: HashSet<Uuid> = client_bindings.into_iter().map(|b| b.client_id).collect();
+
+    if client_ids.is_empty() {
+        return Ok(());
+    }
+
+    let clients = client::Entity::find()
+        .filter(client::Column::Id.is_in(client_ids.iter().cloned()))
+        .filter(client::Column::Status.eq("active"))
+        .all(db)
+        .await?;
+
+    let clients_json: Vec<Value> = clients
+        .iter()
+        .map(|c| client_to_protocol_entry(c, protocol_type))
+        .collect();
+
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert("clients".to_string(), json!(clients_json));
+    }
+
+    Ok(())
+}
+
+/// Map a client to the protocol-specific client entry expected by pp-config builders.
+fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Value {
+    let email = client.email.as_ref().unwrap_or(&client.name);
+    match protocol_type {
+        pt if pt.starts_with("vless") || pt == "vmess" || pt == "trojan" => {
+            let flow = if pt == "vless_vision" || pt == "vless_reality" {
+                "xtls-rprx-vision"
+            } else {
+                ""
+            };
+            let mut obj = json!({
+                "id": client.id.to_string(),
+                "email": email,
+                "flow": flow,
+            });
+            if let Some(limit) = client.max_devices {
+                if limit > 0 {
+                    if let Some(map) = obj.as_object_mut() {
+                        map.insert("limitIp".to_string(), json!(limit));
+                    }
+                }
+            }
+            obj
+        }
+        "hysteria2" | "anytls" => json!({
+            "name": email,
+            "password": client.id.to_string(),
+        }),
+        "tuic" | "tuic_v5" => json!({
+            "name": email,
+            "uuid": client.id.to_string(),
+            "password": client.id.to_string().replace("-", ""),
+        }),
+        "shadowsocks2022" => json!({
+            "password": client.id.to_string().replace("-", ""),
+        }),
+        _ => json!({"id": client.id.to_string()}),
+    }
 }
 
 /// Push generated core config to the agent running on a node.
