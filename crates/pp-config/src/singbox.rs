@@ -133,9 +133,16 @@ fn build_api_service() -> Value {
         .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
     let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
 
+    // sing-box 1.14.0-alpha expects `listen` to be an IP address only
+    // (the port is fixed by the implementation).
+    let listen_addr = http_listen
+        .rsplit_once(':')
+        .map(|(a, _)| a)
+        .unwrap_or(&http_listen);
+
     let mut api = json!({
         "type": "api",
-        "listen": http_listen,
+        "listen": listen_addr,
     });
     if !secret.is_empty() {
         api["secret"] = serde_json::json!(secret);
