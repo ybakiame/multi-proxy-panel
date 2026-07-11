@@ -1,6 +1,8 @@
 use pp_common::{CoreType, PanelError, PanelResult};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
 
 /// Manages the lifecycle of a proxy core (xray or sing-box).
 #[async_trait::async_trait]
@@ -25,6 +27,15 @@ pub trait CoreManager: Send + Sync {
 
     /// Get core version string.
     async fn version(&self) -> PanelResult<String>;
+
+    /// Uptime in seconds if the core is running.
+    async fn uptime_secs(&self) -> PanelResult<u64>;
+
+    /// Active inbound tags (if queryable).
+    async fn active_inbounds(&self) -> PanelResult<Vec<String>>;
+
+    /// Last recorded error message.
+    async fn last_error(&self) -> PanelResult<String>;
 }
 
 /// Factory for creating CoreManager instances.
@@ -49,6 +60,7 @@ impl CoreManagerFactory {
     }
 }
 
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 
@@ -57,6 +69,8 @@ pub struct XrayProcessManager {
     binary: PathBuf,
     config_dir: PathBuf,
     process: RwLock<Option<Child>>,
+    start_time: RwLock<Option<Instant>>,
+    last_error: Arc<RwLock<String>>,
 }
 
 impl XrayProcessManager {
@@ -65,6 +79,8 @@ impl XrayProcessManager {
             binary: binary.as_ref().to_path_buf(),
             config_dir: config_dir.as_ref().to_path_buf(),
             process: RwLock::new(None),
+            start_time: RwLock::new(None),
+            last_error: Arc::new(RwLock::new(String::new())),
         })
     }
 
@@ -95,14 +111,31 @@ impl CoreManager for XrayProcessManager {
         let config_path = self.config_path();
         tokio::fs::write(&config_path, serde_json::to_string_pretty(config)?).await?;
 
-        let child = Command::new(&self.binary)
+        let mut child = Command::new(&self.binary)
             .arg("-c")
             .arg(&config_path)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
+        let stderr = child.stderr.take();
+        let last_error = self.last_error.clone();
+        if let Some(stderr) = stderr {
+            tokio::spawn(async move {
+                let reader = tokio::io::BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        *last_error.write().await = trimmed.to_string();
+                    }
+                }
+            });
+        }
+
         *proc = Some(child);
+        *self.start_time.write().await = Some(Instant::now());
+        *self.last_error.write().await = String::new();
         tracing::info!("xray started with config {}", config_path.display());
         Ok(())
     }
@@ -111,6 +144,7 @@ impl CoreManager for XrayProcessManager {
         let mut proc = self.process.write().await;
         if let Some(mut child) = proc.take() {
             let _ = child.kill().await;
+            *self.start_time.write().await = None;
             tracing::info!("xray stopped");
         }
         Ok(())
@@ -141,6 +175,24 @@ impl CoreManager for XrayProcessManager {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.trim().to_string())
     }
+
+    async fn uptime_secs(&self) -> PanelResult<u64> {
+        Ok(self
+            .start_time
+            .read()
+            .await
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0))
+    }
+
+    async fn active_inbounds(&self) -> PanelResult<Vec<String>> {
+        // TODO: query xray API for active inbounds
+        Ok(vec![])
+    }
+
+    async fn last_error(&self) -> PanelResult<String> {
+        Ok(self.last_error.read().await.clone())
+    }
 }
 
 /// sing-box process manager.
@@ -148,6 +200,8 @@ pub struct SingBoxProcessManager {
     binary: PathBuf,
     config_dir: PathBuf,
     process: RwLock<Option<Child>>,
+    start_time: RwLock<Option<Instant>>,
+    last_error: Arc<RwLock<String>>,
 }
 
 impl SingBoxProcessManager {
@@ -156,6 +210,8 @@ impl SingBoxProcessManager {
             binary: binary.as_ref().to_path_buf(),
             config_dir: config_dir.as_ref().to_path_buf(),
             process: RwLock::new(None),
+            start_time: RwLock::new(None),
+            last_error: Arc::new(RwLock::new(String::new())),
         })
     }
 
@@ -186,7 +242,7 @@ impl CoreManager for SingBoxProcessManager {
         let config_path = self.config_path();
         tokio::fs::write(&config_path, serde_json::to_string_pretty(config)?).await?;
 
-        let child = Command::new(&self.binary)
+        let mut child = Command::new(&self.binary)
             .arg("run")
             .arg("-c")
             .arg(&config_path)
@@ -196,7 +252,24 @@ impl CoreManager for SingBoxProcessManager {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
+        let stderr = child.stderr.take();
+        let last_error = self.last_error.clone();
+        if let Some(stderr) = stderr {
+            tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        *last_error.write().await = trimmed.to_string();
+                    }
+                }
+            });
+        }
+
         *proc = Some(child);
+        *self.start_time.write().await = Some(Instant::now());
+        *self.last_error.write().await = String::new();
         tracing::info!("sing-box started with config {}", config_path.display());
         Ok(())
     }
@@ -205,6 +278,7 @@ impl CoreManager for SingBoxProcessManager {
         let mut proc = self.process.write().await;
         if let Some(mut child) = proc.take() {
             let _ = child.kill().await;
+            *self.start_time.write().await = None;
             tracing::info!("sing-box stopped");
         }
         Ok(())
@@ -254,5 +328,23 @@ impl CoreManager for SingBoxProcessManager {
         let output = Command::new(&self.binary).arg("version").output().await?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.trim().to_string())
+    }
+
+    async fn uptime_secs(&self) -> PanelResult<u64> {
+        Ok(self
+            .start_time
+            .read()
+            .await
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0))
+    }
+
+    async fn active_inbounds(&self) -> PanelResult<Vec<String>> {
+        // TODO: query sing-box API for active inbounds
+        Ok(vec![])
+    }
+
+    async fn last_error(&self) -> PanelResult<String> {
+        Ok(self.last_error.read().await.clone())
     }
 }

@@ -2,11 +2,15 @@
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing_subscriber::prelude::*;
 
 mod client;
+mod logger;
 mod reporter;
 
 use client::AgentStreamClient;
+use logger::AgentLogger;
 
 #[derive(Parser, Debug)]
 #[command(name = "proxy-panel-agent", version, about = "ProxyPanel Node Agent")]
@@ -41,11 +45,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let agent_logger = AgentLogger::new();
+    let log_sender = agent_logger.sender();
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "proxy_panel_agent=info".into());
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "proxy_panel_agent=info".into()),
-        )
+        .with_env_filter(env_filter)
+        .finish()
+        .with(logger::GrpcLogLayer::new(log_sender))
         .init();
 
     let args = Args::parse();
@@ -54,8 +62,7 @@ async fn main() -> anyhow::Result<()> {
     // Ensure data directory exists
     tokio::fs::create_dir_all(&args.data_dir).await?;
 
-    // Discover available cores in the configured binary directory.
-    let supervisor = pp_core::CoreSupervisor::new();
+    let supervisor = Arc::new(pp_core::CoreSupervisor::new());
     let discovered = supervisor.discover(&args.bin_dir, &args.data_dir).await?;
     tracing::info!("discovered cores: {:?}", discovered);
 
@@ -81,10 +88,11 @@ async fn main() -> anyhow::Result<()> {
         hostname,
         args.domain.unwrap_or_default(),
         tls_config,
+        agent_logger,
     );
 
     tokio::select! {
-        res = client.run(args.hub_url, supervisor) => {
+        res = client.run(args.hub_url, supervisor.clone()) => {
             if let Err(e) = res {
                 tracing::error!("client error: {}", e);
             }

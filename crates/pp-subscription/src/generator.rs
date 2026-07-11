@@ -41,10 +41,11 @@ pub struct ProxyNode {
 }
 
 /// Generate subscription content for a given format.
+/// `base_config` is the raw template content (YAML for Clash, JSON for Sing-box).
 pub fn generate_subscription(
     format: SubscriptionFormat,
     nodes: &[ProxyNode],
-    base_config: Option<&Value>,
+    base_config: Option<&str>,
 ) -> PanelResult<String> {
     match format {
         SubscriptionFormat::Base64 => crate::formats::base64::generate(nodes),

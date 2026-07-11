@@ -10,8 +10,15 @@ import {
   FormTextArea,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
-import { getNodesPaginated, createNode, updateNode, deleteNode, pushConfig } from "../api/nodes";
-import { Node } from "../api/types";
+import {
+  getNodesPaginated,
+  createNode,
+  updateNode,
+  deleteNode,
+  pushConfig,
+  getNodeLogs,
+} from "../api/nodes";
+import { Node, AgentLog } from "../api/types";
 
 export function Nodes() {
   const { t } = useTranslation();
@@ -22,6 +29,9 @@ export function Nodes() {
   const [editNode, setEditNode] = useState<Node | null>(null);
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [logNode, setLogNode] = useState<Node | null>(null);
+  const [nodeLogs, setNodeLogs] = useState<AgentLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [form, setForm] = useState({
     name: "",
     hostname: "",
@@ -141,6 +151,17 @@ export function Nodes() {
     setEditNode(node);
   };
 
+  const openLogs = async (node: Node) => {
+    setLogNode(node);
+    setLogsLoading(true);
+    try {
+      const res = await getNodeLogs(node.id, 100);
+      setNodeLogs(res);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -201,6 +222,9 @@ export function Nodes() {
                           <div className="flex gap-2">
                             <Button size="sm" variant="ghost" onPress={() => openEdit(node)}>
                               {t("common.edit")}
+                            </Button>
+                            <Button size="sm" variant="ghost" onPress={() => openLogs(node)}>
+                              {t("nodes.logs")}
                             </Button>
                             <Button size="sm" variant="ghost" onPress={() => handlePush(node)}>
                               {t("nodes.pushConfig")}
@@ -336,6 +360,59 @@ export function Nodes() {
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+      <Modal.Backdrop
+        isOpen={!!logNode}
+        onOpenChange={(open) => {
+          if (!open) setLogNode(null);
+        }}
+      >
+        <Modal.Container className="max-w-4xl">
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {logNode ? `${t("nodes.logs")}: ${logNode.name}` : t("nodes.logs")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="max-h-[60vh] overflow-auto space-y-2">
+              {logsLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : nodeLogs.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">{t("common.empty")}</div>
+              ) : (
+                nodeLogs.map((log) => (
+                  <div key={log.id} className="border-b border-divider pb-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                          log.level === "error"
+                            ? "bg-danger-100 text-danger-700"
+                            : log.level === "warn"
+                              ? "bg-warning-100 text-warning-700"
+                              : "bg-default-100 text-default-700"
+                        }`}
+                      >
+                        {log.level}
+                      </span>
+                      <span className="text-muted-foreground">{log.target}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {new Date(log.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{log.message}</p>
+                  </div>
+                ))
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" onPress={() => setLogNode(null)}>
+                {t("common.close")}
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

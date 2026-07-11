@@ -2,12 +2,15 @@ use pp_proto::{
     AgentMessage, ConfigPush, CoreCommand, Heartbeat, HostMetrics, HubMessage, OnlineUser,
     OnlineUsersReport, RegisterRequest, hub_agent_client::HubAgentClient,
 };
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 
 use pp_core::CoreSupervisor;
+
+use crate::logger::{AgentLogger, collect_core_status, collect_logs};
 
 pub struct AgentStreamClient {
     agent_id: String,
@@ -19,6 +22,7 @@ pub struct AgentStreamClient {
     hub_tx: mpsc::Sender<AgentMessage>,
     #[allow(dead_code)]
     hub_rx: Option<mpsc::Receiver<HubMessage>>,
+    logger: AgentLogger,
 }
 
 impl AgentStreamClient {
@@ -28,6 +32,7 @@ impl AgentStreamClient {
         hostname: String,
         domain: String,
         tls_config: Option<tonic::transport::ClientTlsConfig>,
+        logger: AgentLogger,
     ) -> Self {
         let (hub_tx, _hub_rx) = mpsc::channel::<AgentMessage>(128);
         Self {
@@ -38,15 +43,20 @@ impl AgentStreamClient {
             tls_config,
             hub_tx,
             hub_rx: None,
+            logger,
         }
     }
 
-    pub async fn run(&mut self, hub_url: String, supervisor: CoreSupervisor) -> anyhow::Result<()> {
+    pub async fn run(
+        &mut self,
+        hub_url: String,
+        supervisor: Arc<CoreSupervisor>,
+    ) -> anyhow::Result<()> {
         let mut retry_delay = Duration::from_secs(1);
         let max_retry_delay = Duration::from_secs(60);
 
         loop {
-            match self.try_connect(&hub_url, &supervisor).await {
+            match self.try_connect(&hub_url, supervisor.clone()).await {
                 Ok(()) => {
                     tracing::info!("agent stream ended, reconnecting...");
                     retry_delay = Duration::from_secs(1);
@@ -63,7 +73,7 @@ impl AgentStreamClient {
     async fn try_connect(
         &mut self,
         hub_url: &str,
-        supervisor: &CoreSupervisor,
+        supervisor: Arc<CoreSupervisor>,
     ) -> anyhow::Result<()> {
         let endpoint = tonic::transport::Endpoint::new(hub_url.to_string())?;
         let endpoint = if let Some(tls) = &self.tls_config {
@@ -150,6 +160,51 @@ impl AgentStreamClient {
             tracing::debug!("heartbeat task for agent {} stopped", agent_id);
         });
 
+        // Log sender task
+        let log_tx = outbound_tx.clone();
+        let log_rx = self.logger.receiver();
+        let log_agent_id = self.agent_id.clone();
+        let log_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            let mut stopped = false;
+            while !stopped {
+                interval.tick().await;
+                let batch = collect_logs(&mut *log_rx.lock().await, 100).await;
+                if !batch.entries.is_empty() {
+                    let msg = AgentMessage {
+                        payload: Some(pp_proto::agent_message::Payload::Logs(batch)),
+                    };
+                    if log_tx.send(msg).await.is_err() {
+                        stopped = true;
+                    }
+                }
+            }
+            tracing::debug!("log sender task for agent {} stopped", log_agent_id);
+        });
+
+        // Core status reporter task
+        let status_tx = outbound_tx.clone();
+        let status_supervisor = supervisor.clone();
+        let status_agent_id = self.agent_id.clone();
+        let status_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            let mut stopped = false;
+            while !stopped {
+                interval.tick().await;
+                let reports = collect_core_status(&status_supervisor).await;
+                for report in reports {
+                    let msg = AgentMessage {
+                        payload: Some(pp_proto::agent_message::Payload::CoreStatus(report)),
+                    };
+                    if status_tx.send(msg).await.is_err() {
+                        stopped = true;
+                        break;
+                    }
+                }
+            }
+            tracing::debug!("core status task for agent {} stopped", status_agent_id);
+        });
+
         // Traffic reporter task
         let traffic_tx = outbound_tx.clone();
         let traffic_handle = crate::reporter::spawn_traffic_reporter(traffic_tx, 60);
@@ -158,7 +213,7 @@ impl AgentStreamClient {
         let result: anyhow::Result<()> = async {
             while let Some(msg_result) = stream.message().await? {
                 if let Err(e) =
-                    handle_hub_message(msg_result, supervisor, outbound_tx.clone()).await
+                    handle_hub_message(msg_result, &supervisor, outbound_tx.clone()).await
                 {
                     tracing::warn!("error handling hub message: {}", e);
                 }
@@ -168,6 +223,8 @@ impl AgentStreamClient {
         .await;
 
         heartbeat_handle.abort();
+        log_handle.abort();
+        status_handle.abort();
         traffic_handle.abort();
         result
     }

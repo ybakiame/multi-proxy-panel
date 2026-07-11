@@ -8,7 +8,7 @@ export interface CreateSubscriptionPayload {
 export interface CreateTemplatePayload {
   name: string;
   format?: string;
-  base_config?: Record<string, unknown>;
+  base_config?: string;
   filter_rules?: Record<string, unknown>;
   custom_headers?: Record<string, string>;
 }
@@ -16,7 +16,7 @@ export interface CreateTemplatePayload {
 export interface UpdateTemplatePayload {
   name?: string;
   format?: string;
-  base_config?: Record<string, unknown>;
+  base_config?: string;
   filter_rules?: Record<string, unknown>;
   custom_headers?: Record<string, string>;
 }

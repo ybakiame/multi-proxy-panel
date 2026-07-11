@@ -7,7 +7,7 @@ pub struct Model {
     pub id: Uuid,
     pub name: String,
     pub format: String,
-    pub base_config: Option<Json>,
+    pub base_config: Option<String>,
     pub filter_rules: Option<Json>,
     pub custom_headers: Option<Json>,
     pub created_at: DateTimeWithTimeZone,

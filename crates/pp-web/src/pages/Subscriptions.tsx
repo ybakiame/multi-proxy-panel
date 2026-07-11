@@ -9,6 +9,7 @@ import {
   FormSelect,
   FormTextArea,
   FormCheckbox,
+  CodeEditor,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import {
@@ -76,7 +77,7 @@ export function Subscriptions() {
   const [templateForm, setTemplateForm] = useState({
     name: "",
     format: "base64",
-    base_config: "{}",
+    base_config: "",
     filter_rules: "{}",
     custom_headers: "{}",
   });
@@ -185,7 +186,7 @@ export function Subscriptions() {
     setTemplateForm({
       name: "",
       format: "base64",
-      base_config: "{}",
+      base_config: "",
       filter_rules: "{}",
       custom_headers: "{}",
     });
@@ -202,7 +203,7 @@ export function Subscriptions() {
     setTemplateForm({
       name: tmpl.name,
       format: tmpl.format,
-      base_config: formatJson(tmpl.base_config),
+      base_config: tmpl.base_config || "",
       filter_rules: formatJson(tmpl.filter_rules),
       custom_headers: formatJson(tmpl.custom_headers),
     });
@@ -210,27 +211,66 @@ export function Subscriptions() {
   };
 
   const parseTemplateFormJson = () => {
-    let baseConfig: Record<string, unknown> = {};
     let filterRules: Record<string, unknown> = {};
     let customHeaders: Record<string, string> = {};
-    try {
-      baseConfig = JSON.parse(templateForm.base_config);
-    } catch {}
     try {
       filterRules = JSON.parse(templateForm.filter_rules);
     } catch {}
     try {
       customHeaders = JSON.parse(templateForm.custom_headers);
     } catch {}
-    return { baseConfig, filterRules, customHeaders };
+    return { filterRules, customHeaders };
+  };
+
+  const defaultTemplate = (format: string) => {
+    switch (format) {
+      case "clash":
+        return `port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+# Auto-generated proxy list
+proxies:
+  <PROXY_REPLACE>
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      <NODE_REPLACE>
+rules:
+  - MATCH,Proxy
+`;
+      case "sing-box":
+        return JSON.stringify(
+          {
+            log: { level: "info" },
+            dns: { servers: [{ tag: "local", address: "local" }] },
+            inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }],
+            outbounds: ["<OUTBOUND_REPLACE>", { type: "direct", tag: "direct" }],
+            route: { final: "Proxy" },
+          },
+          null,
+          2,
+        );
+      default:
+        return "";
+    }
+  };
+
+  const templateLanguage = (format: string): "yaml" | "json" | "text" => {
+    if (format === "clash") return "yaml";
+    if (format === "sing-box" || format === "json" || format === "v2rayng") return "json";
+    return "text";
   };
 
   const handleSaveTemplate = async () => {
-    const { baseConfig, filterRules, customHeaders } = parseTemplateFormJson();
+    const { filterRules, customHeaders } = parseTemplateFormJson();
     const payload = {
       name: templateForm.name,
       format: templateForm.format,
-      base_config: baseConfig,
+      base_config: templateForm.base_config,
       filter_rules: filterRules,
       custom_headers: customHeaders,
     };
@@ -590,22 +630,28 @@ export function Subscriptions() {
               <FormSelect
                 label={t("subscriptions.format")}
                 value={templateForm.format}
-                onChange={(value) =>
+                onChange={(value) => {
+                  const format = value || "base64";
                   setTemplateForm({
                     ...templateForm,
-                    format: value || "base64",
-                  })
-                }
+                    format,
+                    base_config:
+                      templateForm.base_config || editTemplate
+                        ? templateForm.base_config
+                        : defaultTemplate(format),
+                  });
+                }}
                 options={FORMAT_OPTIONS.map((format) => ({
                   id: format,
                   label: format,
                 }))}
               />
-              <FormTextArea
+              <CodeEditor
                 label={t("subscriptions.baseConfig")}
                 value={templateForm.base_config}
                 onChange={(value) => setTemplateForm({ ...templateForm, base_config: value })}
-                className="font-mono"
+                language={templateLanguage(templateForm.format)}
+                height="260px"
               />
               <FormTextArea
                 label={t("subscriptions.filterRules")}

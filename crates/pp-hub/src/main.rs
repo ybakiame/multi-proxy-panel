@@ -117,6 +117,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             post(nodes::push_config)
                 .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
         )
+        .route(
+            "/api/v1/nodes/{id}/logs",
+            get(nodes::query_node_logs)
+                .route_layer(middleware::api_key::scope_layer(scopes::LOGS_READ)),
+        )
         // Node Groups
         .route(
             "/api/v1/groups",

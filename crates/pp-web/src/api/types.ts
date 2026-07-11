@@ -113,7 +113,7 @@ export interface SubscriptionTemplate {
   id: string;
   name: string;
   format: string;
-  base_config: Record<string, unknown> | null;
+  base_config: string | null;
   filter_rules: Record<string, unknown> | null;
   custom_headers: Record<string, string> | null;
   created_at: string;
@@ -128,6 +128,16 @@ export interface Subscription {
   is_active: boolean;
   expire_at: string | null;
   last_accessed_at: string | null;
+  created_at: string;
+}
+
+export interface AgentLog {
+  id: string;
+  node_id: string;
+  level: string;
+  target: string;
+  message: string;
+  fields: Record<string, unknown> | null;
   created_at: string;
 }
 

@@ -4,6 +4,7 @@ export { SearchInput } from "./SearchInput";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { CopyableSecret } from "./CopyableSecret";
 export { JsonEditor } from "./JsonEditor";
+export { CodeEditor } from "./CodeEditor";
 export { Pagination } from "./Pagination";
 export { FormInput } from "./FormInput";
 export { FormTextArea } from "./FormTextArea";

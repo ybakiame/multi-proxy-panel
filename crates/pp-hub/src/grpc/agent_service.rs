@@ -1,10 +1,11 @@
 use chrono::Timelike;
 use pp_db::entities::{
-    client, client_online_session, node, node_user_usage_record, traffic_record,
+    agent_log, client, client_online_session, node, node_user_usage_record, traffic_record,
 };
 use pp_proto::{
-    AgentMessage, Heartbeat, HostMetrics, HubMessage, LogBatch, OnlineUsersReport, RegisterRequest,
-    RegisterResponse, TrafficReport, hub_agent_server::HubAgent,
+    AgentMessage, CoreStatusReport, Heartbeat, HostMetrics, HubMessage, LogBatch,
+    OnlineUsersReport, RegisterRequest, RegisterResponse, TrafficReport,
+    hub_agent_server::HubAgent,
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use std::pin::Pin;
@@ -143,7 +144,7 @@ async fn handle_agent_message(
         }
         Some(Payload::CoreStatus(status)) => {
             if let Some(id) = registered_id {
-                tracing::debug!("agent {} core status: {:?}", id, status);
+                handle_core_status(state, *id, status).await?;
             }
         }
         None => {}
@@ -422,23 +423,72 @@ async fn handle_logs(
     agent_id: Uuid,
     logs: LogBatch,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use pp_db::entities::system_log;
-
     for entry in logs.entries {
-        let active = system_log::ActiveModel {
+        let active = agent_log::ActiveModel {
             id: Set(Uuid::new_v4()),
+            node_id: Set(agent_id),
             level: Set(entry.level),
-            source: Set(format!("agent-{}", agent_id)),
+            target: Set(entry.target),
             message: Set(entry.message),
-            metadata: Set(Some(serde_json::json!({
-                "target": entry.target,
-                "fields": entry.fields,
-            }))),
+            fields: Set(Some(serde_json::json!(
+                entry
+                    .fields
+                    .into_iter()
+                    .collect::<std::collections::HashMap<_, _>>()
+            ))),
             created_at: Set(chrono::DateTime::from_timestamp(entry.timestamp, 0)
                 .unwrap_or_else(chrono::Utc::now)
                 .into()),
         };
-        active.insert(&state.db).await?;
+        if let Err(e) = active.insert(&state.db).await {
+            tracing::warn!("failed to insert agent log: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_core_status(
+    state: &AppState,
+    agent_id: Uuid,
+    status: CoreStatusReport,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    tracing::debug!("agent {} core status: {:?}", agent_id, status);
+
+    let message = if status.running {
+        format!(
+            "core {} v{} running, uptime {}s",
+            status.core_type, status.version, status.uptime_sec
+        )
+    } else {
+        format!(
+            "core {} v{} stopped, last error: {}",
+            status.core_type, status.version, status.last_error
+        )
+    };
+
+    let active = agent_log::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        node_id: Set(agent_id),
+        level: Set(if status.running {
+            "info".to_string()
+        } else {
+            "error".to_string()
+        }),
+        target: Set(format!("core-{}", status.core_type)),
+        message: Set(message),
+        fields: Set(Some(serde_json::json!({
+            "core_type": status.core_type,
+            "version": status.version,
+            "running": status.running,
+            "uptime_sec": status.uptime_sec,
+            "active_inbounds": status.active_inbounds,
+            "last_error": status.last_error,
+        }))),
+        created_at: Set(chrono::Utc::now().into()),
+    };
+    if let Err(e) = active.insert(&state.db).await {
+        tracing::warn!("failed to insert core status log: {}", e);
     }
 
     Ok(())

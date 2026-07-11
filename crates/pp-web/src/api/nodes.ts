@@ -1,5 +1,5 @@
 import { get, getPaginated, post, put, del } from "./client";
-import type { Node } from "./types";
+import type { AgentLog, Node } from "./types";
 
 export interface CreateNodePayload {
   name: string;
@@ -19,3 +19,5 @@ export const updateNode = (id: string, payload: Partial<CreateNodePayload>) =>
 export const deleteNode = (id: string) => del(`/api/v1/nodes/${id}`);
 export const pushConfig = (id: string, config: Record<string, unknown>) =>
   post(`/api/v1/nodes/${id}/push`, config);
+export const getNodeLogs = (id: string, limit = 100) =>
+  get<AgentLog[]>(`/api/v1/nodes/${id}/logs?limit=${limit}`);

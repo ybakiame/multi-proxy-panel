@@ -68,7 +68,7 @@ pub async fn list_templates(
 pub struct CreateTemplatePayload {
     pub name: String,
     pub format: Option<String>,
-    pub base_config: Option<Value>,
+    pub base_config: Option<String>,
     pub filter_rules: Option<Value>,
     pub custom_headers: Option<Value>,
 }
@@ -102,7 +102,7 @@ pub async fn create_template(
 pub struct UpdateTemplatePayload {
     pub name: Option<String>,
     pub format: Option<String>,
-    pub base_config: Option<Value>,
+    pub base_config: Option<String>,
     pub filter_rules: Option<Value>,
     pub custom_headers: Option<Value>,
 }
@@ -343,7 +343,7 @@ pub async fn serve_subscription(
         .await
         .map_err(ApiError::from)?;
 
-    let base_config = template.base_config.as_ref();
+    let base_config = template.base_config.as_deref();
     let content = generate_subscription(target_format, &proxy_nodes, base_config).map_err(|e| {
         tracing::warn!("subscription generation error: {}", e);
         ApiError::internal(format!("subscription generation failed: {e}"))

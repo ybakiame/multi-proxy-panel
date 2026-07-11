@@ -4,7 +4,10 @@ use serde_json::Value;
 use crate::generator::ProxyNode;
 
 /// Generate sing-box JSON subscription with outbounds array.
-pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult<String> {
+/// `base_config` is raw JSON template text. Supported placeholders:
+///   - `<OUTBOUND_REPLACE>`  -> JSON array of generated outbounds
+///   - `<NODE_REPLACE>`     -> JSON array of node names
+pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<String> {
     let outbounds: Vec<_> = nodes
         .iter()
         .map(build_outbound)
@@ -13,19 +16,19 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
     let node_names: Vec<String> = nodes.iter().map(|n| n.name.clone()).collect();
 
     if let Some(base) = base_config {
-        let base_str = serde_json::to_string(base)?;
-        if base_str.contains("\"<OUTBOUND_REPLACE>\"") || base_str.contains("\"<NODE_REPLACE>\"") {
-            let rendered = render_template(base_str, &outbounds, &node_names)?;
+        if base.contains("<OUTBOUND_REPLACE>") || base.contains("<NODE_REPLACE>") {
+            let rendered = render_template(base.to_string(), &outbounds, &node_names)?;
             return Ok(serde_json::to_string_pretty(&rendered)?);
         }
+
+        let mut config: Value = serde_json::from_str(base).map_err(|e| {
+            PanelError::Subscription(format!("failed to parse sing-box template json: {e}"))
+        })?;
+        config["outbounds"] = serde_json::Value::Array(outbounds);
+        return Ok(serde_json::to_string_pretty(&config)?);
     }
 
-    let mut config = if let Some(base) = base_config {
-        base.clone()
-    } else {
-        serde_json::json!({ "outbounds": [] })
-    };
-
+    let mut config = serde_json::json!({ "outbounds": [] });
     config["outbounds"] = serde_json::Value::Array(outbounds);
     Ok(serde_json::to_string_pretty(&config)?)
 }
@@ -126,7 +129,8 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         }
         let server_name =
             pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
-        let short_id = pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
+        let short_id =
+            pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
         let spider_x = node
             .settings
             .get("spider_x")

@@ -1,10 +1,16 @@
 use pp_common::{PanelError, PanelResult, ProtocolType};
 use serde_json::Value;
+use serde_json::json;
 
 use crate::generator::ProxyNode;
 
 /// Generate Clash Meta / Mihomo YAML subscription.
-pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult<String> {
+/// `base_config` is raw YAML template text. Supported placeholders:
+///   - `<PROXY_REPLACE>`  -> YAML list of generated proxies
+///   - `<NODE_REPLACE>`   -> YAML list of proxy names
+///
+/// Comments and formatting in the template are preserved.
+pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<String> {
     let mut proxies = Vec::new();
     let mut proxy_names = Vec::new();
 
@@ -14,65 +20,102 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&Value>) -> PanelResult
     }
 
     if let Some(base) = base_config {
-        let base_str = serde_json::to_string(base)?;
-        if base_str.contains("\"<PROXY_REPLACE>\"") || base_str.contains("\"<NODE_REPLACE>\"") {
-            let rendered = render_template(base_str, &proxies, &proxy_names)?;
-            return Ok(serde_yaml::to_string(&rendered)?);
+        let trimmed = base.trim();
+        if trimmed.contains("<PROXY_REPLACE>") || trimmed.contains("<NODE_REPLACE>") {
+            return render_yaml_template(base, &proxies, &proxy_names);
         }
 
-        let mut output = default_output(&proxies, &proxy_names);
-        if let Some(base_proxies) = base.get("proxies").and_then(|v| v.as_array()) {
-            let mut merged = base_proxies.clone();
-            merged.extend(proxies.clone());
-            output["proxies"] = serde_json::Value::Array(merged);
+        // No placeholders: parse as YAML, merge proxies/proxy-groups, serialize back.
+        let mut base_value: Value = serde_yaml::from_str(base).map_err(|e| {
+            PanelError::Subscription(format!("failed to parse clash template yaml: {e}"))
+        })?;
+
+        if base_value.get("proxies").is_none() {
+            base_value["proxies"] = Value::Array(Vec::new());
         }
-        if let Some(base_groups) = base.get("proxy-groups").and_then(|v| v.as_array()) {
-            let mut merged = base_groups.clone();
-            merged.extend(
-                output["proxy-groups"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-            output["proxy-groups"] = serde_json::Value::Array(merged);
+        if let Some(base_proxies) = base_value["proxies"].as_array_mut() {
+            for proxy in &proxies {
+                base_proxies.push(proxy.clone());
+            }
         }
-        return Ok(serde_yaml::to_string(&output)?);
+
+        if base_value.get("proxy-groups").is_none() {
+            base_value["proxy-groups"] = default_proxy_groups(&proxy_names);
+        }
+
+        return serde_yaml::to_string(&base_value)
+            .map_err(|e| PanelError::Subscription(format!("failed to serialize clash yaml: {e}")));
     }
 
-    Ok(serde_yaml::to_string(&default_output(
-        &proxies,
-        &proxy_names,
-    ))?)
-}
-
-fn default_output(proxies: &[Value], proxy_names: &[String]) -> Value {
-    serde_json::json!({
+    let output = serde_json::json!({
         "proxies": proxies,
-        "proxy-groups": [
-            {
-                "name": "Proxy",
-                "type": "select",
-                "proxies": proxy_names
-            }
-        ]
-    })
+        "proxy-groups": default_proxy_groups(&proxy_names),
+    });
+
+    serde_yaml::to_string(&output)
+        .map_err(|e| PanelError::Subscription(format!("failed to serialize clash yaml: {e}")))
 }
 
-fn render_template(
-    base_str: String,
+fn default_proxy_groups(proxy_names: &[String]) -> Value {
+    serde_json::json!([
+        {
+            "name": "Proxy",
+            "type": "select",
+            "proxies": proxy_names
+        }
+    ])
+}
+
+/// Render a YAML template preserving comments and formatting.
+fn render_yaml_template(
+    template: &str,
     proxies: &[Value],
     proxy_names: &[String],
-) -> PanelResult<Value> {
-    let proxies_json = serde_json::to_string(&proxies)?;
-    let names_json = serde_json::to_string(&proxy_names)?;
+) -> PanelResult<String> {
+    let proxies_yaml = serde_yaml::to_string(proxies).map_err(|e| {
+        PanelError::Subscription(format!("failed to serialize proxies to yaml: {e}"))
+    })?;
+    let names_yaml = serde_yaml::to_string(proxy_names).map_err(|e| {
+        PanelError::Subscription(format!("failed to serialize proxy names to yaml: {e}"))
+    })?;
 
-    let rendered = base_str
-        .replace("\"<PROXY_REPLACE>\"", &proxies_json)
-        .replace("\"<NODE_REPLACE>\"", &names_json);
+    let mut output = template.to_string();
+    output = replace_yaml_placeholder(&output, "<PROXY_REPLACE>", &proxies_yaml)?;
+    output = replace_yaml_placeholder(&output, "<NODE_REPLACE>", &names_yaml)?;
 
-    serde_json::from_str(&rendered).map_err(|e| {
-        PanelError::Subscription(format!("failed to render subscription template: {e}"))
-    })
+    Ok(output)
+}
+
+/// Replace a placeholder in a YAML template with an indented YAML block.
+fn replace_yaml_placeholder(
+    template: &str,
+    placeholder: &str,
+    replacement_yaml: &str,
+) -> PanelResult<String> {
+    let pos = template
+        .find(placeholder)
+        .ok_or_else(|| PanelError::Subscription(format!("placeholder {placeholder} not found")))?;
+
+    // Find the start of the line containing the placeholder.
+    let line_start = template[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let indent = &template[line_start..pos];
+    let indent_spaces = indent.len() - indent.trim_start().len();
+    let indent_str = " ".repeat(indent_spaces);
+
+    // Remove leading '-' if present from the serialized YAML block and indent each line.
+    let trimmed = replacement_yaml.trim_start_matches('\n').trim_end();
+    let mut lines = trimmed.lines();
+    let first = lines.next().unwrap_or("");
+    let mut result = first.to_string();
+    for line in lines {
+        result.push('\n');
+        if !line.is_empty() {
+            result.push_str(&indent_str);
+        }
+        result.push_str(line);
+    }
+
+    Ok(template.replacen(placeholder, &result, 1))
 }
 
 fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
@@ -120,114 +163,142 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     });
 
     if !flow.is_empty() {
-        proxy["flow"] = serde_json::json!(flow);
+        proxy["flow"] = json!(flow);
     }
 
-    if network == "xhttp" {
-        if let Some(path) = node.settings.get("xhttp_path").and_then(|v| v.as_str()) {
-            proxy["path"] = serde_json::json!(path);
-        } else if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
-            proxy["path"] = serde_json::json!(path);
+    match node.protocol {
+        ProtocolType::VlessReality => {
+            let public_key = node
+                .settings
+                .get("public_key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let short_id = node
+                .settings
+                .get("short_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let server_name = node
+                .settings
+                .get("server_name")
+                .or_else(|| node.settings.get("sni"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let fingerprint = node
+                .settings
+                .get("client_fingerprint")
+                .or_else(|| node.settings.get("fingerprint"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("chrome");
+
+            proxy["tls"] = json!(true);
+            proxy["servername"] = json!(server_name);
+            proxy["client-fingerprint"] = json!(fingerprint);
+            proxy["reality-opts"] = json!({
+                "enabled": true,
+                "public-key": public_key,
+                "short-id": short_id,
+            });
         }
-        if let Some(host) = node.settings.get("xhttp_host").and_then(|v| v.as_str()) {
-            proxy["host"] = serde_json::json!(host);
-        } else if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
-            proxy["host"] = serde_json::json!(host);
+        ProtocolType::VlessVision => {
+            proxy["tls"] = json!(true);
         }
+        ProtocolType::VlessXhttp => {
+            proxy["tls"] = json!(true);
+            let host = node
+                .settings
+                .get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let path = node
+                .settings
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("/");
+            proxy["plugin-opts"] = json!({
+                "mode": "xhttp",
+                "host": host,
+                "path": path,
+            });
+        }
+        _ => {}
     }
 
-    if node.protocol == ProtocolType::VlessReality {
-        let public_key = node
-            .settings
-            .get("public_key")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
-        let server_name =
-            pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
-        let short_id = pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
-        let spider_x = node
-            .settings
-            .get("spider_x")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let fingerprint = node
-            .settings
-            .get("fingerprint")
-            .and_then(|v| v.as_str())
-            .unwrap_or("chrome");
-
-        proxy["tls"] = serde_json::json!(true);
-        proxy["servername"] = serde_json::json!(server_name);
-        proxy["client-fingerprint"] = serde_json::json!(fingerprint);
-        let mut reality = serde_json::json!({
-            "enabled": true,
-            "public-key": public_key,
-        });
-        if !short_id.is_empty() {
-            reality["short-id"] = serde_json::json!(short_id);
-        }
-        if !spider_x.is_empty() {
-            reality["spider-x"] = serde_json::json!(spider_x);
-        }
-        proxy["reality-opts"] = reality;
-    } else if let Some(tls) = &node.tls {
-        proxy["tls"] = serde_json::json!(true);
-        if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
-            proxy["servername"] = serde_json::json!(sni);
-        }
-    }
+    apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
 
     Ok(proxy)
 }
 
 fn build_vmess_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let id = pp_common::settings_helper::client_uuid(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing vmess id".into()))?;
-    Ok(serde_json::json!({
+    let uuid = pp_common::settings_helper::client_uuid(&node.settings)
+        .ok_or_else(|| PanelError::Subscription("missing vmess uuid".into()))?;
+
+    let network = node
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
+    let mut proxy = serde_json::json!({
         "name": node.name,
         "type": "vmess",
         "server": node.server,
         "port": node.port,
-        "uuid": id,
-        "alterId": node.settings.get("alterId").and_then(|v| v.as_u64()).unwrap_or(0),
-        "cipher": node.settings.get("security").and_then(|v| v.as_str()).unwrap_or("auto"),
-    }))
+        "uuid": uuid,
+        "alterId": 0,
+        "cipher": "auto",
+        "network": network,
+        "udp": true,
+    });
+
+    apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
+
+    Ok(proxy)
 }
 
 fn build_trojan_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
+
+    let network = node
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
+
     let mut proxy = serde_json::json!({
         "name": node.name,
         "type": "trojan",
         "server": node.server,
         "port": node.port,
         "password": password,
+        "network": network,
+        "udp": true,
     });
-    if let Some(tls) = &node.tls {
-        proxy["tls"] = serde_json::json!(true);
-        if let Some(sni) = tls.get("serverName").and_then(|v| v.as_str()) {
-            proxy["sni"] = serde_json::json!(sni);
-        }
-    }
+
+    apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
+
     Ok(proxy)
 }
 
 fn build_shadowsocks_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
+    let password = pp_common::settings_helper::client_password(&node.settings)
+        .ok_or_else(|| PanelError::Subscription("missing shadowsocks password".into()))?;
+
     let method = node
         .settings
         .get("method")
         .and_then(|v| v.as_str())
         .unwrap_or("2022-blake3-aes-128-gcm");
-    let password = pp_common::settings_helper::client_password(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing shadowsocks password".into()))?;
+
     Ok(serde_json::json!({
         "name": node.name,
         "type": "ss",
         "server": node.server,
         "port": node.port,
-        "cipher": method,
         "password": password,
+        "cipher": method,
+        "udp": true,
     }))
 }
 
@@ -235,63 +306,86 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing hysteria2 password".into()))?;
 
-    let server_name = node
-        .tls
-        .as_ref()
-        .and_then(|t| t.get("serverName"))
+    let sni = node
+        .settings
+        .get("sni")
         .and_then(|v| v.as_str())
-        .or_else(|| node.settings.get("sni").and_then(|v| v.as_str()))
-        .unwrap_or("")
-        .to_string();
+        .unwrap_or(&node.server);
+    let skip_cert_verify = node
+        .settings
+        .get("skip_cert_verify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
-    let mut proxy = serde_json::json!({
+    Ok(serde_json::json!({
         "name": node.name,
         "type": "hysteria2",
         "server": node.server,
         "port": node.port,
         "password": password,
-        "sni": server_name,
-        "skip-cert-verify": true,
-    });
+        "sni": sni,
+        "skip-cert-verify": skip_cert_verify,
+        "up": node.settings.get("up").and_then(|v| v.as_u64()).unwrap_or(100),
+        "down": node.settings.get("down").and_then(|v| v.as_u64()).unwrap_or(100),
+        "udp": true,
+    }))
+}
 
-    if let Some(up) = node.settings.get("up_mbps").and_then(|v| v.as_u64()) {
-        proxy["up"] = serde_json::json!(up);
-    }
-    if let Some(down) = node.settings.get("down_mbps").and_then(|v| v.as_u64()) {
-        proxy["down"] = serde_json::json!(down);
-    }
-    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
-        if obfs_type != "none" {
-            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
-            {
-                proxy["obfs"] = serde_json::json!(obfs_type);
-                proxy["obfs-password"] = serde_json::json!(obfs_password);
+fn apply_transport_settings(
+    proxy: &mut Value,
+    network: &str,
+    settings: &Value,
+    tls: Option<&Value>,
+) -> Result<(), PanelError> {
+    match network {
+        "ws" => {
+            let path = settings.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+            let host = settings.get("host").and_then(|v| v.as_str()).unwrap_or("");
+            proxy["ws-opts"] = json!({
+                "path": path,
+                "headers": {
+                    "Host": host
+                }
+            });
+        }
+        "grpc" => {
+            let service_name = settings
+                .get("service_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            proxy["grpc-opts"] = json!({
+                "grpc-service-name": service_name,
+            });
+        }
+        "tcp" => {
+            if let Some(tls_cfg) = tls {
+                proxy["tls"] = json!(true);
+                if let Some(sni) = tls_cfg.get("serverName").and_then(|v| v.as_str()) {
+                    proxy["sni"] = json!(sni);
+                }
             }
         }
+        _ => {}
     }
-
-    Ok(proxy)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generator::ProxyNode;
-    use serde_json::json;
 
     fn reality_node() -> ProxyNode {
         ProxyNode {
-            name: "test-reality".into(),
+            name: "test-reality".to_string(),
             protocol: ProtocolType::VlessReality,
-            server: "1.2.3.4".into(),
+            server: "example.com".to_string(),
             port: 443,
-            settings: json!({
+            settings: serde_json::json!({
                 "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4",
+                "public_key": "pbk",
+                "short_id": "sid",
+                "server_name": "www.example.com",
                 "flow": "xtls-rprx-vision",
-                "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-                "server_names": "example.com,www.example.com",
-                "short_id": "0123456789abcdef",
-                "fingerprint": "chrome"
             }),
             tls: None,
         }
@@ -307,19 +401,20 @@ mod tests {
 
     #[test]
     fn clash_template_replaces_placeholders() {
-        let base = json!({
-            "port": 7890,
-            "proxies": "<PROXY_REPLACE>",
-            "proxy-groups": [
-                {
-                    "name": "Proxy",
-                    "type": "select",
-                    "proxies": "<NODE_REPLACE>"
-                }
-            ]
-        });
-        let out = generate(&[reality_node()], Some(&base)).unwrap();
-        assert!(out.starts_with("port: 7890"));
+        let base = r#"
+port: 7890
+# This is a comment
+proxies:
+  <PROXY_REPLACE>
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      <NODE_REPLACE>
+"#;
+        let out = generate(&[reality_node()], Some(base)).unwrap();
+        assert!(out.contains("port: 7890"));
+        assert!(out.contains("# This is a comment"));
         assert!(out.contains("type: vless"));
         assert!(out.contains("name: test-reality"));
         assert!(out.contains("- test-reality"));
