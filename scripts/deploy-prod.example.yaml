@@ -54,8 +54,10 @@ hub:
   auto_register_agents: false
   install_caddy: true
   admin_username: admin
-  # admin_password: ${ADMIN_PASSWORD}   # optional: auto-generated if omitted
-  # jwt_secret: ${JWT_SECRET}           # optional: auto-generated if omitted
+  # Use ${VAR:-} so the variable is optional. If empty, the script auto-generates
+  # the secret on first Hub deploy.
+  admin_password: ${ADMIN_PASSWORD:-}
+  jwt_secret: ${JWT_SECRET:-}
 
 # ---------------------------------------------------------------------------
 # Server list. mode must be "hub" or "agent".
@@ -71,10 +73,6 @@ servers:
     # ssh_password: ${TEST3_SSH_PASSWORD:-}
     host_key_policy: strict
     domain: test3-panel.ybakiame.net
-    # jwt_secret and admin_password are optional; omit them to let the script
-    # auto-generate and print/save them on first deploy.
-    # jwt_secret: ${JWT_SECRET}
-    # admin_password: ${ADMIN_PASSWORD}
     # If you want to use a pre-provisioned local agent (runs on the same host as
     # the Hub), its hub_url MUST point to the loopback address, e.g.
     # "http://127.0.0.1:50052". Do NOT use the public domain here - that would
@@ -82,13 +80,13 @@ servers:
     # If the agent block is omitted, the deploy script will provision the local
     # agent automatically and use 127.0.0.1 for you.
     #
-    # Recommended workflow for local agent: omit this block on first deploy,
+    # Recommended workflow for local agent: omit this block on the first deploy,
     # then read the auto-generated token from the deployment summary and store
     # it in your vault. On subsequent deploys you can pin it here.
     # agent:
     #   hub_url: "http://127.0.0.1:50052"
-    #   token: ${TEST3_AGENT_TOKEN}
-    #   agent_id: ${TEST3_AGENT_ID}
+    #   token: ${TEST3_AGENT_TOKEN:-}
+    #   agent_id: ${TEST3_AGENT_ID:-}
 
   - name: test2
     host: 192.3.150.233
@@ -110,8 +108,8 @@ servers:
       # and uncomment the two lines below.
       hub: test3
       hub_url: "https://test3-panel.ybakiame.net:443"
-      # token: ${TEST2_AGENT_TOKEN}
-      # agent_id: ${TEST2_AGENT_ID}
+      token: ${TEST2_AGENT_TOKEN:-}
+      agent_id: ${TEST2_AGENT_ID:-}
       # tls_domain is the domain the Agent should verify on the Hub's TLS
       # certificate. It is independent from the agent's own domain above.
       tls_domain: "test3-panel.ybakiame.net"
