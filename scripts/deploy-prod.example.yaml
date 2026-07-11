@@ -9,11 +9,27 @@
 #      are already in your ~/.ssh/known_hosts file.
 #
 # Usage:
-#   export JWT_SECRET="$(openssl rand -hex 32)"
-#   export ADMIN_PASSWORD="$(openssl rand -hex 16)"
-#   export TEST2_AGENT_TOKEN="..."
-#   export TEST3_AGENT_TOKEN="..."
-#   python3 scripts/deploy-prod.py --inventory deploy-prod.example.yaml --action deploy
+#   # 1. Generate/pre-provision agent tokens (recommended for production):
+#      export TEST2_AGENT_TOKEN="$(./target/release/proxy-panel gen-token)"
+#      export TEST2_AGENT_ID="$(\
+#        ./target/release/proxy-panel provision-node \
+#          --database-url 'sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc' \
+#          --name test2 \
+#          --hostname test2-panel.ybakiame.net \
+#          --address 192.3.150.233 \
+#          --token "$TEST2_AGENT_TOKEN" \
+#          | awk -F': ' '/^node_id:/ {print $2}')"
+#
+#   # 2. Set remaining secrets and deploy:
+#      export JWT_SECRET="$(openssl rand -hex 32)"
+#      export ADMIN_PASSWORD="$(openssl rand -hex 16)"
+#      python3 scripts/deploy-prod.py --inventory deploy-prod.example.yaml --action deploy
+#
+# Why pre-generate tokens?
+#   - Agents can be deployed independently from the Hub (no need to SSH into
+#     the Hub during agent deployment just to provision a token).
+#   - Tokens can be stored in a password manager / vault before deployment.
+#   - The inventory file never needs to call back to the Hub to fetch secrets.
 
 # ---------------------------------------------------------------------------
 # Defaults applied to every server unless overridden.
@@ -54,6 +70,10 @@ servers:
     # route local agent traffic over the public network unnecessarily.
     # If the agent block is omitted, the deploy script will provision the local
     # agent automatically and use 127.0.0.1 for you.
+    #
+    # Recommended workflow for local agent: omit this block on first deploy,
+    # then read the auto-generated token from the deployment summary and store
+    # it in your vault. On subsequent deploys you can pin it here.
     # agent:
     #   hub_url: "http://127.0.0.1:50052"
     #   token: ${TEST3_AGENT_TOKEN}
@@ -64,6 +84,8 @@ servers:
     mode: agent
     agent:
       # Remote agents connect to the Hub's public gRPC endpoint.
+      # Use a token that was pre-generated and registered with:
+      #   proxy-panel provision-node --name test2 --token "$TEST2_AGENT_TOKEN"
       hub_url: "http://test3-panel.ybakiame.net:50052"
       token: ${TEST2_AGENT_TOKEN}
       agent_id: ${TEST2_AGENT_ID}

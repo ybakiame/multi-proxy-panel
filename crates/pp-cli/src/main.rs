@@ -43,6 +43,10 @@ enum Commands {
         hostname: Option<String>,
         #[arg(long)]
         address: Option<String>,
+        /// Pre-generated agent token (e.g. from `gen-token`).
+        /// If omitted, a new token will be generated and printed.
+        #[arg(long)]
+        token: Option<String>,
     },
     /// Create an admin user directly in the database
     CreateUser {
@@ -115,9 +119,10 @@ async fn main() -> anyhow::Result<()> {
             name,
             hostname,
             address,
+            token,
         } => {
             let db = pp_db::init_db(&database_url).await?;
-            let raw_token = pp_common::generate_secure_token();
+            let raw_token = token.unwrap_or_else(pp_common::generate_secure_token);
             let token_hash = pp_common::hash_secret(&raw_token)
                 .map_err(|e| anyhow::anyhow!("failed to hash agent token: {}", e))?;
 

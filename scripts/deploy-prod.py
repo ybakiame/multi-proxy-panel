@@ -12,6 +12,13 @@ Designed for safer production use than deploy-server.py:
   - Separate `deploy` and `update` actions
 
 Example:
+    # Generate a token first (optional, recommended for production)
+    export TEST2_AGENT_TOKEN="$(./target/release/proxy-panel gen-token)"
+    export TEST2_AGENT_ID="$(./target/release/proxy-panel provision-node \\
+      --database-url 'sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc' \\
+      --name test2 --address 192.3.150.233 --token "$TEST2_AGENT_TOKEN" \\
+      | awk -F': ' '/^node_id:/ {print $2}')"
+
     python3 scripts/deploy-prod.py --inventory deploy-prod.yaml --action deploy
     python3 scripts/deploy-prod.py --inventory deploy-prod.yaml --action update
 
