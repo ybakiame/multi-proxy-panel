@@ -15,6 +15,7 @@ Cargo.lock
 /scripts/deploy-test-server.py
 /scripts/deploy-server.py
 /scripts/deploy-prod.yaml
+scripts/.deploy-secrets.env
 node_modules/
 crates/pp-web/dist/
 __pycache__/

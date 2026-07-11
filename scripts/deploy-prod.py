@@ -382,13 +382,8 @@ def build_servers(inventory: dict) -> List[Server]:
             key_path=resolve_ssh_key(merged.get("ssh_key")),
             password=merged.get("ssh_password"),
             host_key_policy=merged.get("host_key_policy", "strict"),
-            domain=merged.get("domain"),
-            hub_url=agent_cfg.get("hub_url") if agent_cfg else merged.get("hub_url"),
-            hub_name=agent_cfg.get("hub") if agent_cfg else merged.get("agent_hub"),
-            agent_token=agent_cfg.get("token") if agent_cfg else merged.get("agent_token"),
-            agent_id=agent_cfg.get("agent_id") if agent_cfg else merged.get("agent_id"),
-            hostname=merged.get("hostname") or (agent_cfg.get("hostname") if agent_cfg else None),
             domain=merged.get("domain") or (agent_cfg.get("domain") if agent_cfg else None),
+            hub_url=agent_cfg.get("hub_url") if agent_cfg else merged.get("hub_url"),
             db_url=merged.get("db_url", "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"),
             grpc_listen=merged.get("grpc_listen", "0.0.0.0:50052"),
             listen=merged.get("listen", "127.0.0.1:8081"),
@@ -447,10 +442,10 @@ def install_caddy(ssh, server: Server):
         return
     print("\n=== Installing Caddy on %s ===" % server.name)
     ssh_exec(ssh, "apt-get update", timeout=180)
-    ssh_exec(ssh, "apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl", timeout=180)
+    ssh_exec(ssh, "apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg", timeout=180)
     ssh_exec(
         ssh,
-        "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
+        "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --batch --yes --no-tty --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
         timeout=60,
     )
     ssh_exec(
@@ -463,8 +458,8 @@ def install_caddy(ssh, server: Server):
 
     # gRPC upstream for agents: reverse proxy :443 -> hub:50052 with h2c
     caddyfile = """%s {
-    reverse_proxy /proxypanel.HubAgent/* h2c://127.0.0.1:%d
-    reverse_proxy 127.0.0.1:%d
+    reverse_proxy /proxypanel.HubAgent/* h2c://127.0.0.1:%s
+    reverse_proxy 127.0.0.1:%s
 }
 """ % (server.domain, server.grpc_listen.rsplit(":", 1)[-1], server.listen.rsplit(":", 1)[-1])
     ssh_exec(ssh, "cat > /etc/caddy/Caddyfile <<'EOF'\n%sEOF" % caddyfile)
@@ -511,7 +506,22 @@ def write_agent_env(server: Server) -> str:
     return "\n".join(env) + "\n"
 
 
-# Removed duplicate write_agent_env definition.def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
+def remote_read_agent_env(ssh) -> Dict[str, str]:
+    """Read existing agent env file from the server."""
+    out = ssh_exec(ssh, "cat %s/agent.env 2>/dev/null || true" % REMOTE_ETC, echo=False)
+    env: Dict[str, str] = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env[key.strip()] = value.strip()
+    return env
+
+
+def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
     """Find the Hub server that an agent should connect to."""
     if agent.hub_name:
         for hub in hubs:
@@ -815,6 +825,49 @@ def update_hub(ssh, server: Server):
         ssh_exec(ssh, "%s/proxy-panel init-db --database-url '%s'" % (REMOTE_BIN, server.db_url), timeout=120)
 
         ssh_exec(ssh, "systemctl daemon-reload")
+
+        # Rewrite local agent env to pick up new domain and ensure agent-id is set
+        # for the updated systemd service file.
+        existing_env = remote_read_agent_env(ssh)
+        agent_token = server.agent_token or existing_env.get("PROXYPANEL_AGENT_TOKEN")
+        agent_id = server.agent_id or existing_env.get("PROXYPANEL_AGENT_ID")
+        if not agent_id:
+            agent_id = ssh_exec(
+                ssh,
+                "cat /var/lib/proxy-panel/agent/.agent_id 2>/dev/null || true",
+                echo=False,
+            ).strip() or None
+        agent_hub_url = (
+            server.hub_url
+            or existing_env.get("PROXYPANEL_HUB_URL")
+            or "http://127.0.0.1:%s" % server.grpc_listen.rsplit(":", 1)[-1]
+        )
+        if agent_token:
+            local_agent_env = write_agent_env(Server(
+                name=server.name, host=server.host, mode="hub",
+                user=server.user, port=server.port, key_path=server.key_path,
+                password=server.password, host_key_policy=server.host_key_policy,
+                hub_url=agent_hub_url,
+                agent_token=agent_token,
+                agent_id=agent_id,
+                domain=server.domain,
+                extra_env=server.extra_env,
+            ))
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+                f.write(local_agent_env)
+                local_agent_env_file = f.name
+            upload_with_retries(
+                server.host, server.user, server.port, server.key_path,
+                server.password, server.host_key_policy,
+                local_agent_env_file, REMOTE_ETC + "/agent.env",
+            )
+            try:
+                os.remove(local_agent_env_file)
+            except OSError:
+                pass
+        else:
+            print("Warning: could not determine local agent token; leaving agent.env unchanged")
+
         ssh_exec(ssh, "systemctl start proxy-panel-hub", timeout=60)
         time.sleep(3)
         ssh_exec(ssh, "systemctl start proxy-panel-agent", timeout=60)
@@ -877,6 +930,50 @@ def run_action(server: Server, action: str) -> Optional[Dict[str, str]]:
         raise ValueError("Unknown action: %s" % action)
     finally:
         ssh.close()
+
+
+def deploy_all(servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, str]]:
+    """Deploy all servers sequentially and collect generated secrets."""
+    results: Dict[str, Dict[str, str]] = {}
+    hubs = [s for s in servers if s.mode == "hub"]
+    agents = [s for s in servers if s.mode == "agent"]
+
+    # Provision remote agents that are missing credentials.
+    resolve_agent_credentials(agents, hubs)
+
+    for server in servers:
+        result = run_action(server, "deploy")
+        if result:
+            results[server.name] = result
+
+    if secrets_out:
+        lines = []
+        for name, data in results.items():
+            for key, value in data.items():
+                lines.append("%s_%s=%s" % (name.upper().replace(" ", "_").replace("-", "_"), key.upper(), value))
+        Path(secrets_out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("\nSecrets written to %s" % secrets_out)
+
+    return results
+
+
+def update_all(servers: List[Server]) -> Dict[str, Dict[str, str]]:
+    """Update all servers sequentially."""
+    for server in servers:
+        run_action(server, "update")
+    return {}
+
+
+def print_summary(servers: List[Server], results: Dict[str, Dict[str, str]], secrets_out: str):
+    """Print a human-readable deployment summary."""
+    print("\n=== Summary ===")
+    for server in servers:
+        print("- %s (%s): %s" % (server.name, server.host, server.mode))
+        if server.name in results:
+            for key, value in results[server.name].items():
+                if key in ("admin_password", "agent_token") and not secrets_out:
+                    value = "<set>"
+                print("    %s: %s" % (key, value))
 
 
 # ---------------------------------------------------------------------------
