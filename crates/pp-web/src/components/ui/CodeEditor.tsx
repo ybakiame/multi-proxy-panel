@@ -3,6 +3,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { EditorView } from "@codemirror/view";
 
 export type CodeLanguage = "json" | "yaml" | "text";
 
@@ -22,17 +23,18 @@ export function CodeEditor({
   language = "text",
   label,
   placeholder,
-  height = "240px",
+  height = "320px",
   className = "",
 }: CodeEditorProps) {
   const extensions = useMemo(() => {
+    const base = [EditorView.lineWrapping];
     switch (language) {
       case "json":
-        return [json()];
+        return [...base, json()];
       case "yaml":
-        return [yaml()];
+        return [...base, yaml()];
       default:
-        return [];
+        return base;
     }
   }, [language]);
 
@@ -46,12 +48,16 @@ export function CodeEditor({
         theme={oneDark}
         placeholder={placeholder}
         onChange={onChange}
-        className="rounded-md border border-divider overflow-hidden text-sm"
+        className="rounded-md border border-divider overflow-hidden text-sm font-mono"
         basicSetup={{
           lineNumbers: true,
           highlightActiveLineGutter: true,
           highlightActiveLine: true,
           foldGutter: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: true,
+          tabSize: 2,
         }}
       />
     </div>

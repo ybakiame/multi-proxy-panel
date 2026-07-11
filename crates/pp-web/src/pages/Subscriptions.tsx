@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Badge, Modal, Spinner, Table, Tabs } from "@heroui/react";
+import * as yaml from "js-yaml";
 import {
   ConfirmDialog,
   CopyableSecret,
@@ -47,6 +48,99 @@ function toDatetimeLocalValue(iso: string | null) {
 
 function formatJson(obj: Record<string, unknown> | null) {
   return JSON.stringify(obj || {}, null, 2);
+}
+
+function isJsonLike(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
+}
+
+function defaultTemplate(format: string) {
+  switch (format) {
+    case "clash":
+      return `port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+# Auto-generated proxy list
+proxies:
+  <PROXY_REPLACE>
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      <NODE_REPLACE>
+rules:
+  - MATCH,Proxy
+`;
+    case "sing-box":
+      return JSON.stringify(
+        {
+          log: { level: "info" },
+          dns: { servers: [{ tag: "local", address: "local" }] },
+          inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }],
+          outbounds: ["<OUTBOUND_REPLACE>", { type: "direct", tag: "direct" }],
+          route: { final: "Proxy" },
+        },
+        null,
+        2,
+      );
+    default:
+      return "";
+  }
+}
+
+function normalizeClashTemplate(value: string): string {
+  if (!value) return value;
+  if (!isJsonLike(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    const stringified = JSON.stringify(parsed);
+    const hasProxyPlaceholder = stringified.includes("<PROXY_REPLACE>");
+    const hasNodePlaceholder = stringified.includes("<NODE_REPLACE>");
+    if (hasProxyPlaceholder || hasNodePlaceholder) {
+      return yaml.dump(parsed, { indent: 2, lineWidth: -1 });
+    }
+    // Old JSON template without placeholders: merge into default YAML template
+    let result = defaultTemplate("clash");
+    if (Array.isArray(parsed.proxies) && parsed.proxies.length > 0) {
+      const proxiesYaml = yaml.dump(parsed.proxies, { indent: 2, lineWidth: -1 });
+      result = result.replace("  <PROXY_REPLACE>\n", proxiesYaml);
+    }
+    if (Array.isArray(parsed["proxy-groups"]) && parsed["proxy-groups"].length > 0) {
+      const groupNames = parsed["proxy-groups"]
+        .map((g: { name?: string }) => g.name)
+        .filter(Boolean);
+      const namesYaml = yaml.dump(groupNames, { indent: 2, lineWidth: -1 });
+      result = result.replace("      <NODE_REPLACE>\n", namesYaml);
+    }
+    return result;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeTemplateForFormat(value: string, format: string, isCreate: boolean): string {
+  if (!value) {
+    return isCreate ? defaultTemplate(format) : "";
+  }
+  if (format === "clash") {
+    return normalizeClashTemplate(value);
+  }
+  if (["sing-box", "json", "v2rayng"].includes(format)) {
+    // If the current content is YAML, try to convert to JSON
+    if (!isJsonLike(value)) {
+      try {
+        const parsed = yaml.load(value);
+        return JSON.stringify(parsed, null, 2);
+      } catch {
+        return value;
+      }
+    }
+  }
+  return value;
 }
 
 export function Subscriptions() {
@@ -200,10 +294,14 @@ export function Subscriptions() {
 
   const openEditTemplate = (tmpl: SubscriptionTemplate) => {
     setEditTemplate(tmpl);
+    let baseConfig = tmpl.base_config || "";
+    if (tmpl.format === "clash") {
+      baseConfig = normalizeClashTemplate(baseConfig);
+    }
     setTemplateForm({
       name: tmpl.name,
       format: tmpl.format,
-      base_config: tmpl.base_config || "",
+      base_config: baseConfig,
       filter_rules: formatJson(tmpl.filter_rules),
       custom_headers: formatJson(tmpl.custom_headers),
     });
@@ -220,43 +318,6 @@ export function Subscriptions() {
       customHeaders = JSON.parse(templateForm.custom_headers);
     } catch {}
     return { filterRules, customHeaders };
-  };
-
-  const defaultTemplate = (format: string) => {
-    switch (format) {
-      case "clash":
-        return `port: 7890
-socks-port: 7891
-allow-lan: false
-mode: rule
-log-level: info
-external-controller: 127.0.0.1:9090
-# Auto-generated proxy list
-proxies:
-  <PROXY_REPLACE>
-proxy-groups:
-  - name: Proxy
-    type: select
-    proxies:
-      <NODE_REPLACE>
-rules:
-  - MATCH,Proxy
-`;
-      case "sing-box":
-        return JSON.stringify(
-          {
-            log: { level: "info" },
-            dns: { servers: [{ tag: "local", address: "local" }] },
-            inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }],
-            outbounds: ["<OUTBOUND_REPLACE>", { type: "direct", tag: "direct" }],
-            route: { final: "Proxy" },
-          },
-          null,
-          2,
-        );
-      default:
-        return "";
-    }
   };
 
   const templateLanguage = (format: string): "yaml" | "json" | "text" => {
@@ -635,10 +696,11 @@ rules:
                   setTemplateForm({
                     ...templateForm,
                     format,
-                    base_config:
-                      templateForm.base_config || editTemplate
-                        ? templateForm.base_config
-                        : defaultTemplate(format),
+                    base_config: normalizeTemplateForFormat(
+                      templateForm.base_config,
+                      format,
+                      !editTemplate,
+                    ),
                   });
                 }}
                 options={FORMAT_OPTIONS.map((format) => ({
@@ -651,7 +713,6 @@ rules:
                 value={templateForm.base_config}
                 onChange={(value) => setTemplateForm({ ...templateForm, base_config: value })}
                 language={templateLanguage(templateForm.format)}
-                height="260px"
               />
               <FormTextArea
                 label={t("subscriptions.filterRules")}
