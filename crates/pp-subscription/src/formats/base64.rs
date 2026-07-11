@@ -24,10 +24,7 @@ pub fn generate(nodes: &[ProxyNode]) -> PanelResult<String> {
 }
 
 fn generate_vmess_link(node: &ProxyNode) -> PanelResult<String> {
-    let id = node
-        .settings
-        .get("id")
-        .and_then(|v| v.as_str())
+    let id = pp_common::settings_helper::client_uuid(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing vmess id".into()))?;
 
     let network = node
@@ -98,18 +95,7 @@ fn generate_vmess_link(node: &ProxyNode) -> PanelResult<String> {
 }
 
 fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
-    let id = node
-        .settings
-        .get("id")
-        .and_then(|v| v.as_str())
-        .or_else(|| {
-            node.settings
-                .get("clients")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|c| c.get("id"))
-                .and_then(|v| v.as_str())
-        })
+    let id = pp_common::settings_helper::client_uuid(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing vless id".into()))?;
 
     let flow = node
@@ -189,36 +175,10 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
                     "missing REALITY public_key".into(),
                 ));
             }
-            let server_name = node
-                .settings
-                .get("server_names")
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    node.settings
-                        .get("reality_server_names")
-                        .and_then(|v| v.as_str())
-                })
-                .unwrap_or("")
-                .split(',')
-                .next()
-                .map(|s| s.trim())
-                .unwrap_or("")
-                .to_string();
-            let short_id = node
-                .settings
-                .get("short_id")
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    node.settings
-                        .get("reality_short_id")
-                        .and_then(|v| v.as_str())
-                })
-                .unwrap_or("")
-                .split(',')
-                .next()
-                .map(|s| s.trim())
-                .unwrap_or("")
-                .to_string();
+            let server_name =
+                pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
+            let short_id =
+                pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
             let spider_x = node
                 .settings
                 .get("spider_x")
@@ -265,18 +225,7 @@ fn generate_vless_link(node: &ProxyNode) -> PanelResult<String> {
 }
 
 fn generate_trojan_link(node: &ProxyNode) -> PanelResult<String> {
-    let password = node
-        .settings
-        .get("password")
-        .and_then(|v| v.as_str())
-        .or_else(|| {
-            node.settings
-                .get("clients")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|c| c.get("password"))
-                .and_then(|v| v.as_str())
-        })
+    let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
 
     let network = node
@@ -363,11 +312,12 @@ mod tests {
             server: "1.2.3.4".into(),
             port: 443,
             settings: json!({
-                "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4",
+                "id": "",
+                "clients": [{"id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4"}],
                 "flow": "xtls-rprx-vision",
                 "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-                "server_names": "example.com,www.example.com",
-                "short_id": "0123456789abcdef",
+                "server_names": ["example.com", "www.example.com"],
+                "short_id": ["0123456789abcdef"],
                 "fingerprint": "chrome"
             }),
             tls: None,

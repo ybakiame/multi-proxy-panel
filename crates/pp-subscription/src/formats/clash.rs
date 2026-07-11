@@ -92,18 +92,7 @@ fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
 }
 
 fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let uuid = node
-        .settings
-        .get("id")
-        .and_then(|v| v.as_str())
-        .or_else(|| {
-            node.settings
-                .get("clients")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|c| c.get("id"))
-                .and_then(|v| v.as_str())
-        })
+    let uuid = pp_common::settings_helper::client_uuid(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing vless uuid".into()))?;
 
     let flow = node
@@ -127,6 +116,7 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         "port": node.port,
         "uuid": uuid,
         "network": network,
+        "udp": true,
     });
 
     if !flow.is_empty() {
@@ -152,36 +142,9 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
             .get("public_key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
-        let server_name = node
-            .settings
-            .get("server_names")
-            .and_then(|v| v.as_str())
-            .or_else(|| {
-                node.settings
-                    .get("reality_server_names")
-                    .and_then(|v| v.as_str())
-            })
-            .unwrap_or("")
-            .split(',')
-            .next()
-            .map(|s| s.trim())
-            .unwrap_or("")
-            .to_string();
-        let short_id = node
-            .settings
-            .get("short_id")
-            .and_then(|v| v.as_str())
-            .or_else(|| {
-                node.settings
-                    .get("reality_short_id")
-                    .and_then(|v| v.as_str())
-            })
-            .unwrap_or("")
-            .split(',')
-            .next()
-            .map(|s| s.trim())
-            .unwrap_or("")
-            .to_string();
+        let server_name =
+            pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
+        let short_id = pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
         let spider_x = node
             .settings
             .get("spider_x")
@@ -218,10 +181,7 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
 }
 
 fn build_vmess_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let id = node
-        .settings
-        .get("id")
-        .and_then(|v| v.as_str())
+    let id = pp_common::settings_helper::client_uuid(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing vmess id".into()))?;
     Ok(serde_json::json!({
         "name": node.name,
@@ -235,10 +195,7 @@ fn build_vmess_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
 }
 
 fn build_trojan_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let password = node
-        .settings
-        .get("password")
-        .and_then(|v| v.as_str())
+    let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
     let mut proxy = serde_json::json!({
         "name": node.name,
@@ -262,10 +219,7 @@ fn build_shadowsocks_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         .get("method")
         .and_then(|v| v.as_str())
         .unwrap_or("2022-blake3-aes-128-gcm");
-    let password = node
-        .settings
-        .get("password")
-        .and_then(|v| v.as_str())
+    let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing shadowsocks password".into()))?;
     Ok(serde_json::json!({
         "name": node.name,
@@ -278,18 +232,7 @@ fn build_shadowsocks_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
 }
 
 fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let password = node
-        .settings
-        .get("password")
-        .and_then(|v| v.as_str())
-        .or_else(|| {
-            node.settings
-                .get("clients")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|c| c.get("password"))
-                .and_then(|v| v.as_str())
-        })
+    let password = pp_common::settings_helper::client_password(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing hysteria2 password".into()))?;
 
     let server_name = node

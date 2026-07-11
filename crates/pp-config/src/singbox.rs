@@ -322,27 +322,28 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
         (dest.to_string(), 443)
     };
 
-    let server_names_str = settings
+    let _server_names_str = settings
         .get("reality_server_names")
-        .and_then(|v| v.as_str())
-        .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let server_name = server_names_str
-        .split(',')
-        .next()
-        .map(|s| s.trim())
-        .unwrap_or(&server);
+        .or_else(|| settings.get("server_names"));
 
-    let short_id_str = settings
-        .get("reality_short_id")
-        .and_then(|v| v.as_str())
-        .or_else(|| settings.get("short_id").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let short_ids: Vec<String> = short_id_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let server_name =
+        pp_common::settings_helper::first_server_name(settings).unwrap_or_else(|| server.clone());
+
+    let short_ids: Vec<String> = pp_common::settings_helper::first_short_id(settings)
+        .map(|id| vec![id])
+        .unwrap_or_else(|| {
+            settings
+                .get("reality_short_id")
+                .or_else(|| settings.get("short_id"))
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
 
     let tls_obj = json!({
         "enabled": true,
