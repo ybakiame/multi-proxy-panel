@@ -38,21 +38,11 @@
 #   - Tokens can be stored in a password manager / vault before deployment.
 #   - The inventory file never needs to call back to the Hub to fetch secrets.
 #
-# NEW: deploy-prod.py can also provision remote agents automatically after the
-# Hub is deployed. If agent.token and agent.agent_id are omitted, the script
-# will SSH into the corresponding Hub, run provision-node, and use the returned
-# credentials. In that case you only need to provide agent.hub_url (and optional
-# agent.hub if the hub domain is not in the same inventory).
-
-# ---------------------------------------------------------------------------
-# Defaults applied to every server unless overridden.
-# ---------------------------------------------------------------------------
-defaults:
-  user: root
-  port: 22
-  ssh_key: ~/.ssh/id_rsa
-  # ssh_password: ${SSH_PASSWORD_FALLBACK:-}
-  host_key_policy: strict
+# deploy-prod.py can also provision remote agents automatically after the Hub is
+# deployed. If agent.token and agent.agent_id are omitted, the script will SSH
+# into the corresponding Hub, run provision-node, and use the returned credentials.
+# In that case you only need to provide agent.hub_url (and optional agent.hub if
+# the hub domain is not in the same inventory).
 
 # ---------------------------------------------------------------------------
 # Hub-specific defaults. Values here can be overridden per-server.
@@ -69,11 +59,17 @@ hub:
 
 # ---------------------------------------------------------------------------
 # Server list. mode must be "hub" or "agent".
+# SSH credentials are defined per-server so each host can use its own key.
 # ---------------------------------------------------------------------------
 servers:
   - name: test3
     host: 64.188.27.110
     mode: hub
+    user: root
+    port: 22
+    ssh_key: ~/.ssh/id_rsa
+    # ssh_password: ${TEST3_SSH_PASSWORD:-}
+    host_key_policy: strict
     domain: test3-panel.ybakiame.net
     # jwt_secret and admin_password are optional; omit them to let the script
     # auto-generate and print/save them on first deploy.
@@ -97,6 +93,11 @@ servers:
   - name: test2
     host: 192.3.150.233
     mode: agent
+    user: root
+    port: 22
+    ssh_key: ~/.ssh/id_rsa_test2
+    # ssh_password: ${TEST2_SSH_PASSWORD:-}
+    host_key_policy: strict
     # domain is used when generating subscriptions. If omitted, the agent's IP
     # address (host) is used instead. The domain is reported by the Agent during
     # registration and stored on the Node record in the Hub database.
@@ -107,7 +108,10 @@ servers:
       # are omitted. To pin credentials, pre-generate them with:
       #   proxy-panel provision-node --name test2 --token "$TEST2_AGENT_TOKEN"
       # and uncomment the two lines below.
-      hub_url: "http://test3-panel.ybakiame.net:50052"
-      # hub: test3          # optional: only needed if hub_url cannot be matched to a hub in this inventory
+      hub: test3
+      hub_url: "https://test3-panel.ybakiame.net:443"
       # token: ${TEST2_AGENT_TOKEN}
       # agent_id: ${TEST2_AGENT_ID}
+      # tls_domain is the domain the Agent should verify on the Hub's TLS
+      # certificate. It is independent from the agent's own domain above.
+      tls_domain: "test3-panel.ybakiame.net"
