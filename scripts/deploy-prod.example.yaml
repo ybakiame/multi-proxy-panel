@@ -97,6 +97,10 @@ servers:
   - name: test2
     host: 192.3.150.233
     mode: agent
+    # domain is used when generating subscriptions. If omitted, the agent's IP
+    # address (host) is used instead. The domain is reported by the Agent during
+    # registration and stored on the Node record in the Hub database.
+    domain: test2-panel.ybakiame.net
     agent:
       # Remote agents connect to the Hub's public gRPC endpoint.
       # The script will auto-provision this agent on the Hub if token/agent_id

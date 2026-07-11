@@ -34,6 +34,9 @@ struct Args {
 
     #[arg(long, env = "PROXYPANEL_AGENT_TLS_DOMAIN")]
     tls_domain: Option<String>,
+
+    #[arg(long, env = "PROXYPANEL_AGENT_DOMAIN")]
+    domain: Option<String>,
 }
 
 #[tokio::main]
@@ -72,7 +75,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let tls_config = build_tls_config(args.tls_ca, args.tls_domain).await?;
-    let mut client = AgentStreamClient::new(agent_id, token, hostname, tls_config);
+    let mut client = AgentStreamClient::new(
+        agent_id,
+        token,
+        hostname,
+        args.domain.unwrap_or_default(),
+        tls_config,
+    );
 
     tokio::select! {
         res = client.run(args.hub_url, supervisor) => {

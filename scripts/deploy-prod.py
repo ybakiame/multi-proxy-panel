@@ -388,6 +388,7 @@ def build_servers(inventory: dict) -> List[Server]:
             agent_token=agent_cfg.get("token") if agent_cfg else merged.get("agent_token"),
             agent_id=agent_cfg.get("agent_id") if agent_cfg else merged.get("agent_id"),
             hostname=merged.get("hostname") or (agent_cfg.get("hostname") if agent_cfg else None),
+            domain=merged.get("domain") or (agent_cfg.get("domain") if agent_cfg else None),
             db_url=merged.get("db_url", "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"),
             grpc_listen=merged.get("grpc_listen", "0.0.0.0:50052"),
             listen=merged.get("listen", "127.0.0.1:8081"),
@@ -499,23 +500,18 @@ def write_agent_env(server: Server) -> str:
         "PROXYPANEL_HUB_URL=%s" % server.hub_url,
         "PROXYPANEL_AGENT_TOKEN=%s" % server.agent_token,
     ]
+    if server.agent_id:
+        env.append("PROXYPANEL_AGENT_ID=%s" % server.agent_id)
+    if server.domain:
+        env.append("PROXYPANEL_AGENT_DOMAIN=%s" % server.domain)
+    if server.hostname:
+        env.append("PROXYPANEL_AGENT_NAME=%s" % server.hostname)
     for k, v in server.extra_env.items():
         env.append("%s=%s" % (k, v))
     return "\n".join(env) + "\n"
 
 
-def write_agent_env(server: Server) -> str:
-    env = [
-        "RUST_LOG=proxy_panel_agent=info",
-        "PROXYPANEL_HUB_URL=%s" % server.hub_url,
-        "PROXYPANEL_AGENT_TOKEN=%s" % server.agent_token,
-    ]
-    for k, v in server.extra_env.items():
-        env.append("%s=%s" % (k, v))
-    return "\n".join(env) + "\n"
-
-
-def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
+# Removed duplicate write_agent_env definition.def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
     """Find the Hub server that an agent should connect to."""
     if agent.hub_name:
         for hub in hubs:
@@ -545,7 +541,8 @@ def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
     )
 
 
-def _provision_node_on_hub(hub: Server, name: str, hostname: str, address: str) -> Tuple[str, str]:
+def _provision_node_on_hub(hub: Server, name: str, hostname: str, address: str,
+                             domain: Optional[str] = None) -> Tuple[str, str]:
     """SSH into a hub and provision a node, returning (node_id, token)."""
     ssh = connect_ssh(hub.host, hub.user, hub.port, hub.key_path,
                       hub.password, hub.host_key_policy)
@@ -554,6 +551,8 @@ def _provision_node_on_hub(hub: Server, name: str, hostname: str, address: str) 
             "%s/proxy-panel provision-node --database-url '%s' --name '%s' --hostname '%s' --address '%s'"
             % (REMOTE_BIN, hub.db_url, name, hostname, address)
         )
+        if domain:
+            cmd += " --domain '%s'" % domain
         out = ssh_exec(ssh, cmd, timeout=60)
     finally:
         ssh.close()
@@ -583,6 +582,7 @@ def resolve_agent_credentials(agents: List[Server], hubs: List[Server]) -> Dict[
             name=agent.name,
             hostname=agent.hostname or agent.host,
             address=agent.host,
+            domain=agent.domain,
         )
         agent.agent_token = token
         agent.agent_id = node_id
@@ -695,6 +695,7 @@ systemctl is-active proxy-panel-hub proxy-panel-agent
             name=server.name,
             hostname=server.host,
             address="127.0.0.1",
+            domain=server.domain,
         )
         agent_env = write_agent_env(Server(
             name=server.name, host=server.host, mode="hub",
@@ -702,6 +703,8 @@ systemctl is-active proxy-panel-hub proxy-panel-agent
             password=server.password, host_key_policy=server.host_key_policy,
             hub_url="http://127.0.0.1:%s" % server.grpc_listen.rsplit(":", 1)[-1],
             agent_token=token,
+            agent_id=node_id,
+            domain=server.domain,
             extra_env=server.extra_env,
         ))
         with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
@@ -710,11 +713,6 @@ systemctl is-active proxy-panel-hub proxy-panel-agent
         upload_with_retries(server.host, server.user, server.port, server.key_path,
                             server.password, server.host_key_policy,
                             agent_env_local, REMOTE_ETC + "/agent.env")
-        # Update service file to include agent-id for local agent
-        ssh_exec(ssh, (
-            "sed -i 's|--hub-url ${PROXYPANEL_HUB_URL}|--agent-id %s --hub-url ${PROXYPANEL_HUB_URL}|' "
-            "/etc/systemd/system/proxy-panel-agent.service"
-        ) % node_id)
         ssh_exec(ssh, "systemctl daemon-reload && systemctl restart proxy-panel-agent", timeout=60)
     else:
         node_id = server.agent_id

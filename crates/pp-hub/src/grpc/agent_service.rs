@@ -195,6 +195,9 @@ async fn handle_register(
         if let Some(addr) = &remote_addr {
             active.address = Set(addr.clone());
         }
+        if !req.domain.is_empty() {
+            active.domain = Set(Some(req.domain.clone()));
+        }
         active.last_seen_at = Set(Some(chrono::Utc::now().into()));
         active.updated_at = Set(chrono::Utc::now().into());
         active
@@ -211,6 +214,11 @@ async fn handle_register(
             name: Set(req.hostname.clone()),
             hostname: Set(req.hostname.clone()),
             address: Set(remote_addr.clone().unwrap_or_default()),
+            domain: Set(if req.domain.is_empty() {
+                None
+            } else {
+                Some(req.domain.clone())
+            }),
             token_hash: Set(token_hash),
             cores_available: Set(serde_json::json!(req.capabilities)),
             labels: Set(Some(serde_json::json!(

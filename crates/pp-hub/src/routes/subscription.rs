@@ -564,15 +564,27 @@ async fn build_proxy_nodes(
             let (effective_server, effective_port) = if let Some(ref host) = host_override {
                 (host.address.clone(), host.port as u16)
             } else if let Some(parent_id) = node.parent_id {
-                // Relay/child node: use parent node's address with this node's port
+                // Relay/child node: use parent node's domain/address with this node's port
                 let parent = node::Entity::find_by_id(parent_id).one(db).await?;
                 if let Some(parent) = parent {
-                    (parent.address.clone(), cfg.listen_port as u16)
+                    (
+                        parent
+                            .domain
+                            .clone()
+                            .unwrap_or_else(|| parent.address.clone()),
+                        cfg.listen_port as u16,
+                    )
                 } else {
-                    (node.address.clone(), cfg.listen_port as u16)
+                    (
+                        node.domain.clone().unwrap_or_else(|| node.address.clone()),
+                        cfg.listen_port as u16,
+                    )
                 }
             } else {
-                (node.address.clone(), cfg.listen_port as u16)
+                (
+                    node.domain.clone().unwrap_or_else(|| node.address.clone()),
+                    cfg.listen_port as u16,
+                )
             };
 
             // Apply host overrides to settings (sni, host, path)
@@ -674,7 +686,10 @@ fn substitute_variables(
         .replace("{STATUS}", &client.status)
         .replace("{PROTOCOL}", &cfg.protocol_type)
         .replace("{TRANSPORT}", &transport_str)
-        .replace("{SERVER_IP}", &node.address)
+        .replace(
+            "{SERVER_IP}",
+            &node.domain.clone().unwrap_or_else(|| node.address.clone()),
+        )
 }
 
 /// Format bytes as human-readable string (e.g. "1.5 GB").
@@ -924,6 +939,7 @@ mod tests {
             name: "us-node".to_string(),
             hostname: "us-server".to_string(),
             address: "1.2.3.4".to_string(),
+            domain: None,
             token_hash: "hash".to_string(),
             cores_available: serde_json::json!(["xray"]),
             labels: None,

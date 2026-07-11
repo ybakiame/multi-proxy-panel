@@ -17,6 +17,7 @@ fn node_to_json(n: node::Model) -> Value {
         "name": n.name,
         "hostname": n.hostname,
         "address": n.address,
+        "domain": n.domain,
         "cores_available": n.cores_available,
         "labels": n.labels.unwrap_or(json!({})),
         "usage_coefficient": n.usage_coefficient,
@@ -74,6 +75,7 @@ pub struct CreateNodePayload {
     pub name: String,
     pub hostname: Option<String>,
     pub address: Option<String>,
+    pub domain: Option<String>,
     pub parent_id: Option<Uuid>,
 }
 
@@ -98,6 +100,7 @@ pub async fn create_node(
         name: Set(payload.name),
         hostname: Set(payload.hostname.unwrap_or_default()),
         address: Set(payload.address.unwrap_or_default()),
+        domain: Set(payload.domain),
         token_hash: Set(token_hash),
         cores_available: Set(json!([])),
         labels: Set(None),
@@ -126,6 +129,7 @@ pub struct UpdateNodePayload {
     pub name: Option<String>,
     pub hostname: Option<String>,
     pub address: Option<String>,
+    pub domain: Option<String>,
     pub usage_coefficient: Option<f32>,
     pub labels: Option<Value>,
     pub parent_id: Option<Option<Uuid>>,
@@ -158,6 +162,9 @@ pub async fn update_node(
     }
     if let Some(address) = payload.address {
         active.address = Set(address);
+    }
+    if payload.domain.is_some() {
+        active.domain = Set(payload.domain);
     }
     if let Some(coefficient) = payload.usage_coefficient {
         active.usage_coefficient = Set(coefficient);

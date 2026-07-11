@@ -8,6 +8,7 @@ pub struct Model {
     pub name: String,
     pub hostname: String,
     pub address: String,
+    pub domain: Option<String>,
     pub token_hash: String,
     pub cores_available: Json,
     pub labels: Option<Json>,

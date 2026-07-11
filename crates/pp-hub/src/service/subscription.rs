@@ -68,7 +68,7 @@ pub async fn build_proxy_nodes(
             nodes.push(ProxyNode {
                 name: format!("{}-{}", node.name, cfg.name),
                 protocol,
-                server: node.address.clone(),
+                server: node.domain.clone().unwrap_or_else(|| node.address.clone()),
                 port: cfg.listen_port as u16,
                 settings: cfg.settings.clone(),
                 tls: cfg.tls_settings.clone(),

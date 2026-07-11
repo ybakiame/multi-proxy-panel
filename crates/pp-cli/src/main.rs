@@ -43,6 +43,8 @@ enum Commands {
         hostname: Option<String>,
         #[arg(long)]
         address: Option<String>,
+        #[arg(long)]
+        domain: Option<String>,
         /// Pre-generated agent token (e.g. from `gen-token`).
         /// If omitted, a new token will be generated and printed.
         #[arg(long)]
@@ -119,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
             name,
             hostname,
             address,
+            domain,
             token,
         } => {
             let db = pp_db::init_db(&database_url).await?;
@@ -133,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
                 name: Set(name),
                 hostname: Set(hostname.unwrap_or_default()),
                 address: Set(address.unwrap_or_default()),
+                domain: Set(domain),
                 token_hash: Set(token_hash),
                 cores_available: Set(serde_json::json!([])),
                 labels: Set(None),

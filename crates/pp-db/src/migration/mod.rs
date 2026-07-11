@@ -23,6 +23,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250710_000001_remove_subscription_template_id::Migration),
             Box::new(m20250710_000002_add_protocol_config_core_version::Migration),
             Box::new(m20250710_000003_binding_level_groups::Migration),
+            Box::new(m20250711_000001_add_node_domain::Migration),
         ]
     }
 }
@@ -42,3 +43,4 @@ mod m20250703_000003_add_rate_to_usage_records;
 mod m20250710_000001_remove_subscription_template_id;
 mod m20250710_000002_add_protocol_config_core_version;
 mod m20250710_000003_binding_level_groups;
+mod m20250711_000001_add_node_domain;

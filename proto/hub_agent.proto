@@ -40,6 +40,7 @@ message RegisterRequest {
   string version = 4;
   repeated string capabilities = 5;
   map<string, string> labels = 6;
+  string domain = 7;
 }
 
 // 注册响应

@@ -13,6 +13,7 @@ pub struct AgentStreamClient {
     agent_id: String,
     token: String,
     hostname: String,
+    domain: String,
     tls_config: Option<tonic::transport::ClientTlsConfig>,
     #[allow(dead_code)]
     hub_tx: mpsc::Sender<AgentMessage>,
@@ -25,6 +26,7 @@ impl AgentStreamClient {
         agent_id: String,
         token: String,
         hostname: String,
+        domain: String,
         tls_config: Option<tonic::transport::ClientTlsConfig>,
     ) -> Self {
         let (hub_tx, _hub_rx) = mpsc::channel::<AgentMessage>(128);
@@ -32,6 +34,7 @@ impl AgentStreamClient {
             agent_id,
             token,
             hostname,
+            domain,
             tls_config,
             hub_tx,
             hub_rx: None,
@@ -84,6 +87,7 @@ impl AgentStreamClient {
                     agent_id: self.agent_id.clone(),
                     token: self.token.clone(),
                     hostname: self.hostname.clone(),
+                    domain: self.domain.clone(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     capabilities: vec!["xray".to_string(), "sing-box".to_string()],
                     labels: Default::default(),
