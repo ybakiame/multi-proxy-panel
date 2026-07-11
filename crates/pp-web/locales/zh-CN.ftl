@@ -183,6 +183,8 @@ traffic-total = 总计
 # Field sync / common extras
 common-enabled = 启用
 common-disabled = 禁用
+common-running = 运行中
+common-stopped = 已停止
 common-expiry = 过期时间
 common-last-accessed = 最后访问
 common-created-at = 创建时间
@@ -196,6 +198,7 @@ common-confirm-delete = 确认删除
 node-cores-available = 核心
 node-usage-coefficient = 用量系数
 node-labels = 标签
+node-core-status = 核心状态
 nodes-edit-title = 编辑节点
 nodes-token = Agent Token
 nodes-token-warning = 请立即复制该 Token — 它只会显示一次。

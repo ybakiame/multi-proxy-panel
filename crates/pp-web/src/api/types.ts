@@ -18,6 +18,15 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+export interface CoreStatus {
+  core_type: string;
+  version: string;
+  running: boolean;
+  uptime_sec: number;
+  last_error: string | null;
+  updated_at: string;
+}
+
 export interface Node {
   id: string;
   name: string;
@@ -32,6 +41,7 @@ export interface Node {
   created_at: string;
   updated_at: string;
   token?: string;
+  core_statuses?: CoreStatus[];
 }
 
 export interface ProtocolConfig {

@@ -15,7 +15,63 @@ use uuid::Uuid;
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
-fn node_to_json(n: node::Model) -> Value {
+fn core_status_from_log(log: &agent_log::Model) -> Option<Value> {
+    let fields = log.fields.as_ref()?;
+    let core_type = fields.get("core_type")?.as_str()?;
+    let version = fields.get("version")?.as_str()?;
+    let running = fields.get("running")?.as_bool()?;
+    let uptime_sec = fields.get("uptime_sec")?.as_u64()?;
+    let last_error = fields.get("last_error")?.as_str().unwrap_or("");
+    Some(json!({
+        "core_type": core_type,
+        "version": version,
+        "running": running,
+        "uptime_sec": uptime_sec,
+        "last_error": last_error,
+        "updated_at": log.created_at,
+    }))
+}
+
+async fn latest_core_statuses(
+    state: &AppState,
+    node_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<Value>>, ApiError> {
+    if node_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let logs = agent_log::Entity::find()
+        .filter(agent_log::Column::NodeId.is_in(node_ids.to_vec()))
+        .filter(agent_log::Column::Target.like("core-%"))
+        .order_by_desc(agent_log::Column::CreatedAt)
+        .all(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    let mut by_node: std::collections::HashMap<Uuid, std::collections::HashMap<String, Value>> =
+        std::collections::HashMap::new();
+    for log in logs {
+        if let Some(status) = core_status_from_log(&log) {
+            let core_type = status
+                .get("core_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            by_node
+                .entry(log.node_id)
+                .or_default()
+                .entry(core_type)
+                .or_insert(status);
+        }
+    }
+
+    Ok(by_node
+        .into_iter()
+        .map(|(node_id, statuses)| (node_id, statuses.into_values().collect()))
+        .collect())
+}
+
+fn node_to_json(n: node::Model, core_statuses: Vec<Value>) -> Value {
     json!({
         "id": n.id,
         "name": n.name,
@@ -28,6 +84,7 @@ fn node_to_json(n: node::Model) -> Value {
         "status": n.status,
         "parent_id": n.parent_id,
         "last_seen_at": n.last_seen_at,
+        "core_statuses": core_statuses,
     })
 }
 
@@ -57,7 +114,16 @@ pub async fn list_nodes(
             (items, total)
         };
 
-    let data: Vec<Value> = nodes.into_iter().map(node_to_json).collect();
+    let node_ids: Vec<Uuid> = nodes.iter().map(|n| n.id).collect();
+    let statuses = latest_core_statuses(&state, &node_ids).await?;
+
+    let data: Vec<Value> = nodes
+        .into_iter()
+        .map(|n| {
+            let s = statuses.get(&n.id).cloned().unwrap_or_default();
+            node_to_json(n, s)
+        })
+        .collect();
     Ok(PaginatedResponse::new(data, total))
 }
 
@@ -71,7 +137,10 @@ pub async fn get_node(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("node not found"))?;
 
-    Ok(ApiResponse::new(node_to_json(n)))
+    let statuses = latest_core_statuses(&state, &[id]).await?;
+    let core_statuses = statuses.get(&id).cloned().unwrap_or_default();
+
+    Ok(ApiResponse::new(node_to_json(n, core_statuses)))
 }
 
 #[derive(serde::Deserialize)]
@@ -183,7 +252,10 @@ pub async fn update_node(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    Ok(ApiResponse::new(node_to_json(updated)))
+    let statuses = latest_core_statuses(&state, &[updated.id]).await?;
+    let core_statuses = statuses.get(&updated.id).cloned().unwrap_or_default();
+
+    Ok(ApiResponse::new(node_to_json(updated, core_statuses)))
 }
 
 pub async fn delete_node(

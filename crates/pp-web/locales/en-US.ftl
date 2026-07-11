@@ -183,6 +183,8 @@ traffic-total = Total
 # Field sync / common extras
 common-enabled = Enabled
 common-disabled = Disabled
+common-running = Running
+common-stopped = Stopped
 common-expiry = Expires At
 common-last-accessed = Last Accessed
 common-created-at = Created At
@@ -196,6 +198,7 @@ common-confirm-delete = Confirm Delete
 node-cores-available = Cores
 node-usage-coefficient = Usage Coefficient
 node-labels = Labels
+node-core-status = Core Status
 nodes-edit-title = Edit Node
 nodes-token = Agent Token
 nodes-token-warning = Copy this token now — it will not be shown again.

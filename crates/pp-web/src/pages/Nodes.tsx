@@ -190,12 +190,13 @@ export function Nodes() {
                 <Table.Content>
                   <Table.Header>
                     <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
-                    <Table.Column>{t("nodes.hostname")}</Table.Column>
-                    <Table.Column>{t("nodes.address")}</Table.Column>
+                    <Table.Column>{t("node-hostname")}</Table.Column>
+                    <Table.Column>{t("node-address")}</Table.Column>
                     <Table.Column>{t("common.status")}</Table.Column>
+                    <Table.Column>{t("node-core-status")}</Table.Column>
                     <Table.Column>{t("nodes.parentId")}</Table.Column>
-                    <Table.Column>{t("nodes.cores")}</Table.Column>
-                    <Table.Column>{t("nodes.usageCoefficient")}</Table.Column>
+                    <Table.Column>{t("node-cores-available")}</Table.Column>
+                    <Table.Column>{t("node-usage-coefficient")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
                   </Table.Header>
                   <Table.Body
@@ -212,6 +213,24 @@ export function Nodes() {
                         <Table.Cell>{node.address}</Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={node.status} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="flex flex-wrap gap-1">
+                            {(node.core_statuses || []).map((cs) => (
+                              <span
+                                key={cs.core_type}
+                                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${
+                                  cs.running
+                                    ? "bg-success-100 text-success-700"
+                                    : "bg-danger-100 text-danger-700"
+                                }`}
+                              >
+                                {cs.core_type} {cs.version}
+                                {cs.running ? t("common-running") : t("common-stopped")}
+                              </span>
+                            ))}
+                            {(node.core_statuses || []).length === 0 && "-"}
+                          </div>
                         </Table.Cell>
                         <Table.Cell>
                           {node.parent_id ? `${t("nodes.childOf")} ${node.parent_id}` : "-"}
