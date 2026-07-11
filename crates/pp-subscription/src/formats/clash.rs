@@ -102,7 +102,8 @@ fn replace_yaml_placeholder(
     let indent_spaces = indent.len() - indent.trim_start().len();
     let indent_str = " ".repeat(indent_spaces);
 
-    // Remove leading '-' if present from the serialized YAML block and indent each line.
+    // The leading spaces of the template line provide indentation for the first
+    // line of the replacement block; subsequent lines are indented to match.
     let trimmed = replacement_yaml.trim_start_matches('\n').trim_end();
     let mut lines = trimmed.lines();
     let first = lines.next().unwrap_or("");
@@ -115,7 +116,7 @@ fn replace_yaml_placeholder(
         result.push_str(line);
     }
 
-    Ok(template.replacen(placeholder, &result, 1))
+    Ok(template.replace(placeholder, &result))
 }
 
 fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
@@ -418,5 +419,23 @@ proxy-groups:
         assert!(out.contains("type: vless"));
         assert!(out.contains("name: test-reality"));
         assert!(out.contains("- test-reality"));
+
+        // Must be valid YAML with proxies under the correct key.
+        let parsed: Value = serde_yaml::from_str(&out).unwrap();
+        let proxies = parsed["proxies"]
+            .as_array()
+            .expect("proxies should be a list");
+        assert_eq!(proxies.len(), 1);
+        assert_eq!(proxies[0]["name"], "test-reality");
+        let groups = parsed["proxy-groups"]
+            .as_array()
+            .expect("proxy-groups should be a list");
+        let proxy_names: Vec<_> = groups[0]["proxies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(proxy_names, vec!["test-reality"]);
     }
 }
