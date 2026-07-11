@@ -45,7 +45,7 @@ async fn collect_traffic_report() -> TrafficReport {
             users.extend(user_entries);
         }
         Err(e) => {
-            tracing::debug!("sing-box traffic collection failed: {}", e);
+            tracing::trace!("sing-box traffic collection failed: {}", e);
         }
     }
 
@@ -56,7 +56,7 @@ async fn collect_traffic_report() -> TrafficReport {
             users.extend(user_entries);
         }
         Err(e) => {
-            tracing::debug!("xray traffic collection failed: {}", e);
+            tracing::trace!("xray traffic collection failed: {}", e);
         }
     }
 
