@@ -320,8 +320,10 @@ class Server:
     host_key_policy: str
     domain: Optional[str] = None
     hub_url: Optional[str] = None
+    hub_name: Optional[str] = None
     agent_token: Optional[str] = None
     agent_id: Optional[str] = None
+    hostname: Optional[str] = None
     db_url: Optional[str] = None
     grpc_listen: str = "0.0.0.0:50052"
     listen: str = "127.0.0.1:8081"
@@ -382,8 +384,10 @@ def build_servers(inventory: dict) -> List[Server]:
             host_key_policy=merged.get("host_key_policy", "strict"),
             domain=merged.get("domain"),
             hub_url=agent_cfg.get("hub_url") if agent_cfg else merged.get("hub_url"),
+            hub_name=agent_cfg.get("hub") if agent_cfg else merged.get("agent_hub"),
             agent_token=agent_cfg.get("token") if agent_cfg else merged.get("agent_token"),
             agent_id=agent_cfg.get("agent_id") if agent_cfg else merged.get("agent_id"),
+            hostname=merged.get("hostname") or (agent_cfg.get("hostname") if agent_cfg else None),
             db_url=merged.get("db_url", "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"),
             grpc_listen=merged.get("grpc_listen", "0.0.0.0:50052"),
             listen=merged.get("listen", "127.0.0.1:8081"),
@@ -500,14 +504,60 @@ def write_agent_env(server: Server) -> str:
     return "\n".join(env) + "\n"
 
 
-def provision_agent(ssh, server: Server) -> Tuple[str, str]:
-    """Provision a new node on the hub and return (node_id, token)."""
-    print("\n=== Provisioning agent node on hub ===")
-    cmd = (
-        "%s/proxy-panel provision-node --database-url '%s' --name '%s' --hostname '%s' --address '%s'"
-        % (REMOTE_BIN, server.db_url, server.name, server.host, server.host)
+def write_agent_env(server: Server) -> str:
+    env = [
+        "RUST_LOG=proxy_panel_agent=info",
+        "PROXYPANEL_HUB_URL=%s" % server.hub_url,
+        "PROXYPANEL_AGENT_TOKEN=%s" % server.agent_token,
+    ]
+    for k, v in server.extra_env.items():
+        env.append("%s=%s" % (k, v))
+    return "\n".join(env) + "\n"
+
+
+def find_agent_hub(agent: Server, hubs: List[Server]) -> Server:
+    """Find the Hub server that an agent should connect to."""
+    if agent.hub_name:
+        for hub in hubs:
+            if hub.name == agent.hub_name:
+                return hub
+        raise ValueError(
+            "Agent %s references unknown hub '%s'" % (agent.name, agent.hub_name)
+        )
+
+    if not agent.hub_url:
+        raise ValueError("Agent %s has no hub_url and no hub_name" % agent.name)
+
+    from urllib.parse import urlparse
+    parsed = urlparse(agent.hub_url)
+    agent_host = parsed.hostname or ""
+    for hub in hubs:
+        if hub.domain and hub.domain == agent_host:
+            return hub
+        if hub.host == agent_host:
+            return hub
+
+    raise ValueError(
+        "Agent %s: cannot determine which Hub server manages it. "
+        "Set agent.hub to the hub server name, or make sure agent.hub_url "
+        "matches a hub domain/host in the same inventory."
+        % agent.name
     )
-    out = ssh_exec(ssh, cmd, timeout=60)
+
+
+def _provision_node_on_hub(hub: Server, name: str, hostname: str, address: str) -> Tuple[str, str]:
+    """SSH into a hub and provision a node, returning (node_id, token)."""
+    ssh = connect_ssh(hub.host, hub.user, hub.port, hub.key_path,
+                      hub.password, hub.host_key_policy)
+    try:
+        cmd = (
+            "%s/proxy-panel provision-node --database-url '%s' --name '%s' --hostname '%s' --address '%s'"
+            % (REMOTE_BIN, hub.db_url, name, hostname, address)
+        )
+        out = ssh_exec(ssh, cmd, timeout=60)
+    finally:
+        ssh.close()
+
     node_id = None
     token = None
     for line in out.splitlines():
@@ -516,8 +566,28 @@ def provision_agent(ssh, server: Server) -> Tuple[str, str]:
         elif line.startswith("token:"):
             token = line.split(":", 1)[1].strip()
     if not node_id or not token:
-        raise RuntimeError("Failed to provision agent: %s" % out)
+        raise RuntimeError("Failed to provision node '%s' on hub '%s': %s" % (name, hub.name, out))
     return node_id, token
+
+
+def resolve_agent_credentials(agents: List[Server], hubs: List[Server]) -> Dict[str, Tuple[str, str]]:
+    """For agents missing token/id, provision them on their hub and return credentials."""
+    credentials: Dict[str, Tuple[str, str]] = {}
+    for agent in agents:
+        if agent.agent_token and agent.agent_id:
+            continue
+        hub = find_agent_hub(agent, hubs)
+        print("\n=== Provisioning remote agent '%s' on hub '%s' ===" % (agent.name, hub.name))
+        node_id, token = _provision_node_on_hub(
+            hub,
+            name=agent.name,
+            hostname=agent.hostname or agent.host,
+            address=agent.host,
+        )
+        agent.agent_token = token
+        agent.agent_id = node_id
+        credentials[agent.name] = (node_id, token)
+    return credentials
 
 
 def deploy_hub(ssh, server: Server) -> Dict[str, str]:
@@ -620,7 +690,12 @@ systemctl is-active proxy-panel-hub proxy-panel-agent
 
     # Provision local agent if no explicit token/id provided
     if not server.agent_token or not server.agent_id:
-        node_id, token = provision_agent(ssh, server)
+        node_id, token = _provision_node_on_hub(
+            server,
+            name=server.name,
+            hostname=server.host,
+            address="127.0.0.1",
+        )
         agent_env = write_agent_env(Server(
             name=server.name, host=server.host, mode="hub",
             user=server.user, port=server.port, key_path=server.key_path,
@@ -816,7 +891,8 @@ def main():
     parser.add_argument("--action", "-a", required=True, choices=["deploy", "update"],
                         help="deploy = fresh install, update = replace binaries with rollback")
     parser.add_argument("--limit", "-l", default="", help="Comma-separated list of server names to target")
-    parser.add_argument("--parallel", "-p", action="store_true", help="Run operations in parallel (experimental)")
+    parser.add_argument("--parallel", "-p", action="store_true",
+                        help="Run operations in parallel (experimental, ignored for deploy)")
     parser.add_argument("--host-key-policy", default="strict", choices=["strict", "warn", "auto"],
                         help="SSH host key verification policy (default: strict)")
     parser.add_argument("--secrets-out", "-s", default="",
@@ -832,60 +908,16 @@ def main():
         if not servers:
             raise ValueError("No servers matched --limit=%s" % args.limit)
 
-    # Apply global host-key policy override unless per-server is set
     for s in servers:
         if s.host_key_policy == "strict" and args.host_key_policy != "strict":
             s.host_key_policy = args.host_key_policy
 
-    results = {}
-    if args.parallel:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        with ThreadPoolExecutor(max_workers=min(len(servers), 4)) as executor:
-            futures = {executor.submit(run_action, s, args.action): s for s in servers}
-            for future in as_completed(futures):
-                server = futures[future]
-                try:
-                    result = future.result()
-                    results[server.name] = result
-                    print("\n=== %s completed successfully ===" % server.name)
-                except Exception as e:
-                    print("\n=== %s FAILED: %s ===" % (server.name, e), file=sys.stderr)
+    if args.action == "deploy":
+        results = deploy_all(servers, args.secrets_out)
     else:
-        for server in servers:
-            try:
-                result = run_action(server, args.action)
-                results[server.name] = result
-                print("\n=== %s completed successfully ===" % server.name)
-            except Exception as e:
-                print("\n=== %s FAILED: %s ===" % (server.name, e), file=sys.stderr)
+        results = update_all(servers)
 
-    # Print summary
-    print("\n" + "=" * 60)
-    print("DEPLOYMENT SUMMARY")
-    print("=" * 60)
-    secrets_lines = ["# ProxyPanel generated secrets - store securely and delete after reading\n"]
-    for server in servers:
-        result = results.get(server.name)
-        if isinstance(result, dict):
-            print("\n%s (hub):" % server.name)
-            print("  Panel URL:      https://%s" % server.domain)
-            print("  Admin user:     %s" % server.admin_username)
-            if "admin_password" in result:
-                print("  Admin password: %s" % result["admin_password"])
-                secrets_lines.append("%s_ADMIN_PASSWORD=%s" % (server.name.upper(), result["admin_password"]))
-            if "agent_token" in result and "node_id" in result:
-                print("  Local agent token: %s" % result["agent_token"])
-                print("  Local agent id:    %s" % result["node_id"])
-                secrets_lines.append("%s_AGENT_TOKEN=%s" % (server.name.upper(), result["agent_token"]))
-                secrets_lines.append("%s_AGENT_ID=%s" % (server.name.upper(), result["node_id"]))
-        else:
-            print("\n%s (%s): OK" % (server.name, server.mode))
-
-    if args.secrets_out and secrets_lines:
-        with open(args.secrets_out, "w", encoding="utf-8") as f:
-            f.write("\n".join(secrets_lines) + "\n")
-        print("\nGenerated secrets written to: %s" % args.secrets_out)
-        print("IMPORTANT: This file contains plaintext secrets. Store it securely and delete it when no longer needed.")
+    print_summary(servers, results, args.secrets_out)
 
 
 if __name__ == "__main__":

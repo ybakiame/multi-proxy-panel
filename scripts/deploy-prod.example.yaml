@@ -37,6 +37,12 @@
 #     the Hub during agent deployment just to provision a token).
 #   - Tokens can be stored in a password manager / vault before deployment.
 #   - The inventory file never needs to call back to the Hub to fetch secrets.
+#
+# NEW: deploy-prod.py can also provision remote agents automatically after the
+# Hub is deployed. If agent.token and agent.agent_id are omitted, the script
+# will SSH into the corresponding Hub, run provision-node, and use the returned
+# credentials. In that case you only need to provide agent.hub_url (and optional
+# agent.hub if the hub domain is not in the same inventory).
 
 # ---------------------------------------------------------------------------
 # Defaults applied to every server unless overridden.
@@ -93,8 +99,11 @@ servers:
     mode: agent
     agent:
       # Remote agents connect to the Hub's public gRPC endpoint.
-      # Use a token that was pre-generated and registered with:
+      # The script will auto-provision this agent on the Hub if token/agent_id
+      # are omitted. To pin credentials, pre-generate them with:
       #   proxy-panel provision-node --name test2 --token "$TEST2_AGENT_TOKEN"
+      # and uncomment the two lines below.
       hub_url: "http://test3-panel.ybakiame.net:50052"
-      token: ${TEST2_AGENT_TOKEN}
-      agent_id: ${TEST2_AGENT_ID}
+      # hub: test3          # optional: only needed if hub_url cannot be matched to a hub in this inventory
+      # token: ${TEST2_AGENT_TOKEN}
+      # agent_id: ${TEST2_AGENT_ID}
