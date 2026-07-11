@@ -17,6 +17,13 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+/// Returns true if the address is a loopback address (IPv4 or IPv6).
+fn is_loopback_addr(addr: &str) -> bool {
+    addr.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
 /// gRPC service implementation for Hub-Agent communication.
 pub struct HubAgentService {
     state: Arc<AppState>,
@@ -194,7 +201,9 @@ async fn handle_register(
         active.status = Set("online".to_string());
         active.hostname = Set(req.hostname.clone());
         if let Some(addr) = &remote_addr {
-            active.address = Set(addr.clone());
+            if !is_loopback_addr(addr) {
+                active.address = Set(addr.clone());
+            }
         }
         if !req.domain.is_empty() {
             active.domain = Set(Some(req.domain.clone()));
@@ -214,7 +223,10 @@ async fn handle_register(
             id: Set(agent_id),
             name: Set(req.hostname.clone()),
             hostname: Set(req.hostname.clone()),
-            address: Set(remote_addr.clone().unwrap_or_default()),
+            address: Set(remote_addr
+                .clone()
+                .filter(|a| !is_loopback_addr(a))
+                .unwrap_or_default()),
             domain: Set(if req.domain.is_empty() {
                 None
             } else {

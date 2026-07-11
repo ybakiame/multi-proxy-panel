@@ -604,6 +604,51 @@ def resolve_agent_credentials(agents: List[Server], hubs: List[Server]) -> Dict[
     return credentials
 
 
+def update_node_metadata_on_hub(hub: Server, node_id: str, address: str,
+                                 domain: Optional[str] = None,
+                                 hostname: Optional[str] = None):
+    """Update a node's address/domain/hostname in the Hub database.
+
+    This is necessary because agents connecting through a reverse proxy
+    (e.g. Caddy) appear to come from 127.0.0.1, so the Hub cannot reliably
+    determine the public address from the gRPC connection alone.
+    """
+    ssh = connect_ssh(hub.host, hub.user, hub.port, hub.key_path,
+                      hub.password, hub.host_key_policy)
+    try:
+        set_fields = ["address = ?"]
+        params = [address]
+        if domain:
+            set_fields.append("domain = ?")
+            params.append(domain)
+        if hostname:
+            set_fields.append("hostname = ?")
+            params.append(hostname)
+
+        sql = "UPDATE nodes SET %s WHERE id = ?" % ", ".join(set_fields)
+        param_str = ", ".join(repr(p) for p in params)
+
+        script = """import sqlite3, uuid
+c = sqlite3.connect('%s')
+node_id = uuid.UUID('%s').bytes
+c.execute(""%s"", (%s, node_id))
+c.commit()
+print('updated node metadata, rows changed:', c.total_changes)
+""" % (hub.db_url, node_id, sql, param_str)
+
+        print("\n=== Updating node metadata on hub '%s' for agent '%s' ===" % (hub.name, node_id))
+        ssh_exec(ssh, "python3 -c '%s'" % script, timeout=60)
+    finally:
+        ssh.close()
+
+
+def is_local_hub_url(hub_url: Optional[str]) -> bool:
+    """Return True if the agent connects to a Hub on the same host."""
+    if not hub_url:
+        return False
+    return "127.0.0.1" in hub_url or "localhost" in hub_url or "::1" in hub_url
+
+
 def deploy_hub(ssh, server: Server) -> Dict[str, str]:
     server.require_hub()
     print("\n=== Deploying Hub on %s ===" % server.name)
@@ -988,6 +1033,23 @@ def deploy_all(servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, s
         if result:
             results[server.name] = result
 
+        # Update the node's public address on the Hub after deploying a remote agent.
+        if server.mode == "agent" and server.agent_id and not is_local_hub_url(server.hub_url):
+            try:
+                hub = find_agent_hub(server, hubs)
+                update_node_metadata_on_hub(
+                    hub,
+                    server.agent_id,
+                    server.host,
+                    domain=server.domain,
+                    hostname=server.hostname or server.name,
+                )
+            except Exception as e:
+                print(
+                    "Warning: could not update node metadata for %s on hub: %s" % (server.name, e),
+                    file=sys.stderr,
+                )
+
     if secrets_out:
         lines = []
         for name, data in results.items():
@@ -1001,8 +1063,26 @@ def deploy_all(servers: List[Server], secrets_out: str) -> Dict[str, Dict[str, s
 
 def update_all(servers: List[Server]) -> Dict[str, Dict[str, str]]:
     """Update all servers sequentially."""
+    hubs = [s for s in servers if s.mode == "hub"]
     for server in servers:
         run_action(server, "update")
+
+        # Refresh the node's public address on the Hub after updating a remote agent.
+        if server.mode == "agent" and server.agent_id and not is_local_hub_url(server.hub_url):
+            try:
+                hub = find_agent_hub(server, hubs)
+                update_node_metadata_on_hub(
+                    hub,
+                    server.agent_id,
+                    server.host,
+                    domain=server.domain,
+                    hostname=server.hostname or server.name,
+                )
+            except Exception as e:
+                print(
+                    "Warning: could not update node metadata for %s on hub: %s" % (server.name, e),
+                    file=sys.stderr,
+                )
     return {}
 
 
