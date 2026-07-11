@@ -171,8 +171,8 @@ async fn build_tls_config(
     ca_path: Option<PathBuf>,
     domain: Option<String>,
 ) -> anyhow::Result<Option<tonic::transport::ClientTlsConfig>> {
-    match ca_path {
-        Some(path) => {
+    match (ca_path, domain) {
+        (Some(path), domain) => {
             let ca = tokio::fs::read(&path).await?;
             let cert = tonic::transport::Certificate::from_pem(&ca);
             let mut tls = tonic::transport::ClientTlsConfig::new().ca_certificate(cert);
@@ -181,6 +181,13 @@ async fn build_tls_config(
             }
             Ok(Some(tls))
         }
-        None => Ok(None),
+        (None, Some(domain)) => {
+            // Use system root certificates when only a domain is provided.
+            let tls = tonic::transport::ClientTlsConfig::new()
+                .domain_name(domain)
+                .with_native_roots();
+            Ok(Some(tls))
+        }
+        (None, None) => Ok(None),
     }
 }

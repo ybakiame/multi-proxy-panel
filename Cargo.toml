@@ -33,7 +33,7 @@ tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "auth", "fs"] }
 
 # gRPC
-tonic = { version = "0.13", features = ["transport", "tls-ring"] }
+tonic = { version = "0.13", features = ["transport", "tls-ring", "tls-native-roots"] }
 prost = "0.13"
 prost-types = "0.13"
 

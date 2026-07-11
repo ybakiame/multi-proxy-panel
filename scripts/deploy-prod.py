@@ -143,10 +143,6 @@ def connect_ssh(host: str, user: str, port: int, key_path: Optional[str], passwo
             pass
 
         try:
-            pkey = None
-            if key_path:
-                pkey = paramiko.RSAKey.from_private_key_file(key_path)
-
             connect_kwargs = {
                 "hostname": host,
                 "port": port,
@@ -156,8 +152,8 @@ def connect_ssh(host: str, user: str, port: int, key_path: Optional[str], passwo
                 "auth_timeout": 60,
                 "look_for_keys": key_path is None,
             }
-            if pkey:
-                connect_kwargs["pkey"] = pkey
+            if key_path:
+                connect_kwargs["key_filename"] = key_path
             elif password:
                 connect_kwargs["password"] = password
 
@@ -335,6 +331,7 @@ class Server:
     install_caddy: bool = True
     tls_cert: Optional[str] = None
     tls_key: Optional[str] = None
+    tls_domain: Optional[str] = None
     extra_env: Dict[str, str] = field(default_factory=dict)
 
     def require_hub(self):
@@ -384,6 +381,10 @@ def build_servers(inventory: dict) -> List[Server]:
             host_key_policy=merged.get("host_key_policy", "strict"),
             domain=merged.get("domain") or (agent_cfg.get("domain") if agent_cfg else None),
             hub_url=agent_cfg.get("hub_url") if agent_cfg else merged.get("hub_url"),
+            hub_name=agent_cfg.get("hub") if agent_cfg else None,
+            agent_token=agent_cfg.get("token") if agent_cfg else None,
+            agent_id=agent_cfg.get("agent_id") if agent_cfg else None,
+            hostname=agent_cfg.get("hostname") if agent_cfg else None,
             db_url=merged.get("db_url", "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"),
             grpc_listen=merged.get("grpc_listen", "0.0.0.0:50052"),
             listen=merged.get("listen", "127.0.0.1:8081"),
@@ -395,6 +396,7 @@ def build_servers(inventory: dict) -> List[Server]:
             install_caddy=bool(merged.get("install_caddy", True)),
             tls_cert=merged.get("tls_cert"),
             tls_key=merged.get("tls_key"),
+            tls_domain=merged.get("tls_domain") or (agent_cfg.get("tls_domain") if agent_cfg else None),
             extra_env=merged.get("extra_env", {}),
         ))
     return servers
@@ -501,6 +503,8 @@ def write_agent_env(server: Server) -> str:
         env.append("PROXYPANEL_AGENT_DOMAIN=%s" % server.domain)
     if server.hostname:
         env.append("PROXYPANEL_AGENT_NAME=%s" % server.hostname)
+    if server.tls_domain:
+        env.append("PROXYPANEL_AGENT_TLS_DOMAIN=%s" % server.tls_domain)
     for k, v in server.extra_env.items():
         env.append("%s=%s" % (k, v))
     return "\n".join(env) + "\n"
@@ -777,7 +781,41 @@ ARCHIVE_DIR=/tmp/proxy-panel-prod
 useradd -r -s /bin/false proxypanel 2>/dev/null || true
 
 install -m 755 "$ARCHIVE_DIR/bin/proxy-panel-agent" %s/proxy-panel-agent
-cp "$ARCHIVE_DIR/service/proxy-panel-agent.service" /etc/systemd/system/proxy-panel-agent.service
+
+cat > /etc/systemd/system/proxy-panel-agent.service <<'EOF'
+[Unit]
+Description=ProxyPanel Agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxy-panel
+
+Environment=RUST_LOG=proxy_panel_agent=info
+EnvironmentFile=-/etc/proxy-panel/agent.env
+
+ExecStart=/usr/local/bin/proxy-panel-agent \\
+    --agent-id ${PROXYPANEL_AGENT_ID} \\
+    --hub-url ${PROXYPANEL_HUB_URL} \\
+    --token ${PROXYPANEL_AGENT_TOKEN} \\
+    --data-dir /var/lib/proxy-panel/agent \\
+    --bin-dir /opt/proxy-panel/bin%s
+
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/proxy-panel
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 chown -R proxypanel:proxypanel %s /var/lib/proxy-panel %s
 chmod 640 %s/agent.env
@@ -787,7 +825,11 @@ systemctl enable --now proxy-panel-agent
 sleep 5
 
 systemctl is-active proxy-panel-agent
-""" % (REMOTE_BIN, REMOTE_DIR, REMOTE_ETC, REMOTE_ETC)
+""" % (
+        REMOTE_BIN,
+        " \\\n    --tls-domain ${PROXYPANEL_AGENT_TLS_DOMAIN}" if server.tls_domain else "",
+        REMOTE_DIR, REMOTE_ETC, REMOTE_ETC,
+    )
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
         f.write(install_script)
