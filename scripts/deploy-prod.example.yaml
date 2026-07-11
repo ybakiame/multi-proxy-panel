@@ -1,0 +1,63 @@
+# Example production inventory for scripts/deploy-prod.py
+#
+# SECURITY NOTES:
+#   1. Do NOT commit this file with real secrets. Use environment variables
+#      (e.g. ${JWT_SECRET}) and keep them in a password manager / vault.
+#   2. Prefer SSH key authentication. Use ssh_password only as a fallback and
+#      remove it from this file after the first deploy.
+#   3. For strict host-key verification (default), make sure the target hosts
+#      are already in your ~/.ssh/known_hosts file.
+#
+# Usage:
+#   export JWT_SECRET="$(openssl rand -hex 32)"
+#   export ADMIN_PASSWORD="$(openssl rand -hex 16)"
+#   export TEST2_AGENT_TOKEN="..."
+#   export TEST3_AGENT_TOKEN="..."
+#   python3 scripts/deploy-prod.py --inventory deploy-prod.example.yaml --action deploy
+
+# ---------------------------------------------------------------------------
+# Defaults applied to every server unless overridden.
+# ---------------------------------------------------------------------------
+defaults:
+  user: root
+  port: 22
+  ssh_key: ~/.ssh/id_rsa
+  # ssh_password: ${SSH_PASSWORD_FALLBACK:-}
+  host_key_policy: strict
+
+# ---------------------------------------------------------------------------
+# Hub-specific defaults. Values here can be overridden per-server.
+# ---------------------------------------------------------------------------
+hub:
+  listen: "127.0.0.1:8081"
+  grpc_listen: "0.0.0.0:50052"
+  db_url: "sqlite:///opt/proxy-panel/data/proxypanel.db?mode=rwc"
+  auto_register_agents: false
+  install_caddy: true
+  admin_username: admin
+  # admin_password: ${ADMIN_PASSWORD}
+  # jwt_secret: ${JWT_SECRET}
+
+# ---------------------------------------------------------------------------
+# Server list. mode must be "hub" or "agent".
+# ---------------------------------------------------------------------------
+servers:
+  - name: test3
+    host: 64.188.27.110
+    mode: hub
+    domain: test3-panel.ybakiame.net
+    jwt_secret: ${JWT_SECRET}
+    admin_password: ${ADMIN_PASSWORD}
+    # Optionally provide a pre-provisioned local agent token/id:
+    # agent:
+    #   hub_url: "http://127.0.0.1:50052"
+    #   token: ${TEST3_AGENT_TOKEN}
+    #   agent_id: ${TEST3_AGENT_ID}
+
+  - name: test2
+    host: 192.3.150.233
+    mode: agent
+    agent:
+      hub_url: "http://test3-panel.ybakiame.net:50052"
+      token: ${TEST2_AGENT_TOKEN}
+      agent_id: ${TEST2_AGENT_ID}
