@@ -243,8 +243,9 @@ pub async fn nodes_using_config(
     let node_ids: HashSet<Uuid> = bindings.into_iter().map(|b| b.node_id).collect();
     Ok(node_ids.into_iter().collect())
 }
-/// For sing-box, returns the highest explicitly requested version or a default
-/// of 1.14.0 so that new server deployments use the modern API service.
+/// For sing-box, returns the highest explicitly requested version or a stable
+/// default of v1.13.14. If you need the new gRPC API service, set a protocol
+/// config's core_version to a 1.14.0 alpha tag such as `v1.14.0-alpha.43`.
 fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Option<String> {
     if core_type != CoreType::SingBox {
         return None;
@@ -257,7 +258,7 @@ fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Op
         .collect();
 
     if requested.is_empty() {
-        return Some("1.14.0".to_string());
+        return Some("v1.13.14".to_string());
     }
 
     requested

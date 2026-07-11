@@ -66,10 +66,21 @@ fn target_info() -> PanelResult<(&'static str, &'static str, &'static str, bool)
     Ok((os, xray_arch, sb_arch, is_windows))
 }
 
+/// GitHub release tags include a leading 'v', but callers may pass either
+/// `1.14.0-alpha.43` or `v1.14.0-alpha.43`. This helper normalizes to the
+/// tag name used in release URLs.
+fn github_tag(version: &str) -> String {
+    if version.starts_with('v') {
+        version.to_string()
+    } else {
+        format!("v{version}")
+    }
+}
+
 fn asset_name(core_type: CoreType, version: &str) -> PanelResult<(String, String)> {
     let (_, xray_arch, sb_arch, is_windows) = target_info()?;
 
-    // GitHub release tags include the leading 'v'; asset names usually omit it.
+    // Asset names usually omit the leading 'v' present in GitHub tags.
     let version_no_v = version.strip_prefix('v').unwrap_or(version);
 
     match core_type {
@@ -282,7 +293,10 @@ pub async fn ensure_core_binary(
     let info = release_info(core_type);
     let url = format!(
         "https://github.com/{}/{}/releases/download/{}/{}",
-        info.owner, info.repo, version, asset
+        info.owner,
+        info.repo,
+        github_tag(&version),
+        asset
     );
 
     tracing::info!("downloading {:?} {} from {}", core_type, version, url);
@@ -317,6 +331,14 @@ pub async fn ensure_core_binary(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_tag_normalizes_version_strings() {
+        assert_eq!(github_tag("v1.14.0-alpha.43"), "v1.14.0-alpha.43");
+        assert_eq!(github_tag("1.14.0-alpha.43"), "v1.14.0-alpha.43");
+        assert_eq!(github_tag("v25.6.8"), "v25.6.8");
+        assert_eq!(github_tag("25.6.8"), "v25.6.8");
+    }
 
     #[test]
     fn asset_names_are_well_formed() {
