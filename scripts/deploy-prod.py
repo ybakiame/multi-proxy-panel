@@ -22,6 +22,9 @@ Example:
     python3 scripts/deploy-prod.py --inventory deploy-prod.yaml --action deploy
     python3 scripts/deploy-prod.py --inventory deploy-prod.yaml --action update
 
+    # Save generated secrets to a file (optional, for first deploy)
+    python3 scripts/deploy-prod.py --inventory deploy-prod.yaml --action deploy --secrets-out .deploy-secrets.env
+
 See scripts/deploy-prod.example.yaml for the inventory format.
 """
 
@@ -816,6 +819,8 @@ def main():
     parser.add_argument("--parallel", "-p", action="store_true", help="Run operations in parallel (experimental)")
     parser.add_argument("--host-key-policy", default="strict", choices=["strict", "warn", "auto"],
                         help="SSH host key verification policy (default: strict)")
+    parser.add_argument("--secrets-out", "-s", default="",
+                        help="Write generated secrets (admin_password, tokens) to this file")
     args = parser.parse_args()
 
     inventory = load_inventory(args.inventory)
@@ -858,6 +863,7 @@ def main():
     print("\n" + "=" * 60)
     print("DEPLOYMENT SUMMARY")
     print("=" * 60)
+    secrets_lines = ["# ProxyPanel generated secrets - store securely and delete after reading\n"]
     for server in servers:
         result = results.get(server.name)
         if isinstance(result, dict):
@@ -866,10 +872,20 @@ def main():
             print("  Admin user:     %s" % server.admin_username)
             if "admin_password" in result:
                 print("  Admin password: %s" % result["admin_password"])
-            if "agent_token" in result:
+                secrets_lines.append("%s_ADMIN_PASSWORD=%s" % (server.name.upper(), result["admin_password"]))
+            if "agent_token" in result and "node_id" in result:
                 print("  Local agent token: %s" % result["agent_token"])
+                print("  Local agent id:    %s" % result["node_id"])
+                secrets_lines.append("%s_AGENT_TOKEN=%s" % (server.name.upper(), result["agent_token"]))
+                secrets_lines.append("%s_AGENT_ID=%s" % (server.name.upper(), result["node_id"]))
         else:
             print("\n%s (%s): OK" % (server.name, server.mode))
+
+    if args.secrets_out and secrets_lines:
+        with open(args.secrets_out, "w", encoding="utf-8") as f:
+            f.write("\n".join(secrets_lines) + "\n")
+        print("\nGenerated secrets written to: %s" % args.secrets_out)
+        print("IMPORTANT: This file contains plaintext secrets. Store it securely and delete it when no longer needed.")
 
 
 if __name__ == "__main__":
