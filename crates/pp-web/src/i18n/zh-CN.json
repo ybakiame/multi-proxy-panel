@@ -18,6 +18,7 @@
     "logout": "退出登录",
     "enabled": "启用",
     "disabled": "禁用",
+    "theme": "切换主题",
     "expiry": "过期时间",
     "lastAccessed": "最后访问",
     "createdAt": "创建时间",
@@ -34,6 +35,8 @@
     "copy": "复制",
     "copied": "已复制",
     "submitting": "提交中...",
+    "running": "运行中",
+    "stopped": "已停止",
     "yes": "是",
     "no": "否"
   },
@@ -99,6 +102,8 @@
     "address": "地址",
     "lastSeen": "最后在线",
     "cores": "核心",
+    "coreStatus": "核心状态",
+    "coresAvailable": "可用核心",
     "usageCoefficient": "用量系数",
     "labels": "标签",
     "deleteTitle": "删除节点",
@@ -117,6 +122,14 @@
     "port": "端口",
     "key": "密钥",
     "tlsSettings": "TLS 设置（JSON）",
+    "tlsType": "TLS 类型",
+    "tlsTypeNone": "无",
+    "tlsTypeCertificate": "证书文件",
+    "tlsTypeAcme": "ACME 自动证书",
+    "tlsCertFile": "证书路径",
+    "tlsKeyFile": "私钥路径",
+    "tlsDomain": "ACME 域名",
+    "tlsDomainDescription": "sing-box 将自动向 Let's Encrypt 申请该域名的证书。需要 80/443 端口可用于 ACME 挑战。",
     "generateKeys": "生成密钥",
     "uuid": "UUID",
     "uuidDescription": "用作服务端入站的占位符；实际客户端 UUID 会在生成订阅时注入。",
@@ -148,7 +161,8 @@
     "deleteConfirm": "确定要删除该绑定吗？",
     "node": "节点",
     "protocol": "协议",
-    "overrideSettings": "覆盖设置（JSON）"
+    "overrideSettings": "覆盖设置（JSON）",
+    "tlsOverride": "TLS 覆盖配置"
   },
   "hosts": {
     "title": "入站主机",
@@ -219,6 +233,12 @@
     "templateDeleteTitle": "删除订阅模板",
     "templateDeleteConfirm": "确定要删除该订阅模板吗？",
     "templateEditTitle": "编辑模板",
+    "templateCreateTitle": "创建模板",
+    "builtinReadonly": "内置模板仅允许启用或禁用，其他字段不可编辑。",
+    "tokenWarning": "请立即复制该订阅链接 — 它只会显示一次。",
+    "defaultTemplate": "默认",
+    "builtinSingBox": "默认 Sing-box 模板",
+    "builtinClash": "默认 Clash 模板",
     "client": "客户端",
     "template": "模板",
     "token": "令牌",
@@ -230,10 +250,11 @@
     "filterRules": "过滤规则（JSON）",
     "customHeaders": "自定义头（JSON）",
     "createTemplate": "+ 创建模板",
-    "templateCreateTitle": "创建模板",
     "format": "格式",
+    "builtin": "内置",
     "copyLink": "复制链接",
-    "qrCode": "二维码"
+    "qrCode": "二维码",
+    "enabled": "启用状态"
   },
   "metrics": {
     "title": "主机指标",
@@ -295,5 +316,19 @@
     "message": "消息",
     "time": "时间",
     "empty": "没有符合筛选条件的日志。"
+  },
+  "status": {
+    "online": "在线",
+    "offline": "离线",
+    "connecting": "连接中",
+    "degraded": "降级",
+    "active": "活跃",
+    "enabled": "已启用",
+    "inactive": "未激活",
+    "disabled": "已禁用",
+    "expired": "已过期",
+    "on_hold": "暂停",
+    "limited": "受限",
+    "maintenance": "维护中"
   }
 }

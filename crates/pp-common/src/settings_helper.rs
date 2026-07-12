@@ -102,10 +102,76 @@ pub fn client_password(settings: &Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Merge protocol-level TLS settings with binding-level TLS override.
+/// Binding-level values take precedence. If neither side provides TLS,
+/// returns None.
+pub fn merge_tls_settings(base: Option<Value>, override_tls: Option<Value>) -> Option<Value> {
+    match (base, override_tls) {
+        (Some(base), Some(over)) if over.is_object() && base.is_object() => {
+            let mut merged = base.as_object().cloned().unwrap_or_default();
+            for (k, v) in over.as_object().cloned().unwrap_or_default() {
+                merged.insert(k, v);
+            }
+            Some(Value::Object(merged))
+        }
+        (_, Some(over)) => Some(over),
+        (base, None) => base,
+    }
+}
+
+/// Return true if the TLS configuration uses a real certificate (user-provided
+/// cert/key files or ACME automatic certificate). When true, clients should
+/// verify the certificate instead of skipping validation.
+pub fn tls_has_real_certificate(tls: Option<&Value>) -> bool {
+    let Some(obj) = tls.and_then(|t| t.as_object()) else {
+        return false;
+    };
+
+    let has_cert_file = obj
+        .get("certFile")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let has_key_file = obj
+        .get("keyFile")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let has_acme_domain = obj
+        .get("domain")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+
+    (has_cert_file && has_key_file) || has_acme_domain
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn merge_tls_settings_prefers_override() {
+        let base = Some(json!({ "serverName": "base.example.com", "certFile": "/base.crt" }));
+        let over = Some(json!({ "certFile": "/override.crt" }));
+        let merged = merge_tls_settings(base, over).unwrap();
+        assert_eq!(merged["serverName"], "base.example.com");
+        assert_eq!(merged["certFile"], "/override.crt");
+    }
+
+    #[test]
+    fn tls_has_real_certificate_detects_cert_and_acme() {
+        assert!(!tls_has_real_certificate(Some(
+            &json!({ "serverName": "example.com" })
+        )));
+        assert!(tls_has_real_certificate(Some(
+            &json!({ "certFile": "/cert.pem", "keyFile": "/key.pem" })
+        )));
+        assert!(tls_has_real_certificate(Some(
+            &json!({ "domain": "example.com" })
+        )));
+    }
 
     #[test]
     fn first_server_name_handles_string_and_array() {

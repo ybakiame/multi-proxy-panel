@@ -18,6 +18,7 @@
     "logout": "Logout",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "theme": "Toggle theme",
     "expiry": "Expires At",
     "lastAccessed": "Last Accessed",
     "createdAt": "Created At",
@@ -34,6 +35,8 @@
     "copy": "Copy",
     "copied": "Copied",
     "submitting": "Submitting...",
+    "running": "Running",
+    "stopped": "Stopped",
     "yes": "Yes",
     "no": "No"
   },
@@ -99,6 +102,8 @@
     "address": "Address",
     "lastSeen": "Last Seen",
     "cores": "Cores",
+    "coreStatus": "Core Status",
+    "coresAvailable": "Available Cores",
     "usageCoefficient": "Usage Coefficient",
     "labels": "Labels",
     "deleteTitle": "Delete Node",
@@ -117,6 +122,14 @@
     "port": "Port",
     "key": "Key",
     "tlsSettings": "TLS Settings (JSON)",
+    "tlsType": "TLS Type",
+    "tlsTypeNone": "None",
+    "tlsTypeCertificate": "Certificate Files",
+    "tlsTypeAcme": "ACME Automatic",
+    "tlsCertFile": "Certificate Path",
+    "tlsKeyFile": "Private Key Path",
+    "tlsDomain": "ACME Domain",
+    "tlsDomainDescription": "sing-box will request a certificate from Let's Encrypt for this domain. Ports 80/443 must be reachable for ACME challenges.",
     "generateKeys": "Generate Keys",
     "uuid": "UUID",
     "uuidDescription": "Used as a placeholder in the server inbound; actual client UUIDs are injected into subscriptions.",
@@ -148,7 +161,8 @@
     "deleteConfirm": "Are you sure you want to delete this binding?",
     "node": "Node",
     "protocol": "Protocol",
-    "overrideSettings": "Override Settings (JSON)"
+    "overrideSettings": "Override Settings (JSON)",
+    "tlsOverride": "TLS Override"
   },
   "hosts": {
     "title": "Inbound Hosts",
@@ -219,6 +233,12 @@
     "templateDeleteTitle": "Delete Subscription Template",
     "templateDeleteConfirm": "Are you sure you want to delete this subscription template?",
     "templateEditTitle": "Edit Template",
+    "templateCreateTitle": "Create Template",
+    "builtinReadonly": "Builtin templates can only be enabled or disabled; other fields are read-only.",
+    "tokenWarning": "Copy this subscription link now — it will not be shown again.",
+    "defaultTemplate": "Default",
+    "builtinSingBox": "Default Sing-box Template",
+    "builtinClash": "Default Clash Template",
     "client": "Client",
     "template": "Template",
     "token": "Token",
@@ -230,10 +250,11 @@
     "filterRules": "Filter Rules (JSON)",
     "customHeaders": "Custom Headers (JSON)",
     "createTemplate": "+ Create Template",
-    "templateCreateTitle": "Create Template",
     "format": "Format",
+    "builtin": "Builtin",
     "copyLink": "Copy Link",
-    "qrCode": "QR Code"
+    "qrCode": "QR Code",
+    "enabled": "Enabled"
   },
   "metrics": {
     "title": "Host Metrics",
@@ -295,5 +316,19 @@
     "message": "Message",
     "time": "Time",
     "empty": "No logs match the selected filters."
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Connecting",
+    "degraded": "Degraded",
+    "active": "Active",
+    "enabled": "Enabled",
+    "inactive": "Inactive",
+    "disabled": "Disabled",
+    "expired": "Expired",
+    "on_hold": "On Hold",
+    "limited": "Limited",
+    "maintenance": "Maintenance"
   }
 }

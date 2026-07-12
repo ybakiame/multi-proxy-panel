@@ -8,6 +8,7 @@ import {
   JsonEditor,
   FormSelect,
   FormCheckbox,
+  FormInput,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getBindingsPaginated, createBinding, updateBinding, deleteBinding } from "../api/bindings";
@@ -20,7 +21,69 @@ interface BindingForm {
   protocol_config_id: string;
   is_active: boolean;
   override_settings: string;
+  tls_type: "none" | "certificate" | "acme";
+  tls_cert_file: string;
+  tls_key_file: string;
+  tls_domain: string;
 }
+
+const defaultForm: BindingForm = {
+  node_id: "",
+  protocol_config_id: "",
+  is_active: true,
+  override_settings: "{}",
+  tls_type: "none",
+  tls_cert_file: "",
+  tls_key_file: "",
+  tls_domain: "",
+};
+
+const parseOverrideJson = (value: string): Record<string, unknown> => {
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+
+const tlsFieldsFromOverride = (
+  override?: Record<string, unknown> | null,
+): Pick<BindingForm, "tls_type" | "tls_cert_file" | "tls_key_file" | "tls_domain"> => {
+  const tls = override?.tls_settings as Record<string, unknown> | undefined;
+  if (!tls) {
+    return {
+      tls_type: "none",
+      tls_cert_file: "",
+      tls_key_file: "",
+      tls_domain: "",
+    };
+  }
+  const domain = (tls.domain as string) || "";
+  if (domain) {
+    return {
+      tls_type: "acme",
+      tls_domain: domain,
+      tls_cert_file: "",
+      tls_key_file: "",
+    };
+  }
+  const certFile = (tls.certFile as string) || "";
+  const keyFile = (tls.keyFile as string) || "";
+  if (certFile || keyFile) {
+    return {
+      tls_type: "certificate",
+      tls_cert_file: certFile,
+      tls_key_file: keyFile,
+      tls_domain: "",
+    };
+  }
+  return {
+    tls_type: "none",
+    tls_cert_file: "",
+    tls_key_file: "",
+    tls_domain: "",
+  };
+};
 
 export function Bindings() {
   const { t } = useTranslation();
@@ -32,12 +95,41 @@ export function Bindings() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editBinding, setEditBinding] = useState<Binding | null>(null);
   const [deleteBindingId, setDeleteBindingId] = useState<string | null>(null);
-  const [form, setForm] = useState<BindingForm>({
-    node_id: "",
-    protocol_config_id: "",
-    is_active: true,
-    override_settings: "{}",
-  });
+  const [form, setForm] = useState<BindingForm>(defaultForm);
+
+  const selectedProtocol = protocols.find((p) => p.id === form.protocol_config_id);
+  const requiresTls =
+    selectedProtocol?.protocol_type === "hysteria2" || selectedProtocol?.protocol_type === "anytls";
+
+  const buildOverrideWithTls = (current: BindingForm): Record<string, unknown> => {
+    const override = parseOverrideJson(current.override_settings);
+    delete override.tls_settings;
+    if (current.tls_type === "certificate") {
+      if (current.tls_cert_file.trim() || current.tls_key_file.trim()) {
+        override.tls_settings = {
+          certFile: current.tls_cert_file.trim(),
+          keyFile: current.tls_key_file.trim(),
+        };
+      }
+    } else if (current.tls_type === "acme" && current.tls_domain.trim()) {
+      override.tls_settings = { domain: current.tls_domain.trim() };
+    }
+    return override;
+  };
+
+  const updateForm = (updates: Partial<BindingForm>) => {
+    setForm((prev) => {
+      const next = { ...prev, ...updates };
+      const override = buildOverrideWithTls(next);
+      return { ...next, override_settings: JSON.stringify(override, null, 2) };
+    });
+  };
+
+  const setOverrideSettings = (value: string) => {
+    const override = parseOverrideJson(value);
+    const tlsFields = tlsFieldsFromOverride(override);
+    setForm((prev) => ({ ...prev, override_settings: value, ...tlsFields }));
+  };
 
   const fetch = async () => {
     setLoading(true);
@@ -67,12 +159,7 @@ export function Bindings() {
   }, [page, perPage]);
 
   const resetForm = () => {
-    setForm({
-      node_id: "",
-      protocol_config_id: "",
-      is_active: true,
-      override_settings: "{}",
-    });
+    setForm(defaultForm);
   };
 
   const handleCreate = async () => {
@@ -109,6 +196,7 @@ export function Bindings() {
   };
 
   const openEdit = (binding: Binding) => {
+    const override = binding.override_settings || {};
     setForm({
       node_id: binding.node_id,
       protocol_config_id: binding.protocol_config_id,
@@ -116,6 +204,7 @@ export function Bindings() {
       override_settings: binding.override_settings
         ? JSON.stringify(binding.override_settings, null, 2)
         : "{}",
+      ...tlsFieldsFromOverride(override),
     });
     setEditBinding(binding);
   };
@@ -148,6 +237,53 @@ export function Bindings() {
   const getProtocolName = (protocolId: string) => {
     const protocol = protocols.find((p) => p.id === protocolId);
     return protocol ? protocol.name : protocolId;
+  };
+
+  const renderTlsFields = () => {
+    if (!requiresTls) return null;
+    return (
+      <div className="space-y-4 rounded-lg border border-default-200 p-4">
+        <div className="text-sm font-medium">{t("bindings.tlsOverride")}</div>
+        <FormSelect
+          label={t("protocols.tlsType")}
+          value={form.tls_type}
+          onChange={(value) => updateForm({ tls_type: value as BindingForm["tls_type"] })}
+          options={[
+            { id: "none", label: t("protocols.tlsTypeNone") },
+            { id: "certificate", label: t("protocols.tlsTypeCertificate") },
+            { id: "acme", label: t("protocols.tlsTypeAcme") },
+          ]}
+        />
+        {form.tls_type === "certificate" && (
+          <>
+            <FormInput
+              label={t("protocols.tlsCertFile")}
+              value={form.tls_cert_file}
+              onChange={(value) => updateForm({ tls_cert_file: value })}
+              placeholder="/etc/ssl/certs/example.crt"
+              isRequired
+            />
+            <FormInput
+              label={t("protocols.tlsKeyFile")}
+              value={form.tls_key_file}
+              onChange={(value) => updateForm({ tls_key_file: value })}
+              placeholder="/etc/ssl/private/example.key"
+              isRequired
+            />
+          </>
+        )}
+        {form.tls_type === "acme" && (
+          <FormInput
+            label={t("protocols.tlsDomain")}
+            value={form.tls_domain}
+            onChange={(value) => updateForm({ tls_domain: value })}
+            placeholder="hy2.example.com"
+            description={t("protocols.tlsDomainDescription")}
+            isRequired
+          />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -251,7 +387,7 @@ export function Bindings() {
               <FormSelect
                 label={t("bindings.node")}
                 value={form.node_id}
-                onChange={(value) => setForm({ ...form, node_id: value })}
+                onChange={(value) => updateForm({ node_id: value })}
                 options={nodes.map((node) => ({
                   id: node.id,
                   label: node.name,
@@ -261,7 +397,7 @@ export function Bindings() {
               <FormSelect
                 label={t("bindings.protocol")}
                 value={form.protocol_config_id}
-                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
+                onChange={(value) => updateForm({ protocol_config_id: value })}
                 options={protocols.map((protocol) => ({
                   id: protocol.id,
                   label: protocol.name,
@@ -270,14 +406,15 @@ export function Bindings() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) => setForm({ ...form, is_active: selected })}
+                onChange={(selected) => updateForm({ is_active: selected })}
               >
                 {t("common.active")}
               </FormCheckbox>
+              {renderTlsFields()}
               <JsonEditor
                 label={t("bindings.overrideSettings")}
                 value={form.override_settings}
-                onChange={(value) => setForm({ ...form, override_settings: value })}
+                onChange={(value) => setOverrideSettings(value)}
               />
             </Modal.Body>
             <Modal.Footer>
@@ -305,7 +442,7 @@ export function Bindings() {
               <FormSelect
                 label={t("bindings.node")}
                 value={form.node_id}
-                onChange={(value) => setForm({ ...form, node_id: value })}
+                onChange={(value) => updateForm({ node_id: value })}
                 options={nodes.map((node) => ({
                   id: node.id,
                   label: node.name,
@@ -315,7 +452,7 @@ export function Bindings() {
               <FormSelect
                 label={t("bindings.protocol")}
                 value={form.protocol_config_id}
-                onChange={(value) => setForm({ ...form, protocol_config_id: value })}
+                onChange={(value) => updateForm({ protocol_config_id: value })}
                 options={protocols.map((protocol) => ({
                   id: protocol.id,
                   label: protocol.name,
@@ -324,14 +461,15 @@ export function Bindings() {
               />
               <FormCheckbox
                 isSelected={form.is_active}
-                onChange={(selected) => setForm({ ...form, is_active: selected })}
+                onChange={(selected) => updateForm({ is_active: selected })}
               >
                 {t("common.active")}
               </FormCheckbox>
+              {renderTlsFields()}
               <JsonEditor
                 label={t("bindings.overrideSettings")}
                 value={form.override_settings}
-                onChange={(value) => setForm({ ...form, override_settings: value })}
+                onChange={(value) => setOverrideSettings(value)}
               />
             </Modal.Body>
             <Modal.Footer>

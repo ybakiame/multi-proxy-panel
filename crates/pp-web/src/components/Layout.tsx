@@ -84,7 +84,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </Select.Popover>
           </Select>
           <div className="flex gap-2">
-            <Button isIconOnly variant="ghost" onPress={toggleTheme} className="flex-1">
+            <Button
+              isIconOnly
+              variant="ghost"
+              onPress={toggleTheme}
+              className="flex-1"
+              aria-label={t("common.theme")}
+            >
               {isDark ? <MoonIcon className="h-4 w-4" /> : <SunIcon className="h-4 w-4" />}
             </Button>
             <Button variant="danger" onPress={logout} className="flex-[2]">

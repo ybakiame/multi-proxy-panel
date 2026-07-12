@@ -123,10 +123,7 @@ fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     match node.protocol {
         ProtocolType::VlessReality | ProtocolType::VlessXhttp => build_vless_proxy(node),
         ProtocolType::Hysteria2 => build_hysteria2_proxy(node),
-        _ => Err(PanelError::Subscription(format!(
-            "protocol {:?} not supported in clash subscription",
-            node.protocol
-        ))),
+        ProtocolType::Anytls => build_anytls_proxy(node),
     }
 }
 
@@ -169,17 +166,10 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
                 .get("public_key")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let short_id = node
-                .settings
-                .get("short_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let server_name = node
-                .settings
-                .get("server_name")
-                .or_else(|| node.settings.get("sni"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let short_id =
+                pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
+            let server_name =
+                pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
             let fingerprint = node
                 .settings
                 .get("client_fingerprint")
@@ -200,12 +190,14 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
             proxy["tls"] = json!(true);
             let host = node
                 .settings
-                .get("host")
+                .get("xhttp_host")
+                .or_else(|| node.settings.get("host"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let path = node
                 .settings
-                .get("path")
+                .get("xhttp_path")
+                .or_else(|| node.settings.get("path"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("/");
             proxy["plugin-opts"] = json!({
@@ -230,14 +222,22 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         .settings
         .get("sni")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.tls
+                .as_ref()
+                .and_then(|t| t.get("serverName"))
+                .and_then(|v| v.as_str())
+        })
         .unwrap_or(&node.server);
     let skip_cert_verify = node
         .settings
         .get("skip_cert_verify")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(!pp_common::settings_helper::tls_has_real_certificate(
+            node.tls.as_ref(),
+        ));
 
-    Ok(serde_json::json!({
+    let mut proxy = serde_json::json!({
         "name": node.name,
         "type": "hysteria2",
         "server": node.server,
@@ -245,8 +245,55 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         "password": password,
         "sni": sni,
         "skip-cert-verify": skip_cert_verify,
-        "up": node.settings.get("up").and_then(|v| v.as_u64()).unwrap_or(100),
-        "down": node.settings.get("down").and_then(|v| v.as_u64()).unwrap_or(100),
+        "up": node.settings.get("up_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
+        "down": node.settings.get("down_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
+        "udp": true,
+    });
+
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
+        if obfs_type != "none" {
+            proxy["obfs"] = json!(obfs_type);
+            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
+            {
+                proxy["obfs-password"] = json!(obfs_password);
+            }
+        }
+    }
+
+    Ok(proxy)
+}
+
+fn build_anytls_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
+    let password = pp_common::settings_helper::client_password(&node.settings)
+        .ok_or_else(|| PanelError::Subscription("missing anytls password".into()))?;
+
+    let sni = node
+        .settings
+        .get("sni")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            node.tls
+                .as_ref()
+                .and_then(|t| t.get("serverName"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or(&node.server);
+    let skip_cert_verify = node
+        .settings
+        .get("skip_cert_verify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(!pp_common::settings_helper::tls_has_real_certificate(
+            node.tls.as_ref(),
+        ));
+
+    Ok(serde_json::json!({
+        "name": node.name,
+        "type": "anytls",
+        "server": node.server,
+        "port": node.port,
+        "password": password,
+        "sni": sni,
+        "skip-cert-verify": skip_cert_verify,
         "udp": true,
     }))
 }
@@ -317,6 +364,41 @@ mod tests {
         assert!(out.starts_with("proxies:"));
         assert!(out.contains("type: vless"));
         assert!(out.contains("reality-opts:"));
+    }
+
+    #[test]
+    fn clash_hysteria2_verifies_when_certificate_files_present() {
+        let node = ProxyNode {
+            name: "test-hy2".into(),
+            protocol: ProtocolType::Hysteria2,
+            server: "1.2.3.4".into(),
+            port: 8443,
+            settings: serde_json::json!({
+                "clients": [{"password": "hy2-secret"}],
+            }),
+            tls: Some(serde_json::json!({
+                "certFile": "/etc/ssl/cert.pem",
+                "keyFile": "/etc/ssl/key.pem",
+            })),
+        };
+        let proxy = build_hysteria2_proxy(&node).unwrap();
+        assert_eq!(proxy["skip-cert-verify"], false);
+    }
+
+    #[test]
+    fn clash_hysteria2_skips_verify_without_real_certificate() {
+        let node = ProxyNode {
+            name: "test-hy2".into(),
+            protocol: ProtocolType::Hysteria2,
+            server: "1.2.3.4".into(),
+            port: 8443,
+            settings: serde_json::json!({
+                "clients": [{"password": "hy2-secret"}],
+            }),
+            tls: Some(serde_json::json!({ "serverName": "hy2.example.com" })),
+        };
+        let proxy = build_hysteria2_proxy(&node).unwrap();
+        assert_eq!(proxy["skip-cert-verify"], true);
     }
 
     #[test]

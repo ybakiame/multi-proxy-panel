@@ -60,13 +60,21 @@ pub async fn build_proxy_nodes(
                 _ => continue,
             };
 
+            let tls = pp_common::settings_helper::merge_tls_settings(
+                cfg.tls_settings.clone(),
+                binding
+                    .override_settings
+                    .as_ref()
+                    .and_then(|o| o.get("tls_settings").cloned()),
+            );
+
             nodes.push(ProxyNode {
                 name: format!("{}-{}", node.name, cfg.name),
                 protocol,
                 server: node.domain.clone().unwrap_or_else(|| node.address.clone()),
                 port: cfg.listen_port as u16,
                 settings: cfg.settings.clone(),
-                tls: cfg.tls_settings.clone(),
+                tls,
             });
         }
     }

@@ -27,6 +27,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250711_000002_subscription_template_text::Migration),
             Box::new(m20250711_000003_create_agent_logs::Migration),
             Box::new(m20250711_000004_cleanup_protocols_and_template_flags::Migration),
+            Box::new(m20250712_000001_fix_subscription_template_blob_ids::Migration),
         ]
     }
 }
@@ -50,3 +51,4 @@ mod m20250711_000001_add_node_domain;
 mod m20250711_000002_subscription_template_text;
 mod m20250711_000003_create_agent_logs;
 mod m20250711_000004_cleanup_protocols_and_template_flags;
+mod m20250712_000001_fix_subscription_template_blob_ids;

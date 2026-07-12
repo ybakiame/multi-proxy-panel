@@ -3,17 +3,27 @@ use serde_json::Value;
 
 use crate::generator::ProxyNode;
 
+/// Protocols supported by the sing-box subscription generator.
+fn is_supported(protocol: ProtocolType) -> bool {
+    matches!(
+        protocol,
+        ProtocolType::VlessReality | ProtocolType::Hysteria2 | ProtocolType::Anytls
+    )
+}
+
 /// Generate sing-box JSON subscription with outbounds array.
 /// `base_config` is raw JSON template text. Supported placeholders:
 ///   - `<OUTBOUND_REPLACE>`  -> JSON array of generated outbounds
 ///   - `<NODE_REPLACE>`     -> JSON array of node names
 pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<String> {
-    let outbounds: Vec<_> = nodes
+    let supported: Vec<&ProxyNode> = nodes.iter().filter(|n| is_supported(n.protocol)).collect();
+
+    let outbounds: Vec<_> = supported
         .iter()
-        .map(build_outbound)
+        .map(|n| build_outbound(n))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let node_names: Vec<String> = nodes.iter().map(|n| n.name.clone()).collect();
+    let node_names: Vec<String> = supported.iter().map(|n| n.name.clone()).collect();
 
     if let Some(base) = base_config {
         if base.contains("<OUTBOUND_REPLACE>") || base.contains("<NODE_REPLACE>") {
@@ -52,17 +62,16 @@ fn render_template(
 
 fn build_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
     match node.protocol {
-        ProtocolType::VlessReality => build_vless_outbound(node),
+        ProtocolType::VlessReality => build_vless_reality_outbound(node),
         ProtocolType::Hysteria2 => build_hysteria2_outbound(node),
         ProtocolType::Anytls => build_anytls_outbound(node),
-        _ => Err(PanelError::Subscription(format!(
-            "protocol {:?} not supported in sing-box subscription",
-            node.protocol
-        ))),
+        ProtocolType::VlessXhttp => Err(PanelError::Subscription(
+            "sing-box does not support the vless xhttp transport".into(),
+        )),
     }
 }
 
-fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
+fn build_vless_reality_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
     let uuid = pp_common::settings_helper::client_uuid(&node.settings)
         .ok_or_else(|| PanelError::Subscription("missing vless uuid".into()))?;
 
@@ -95,17 +104,11 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         outbound["transport"] = serde_json::json!({
             "type": network,
         });
-        if network == "xhttp" {
-            if let Some(path) = node.settings.get("xhttp_path").and_then(|v| v.as_str()) {
-                outbound["transport"]["path"] = serde_json::json!(path);
-            } else if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
-                outbound["transport"]["path"] = serde_json::json!(path);
-            }
-            if let Some(host) = node.settings.get("xhttp_host").and_then(|v| v.as_str()) {
-                outbound["transport"]["host"] = serde_json::json!(host);
-            } else if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
-                outbound["transport"]["host"] = serde_json::json!(host);
-            }
+        if let Some(path) = node.settings.get("path").and_then(|v| v.as_str()) {
+            outbound["transport"]["path"] = serde_json::json!(path);
+        }
+        if let Some(host) = node.settings.get("host").and_then(|v| v.as_str()) {
+            outbound["transport"]["host"] = serde_json::json!(host);
         }
     }
 
@@ -168,6 +171,14 @@ fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         .unwrap_or("")
         .to_string();
 
+    let skip_verify = node
+        .settings
+        .get("skip_cert_verify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(!pp_common::settings_helper::tls_has_real_certificate(
+            node.tls.as_ref(),
+        ));
+
     let mut outbound = serde_json::json!({
         "type": "hysteria2",
         "tag": node.name,
@@ -177,7 +188,7 @@ fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         "tls": {
             "enabled": true,
             "server_name": server_name,
-            "insecure": true,
+            "insecure": skip_verify,
         },
     });
 
@@ -215,6 +226,14 @@ fn build_anytls_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         .unwrap_or("")
         .to_string();
 
+    let skip_verify = node
+        .settings
+        .get("skip_cert_verify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(!pp_common::settings_helper::tls_has_real_certificate(
+            node.tls.as_ref(),
+        ));
+
     Ok(serde_json::json!({
         "type": "anytls",
         "tag": node.name,
@@ -224,7 +243,7 @@ fn build_anytls_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         "tls": {
             "enabled": true,
             "server_name": server_name,
-            "insecure": true,
+            "insecure": skip_verify,
         },
     }))
 }
@@ -256,7 +275,7 @@ mod tests {
 
     #[test]
     fn vless_reality_outbound_has_reality_tls() {
-        let outbound = build_vless_outbound(&reality_node()).unwrap();
+        let outbound = build_vless_reality_outbound(&reality_node()).unwrap();
         assert_eq!(outbound["type"], "vless");
         assert_eq!(outbound["server"], "1.2.3.4");
         assert_eq!(outbound["server_port"], 443);
@@ -273,10 +292,42 @@ mod tests {
     }
 
     #[test]
+    fn hysteria2_outbound_insecure_when_no_real_certificate() {
+        let node = ProxyNode {
+            name: "test-hy2".into(),
+            protocol: ProtocolType::Hysteria2,
+            server: "1.2.3.4".into(),
+            port: 8443,
+            settings: json!({
+                "clients": [{"password": "hy2-secret"}],
+            }),
+            tls: Some(json!({ "serverName": "hy2.example.com" })),
+        };
+        let outbound = build_hysteria2_outbound(&node).unwrap();
+        assert_eq!(outbound["tls"]["insecure"], true);
+    }
+
+    #[test]
+    fn hysteria2_outbound_verifies_when_acme_domain_present() {
+        let node = ProxyNode {
+            name: "test-hy2".into(),
+            protocol: ProtocolType::Hysteria2,
+            server: "1.2.3.4".into(),
+            port: 8443,
+            settings: json!({
+                "clients": [{"password": "hy2-secret"}],
+            }),
+            tls: Some(json!({ "domain": "hy2.example.com" })),
+        };
+        let outbound = build_hysteria2_outbound(&node).unwrap();
+        assert_eq!(outbound["tls"]["insecure"], false);
+    }
+
+    #[test]
     fn vless_reality_outbound_requires_public_key() {
         let mut node = reality_node();
         node.settings["public_key"] = json!("");
-        let err = build_vless_outbound(&node).unwrap_err();
+        let err = build_vless_reality_outbound(&node).unwrap_err();
         assert!(err.to_string().contains("public_key"));
     }
 }

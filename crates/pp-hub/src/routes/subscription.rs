@@ -40,30 +40,25 @@ pub async fn list_templates(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> PaginatedResult<Value> {
-    let (templates, total) =
+    let items = subscription_template::Entity::find()
+        .all(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    let total = items.len() as u64;
+    let templates: Vec<Value> =
         if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-            let total = subscription_template::Entity::find()
-                .count(&state.db)
-                .await
-                .map_err(ApiError::from)? as u64;
-            let items = subscription_template::Entity::find()
-                .offset((page - 1) * per_page)
-                .limit(per_page)
-                .all(&state.db)
-                .await
-                .map_err(ApiError::from)?;
-            (items, total)
+            items
+                .into_iter()
+                .skip(((page - 1) * per_page) as usize)
+                .take(per_page as usize)
+                .map(template_to_json)
+                .collect()
         } else {
-            let items = subscription_template::Entity::find()
-                .all(&state.db)
-                .await
-                .map_err(ApiError::from)?;
-            let total = items.len() as u64;
-            (items, total)
+            items.into_iter().map(template_to_json).collect()
         };
 
-    let data: Vec<Value> = templates.into_iter().map(template_to_json).collect();
-    Ok(PaginatedResponse::new(data, total))
+    Ok(PaginatedResponse::new(templates, total))
 }
 
 #[derive(serde::Deserialize)]
@@ -176,7 +171,8 @@ pub async fn update_template(
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
     // Enforce only one enabled template per format.
-    enforce_unique_enabled_template(&state.db, updated.id.clone(), &new_format, new_enabled).await?;
+    enforce_unique_enabled_template(&state.db, updated.id.clone(), &new_format, new_enabled)
+        .await?;
 
     Ok(ApiResponse::new(template_to_json(updated)))
 }
@@ -715,13 +711,21 @@ async fn build_proxy_nodes(
                 format!("{}-{}", node.name, cfg.name)
             };
 
+            let tls = pp_common::settings_helper::merge_tls_settings(
+                cfg.tls_settings.clone(),
+                binding
+                    .override_settings
+                    .as_ref()
+                    .and_then(|o| o.get("tls_settings").cloned()),
+            );
+
             nodes.push(ProxyNode {
                 name: display_name,
                 protocol: protocol_type,
                 server: effective_server,
                 port: effective_port,
                 settings,
-                tls: cfg.tls_settings.clone(),
+                tls,
             });
         }
     }

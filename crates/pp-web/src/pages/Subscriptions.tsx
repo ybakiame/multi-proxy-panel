@@ -407,6 +407,13 @@ export function Subscriptions() {
     );
   };
 
+  const templateDisplayName = (tmpl: SubscriptionTemplate) => {
+    if (!tmpl.is_builtin) return tmpl.name;
+    if (tmpl.format === "sing-box") return t("subscriptions.builtinSingBox");
+    if (tmpl.format === "clash") return t("subscriptions.builtinClash");
+    return tmpl.name;
+  };
+
   const buildSubUrl = (sub: Subscription, format?: string) => {
     const origin = baseUrl() || window.location.origin;
     let url = `${origin}${sub.url_path}`;
@@ -448,7 +455,9 @@ export function Subscriptions() {
               </Button>
             </div>
 
-            {newToken && <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />}
+            {newToken && (
+              <CopyableSecret secret={newToken} label={t("subscriptions.tokenWarning")} />
+            )}
 
             <Card>
               <Card.Content>
@@ -578,7 +587,16 @@ export function Subscriptions() {
                         >
                           {templates.map((tmpl) => (
                             <Table.Row key={tmpl.id}>
-                              <Table.Cell>{tmpl.name}</Table.Cell>
+                              <Table.Cell>
+                                <div className="flex items-center gap-2">
+                                  {templateDisplayName(tmpl)}
+                                  {tmpl.is_builtin && (
+                                    <Badge color="warning" size="sm">
+                                      {t("subscriptions.defaultTemplate")}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </Table.Cell>
                               <Table.Cell>{templateFormatBadge(tmpl.format)}</Table.Cell>
                               <Table.Cell>
                                 {tmpl.is_builtin ? t("common.yes") : t("common.no")}
@@ -586,15 +604,16 @@ export function Subscriptions() {
                               <Table.Cell>
                                 <Switch
                                   isSelected={tmpl.is_enabled}
-                                  onChange={(selected) =>
+                                  onChange={(selected: boolean) =>
                                     updateTemplate(tmpl.id, { is_enabled: selected })
                                       .then(fetchTemplates)
                                       .catch(() => {})
                                   }
-                                  isDisabled={false}
                                   aria-label={t("subscriptions.enabled")}
                                 >
-                                  {tmpl.is_enabled ? t("common.enabled") : t("common.disabled")}
+                                  <Switch.Control>
+                                    <Switch.Thumb />
+                                  </Switch.Control>
                                 </Switch>
                               </Table.Cell>
                               <Table.Cell>
@@ -751,9 +770,14 @@ export function Subscriptions() {
               />
               <Switch
                 isSelected={templateForm.is_enabled}
-                onChange={(selected) => setTemplateForm({ ...templateForm, is_enabled: selected })}
+                onChange={(selected: boolean) =>
+                  setTemplateForm({ ...templateForm, is_enabled: selected })
+                }
                 aria-label={t("subscriptions.enabled")}
               >
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
                 {templateForm.is_enabled ? t("common.enabled") : t("common.disabled")}
               </Switch>
               <CodeEditor

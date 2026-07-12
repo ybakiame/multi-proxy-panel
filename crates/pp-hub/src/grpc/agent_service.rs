@@ -472,6 +472,11 @@ async fn handle_core_status(
             "core {} v{} running, uptime {}s",
             status.core_type, status.version, status.uptime_sec
         )
+    } else if status.last_error.is_empty() {
+        format!(
+            "core {} v{} not running (no error captured)",
+            status.core_type, status.version
+        )
     } else {
         format!(
             "core {} v{} stopped, last error: {}",
@@ -484,6 +489,8 @@ async fn handle_core_status(
         node_id: Set(agent_id),
         level: Set(if status.running {
             "info".to_string()
+        } else if status.last_error.is_empty() {
+            "warning".to_string()
         } else {
             "error".to_string()
         }),

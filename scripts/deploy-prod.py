@@ -439,7 +439,42 @@ def remote_restore(ssh, server: Server, backup_path: str):
     ssh_exec(ssh, " && ".join(restore_cmds), timeout=60)
 
 
-def install_caddy(ssh, server: Server):
+def wait_for_hub_health(ssh, server: Server, max_wait: int = 30):
+    """Wait until the Hub health endpoint returns success."""
+    print("Waiting for Hub health check...")
+    cmd = (
+        "curl -sfk https://127.0.0.1/health -H 'Host: %s' || "
+        "curl -sf http://127.0.0.1:%s/health"
+        % (server.domain, server.listen.rsplit(":", 1)[-1])
+    )
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        try:
+            out = ssh_exec(ssh, cmd, echo=False, timeout=5)
+            if '"status"' in out or '"healthy"' in out:
+                print("Hub is healthy")
+                return
+        except RuntimeError:
+            pass
+        time.sleep(1)
+    raise RuntimeError("Hub health check did not pass within %d seconds" % max_wait)
+
+
+def wait_for_agent_register(ssh, max_wait: int = 60):
+    """Wait until the local agent has registered with the Hub."""
+    print("Waiting for agent registration...")
+    cmd = "journalctl -u proxy-panel-agent -n 5 --no-pager"
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        try:
+            out = ssh_exec(ssh, cmd, echo=False, timeout=5)
+            if "register response: success=true" in out:
+                print("Agent registered")
+                return
+        except RuntimeError:
+            pass
+        time.sleep(1)
+    raise RuntimeError("Agent did not register within %d seconds" % max_wait)
     if not server.install_caddy:
         return
     print("\n=== Installing Caddy on %s ===" % server.name)
@@ -835,6 +870,9 @@ ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/proxy-panel /opt/proxy-panel/bin
 
+# Allow sing-box child process to bind ACME challenge ports (80/443).
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
 [Install]
 WantedBy=multi-user.target
 """ % tls_arg
@@ -994,9 +1032,14 @@ def update_hub(ssh, server: Server):
             print("Warning: could not determine local agent token; leaving agent.env unchanged")
 
         ssh_exec(ssh, "systemctl start proxy-panel-hub", timeout=60)
-        time.sleep(3)
-        ssh_exec(ssh, "systemctl start proxy-panel-agent", timeout=60)
-        time.sleep(5)
+
+        # Wait for Hub health endpoint before starting dependent agents.
+        wait_for_hub_health(ssh, server)
+
+        # Restart the local agent so it picks up the new binary and env.
+        ssh_exec(ssh, "systemctl restart proxy-panel-agent", timeout=60)
+        wait_for_agent_register(ssh, max_wait=60)
+
         ssh_exec(ssh, "systemctl is-active proxy-panel-hub proxy-panel-agent")
 
         health = ssh_exec(
@@ -1028,8 +1071,8 @@ def update_agent(ssh, server: Server):
         ssh_exec(ssh, "chown -R proxypanel:proxypanel %s /var/lib/proxy-panel %s" % (REMOTE_DIR, REMOTE_ETC))
         write_agent_service(ssh, server)
         ssh_exec(ssh, "systemctl daemon-reload")
-        ssh_exec(ssh, "systemctl start proxy-panel-agent", timeout=60)
-        time.sleep(5)
+        ssh_exec(ssh, "systemctl restart proxy-panel-agent", timeout=60)
+        wait_for_agent_register(ssh, max_wait=60)
         ssh_exec(ssh, "systemctl is-active proxy-panel-agent")
     except Exception as e:
         print("Update failed on %s: %s" % (server.name, e), file=sys.stderr)
@@ -1111,23 +1154,41 @@ def update_all(servers: List[Server], all_servers: List[Server]) -> Dict[str, Di
     itself is not part of the current update target.
     """
     hubs = [s for s in all_servers if s.mode == "hub"]
+    hub_just_updated = False
     for server in servers:
         run_action(server, "update")
+        if server.mode == "hub":
+            hub_just_updated = True
+            continue
 
         # Refresh the node's public address on the Hub after updating a remote agent.
-        if server.mode == "agent" and server.agent_id and not is_local_hub_url(server.hub_url):
-            try:
-                hub = find_agent_hub(server, hubs)
-                update_node_metadata_on_hub(
-                    hub,
-                    server.agent_id,
-                    server.host,
-                    domain=server.domain,
-                    hostname=server.hostname or server.name,
-                )
-            except Exception as e:
+        if server.mode == "agent" and not is_local_hub_url(server.hub_url):
+            # If the Hub was just updated, give remote agents a moment to reconnect
+            # before restarting this agent. This avoids compounding reconnect backoffs.
+            if hub_just_updated:
+                print("Waiting 15s for agents to reconnect to freshly updated Hub...")
+                time.sleep(15)
+                hub_just_updated = False
+
+            if server.agent_id:
+                try:
+                    hub = find_agent_hub(server, hubs)
+                    update_node_metadata_on_hub(
+                        hub,
+                        server.agent_id,
+                        server.host,
+                        domain=server.domain,
+                        hostname=server.hostname or server.name,
+                    )
+                except Exception as e:
+                    print(
+                        "Warning: could not update node metadata for %s on hub: %s" % (server.name, e),
+                        file=sys.stderr,
+                    )
+            else:
                 print(
-                    "Warning: could not update node metadata for %s on hub: %s" % (server.name, e),
+                    "Warning: skipping node metadata update for %s: agent_id not set in inventory"
+                    % server.name,
                     file=sys.stderr,
                 )
     return {}

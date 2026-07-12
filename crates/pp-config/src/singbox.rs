@@ -1,5 +1,6 @@
 use pp_common::{CoreType, PanelError, PanelResult, ProtocolType};
 use serde_json::{Value, json};
+use tracing::warn;
 
 use super::builder::{ConfigBuilder, InboundConfig};
 
@@ -31,11 +32,21 @@ impl ConfigBuilder for SingBoxConfigBuilder {
     fn build_full_config(&self, inbounds: &[InboundConfig]) -> PanelResult<Value> {
         let mut sb_inbounds = Vec::with_capacity(inbounds.len());
         for inbound in inbounds {
-            sb_inbounds.push(self.build_inbound(
-                inbound.protocol,
-                &inbound.settings,
-                inbound.tls.as_ref(),
-            )?);
+            match self.build_inbound(inbound.protocol, &inbound.settings, inbound.tls.as_ref()) {
+                Ok(value) => sb_inbounds.push(value),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if matches!(
+                        inbound.protocol,
+                        ProtocolType::Hysteria2 | ProtocolType::Anytls
+                    ) && err_msg.contains("TLS")
+                    {
+                        warn!("skipping sing-box inbound {}: {}", inbound.tag, err_msg);
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
         }
 
         let effective_version = effective_singbox_version(inbounds);
@@ -339,13 +350,38 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
     Some(tls_obj)
 }
 
-fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    if tls.is_none() {
-        return Err(PanelError::Validation(
-            "Hysteria2 requires TLS configuration".into(),
-        ));
+fn build_singbox_server_tls(tls: Option<&Value>) -> PanelResult<Value> {
+    let tls = tls.ok_or_else(|| PanelError::Validation("TLS configuration is required".into()))?;
+
+    // User-provided certificate files
+    let cert_file = tls.get("certFile").and_then(|v| v.as_str()).unwrap_or("");
+    let key_file = tls.get("keyFile").and_then(|v| v.as_str()).unwrap_or("");
+    if !cert_file.is_empty() && !key_file.is_empty() {
+        return Ok(json!({
+            "enabled": true,
+            "certificate_path": cert_file,
+            "key_path": key_file,
+        }));
     }
 
+    // ACME automatic certificate
+    let domain = tls.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+    if !domain.is_empty() {
+        return Ok(json!({
+            "enabled": true,
+            "acme": {
+                "domain": [domain],
+                "data_directory": "acme",
+            },
+        }));
+    }
+
+    Err(PanelError::Validation(
+        "TLS requires certFile+keyFile or a domain for ACME".into(),
+    ))
+}
+
+fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
     let users = password_clients_to_users(settings);
     let obfs_type = settings
         .get("obfs_type")
@@ -362,11 +398,7 @@ fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": users,
-        "tls": {
-            "enabled": true,
-            "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
-            "key_path": tls.and_then(|t| t.get("keyFile")).and_then(|v| v.as_str()).unwrap_or(""),
-        },
+        "tls": build_singbox_server_tls(tls)?,
         "up_mbps": settings.get("up_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
         "down_mbps": settings.get("down_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
     });
@@ -382,12 +414,6 @@ fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult
 }
 
 fn build_anytls_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    if tls.is_none() {
-        return Err(PanelError::Validation(
-            "AnyTLS requires TLS configuration".into(),
-        ));
-    }
-
     let users = password_clients_to_users(settings);
     let mut inbound = json!({
         "type": "anytls",
@@ -395,11 +421,7 @@ fn build_anytls_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": users,
-        "tls": {
-            "enabled": true,
-            "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
-            "key_path": tls.and_then(|t| t.get("keyFile")).and_then(|v| v.as_str()).unwrap_or(""),
-        },
+        "tls": build_singbox_server_tls(tls)?,
     });
 
     if let Some(masquerade) = settings.get("masquerade").and_then(|v| v.as_str()) {
@@ -518,8 +540,66 @@ mod tests {
         assert_eq!(inbound["type"], "hysteria2");
         assert_eq!(inbound["listen_port"], 8444);
         assert_eq!(inbound["tls"]["enabled"], true);
+        assert_eq!(inbound["tls"]["certificate_path"], "/tmp/cert.pem");
+        assert_eq!(inbound["tls"]["key_path"], "/tmp/key.pem");
         let users = inbound["users"].as_array().unwrap();
         assert_eq!(users[0]["password"], "secret");
+    }
+
+    #[test]
+    fn hysteria2_inbound_acme_tls() {
+        let builder = SingBoxConfigBuilder;
+        let settings = json!({
+            "tag": "hy2-in",
+            "listen": "::",
+            "port": 8444,
+            "clients": [{ "name": "alice", "password": "secret" }],
+        });
+        let tls = json!({ "domain": "hy2.example.com" });
+        let inbound = builder
+            .build_inbound(ProtocolType::Hysteria2, &settings, Some(&tls))
+            .unwrap();
+
+        assert_eq!(inbound["type"], "hysteria2");
+        assert_eq!(inbound["tls"]["enabled"], true);
+        let domains = inbound["tls"]["acme"]["domain"].as_array().unwrap();
+        assert_eq!(domains[0], "hy2.example.com");
+        assert_eq!(inbound["tls"]["acme"]["data_directory"], "acme");
+    }
+
+    #[test]
+    fn full_config_skips_hysteria2_without_tls() {
+        let builder = SingBoxConfigBuilder;
+        let reality = InboundConfig {
+            tag: "vless-reality-in".into(),
+            protocol: ProtocolType::VlessReality,
+            listen: "::".into(),
+            port: 443,
+            settings: reality_settings(),
+            tls: None,
+            sniffing: None,
+            core_version: None,
+        };
+        let hysteria = InboundConfig {
+            tag: "hy2-in".into(),
+            protocol: ProtocolType::Hysteria2,
+            listen: "::".into(),
+            port: 8444,
+            settings: json!({
+                "tag": "hy2-in",
+                "listen": "::",
+                "port": 8444,
+                "clients": [{ "name": "alice", "password": "secret" }],
+            }),
+            tls: None,
+            sniffing: None,
+            core_version: None,
+        };
+
+        let config = builder.build_full_config(&[reality, hysteria]).unwrap();
+        let inbounds = config["inbounds"].as_array().unwrap();
+        assert_eq!(inbounds.len(), 1);
+        assert_eq!(inbounds[0]["type"], "vless");
     }
 
     #[test]

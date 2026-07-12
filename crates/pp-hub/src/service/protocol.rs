@@ -44,11 +44,18 @@ pub async fn generate_node_config(
         let protocol = parse_protocol_type(&config.protocol_type)?;
         let mut settings = config.settings.clone();
 
-        // Merge override settings from binding
+        // Merge override settings from binding, keeping tls_settings separate.
+        let override_tls = binding
+            .override_settings
+            .as_ref()
+            .and_then(|o| o.get("tls_settings").cloned());
         if let Some(ref overrides) = binding.override_settings {
             if let Some(obj) = settings.as_object_mut() {
                 if let Some(over_obj) = overrides.as_object() {
                     for (k, v) in over_obj {
+                        if k == "tls_settings" {
+                            continue;
+                        }
                         obj.insert(k.clone(), v.clone());
                     }
                 }
@@ -68,13 +75,18 @@ pub async fn generate_node_config(
             );
         }
 
+        let effective_tls = pp_common::settings_helper::merge_tls_settings(
+            config.tls_settings.clone(),
+            override_tls,
+        );
+
         inbounds.push(InboundConfig {
             tag: format!("{}-{}", config.name, config.id),
             protocol,
             listen: config.listen_address.clone(),
             port: config.listen_port as u16,
             settings,
-            tls: config.tls_settings.clone(),
+            tls: effective_tls,
             sniffing: None,
             core_version: config.core_version.clone(),
         });
