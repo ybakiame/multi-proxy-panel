@@ -245,6 +245,7 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         "password": password,
         "sni": sni,
         "skip-cert-verify": skip_cert_verify,
+        "alpn": ["h3"],
         "up": node.settings.get("up_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
         "down": node.settings.get("down_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
         "udp": true,
@@ -383,6 +384,7 @@ mod tests {
         };
         let proxy = build_hysteria2_proxy(&node).unwrap();
         assert_eq!(proxy["skip-cert-verify"], false);
+        assert_eq!(proxy["alpn"], json!(["h3"]));
     }
 
     #[test]
@@ -399,6 +401,7 @@ mod tests {
         };
         let proxy = build_hysteria2_proxy(&node).unwrap();
         assert_eq!(proxy["skip-cert-verify"], true);
+        assert_eq!(proxy["alpn"], json!(["h3"]));
     }
 
     #[test]

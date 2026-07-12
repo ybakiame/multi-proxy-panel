@@ -189,6 +189,7 @@ fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
             "enabled": true,
             "server_name": server_name,
             "insecure": skip_verify,
+            "alpn": ["h3"],
         },
     });
 
@@ -305,6 +306,7 @@ mod tests {
         };
         let outbound = build_hysteria2_outbound(&node).unwrap();
         assert_eq!(outbound["tls"]["insecure"], true);
+        assert_eq!(outbound["tls"]["alpn"], json!(["h3"]));
     }
 
     #[test]
@@ -321,6 +323,7 @@ mod tests {
         };
         let outbound = build_hysteria2_outbound(&node).unwrap();
         assert_eq!(outbound["tls"]["insecure"], false);
+        assert_eq!(outbound["tls"]["alpn"], json!(["h3"]));
     }
 
     #[test]

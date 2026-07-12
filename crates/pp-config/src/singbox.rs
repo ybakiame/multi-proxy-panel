@@ -392,13 +392,16 @@ fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    let mut tls_obj = build_singbox_server_tls(tls)?;
+    tls_obj["alpn"] = json!(["h3"]);
+
     let mut inbound = json!({
         "type": "hysteria2",
         "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("hy2-in"),
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
         "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
         "users": users,
-        "tls": build_singbox_server_tls(tls)?,
+        "tls": tls_obj,
         "up_mbps": settings.get("up_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
         "down_mbps": settings.get("down_mbps").and_then(|v| v.as_u64()).unwrap_or(100),
     });
@@ -542,6 +545,7 @@ mod tests {
         assert_eq!(inbound["tls"]["enabled"], true);
         assert_eq!(inbound["tls"]["certificate_path"], "/tmp/cert.pem");
         assert_eq!(inbound["tls"]["key_path"], "/tmp/key.pem");
+        assert_eq!(inbound["tls"]["alpn"], json!(["h3"]));
         let users = inbound["users"].as_array().unwrap();
         assert_eq!(users[0]["password"], "secret");
     }
@@ -565,6 +569,7 @@ mod tests {
         let domains = inbound["tls"]["acme"]["domain"].as_array().unwrap();
         assert_eq!(domains[0], "hy2.example.com");
         assert_eq!(inbound["tls"]["acme"]["data_directory"], "acme");
+        assert_eq!(inbound["tls"]["alpn"], json!(["h3"]));
     }
 
     #[test]
