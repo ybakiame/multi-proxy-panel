@@ -90,6 +90,16 @@ impl MigrationTrait for Migration {
                 ))
                 .await?;
             }
+
+            // Ensure only the builtin template remains enabled for this format.
+            db.execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                format!(
+                    "UPDATE subscription_templates SET is_enabled = 0 WHERE is_builtin = 0 AND format = '{}' AND is_enabled = 1",
+                    format_escaped
+                ),
+            ))
+            .await?;
         }
 
         Ok(())
