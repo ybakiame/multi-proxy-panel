@@ -391,7 +391,6 @@ fn minimal_config_for_core(core_type: pp_common::CoreType) -> serde_json::Value 
             "inbounds": [],
             "outbounds": [{ "type": "direct", "tag": "direct" }]
         }),
-        pp_common::CoreType::Both => serde_json::json!({}),
     }
 }
 
@@ -492,7 +491,6 @@ fn core_type_from_i32(value: i32) -> pp_common::CoreType {
     match value {
         1 => pp_common::CoreType::Xray,
         2 => pp_common::CoreType::SingBox,
-        3 => pp_common::CoreType::Both,
         _ => pp_common::CoreType::SingBox,
     }
 }

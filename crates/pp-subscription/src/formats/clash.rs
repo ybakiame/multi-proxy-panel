@@ -121,12 +121,7 @@ fn replace_yaml_placeholder(
 
 fn build_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     match node.protocol {
-        ProtocolType::VlessReality | ProtocolType::VlessVision | ProtocolType::VlessXhttp => {
-            build_vless_proxy(node)
-        }
-        ProtocolType::Vmess => build_vmess_proxy(node),
-        ProtocolType::Trojan => build_trojan_proxy(node),
-        ProtocolType::Shadowsocks2022 => build_shadowsocks_proxy(node),
+        ProtocolType::VlessReality | ProtocolType::VlessXhttp => build_vless_proxy(node),
         ProtocolType::Hysteria2 => build_hysteria2_proxy(node),
         _ => Err(PanelError::Subscription(format!(
             "protocol {:?} not supported in clash subscription",
@@ -201,9 +196,6 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
                 "short-id": short_id,
             });
         }
-        ProtocolType::VlessVision => {
-            proxy["tls"] = json!(true);
-        }
         ProtocolType::VlessXhttp => {
             proxy["tls"] = json!(true);
             let host = node
@@ -228,79 +220,6 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
     apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
 
     Ok(proxy)
-}
-
-fn build_vmess_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let uuid = pp_common::settings_helper::client_uuid(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing vmess uuid".into()))?;
-
-    let network = node
-        .settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut proxy = serde_json::json!({
-        "name": node.name,
-        "type": "vmess",
-        "server": node.server,
-        "port": node.port,
-        "uuid": uuid,
-        "alterId": 0,
-        "cipher": "auto",
-        "network": network,
-        "udp": true,
-    });
-
-    apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
-
-    Ok(proxy)
-}
-
-fn build_trojan_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let password = pp_common::settings_helper::client_password(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
-
-    let network = node
-        .settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut proxy = serde_json::json!({
-        "name": node.name,
-        "type": "trojan",
-        "server": node.server,
-        "port": node.port,
-        "password": password,
-        "network": network,
-        "udp": true,
-    });
-
-    apply_transport_settings(&mut proxy, network, &node.settings, node.tls.as_ref())?;
-
-    Ok(proxy)
-}
-
-fn build_shadowsocks_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
-    let password = pp_common::settings_helper::client_password(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing shadowsocks password".into()))?;
-
-    let method = node
-        .settings
-        .get("method")
-        .and_then(|v| v.as_str())
-        .unwrap_or("2022-blake3-aes-128-gcm");
-
-    Ok(serde_json::json!({
-        "name": node.name,
-        "type": "ss",
-        "server": node.server,
-        "port": node.port,
-        "password": password,
-        "cipher": method,
-        "udp": true,
-    }))
 }
 
 fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {

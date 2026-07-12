@@ -213,7 +213,7 @@ pub async fn update_config(
             let core_type = updated
                 .core_type
                 .parse::<pp_common::CoreType>()
-                .unwrap_or(pp_common::CoreType::Both);
+                .unwrap_or(pp_common::CoreType::SingBox);
             for node_id in node_ids {
                 if let Err(e) = crate::service::protocol::push_node_config(
                     &state,

@@ -37,7 +37,7 @@ pub async fn generate_node_config(
 
         // Check if this config applies to the target core
         let config_core = parse_core_type(&config.core_type);
-        if config_core != CoreType::Both && config_core != target_core {
+        if config_core != target_core {
             continue;
         }
 
@@ -148,8 +148,8 @@ async fn inject_binding_clients(
 fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Value {
     let email = client.email.as_ref().unwrap_or(&client.name);
     match protocol_type {
-        pt if pt.starts_with("vless") || pt == "vmess" || pt == "trojan" => {
-            let flow = if pt == "vless_vision" || pt == "vless_reality" {
+        pt if pt.starts_with("vless") => {
+            let flow = if pt == "vless_reality" {
                 "xtls-rprx-vision"
             } else {
                 ""
@@ -171,14 +171,6 @@ fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Valu
         "hysteria2" | "anytls" => json!({
             "name": email,
             "password": client.id.to_string(),
-        }),
-        "tuic" | "tuic_v5" => json!({
-            "name": email,
-            "uuid": client.id.to_string(),
-            "password": client.id.to_string().replace("-", ""),
-        }),
-        "shadowsocks2022" => json!({
-            "password": client.id.to_string().replace("-", ""),
         }),
         _ => json!({"id": client.id.to_string()}),
     }
@@ -206,7 +198,6 @@ pub async fn push_node_config(
     let proto_core = match core_type {
         CoreType::Xray => pp_proto::CoreType::Xray,
         CoreType::SingBox => pp_proto::CoreType::SingBox,
-        CoreType::Both => pp_proto::CoreType::Both,
     };
 
     let message = pp_proto::HubMessage {
@@ -321,10 +312,7 @@ pub async fn validate_node_port_conflicts(
         }
 
         let config_core = parse_core_type(&config.core_type);
-        let cores: Vec<CoreType> = match config_core {
-            CoreType::Both => vec![CoreType::Xray, CoreType::SingBox],
-            c => vec![c],
-        };
+        let cores: Vec<CoreType> = vec![config_core];
 
         let entry = port_cores.entry((listen.clone(), port)).or_default();
         for c in cores {
@@ -344,7 +332,7 @@ fn parse_core_type(s: &str) -> CoreType {
     match s {
         "xray" => CoreType::Xray,
         "sing-box" | "singbox" => CoreType::SingBox,
-        _ => CoreType::Both,
+        _ => CoreType::SingBox,
     }
 }
 
@@ -352,13 +340,8 @@ fn parse_protocol_type(s: &str) -> PanelResult<pp_common::ProtocolType> {
     use pp_common::ProtocolType;
     match s {
         "vless_reality" => Ok(ProtocolType::VlessReality),
-        "vless_vision" => Ok(ProtocolType::VlessVision),
         "vless_xhttp" => Ok(ProtocolType::VlessXhttp),
-        "vmess" => Ok(ProtocolType::Vmess),
-        "trojan" => Ok(ProtocolType::Trojan),
-        "shadowsocks2022" => Ok(ProtocolType::Shadowsocks2022),
         "hysteria2" => Ok(ProtocolType::Hysteria2),
-        "tuic" | "tuic_v5" => Ok(ProtocolType::TuicV5),
         "anytls" => Ok(ProtocolType::Anytls),
         _ => Err(pp_common::PanelError::Validation(format!(
             "unknown protocol type: {}",

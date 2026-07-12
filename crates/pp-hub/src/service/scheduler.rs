@@ -426,10 +426,10 @@ async fn check_bindings_for_core(
         let binding_core = match config.as_str() {
             "xray" => pp_common::CoreType::Xray,
             "sing-box" | "singbox" => pp_common::CoreType::SingBox,
-            _ => pp_common::CoreType::Both,
+            _ => pp_common::CoreType::SingBox,
         };
 
-        if binding_core == pp_common::CoreType::Both || binding_core == core_type {
+        if binding_core == core_type {
             return Ok(true);
         }
     }

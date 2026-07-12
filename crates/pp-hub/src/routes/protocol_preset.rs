@@ -1,4 +1,4 @@
-//! Protocol configuration presets inspired by v2ray-agent and 233boy/Xray scripts.
+//! Protocol configuration presets for supported secure protocols.
 //!
 //! Presets bundle a base protocol + transport + security into ready-to-use
 //! `protocol_configs` rows, reducing manual JSON editing.
@@ -18,26 +18,14 @@ use crate::state::AppState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProtocolPreset {
-    /// VLESS + REALITY + vision flow (xray)
+    /// VLESS + REALITY + vision flow
     VlessReality,
-    /// VLESS + TCP + TLS + vision flow (xray)
-    VlessVisionTls,
-    /// VLESS + WebSocket + TLS (xray/sing-box)
-    VlessWsTls,
-    /// VLESS + gRPC + TLS (xray/sing-box)
-    VlessGrpcTls,
-    /// VLESS + XHTTP + TLS (xray)
+    /// VLESS + XHTTP + TLS (xray only)
     VlessXhttpTls,
-    /// VMess + WebSocket + TLS (xray/sing-box)
-    VmessWsTls,
-    /// VMess + gRPC + TLS (xray/sing-box)
-    VmessGrpcTls,
-    /// Trojan + WebSocket + TLS (xray/sing-box)
-    TrojanWsTls,
-    /// Trojan + gRPC + TLS (xray/sing-box)
-    TrojanGrpcTls,
-    /// Shadowsocks 2022 (xray/sing-box)
-    Shadowsocks2022,
+    /// Hysteria2 (sing-box only)
+    Hysteria2,
+    /// AnyTLS (sing-box only)
+    Anytls,
 }
 
 /// Description of a preset for the frontend.
@@ -62,67 +50,25 @@ pub fn list_presets() -> Vec<PresetInfo> {
             core_type: CoreType::Xray.to_string(),
         },
         PresetInfo {
-            id: "vless_vision_tls".to_string(),
-            name: "VLESS + Vision + TLS".to_string(),
-            description: "VLESS over TCP with TLS and xtls-rprx-vision flow.".to_string(),
-            protocol_type: ProtocolType::VlessVision.to_string(),
-            core_type: CoreType::Xray.to_string(),
-        },
-        PresetInfo {
-            id: "vless_ws_tls".to_string(),
-            name: "VLESS + WebSocket + TLS".to_string(),
-            description: "VLESS over WebSocket, suitable for CDN.".to_string(),
-            protocol_type: ProtocolType::VlessVision.to_string(),
-            core_type: CoreType::Both.to_string(),
-        },
-        PresetInfo {
-            id: "vless_grpc_tls".to_string(),
-            name: "VLESS + gRPC + TLS".to_string(),
-            description: "VLESS over gRPC, suitable for CDN.".to_string(),
-            protocol_type: ProtocolType::VlessVision.to_string(),
-            core_type: CoreType::Both.to_string(),
-        },
-        PresetInfo {
             id: "vless_xhttp_tls".to_string(),
             name: "VLESS + XHTTP + TLS".to_string(),
-            description: "VLESS over XHTTP (HTTPUpgrade).".to_string(),
+            description: "VLESS over XHTTP (HTTPUpgrade), xray only.".to_string(),
             protocol_type: ProtocolType::VlessXhttp.to_string(),
             core_type: CoreType::Xray.to_string(),
         },
         PresetInfo {
-            id: "vmess_ws_tls".to_string(),
-            name: "VMess + WebSocket + TLS".to_string(),
-            description: "VMess over WebSocket, wide client compatibility.".to_string(),
-            protocol_type: ProtocolType::Vmess.to_string(),
-            core_type: CoreType::Both.to_string(),
+            id: "hysteria2".to_string(),
+            name: "Hysteria2".to_string(),
+            description: "Hysteria2 with TLS, sing-box only.".to_string(),
+            protocol_type: ProtocolType::Hysteria2.to_string(),
+            core_type: CoreType::SingBox.to_string(),
         },
         PresetInfo {
-            id: "vmess_grpc_tls".to_string(),
-            name: "VMess + gRPC + TLS".to_string(),
-            description: "VMess over gRPC.".to_string(),
-            protocol_type: ProtocolType::Vmess.to_string(),
-            core_type: CoreType::Both.to_string(),
-        },
-        PresetInfo {
-            id: "trojan_ws_tls".to_string(),
-            name: "Trojan + WebSocket + TLS".to_string(),
-            description: "Trojan over WebSocket.".to_string(),
-            protocol_type: ProtocolType::Trojan.to_string(),
-            core_type: CoreType::Both.to_string(),
-        },
-        PresetInfo {
-            id: "trojan_grpc_tls".to_string(),
-            name: "Trojan + gRPC + TLS".to_string(),
-            description: "Trojan over gRPC.".to_string(),
-            protocol_type: ProtocolType::Trojan.to_string(),
-            core_type: CoreType::Both.to_string(),
-        },
-        PresetInfo {
-            id: "shadowsocks2022".to_string(),
-            name: "Shadowsocks 2022".to_string(),
-            description: "Shadowsocks 2022 with BLAKE3 AEAD.".to_string(),
-            protocol_type: ProtocolType::Shadowsocks2022.to_string(),
-            core_type: CoreType::Both.to_string(),
+            id: "anytls".to_string(),
+            name: "AnyTLS".to_string(),
+            description: "AnyTLS with TLS, sing-box only.".to_string(),
+            protocol_type: ProtocolType::Anytls.to_string(),
+            core_type: CoreType::SingBox.to_string(),
         },
     ]
 }
@@ -155,53 +101,6 @@ pub fn expand_preset(
             });
             (ProtocolType::VlessReality, CoreType::Xray, settings, None)
         }
-        ProtocolPreset::VlessVisionTls => {
-            let settings = json!({
-                "clients": [],
-                "decryption": "none",
-                "flow": "xtls-rprx-vision",
-                "network": "tcp",
-            });
-            let tls = default_tls_settings(sni);
-            (
-                ProtocolType::VlessVision,
-                CoreType::Xray,
-                settings,
-                Some(tls),
-            )
-        }
-        ProtocolPreset::VlessWsTls => {
-            let settings = json!({
-                "clients": [],
-                "decryption": "none",
-                "network": "ws",
-                "path": "/vless",
-                "host": sni,
-            });
-            let tls = default_tls_settings(sni);
-            (
-                ProtocolType::VlessVision,
-                CoreType::Both,
-                settings,
-                Some(tls),
-            )
-        }
-        ProtocolPreset::VlessGrpcTls => {
-            let settings = json!({
-                "clients": [],
-                "decryption": "none",
-                "network": "grpc",
-                "service_name": "vless-grpc",
-                "host": sni,
-            });
-            let tls = default_tls_settings(sni);
-            (
-                ProtocolType::VlessVision,
-                CoreType::Both,
-                settings,
-                Some(tls),
-            )
-        }
         ProtocolPreset::VlessXhttpTls => {
             let settings = json!({
                 "clients": [],
@@ -219,58 +118,29 @@ pub fn expand_preset(
                 Some(tls),
             )
         }
-        ProtocolPreset::VmessWsTls => {
+        ProtocolPreset::Hysteria2 => {
             let settings = json!({
                 "clients": [],
-                "network": "ws",
-                "path": "/vmess",
-                "host": sni,
+                "up_mbps": 100,
+                "down_mbps": 100,
+                "obfs_type": "none",
+                "obfs_password": "",
             });
             let tls = default_tls_settings(sni);
-            (ProtocolType::Vmess, CoreType::Both, settings, Some(tls))
-        }
-        ProtocolPreset::VmessGrpcTls => {
-            let settings = json!({
-                "clients": [],
-                "network": "grpc",
-                "service_name": "vmess-grpc",
-                "host": sni,
-            });
-            let tls = default_tls_settings(sni);
-            (ProtocolType::Vmess, CoreType::Both, settings, Some(tls))
-        }
-        ProtocolPreset::TrojanWsTls => {
-            let settings = json!({
-                "clients": [],
-                "network": "ws",
-                "path": "/trojan",
-                "host": sni,
-            });
-            let tls = default_tls_settings(sni);
-            (ProtocolType::Trojan, CoreType::Both, settings, Some(tls))
-        }
-        ProtocolPreset::TrojanGrpcTls => {
-            let settings = json!({
-                "clients": [],
-                "network": "grpc",
-                "service_name": "trojan-grpc",
-                "host": sni,
-            });
-            let tls = default_tls_settings(sni);
-            (ProtocolType::Trojan, CoreType::Both, settings, Some(tls))
-        }
-        ProtocolPreset::Shadowsocks2022 => {
-            let settings = json!({
-                "method": "2022-blake3-aes-128-gcm",
-                "password": "",
-                "network": "tcp,udp",
-            });
             (
-                ProtocolType::Shadowsocks2022,
-                CoreType::Both,
+                ProtocolType::Hysteria2,
+                CoreType::SingBox,
                 settings,
-                None,
+                Some(tls),
             )
+        }
+        ProtocolPreset::Anytls => {
+            let settings = json!({
+                "clients": [],
+                "masquerade": "",
+            });
+            let tls = default_tls_settings(sni);
+            (ProtocolType::Anytls, CoreType::SingBox, settings, Some(tls))
         }
     };
 
@@ -285,11 +155,8 @@ pub fn expand_preset(
     })
 }
 
-fn default_port_for_preset(preset: ProtocolPreset) -> u16 {
-    match preset {
-        ProtocolPreset::Shadowsocks2022 => 8388,
-        _ => 443,
-    }
+fn default_port_for_preset(_preset: ProtocolPreset) -> u16 {
+    443
 }
 
 fn default_tls_settings(sni: &str) -> Value {
@@ -394,15 +261,9 @@ impl std::str::FromStr for ProtocolPreset {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "vless_reality" => Ok(ProtocolPreset::VlessReality),
-            "vless_vision_tls" => Ok(ProtocolPreset::VlessVisionTls),
-            "vless_ws_tls" => Ok(ProtocolPreset::VlessWsTls),
-            "vless_grpc_tls" => Ok(ProtocolPreset::VlessGrpcTls),
             "vless_xhttp_tls" => Ok(ProtocolPreset::VlessXhttpTls),
-            "vmess_ws_tls" => Ok(ProtocolPreset::VmessWsTls),
-            "vmess_grpc_tls" => Ok(ProtocolPreset::VmessGrpcTls),
-            "trojan_ws_tls" => Ok(ProtocolPreset::TrojanWsTls),
-            "trojan_grpc_tls" => Ok(ProtocolPreset::TrojanGrpcTls),
-            "shadowsocks2022" => Ok(ProtocolPreset::Shadowsocks2022),
+            "hysteria2" => Ok(ProtocolPreset::Hysteria2),
+            "anytls" => Ok(ProtocolPreset::Anytls),
             _ => Err(format!("unknown preset: {}", s)),
         }
     }
@@ -427,16 +288,16 @@ mod tests {
     }
 
     #[test]
-    fn vmess_ws_tls_preset_has_ws_fields() {
+    fn hysteria2_preset_has_tls_and_users() {
         let payload = expand_preset(
-            ProtocolPreset::VmessWsTls,
+            ProtocolPreset::Hysteria2,
             "test",
             Some("cdn.example.com"),
             None,
         );
-        assert_eq!(payload["protocol_type"], "vmess");
-        assert_eq!(payload["settings"]["network"], "ws");
-        assert_eq!(payload["settings"]["host"], "cdn.example.com");
+        assert_eq!(payload["protocol_type"], "hysteria2");
+        assert_eq!(payload["core_type"], "sing-box");
+        assert_eq!(payload["settings"]["up_mbps"], 100);
         assert_eq!(payload["tls_settings"]["serverName"], "cdn.example.com");
     }
 }

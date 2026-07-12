@@ -18,12 +18,9 @@ impl ConfigBuilder for XrayConfigBuilder {
         tls: Option<&Value>,
     ) -> PanelResult<Value> {
         match protocol {
-            ProtocolType::VlessReality | ProtocolType::VlessVision | ProtocolType::VlessXhttp => {
+            ProtocolType::VlessReality | ProtocolType::VlessXhttp => {
                 build_vless_inbound(protocol, settings, tls)
             }
-            ProtocolType::Vmess => build_vmess_inbound(settings, tls),
-            ProtocolType::Trojan => build_trojan_inbound(settings, tls),
-            ProtocolType::Shadowsocks2022 => build_shadowsocks_inbound(settings, tls),
             _ => Err(PanelError::Config(format!(
                 "protocol {:?} not supported by xray",
                 protocol
@@ -330,85 +327,9 @@ fn build_xray_xhttp_settings(settings: &Value) -> Option<Value> {
     Some(xhttp)
 }
 
-fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    let network = settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut inbound = json!({
-        "protocol": "vmess",
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
-        "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
-        "settings": {
-            "clients": settings.get("clients").cloned().unwrap_or(json!([]))
-        },
-        "streamSettings": {
-            "network": network,
-            "security": if tls.is_some() { "tls" } else { "none" },
-        },
-        "sniffing": {
-            "enabled": true,
-            "destOverride": ["http", "tls", "quic"]
-        }
-    });
-
-    apply_xray_transport_settings(&mut inbound, network, settings)?;
-
-    if let Some(tls_cfg) = tls {
-        inbound["streamSettings"]["tlsSettings"] = tls_cfg.clone();
-    }
-
-    Ok(inbound)
-}
-
-fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    if tls.is_none() {
-        return Err(PanelError::Validation(
-            "Trojan requires TLS configuration".into(),
-        ));
-    }
-
-    let network = settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut inbound = json!({
-        "protocol": "trojan",
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
-        "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
-        "settings": {
-            "clients": settings.get("clients").cloned().unwrap_or(json!([]))
-        },
-        "streamSettings": {
-            "network": network,
-            "security": "tls",
-            "tlsSettings": tls.unwrap()
-        }
-    });
-
-    apply_xray_transport_settings(&mut inbound, network, settings)?;
-
-    Ok(inbound)
-}
-
-fn build_shadowsocks_inbound(settings: &Value, _tls: Option<&Value>) -> PanelResult<Value> {
-    Ok(json!({
-        "protocol": "shadowsocks",
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
-        "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(8388),
-        "settings": {
-            "method": settings.get("method").and_then(|v| v.as_str()).unwrap_or("2022-blake3-aes-128-gcm"),
-            "password": settings.get("password").and_then(|v| v.as_str()).unwrap_or(""),
-            "network": settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp,udp")
-        }
-    }))
-}
-
 fn stream_settings_network(protocol: &ProtocolType) -> &'static str {
     match protocol {
-        ProtocolType::VlessReality | ProtocolType::VlessVision => "tcp",
+        ProtocolType::VlessReality => "tcp",
         ProtocolType::VlessXhttp => "xhttp",
         _ => "tcp",
     }
@@ -479,53 +400,30 @@ mod tests {
     }
 
     #[test]
-    fn vless_ws_tls_inbound_has_ws_settings() {
+    fn vless_xhttp_inbound_has_xhttp_settings() {
         let builder = XrayConfigBuilder;
         let settings = json!({
-            "tag": "vless-ws-in",
+            "tag": "vless-xhttp-in",
             "listen": "0.0.0.0",
             "port": 443,
             "clients": [
                 { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com" }
             ],
-            "network": "ws",
-            "path": "/vless",
-            "host": "cdn.example.com",
+            "xhttp_path": "/xhttp",
+            "xhttp_host": "cdn.example.com",
+            "xhttp_mode": "auto",
         });
         let tls = json!({ "serverName": "cdn.example.com" });
         let inbound = builder
-            .build_inbound(ProtocolType::VlessVision, &settings, Some(&tls))
+            .build_inbound(ProtocolType::VlessXhttp, &settings, Some(&tls))
             .unwrap();
 
-        assert_eq!(inbound["streamSettings"]["network"], "ws");
+        assert_eq!(inbound["streamSettings"]["network"], "xhttp");
         assert_eq!(inbound["streamSettings"]["security"], "tls");
-        assert_eq!(inbound["streamSettings"]["wsSettings"]["path"], "/vless");
+        assert_eq!(inbound["streamSettings"]["xhttpSettings"]["path"], "/xhttp");
         assert_eq!(
-            inbound["streamSettings"]["wsSettings"]["headers"]["Host"],
+            inbound["streamSettings"]["xhttpSettings"]["host"],
             "cdn.example.com"
-        );
-    }
-
-    #[test]
-    fn vmess_grpc_inbound_has_grpc_settings() {
-        let builder = XrayConfigBuilder;
-        let settings = json!({
-            "tag": "vmess-grpc-in",
-            "listen": "0.0.0.0",
-            "port": 443,
-            "clients": [{ "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }],
-            "network": "grpc",
-            "service_name": "vmess-grpc",
-        });
-        let tls = json!({ "serverName": "example.com" });
-        let inbound = builder
-            .build_inbound(ProtocolType::Vmess, &settings, Some(&tls))
-            .unwrap();
-
-        assert_eq!(inbound["streamSettings"]["network"], "grpc");
-        assert_eq!(
-            inbound["streamSettings"]["grpcSettings"]["serviceName"],
-            "vmess-grpc"
         );
     }
 

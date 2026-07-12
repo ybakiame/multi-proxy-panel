@@ -28,11 +28,6 @@ fn release_info(core_type: CoreType) -> ReleaseInfo {
             repo: "sing-box",
             binary_name: "sing-box",
         },
-        CoreType::Both => ReleaseInfo {
-            owner: "",
-            repo: "",
-            binary_name: "",
-        },
     }
 }
 
@@ -40,7 +35,6 @@ fn env_version(core_type: CoreType) -> Option<String> {
     let key = match core_type {
         CoreType::Xray => "PROXYPANEL_XRAY_VERSION",
         CoreType::SingBox => "PROXYPANEL_SINGBOX_VERSION",
-        CoreType::Both => return None,
     };
     std::env::var(key).ok().filter(|s| !s.is_empty())
 }
@@ -92,9 +86,6 @@ fn asset_name(core_type: CoreType, version: &str) -> PanelResult<(String, String
                 "sing-box".to_string(),
             ))
         }
-        CoreType::Both => Err(PanelError::Core(
-            "Cannot auto-install 'Both' core type".into(),
-        )),
     }
 }
 
@@ -271,10 +262,6 @@ pub async fn ensure_core_binary(
     core_type: CoreType,
     version: Option<&str>,
 ) -> PanelResult<PathBuf> {
-    if core_type == CoreType::Both {
-        return Err(PanelError::Core("Cannot install 'Both' core type".into()));
-    }
-
     let on_disk = bin_dir.join(binary_name_on_disk(core_type));
     if tokio::fs::try_exists(&on_disk).await.unwrap_or(false) {
         return Ok(on_disk);

@@ -18,15 +18,13 @@ impl ConfigBuilder for SingBoxConfigBuilder {
         tls: Option<&Value>,
     ) -> PanelResult<Value> {
         match protocol {
-            ProtocolType::VlessReality | ProtocolType::VlessVision | ProtocolType::VlessXhttp => {
-                build_vless_inbound(protocol, settings, tls)
-            }
-            ProtocolType::Vmess => build_vmess_inbound(settings, tls),
-            ProtocolType::Trojan => build_trojan_inbound(settings, tls),
-            ProtocolType::Shadowsocks2022 => build_shadowsocks_inbound(settings, tls),
+            ProtocolType::VlessReality => build_vless_inbound(settings, tls),
             ProtocolType::Hysteria2 => build_hysteria2_inbound(settings, tls),
-            ProtocolType::TuicV5 => build_tuic_inbound(settings, tls),
             ProtocolType::Anytls => build_anytls_inbound(settings, tls),
+            _ => Err(PanelError::Config(format!(
+                "protocol {:?} not supported by sing-box",
+                protocol
+            ))),
         }
     }
 
@@ -169,17 +167,7 @@ fn build_legacy_api_services() -> Value {
     })
 }
 
-fn build_vless_inbound(
-    protocol: ProtocolType,
-    settings: &Value,
-    tls: Option<&Value>,
-) -> PanelResult<Value> {
-    if protocol == ProtocolType::VlessXhttp {
-        return Err(PanelError::Config(
-            "sing-box does not support VLESS + XHTTP transport".into(),
-        ));
-    }
-
+fn build_vless_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
     let users = vless_clients_to_users(settings);
     let flow = settings.get("flow").and_then(|v| v.as_str()).unwrap_or("");
     let network = settings
@@ -209,21 +197,10 @@ fn build_vless_inbound(
         }
     }
 
-    if protocol == ProtocolType::VlessReality {
-        let reality_tls = build_singbox_reality_tls(settings, tls).ok_or_else(|| {
-            PanelError::Validation(
-                "VLESS+REALITY requires reality_dest and reality_private_key".into(),
-            )
-        })?;
-        inbound["tls"] = reality_tls;
-    } else if let Some(tls_cfg) = tls {
-        inbound["tls"] = json!({
-            "enabled": true,
-            "server_name": tls_cfg.get("serverName").and_then(|v| v.as_str()).unwrap_or(""),
-            "certificate_path": tls_cfg.get("certFile").and_then(|v| v.as_str()).unwrap_or(""),
-            "key_path": tls_cfg.get("keyFile").and_then(|v| v.as_str()).unwrap_or(""),
-        });
-    }
+    let reality_tls = build_singbox_reality_tls(settings, tls).ok_or_else(|| {
+        PanelError::Validation("VLESS+REALITY requires reality_dest and reality_private_key".into())
+    })?;
+    inbound["tls"] = reality_tls;
 
     Ok(inbound)
 }
@@ -271,9 +248,6 @@ fn build_singbox_transport(network: &str, settings: &Value) -> Value {
     }
 }
 
-/// Insert a transport object into an inbound config if it is not null.
-/// This keeps "tcp" inbounds valid for sing-box 1.11+ which rejects
-/// `{"type":"tcp"}` as a transport.
 /// Convert VLESS clients array (id, email, flow) to sing-box users array (uuid, name, flow).
 fn vless_clients_to_users(settings: &Value) -> Value {
     if let Some(clients) = settings.get("clients").and_then(|v| v.as_array()) {
@@ -329,10 +303,6 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
         (dest.to_string(), 443)
     };
 
-    let _server_names_str = settings
-        .get("reality_server_names")
-        .or_else(|| settings.get("server_names"));
-
     let server_name =
         pp_common::settings_helper::first_server_name(settings).unwrap_or_else(|| server.clone());
 
@@ -367,80 +337,6 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
     });
 
     Some(tls_obj)
-}
-
-fn build_vmess_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    let network = settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut inbound = json!({
-        "type": "vmess",
-        "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("vmess-in"),
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
-        "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
-        "users": settings.get("clients").cloned().unwrap_or(json!([])),
-    });
-
-    let transport = build_singbox_transport(network, settings);
-    if !transport.is_null() {
-        inbound["transport"] = transport;
-    }
-
-    if let Some(tls_cfg) = tls {
-        inbound["tls"] = json!({
-            "enabled": true,
-            "server_name": tls_cfg.get("serverName").and_then(|v| v.as_str()).unwrap_or(""),
-        });
-    }
-
-    Ok(inbound)
-}
-
-fn build_trojan_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    if tls.is_none() {
-        return Err(PanelError::Validation(
-            "Trojan requires TLS configuration".into(),
-        ));
-    }
-
-    let network = settings
-        .get("network")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp");
-
-    let mut inbound = json!({
-        "type": "trojan",
-        "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("trojan-in"),
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
-        "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
-        "users": settings.get("clients").cloned().unwrap_or(json!([])),
-        "tls": {
-            "enabled": true,
-            "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
-            "key_path": tls.and_then(|t| t.get("keyFile")).and_then(|v| v.as_str()).unwrap_or(""),
-        }
-    });
-
-    let transport = build_singbox_transport(network, settings);
-    if !transport.is_null() {
-        inbound["transport"] = transport;
-    }
-
-    Ok(inbound)
-}
-
-fn build_shadowsocks_inbound(settings: &Value, _tls: Option<&Value>) -> PanelResult<Value> {
-    Ok(json!({
-        "type": "shadowsocks",
-        "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("ss-in"),
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
-        "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(8388),
-        "method": settings.get("method").and_then(|v| v.as_str()).unwrap_or("2022-blake3-aes-128-gcm"),
-        "password": settings.get("password").and_then(|v| v.as_str()).unwrap_or(""),
-        "network": settings.get("network").and_then(|v| v.as_str()).unwrap_or("tcp")
-    }))
 }
 
 fn build_hysteria2_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
@@ -515,30 +411,6 @@ fn build_anytls_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
     Ok(inbound)
 }
 
-fn build_tuic_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Value> {
-    if tls.is_none() {
-        return Err(PanelError::Validation(
-            "TUIC requires TLS configuration".into(),
-        ));
-    }
-
-    let users = tuic_clients_to_users(settings);
-
-    Ok(json!({
-        "type": "tuic",
-        "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("tuic-in"),
-        "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("::"),
-        "listen_port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
-        "users": users,
-        "tls": {
-            "enabled": true,
-            "certificate_path": tls.and_then(|t| t.get("certFile")).and_then(|v| v.as_str()).unwrap_or(""),
-            "key_path": tls.and_then(|t| t.get("keyFile")).and_then(|v| v.as_str()).unwrap_or(""),
-        },
-        "congestion_control": settings.get("congestion_control").and_then(|v| v.as_str()).unwrap_or("bbr"),
-    }))
-}
-
 /// Convert clients array with password auth to sing-box users array (name, password).
 fn password_clients_to_users(settings: &Value) -> Value {
     if let Some(clients) = settings.get("clients").and_then(|v| v.as_array()) {
@@ -563,46 +435,6 @@ fn password_clients_to_users(settings: &Value) -> Value {
         } else {
             json!([{"name": "", "password": password}])
         }
-    }
-}
-
-/// Convert clients array with UUID+password auth to sing-box TUIC users array (name, uuid, password).
-fn tuic_clients_to_users(settings: &Value) -> Value {
-    if let Some(clients) = settings.get("clients").and_then(|v| v.as_array()) {
-        let users: Vec<Value> = clients
-            .iter()
-            .map(|c| {
-                let mut user = json!({
-                    "name": c.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                });
-                if let Some(uuid) = c.get("uuid").and_then(|v| v.as_str()) {
-                    if !uuid.is_empty() {
-                        user["uuid"] = json!(uuid);
-                    }
-                }
-                if let Some(password) = c.get("password").and_then(|v| v.as_str()) {
-                    if !password.is_empty() {
-                        user["password"] = json!(password);
-                    }
-                }
-                user
-            })
-            .collect();
-        json!(users)
-    } else {
-        let uuid = settings.get("uuid").and_then(|v| v.as_str()).unwrap_or("");
-        let password = settings
-            .get("password")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let mut user = json!({"name": ""});
-        if !uuid.is_empty() {
-            user["uuid"] = json!(uuid);
-        }
-        if !password.is_empty() {
-            user["password"] = json!(password);
-        }
-        json!([user])
     }
 }
 
@@ -670,47 +502,24 @@ mod tests {
     }
 
     #[test]
-    fn vless_ws_inbound_has_transport() {
+    fn hysteria2_inbound_has_users_and_tls() {
         let builder = SingBoxConfigBuilder;
         let settings = json!({
-            "tag": "vless-ws-in",
+            "tag": "hy2-in",
             "listen": "::",
-            "port": 443,
-            "clients": [
-                { "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com" }
-            ],
-            "network": "ws",
-            "path": "/vless",
-            "host": "cdn.example.com",
+            "port": 8444,
+            "clients": [{ "name": "alice", "password": "secret" }],
         });
-        let tls = json!({ "serverName": "cdn.example.com" });
+        let tls = json!({ "certFile": "/tmp/cert.pem", "keyFile": "/tmp/key.pem" });
         let inbound = builder
-            .build_inbound(ProtocolType::VlessVision, &settings, Some(&tls))
+            .build_inbound(ProtocolType::Hysteria2, &settings, Some(&tls))
             .unwrap();
 
-        assert_eq!(inbound["transport"]["type"], "ws");
-        assert_eq!(inbound["transport"]["path"], "/vless");
+        assert_eq!(inbound["type"], "hysteria2");
+        assert_eq!(inbound["listen_port"], 8444);
         assert_eq!(inbound["tls"]["enabled"], true);
-    }
-
-    #[test]
-    fn trojan_grpc_inbound_has_transport() {
-        let builder = SingBoxConfigBuilder;
-        let settings = json!({
-            "tag": "trojan-grpc-in",
-            "listen": "::",
-            "port": 443,
-            "clients": [{ "password": "secret" }],
-            "network": "grpc",
-            "service_name": "trojan-grpc",
-        });
-        let tls = json!({ "serverName": "example.com", "certFile": "", "keyFile": "" });
-        let inbound = builder
-            .build_inbound(ProtocolType::Trojan, &settings, Some(&tls))
-            .unwrap();
-
-        assert_eq!(inbound["transport"]["type"], "grpc");
-        assert_eq!(inbound["transport"]["service_name"], "trojan-grpc");
+        let users = inbound["users"].as_array().unwrap();
+        assert_eq!(users[0]["password"], "secret");
     }
 
     #[test]

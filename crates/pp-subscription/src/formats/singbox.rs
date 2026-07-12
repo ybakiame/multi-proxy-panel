@@ -52,13 +52,9 @@ fn render_template(
 
 fn build_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
     match node.protocol {
-        ProtocolType::VlessReality | ProtocolType::VlessVision | ProtocolType::VlessXhttp => {
-            build_vless_outbound(node)
-        }
-        ProtocolType::Vmess => build_vmess_outbound(node),
-        ProtocolType::Trojan => build_trojan_outbound(node),
-        ProtocolType::Shadowsocks2022 => build_shadowsocks_outbound(node),
+        ProtocolType::VlessReality => build_vless_outbound(node),
         ProtocolType::Hysteria2 => build_hysteria2_outbound(node),
+        ProtocolType::Anytls => build_anytls_outbound(node),
         _ => Err(PanelError::Subscription(format!(
             "protocol {:?} not supported in sing-box subscription",
             node.protocol
@@ -76,14 +72,11 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let network = match node.protocol {
-        ProtocolType::VlessXhttp => "xhttp",
-        _ => node
-            .settings
-            .get("network")
-            .and_then(|v| v.as_str())
-            .unwrap_or("tcp"),
-    };
+    let network = node
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
 
     let mut outbound = serde_json::json!({
         "type": "vless",
@@ -116,116 +109,50 @@ fn build_vless_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
         }
     }
 
-    if node.protocol == ProtocolType::VlessReality {
-        let public_key = node
-            .settings
-            .get("public_key")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
-        if public_key.is_empty() {
-            return Err(PanelError::Subscription(
-                "missing REALITY public_key".into(),
-            ));
-        }
-        let server_name =
-            pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
-        let short_id =
-            pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
-        let spider_x = node
-            .settings
-            .get("spider_x")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let fingerprint = node
-            .settings
-            .get("fingerprint")
-            .and_then(|v| v.as_str())
-            .unwrap_or("chrome");
-
-        let mut reality = serde_json::json!({
-            "enabled": true,
-            "public_key": public_key,
-            "short_id": short_id,
-        });
-        if !spider_x.is_empty() {
-            reality["spider_x"] = serde_json::json!(spider_x);
-        }
-
-        outbound["tls"] = serde_json::json!({
-            "enabled": true,
-            "server_name": server_name,
-            "utls": {
-                "enabled": true,
-                "fingerprint": fingerprint,
-            },
-            "reality": reality,
-        });
-    } else if let Some(tls) = &node.tls {
-        let mut tls_obj = serde_json::json!({
-            "enabled": true,
-            "server_name": tls.get("serverName").and_then(|v| v.as_str()).unwrap_or(""),
-        });
-        if network != "tcp" {
-            tls_obj["utls"] = serde_json::json!({
-                "enabled": true,
-                "fingerprint": node.settings.get("fingerprint").and_then(|v| v.as_str()).unwrap_or("chrome"),
-            });
-        }
-        outbound["tls"] = tls_obj;
-    }
-
-    Ok(outbound)
-}
-
-fn build_vmess_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
-    let id = pp_common::settings_helper::client_uuid(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing vmess id".into()))?;
-    Ok(serde_json::json!({
-        "type": "vmess",
-        "tag": node.name,
-        "server": node.server,
-        "server_port": node.port,
-        "uuid": id,
-        "security": node.settings.get("security").and_then(|v| v.as_str()).unwrap_or("auto"),
-        "alter_id": node.settings.get("alterId").and_then(|v| v.as_u64()).unwrap_or(0),
-    }))
-}
-
-fn build_trojan_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
-    let password = pp_common::settings_helper::client_password(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing trojan password".into()))?;
-    let mut outbound = serde_json::json!({
-        "type": "trojan",
-        "tag": node.name,
-        "server": node.server,
-        "server_port": node.port,
-        "password": password,
-    });
-    if let Some(tls) = &node.tls {
-        outbound["tls"] = serde_json::json!({
-            "enabled": true,
-            "server_name": tls.get("serverName").and_then(|v| v.as_str()).unwrap_or(""),
-        });
-    }
-    Ok(outbound)
-}
-
-fn build_shadowsocks_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
-    let method = node
+    let public_key = node
         .settings
-        .get("method")
+        .get("public_key")
         .and_then(|v| v.as_str())
-        .unwrap_or("2022-blake3-aes-128-gcm");
-    let password = pp_common::settings_helper::client_password(&node.settings)
-        .ok_or_else(|| PanelError::Subscription("missing shadowsocks password".into()))?;
-    Ok(serde_json::json!({
-        "type": "shadowsocks",
-        "tag": node.name,
-        "server": node.server,
-        "server_port": node.port,
-        "method": method,
-        "password": password,
-    }))
+        .ok_or_else(|| PanelError::Subscription("missing REALITY public_key".into()))?;
+    if public_key.is_empty() {
+        return Err(PanelError::Subscription(
+            "missing REALITY public_key".into(),
+        ));
+    }
+    let server_name =
+        pp_common::settings_helper::first_server_name(&node.settings).unwrap_or_default();
+    let short_id = pp_common::settings_helper::first_short_id(&node.settings).unwrap_or_default();
+    let spider_x = node
+        .settings
+        .get("spider_x")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let fingerprint = node
+        .settings
+        .get("fingerprint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("chrome");
+
+    let mut reality = serde_json::json!({
+        "enabled": true,
+        "public_key": public_key,
+        "short_id": short_id,
+    });
+    if !spider_x.is_empty() {
+        reality["spider_x"] = serde_json::json!(spider_x);
+    }
+
+    outbound["tls"] = serde_json::json!({
+        "enabled": true,
+        "server_name": server_name,
+        "utls": {
+            "enabled": true,
+            "fingerprint": fingerprint,
+        },
+        "reality": reality,
+    });
+
+    Ok(outbound)
 }
 
 fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
@@ -273,6 +200,33 @@ fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
     }
 
     Ok(outbound)
+}
+
+fn build_anytls_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
+    let password = pp_common::settings_helper::client_password(&node.settings)
+        .ok_or_else(|| PanelError::Subscription("missing anytls password".into()))?;
+
+    let server_name = node
+        .tls
+        .as_ref()
+        .and_then(|t| t.get("serverName"))
+        .and_then(|v| v.as_str())
+        .or_else(|| node.settings.get("sni").and_then(|v| v.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    Ok(serde_json::json!({
+        "type": "anytls",
+        "tag": node.name,
+        "server": node.server,
+        "server_port": node.port,
+        "password": password,
+        "tls": {
+            "enabled": true,
+            "server_name": server_name,
+            "insecure": true,
+        },
+    }))
 }
 
 #[cfg(test)]

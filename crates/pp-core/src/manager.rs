@@ -53,9 +53,6 @@ impl CoreManagerFactory {
                 binary_path,
                 config_dir,
             )?)),
-            CoreType::Both => Err(PanelError::Core(
-                "Cannot create manager for 'Both' — select a specific core".into(),
-            )),
         }
     }
 }
