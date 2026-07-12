@@ -88,7 +88,7 @@ pub async fn create_template(
 
     let format = payload.format.unwrap_or_else(|| "base64".to_string());
     let active = subscription_template::ActiveModel {
-        id: Set(Uuid::new_v4()),
+        id: Set(Uuid::new_v4().to_string()),
         name: Set(payload.name),
         format: Set(format.clone()),
         base_config: Set(payload.base_config),
@@ -102,7 +102,7 @@ pub async fn create_template(
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
     // Enforce only one enabled template per format.
-    enforce_unique_enabled_template(&state.db, inserted.id, &format, true).await?;
+    enforce_unique_enabled_template(&state.db, inserted.id.clone(), &format, true).await?;
 
     Ok(ApiResponse::new(template_to_json(inserted)))
 }
@@ -119,7 +119,7 @@ pub struct UpdateTemplatePayload {
 
 pub async fn update_template(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(payload): Json<UpdateTemplatePayload>,
 ) -> ApiResult<Value> {
     let template = subscription_template::Entity::find_by_id(id)
@@ -176,16 +176,16 @@ pub async fn update_template(
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
     // Enforce only one enabled template per format.
-    enforce_unique_enabled_template(&state.db, updated.id, &new_format, new_enabled).await?;
+    enforce_unique_enabled_template(&state.db, updated.id.clone(), &new_format, new_enabled).await?;
 
     Ok(ApiResponse::new(template_to_json(updated)))
 }
 
 pub async fn delete_template(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let template = subscription_template::Entity::find_by_id(id)
+    let template = subscription_template::Entity::find_by_id(id.clone())
         .one(&state.db)
         .await
         .map_err(ApiError::from)?
@@ -486,7 +486,7 @@ async fn find_template_for_format(
 /// When `enabled` is true, disable all other enabled templates of the same format.
 async fn enforce_unique_enabled_template(
     db: &sea_orm::DatabaseConnection,
-    template_id: Uuid,
+    template_id: String,
     format: &str,
     enabled: bool,
 ) -> Result<(), ApiError> {
