@@ -19,28 +19,12 @@ import {
 } from "../api/protocols";
 import { ProtocolConfig } from "../api/types";
 
-const PROTOCOL_TYPES = [
-  "vless_reality",
-  "vless_vision",
-  "vless_xhttp",
-  "vmess",
-  "trojan",
-  "shadowsocks2022",
-  "hysteria2",
-  "tuic",
-  "anytls",
-];
+const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
-const CORE_TYPES = ["xray", "sing-box", "both"];
+const CORE_TYPES = ["xray", "sing-box"];
 const FLOW_OPTIONS = ["xtls-rprx-vision"];
 const XHTTP_MODES = ["auto", "packet-up", "stream-up"];
-const SHADOWSOCKS2022_METHODS = [
-  "2022-blake3-aes-128-gcm",
-  "2022-blake3-aes-256-gcm",
-  "2022-blake3-chacha20-poly1305",
-];
 const OBFS_TYPES = ["none", "salamander"];
-const TUIC_CONGESTION = ["bbr", "cubic", "new_reno"];
 
 interface ProtocolForm {
   name: string;
@@ -66,9 +50,6 @@ interface ProtocolForm {
   up_mbps: string;
   down_mbps: string;
   masquerade: string;
-  congestion_control: string;
-  alter_id: string;
-  method: string;
 }
 
 const defaultForm: ProtocolForm = {
@@ -95,9 +76,6 @@ const defaultForm: ProtocolForm = {
   up_mbps: "",
   down_mbps: "",
   masquerade: "",
-  congestion_control: "bbr",
-  alter_id: "",
-  method: "2022-blake3-aes-256-gcm",
 };
 
 export function Protocols() {
@@ -145,9 +123,6 @@ export function Protocols() {
       up_mbps: settings.up_mbps !== undefined ? String(settings.up_mbps) : "",
       down_mbps: settings.down_mbps !== undefined ? String(settings.down_mbps) : "",
       masquerade: (settings.masquerade as string) || "",
-      congestion_control: (settings.congestion_control as string) || "bbr",
-      alter_id: settings.alter_id !== undefined ? String(settings.alter_id) : "",
-      method: (settings.method as string) || "2022-blake3-aes-256-gcm",
     };
   };
 
@@ -184,31 +159,12 @@ export function Protocols() {
           public_key: form.public_key,
           short_id: form.short_id,
         };
-      case "vless_vision":
-        return {
-          uuid: form.uuid,
-          flow: form.flow,
-        };
       case "vless_xhttp":
         return {
           uuid: form.uuid,
           path: form.path,
           host: form.host,
           mode: form.mode,
-        };
-      case "vmess":
-        return {
-          uuid: form.uuid,
-          alter_id: Number(form.alter_id) || 0,
-        };
-      case "trojan":
-        return {
-          password: form.password,
-        };
-      case "shadowsocks2022":
-        return {
-          method: form.method,
-          password: form.password,
         };
       case "hysteria2":
         return {
@@ -222,12 +178,6 @@ export function Protocols() {
         return {
           password: form.password,
           masquerade: form.masquerade,
-        };
-      case "tuic":
-        return {
-          uuid: form.uuid,
-          password: form.password,
-          congestion_control: form.congestion_control,
         };
       default:
         return {};
@@ -371,27 +321,6 @@ export function Protocols() {
             />
           </>
         );
-      case "vless_vision":
-        return (
-          <>
-            <FormInput
-              label={t("protocols.uuid")}
-              value={form.uuid}
-              onChange={(value) => setForm({ ...form, uuid: value })}
-              description={t("protocols.uuidDescription")}
-              isRequired
-            />
-            <FormSelect
-              label={t("protocols.flow")}
-              value={form.flow}
-              onChange={(value) => setForm({ ...form, flow: value })}
-              options={FLOW_OPTIONS.map((option) => ({
-                id: option,
-                label: option,
-              }))}
-            />
-          </>
-        );
       case "vless_xhttp":
         return (
           <>
@@ -420,55 +349,6 @@ export function Protocols() {
                 id: option,
                 label: option,
               }))}
-            />
-          </>
-        );
-      case "vmess":
-        return (
-          <>
-            <FormInput
-              label={t("protocols.uuid")}
-              value={form.uuid}
-              onChange={(value) => setForm({ ...form, uuid: value })}
-              description={t("protocols.uuidDescription")}
-              isRequired
-            />
-            <FormInput
-              type="number"
-              label={t("protocols.alterId")}
-              value={form.alter_id}
-              onChange={(value) => setForm({ ...form, alter_id: value })}
-            />
-          </>
-        );
-      case "trojan":
-        return (
-          <FormInput
-            label={t("protocols.password")}
-            value={form.password}
-            onChange={(value) => setForm({ ...form, password: value })}
-            description={t("protocols.passwordDescription")}
-            isRequired
-          />
-        );
-      case "shadowsocks2022":
-        return (
-          <>
-            <FormSelect
-              label={t("protocols.method")}
-              value={form.method}
-              onChange={(value) => setForm({ ...form, method: value })}
-              options={SHADOWSOCKS2022_METHODS.map((option) => ({
-                id: option,
-                label: option,
-              }))}
-            />
-            <FormInput
-              label={t("protocols.password")}
-              value={form.password}
-              onChange={(value) => setForm({ ...form, password: value })}
-              description={t("protocols.passwordDescription")}
-              isRequired
             />
           </>
         );
@@ -524,34 +404,6 @@ export function Protocols() {
               label={t("protocols.masquerade")}
               value={form.masquerade}
               onChange={(value) => setForm({ ...form, masquerade: value })}
-            />
-          </>
-        );
-      case "tuic":
-        return (
-          <>
-            <FormInput
-              label={t("protocols.uuid")}
-              value={form.uuid}
-              onChange={(value) => setForm({ ...form, uuid: value })}
-              description={t("protocols.uuidDescription")}
-              isRequired
-            />
-            <FormInput
-              label={t("protocols.password")}
-              value={form.password}
-              onChange={(value) => setForm({ ...form, password: value })}
-              description={t("protocols.passwordDescription")}
-              isRequired
-            />
-            <FormSelect
-              label={t("protocols.congestionControl")}
-              value={form.congestion_control}
-              onChange={(value) => setForm({ ...form, congestion_control: value })}
-              options={TUIC_CONGESTION.map((option) => ({
-                id: option,
-                label: option,
-              }))}
             />
           </>
         );

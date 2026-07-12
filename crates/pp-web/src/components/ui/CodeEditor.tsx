@@ -15,6 +15,7 @@ interface CodeEditorProps {
   placeholder?: string;
   height?: string;
   className?: string;
+  readOnly?: boolean;
 }
 
 export function CodeEditor({
@@ -25,6 +26,7 @@ export function CodeEditor({
   placeholder,
   height = "320px",
   className = "",
+  readOnly = false,
 }: CodeEditorProps) {
   const extensions = useMemo(() => {
     const base = [EditorView.lineWrapping];
@@ -48,6 +50,7 @@ export function CodeEditor({
         theme={oneDark}
         placeholder={placeholder}
         onChange={onChange}
+        editable={!readOnly}
         className="rounded-md border border-divider overflow-hidden text-sm font-mono"
         basicSetup={{
           lineNumbers: true,

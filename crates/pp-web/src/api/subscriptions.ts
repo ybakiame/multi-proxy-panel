@@ -11,6 +11,7 @@ export interface CreateTemplatePayload {
   base_config?: string;
   filter_rules?: Record<string, unknown>;
   custom_headers?: Record<string, string>;
+  is_enabled?: boolean;
 }
 
 export interface UpdateTemplatePayload {
@@ -19,6 +20,7 @@ export interface UpdateTemplatePayload {
   base_config?: string;
   filter_rules?: Record<string, unknown>;
   custom_headers?: Record<string, string>;
+  is_enabled?: boolean;
 }
 
 export const getSubscriptions = (page: number, perPage: number) =>

@@ -126,6 +126,8 @@ export interface SubscriptionTemplate {
   base_config: string | null;
   filter_rules: Record<string, unknown> | null;
   custom_headers: Record<string, string> | null;
+  is_builtin: boolean;
+  is_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

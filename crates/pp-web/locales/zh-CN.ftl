@@ -206,17 +206,10 @@ nodes-token-warning = 请立即复制该 Token — 它只会显示一次。
 # Protocol extras
 protocols-tls-settings = TLS 设置（JSON）
 protocols-protocol-vless-reality = VLESS REALITY
-protocols-protocol-vless-vision = VLESS Vision
 protocols-protocol-vless-xhttp = VLESS XHTTP
-protocols-protocol-vmess = VMess
-protocols-protocol-trojan = Trojan
-protocols-protocol-shadowsocks2022 = Shadowsocks 2022
 protocols-protocol-hysteria2 = Hysteria2
 protocols-protocol-anytls = AnyTLS
-protocols-protocol-tuic-v5 = TUIC v5
 protocols-uuid = UUID
-protocols-alter-id = Alter ID
-protocols-method = 加密方法
 protocols-flow = Flow
 protocols-password = 密码
 protocols-dest = REALITY 目标
@@ -232,7 +225,6 @@ protocols-obfs-password = 混淆密码
 protocols-up-mbps = 上行 Mbps
 protocols-down-mbps = 下行 Mbps
 protocols-masquerade = 伪装 URL
-protocols-congestion-control = 拥塞控制
 protocols-generate-keys = 生成密钥
 protocols-delete-title = 删除协议
 protocols-delete-confirm = 该协议配置将被删除，是否继续？
@@ -270,6 +262,9 @@ subscriptions-template-create = + 创建模板
 subscriptions-template-create-title = 创建模板
 subscriptions-token-masked = ••••••••••••
 subscriptions-format = 格式
+subscriptions-builtin = 内置
+subscriptions-enabled = 启用
+subscriptions-builtin-readonly = 内置模板仅支持启用或禁用。
 
 # Logs extras
 logs-page = 页码

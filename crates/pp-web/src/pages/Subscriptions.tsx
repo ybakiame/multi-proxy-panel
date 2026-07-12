@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Card, Badge, Modal, Spinner, Table, Tabs } from "@heroui/react";
+import { Button, Card, Badge, Modal, Spinner, Switch, Table, Tabs } from "@heroui/react";
 import * as yaml from "js-yaml";
 import {
   ConfirmDialog,
@@ -174,6 +174,7 @@ export function Subscriptions() {
     base_config: "",
     filter_rules: "{}",
     custom_headers: "{}",
+    is_enabled: true,
   });
 
   // QR state
@@ -283,6 +284,7 @@ export function Subscriptions() {
       base_config: "",
       filter_rules: "{}",
       custom_headers: "{}",
+      is_enabled: true,
     });
   };
 
@@ -298,13 +300,26 @@ export function Subscriptions() {
     if (tmpl.format === "clash") {
       baseConfig = normalizeClashTemplate(baseConfig);
     }
-    setTemplateForm({
-      name: tmpl.name,
-      format: tmpl.format,
-      base_config: baseConfig,
-      filter_rules: formatJson(tmpl.filter_rules),
-      custom_headers: formatJson(tmpl.custom_headers),
-    });
+    if (tmpl.is_builtin) {
+      // Builtin templates only allow enabling/disabling.
+      setTemplateForm({
+        name: tmpl.name,
+        format: tmpl.format,
+        base_config: baseConfig,
+        filter_rules: "{}",
+        custom_headers: "{}",
+        is_enabled: tmpl.is_enabled,
+      });
+    } else {
+      setTemplateForm({
+        name: tmpl.name,
+        format: tmpl.format,
+        base_config: baseConfig,
+        filter_rules: formatJson(tmpl.filter_rules),
+        custom_headers: formatJson(tmpl.custom_headers),
+        is_enabled: tmpl.is_enabled,
+      });
+    }
     setTemplateFormOpen(true);
   };
 
@@ -328,18 +343,28 @@ export function Subscriptions() {
 
   const handleSaveTemplate = async () => {
     const { filterRules, customHeaders } = parseTemplateFormJson();
-    const payload = {
-      name: templateForm.name,
-      format: templateForm.format,
-      base_config: templateForm.base_config,
-      filter_rules: filterRules,
-      custom_headers: customHeaders,
-    };
     try {
       if (editTemplate) {
+        const payload = editTemplate.is_builtin
+          ? { is_enabled: templateForm.is_enabled }
+          : {
+              name: templateForm.name,
+              format: templateForm.format,
+              base_config: templateForm.base_config,
+              filter_rules: filterRules,
+              custom_headers: customHeaders,
+              is_enabled: templateForm.is_enabled,
+            };
         await updateTemplate(editTemplate.id, payload);
       } else {
-        await createTemplate(payload);
+        await createTemplate({
+          name: templateForm.name,
+          format: templateForm.format,
+          base_config: templateForm.base_config,
+          filter_rules: filterRules,
+          custom_headers: customHeaders,
+          is_enabled: templateForm.is_enabled,
+        });
       }
       setTemplateFormOpen(false);
       resetTemplateFormState();
@@ -540,9 +565,8 @@ export function Subscriptions() {
                         <Table.Header>
                           <Table.Column isRowHeader>{t("common.name")}</Table.Column>
                           <Table.Column>{t("subscriptions.format")}</Table.Column>
-                          <Table.Column>{t("subscriptions.baseConfig")}</Table.Column>
-                          <Table.Column>{t("subscriptions.filterRules")}</Table.Column>
-                          <Table.Column>{t("subscriptions.customHeaders")}</Table.Column>
+                          <Table.Column>{t("subscriptions.builtin")}</Table.Column>
+                          <Table.Column>{t("subscriptions.enabled")}</Table.Column>
                           <Table.Column>{t("common.actions")}</Table.Column>
                         </Table.Header>
                         <Table.Body
@@ -557,13 +581,21 @@ export function Subscriptions() {
                               <Table.Cell>{tmpl.name}</Table.Cell>
                               <Table.Cell>{templateFormatBadge(tmpl.format)}</Table.Cell>
                               <Table.Cell>
-                                {tmpl.base_config ? t("common.yes") : t("common.no")}
+                                {tmpl.is_builtin ? t("common.yes") : t("common.no")}
                               </Table.Cell>
                               <Table.Cell>
-                                {tmpl.filter_rules ? t("common.yes") : t("common.no")}
-                              </Table.Cell>
-                              <Table.Cell>
-                                {tmpl.custom_headers ? t("common.yes") : t("common.no")}
+                                <Switch
+                                  isSelected={tmpl.is_enabled}
+                                  onChange={(selected) =>
+                                    updateTemplate(tmpl.id, { is_enabled: selected })
+                                      .then(fetchTemplates)
+                                      .catch(() => {})
+                                  }
+                                  isDisabled={false}
+                                  aria-label={t("subscriptions.enabled")}
+                                >
+                                  {tmpl.is_enabled ? t("common.enabled") : t("common.disabled")}
+                                </Switch>
                               </Table.Cell>
                               <Table.Cell>
                                 <div className="flex gap-2">
@@ -574,13 +606,15 @@ export function Subscriptions() {
                                   >
                                     {t("common.edit")}
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="danger"
-                                    onPress={() => setDeleteTemplateId(tmpl.id)}
-                                  >
-                                    {t("common.delete")}
-                                  </Button>
+                                  {!tmpl.is_builtin && (
+                                    <Button
+                                      size="sm"
+                                      variant="danger"
+                                      onPress={() => setDeleteTemplateId(tmpl.id)}
+                                    >
+                                      {t("common.delete")}
+                                    </Button>
+                                  )}
                                 </div>
                               </Table.Cell>
                             </Table.Row>
@@ -682,11 +716,17 @@ export function Subscriptions() {
               </Modal.Heading>
             </Modal.Header>
             <Modal.Body className="space-y-4">
+              {editTemplate?.is_builtin && (
+                <p className="text-sm text-muted-foreground">
+                  {t("subscriptions.builtinReadonly")}
+                </p>
+              )}
               <FormInput
                 label={t("common.name")}
                 value={templateForm.name}
                 onChange={(value) => setTemplateForm({ ...templateForm, name: value })}
                 isRequired
+                isReadOnly={editTemplate?.is_builtin}
               />
               <FormSelect
                 label={t("subscriptions.format")}
@@ -707,25 +747,40 @@ export function Subscriptions() {
                   id: format,
                   label: format,
                 }))}
+                isDisabled={editTemplate?.is_builtin}
               />
+              <Switch
+                isSelected={templateForm.is_enabled}
+                onChange={(selected) => setTemplateForm({ ...templateForm, is_enabled: selected })}
+                aria-label={t("subscriptions.enabled")}
+              >
+                {templateForm.is_enabled ? t("common.enabled") : t("common.disabled")}
+              </Switch>
               <CodeEditor
                 label={t("subscriptions.baseConfig")}
                 value={templateForm.base_config}
                 onChange={(value) => setTemplateForm({ ...templateForm, base_config: value })}
                 language={templateLanguage(templateForm.format)}
+                readOnly={editTemplate?.is_builtin}
               />
-              <FormTextArea
-                label={t("subscriptions.filterRules")}
-                value={templateForm.filter_rules}
-                onChange={(value) => setTemplateForm({ ...templateForm, filter_rules: value })}
-                className="font-mono"
-              />
-              <FormTextArea
-                label={t("subscriptions.customHeaders")}
-                value={templateForm.custom_headers}
-                onChange={(value) => setTemplateForm({ ...templateForm, custom_headers: value })}
-                className="font-mono"
-              />
+              {!editTemplate?.is_builtin && (
+                <>
+                  <FormTextArea
+                    label={t("subscriptions.filterRules")}
+                    value={templateForm.filter_rules}
+                    onChange={(value) => setTemplateForm({ ...templateForm, filter_rules: value })}
+                    className="font-mono"
+                  />
+                  <FormTextArea
+                    label={t("subscriptions.customHeaders")}
+                    value={templateForm.custom_headers}
+                    onChange={(value) =>
+                      setTemplateForm({ ...templateForm, custom_headers: value })
+                    }
+                    className="font-mono"
+                  />
+                </>
+              )}
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="ghost" onPress={() => setTemplateFormOpen(false)}>

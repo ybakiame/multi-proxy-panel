@@ -206,17 +206,10 @@ nodes-token-warning = Copy this token now — it will not be shown again.
 # Protocol extras
 protocols-tls-settings = TLS Settings (JSON)
 protocols-protocol-vless-reality = VLESS REALITY
-protocols-protocol-vless-vision = VLESS Vision
 protocols-protocol-vless-xhttp = VLESS XHTTP
-protocols-protocol-vmess = VMess
-protocols-protocol-trojan = Trojan
-protocols-protocol-shadowsocks2022 = Shadowsocks 2022
 protocols-protocol-hysteria2 = Hysteria2
 protocols-protocol-anytls = AnyTLS
-protocols-protocol-tuic-v5 = TUIC v5
 protocols-uuid = UUID
-protocols-alter-id = Alter ID
-protocols-method = Method
 protocols-flow = Flow
 protocols-password = Password
 protocols-dest = Reality Dest
@@ -232,7 +225,6 @@ protocols-obfs-password = Obfs Password
 protocols-up-mbps = Up Mbps
 protocols-down-mbps = Down Mbps
 protocols-masquerade = Masquerade URL
-protocols-congestion-control = Congestion Control
 protocols-generate-keys = Generate Keys
 protocols-delete-title = Delete Protocol
 protocols-delete-confirm = This protocol config will be deleted. Continue?
@@ -270,6 +262,9 @@ subscriptions-template-create = + Create Template
 subscriptions-template-create-title = Create Template
 subscriptions-token-masked = ••••••••••••
 subscriptions-format = Format
+subscriptions-builtin = Builtin
+subscriptions-enabled = Enabled
+subscriptions-builtin-readonly = Builtin templates can only be enabled or disabled.
 
 # Logs extras
 logs-page = Page
