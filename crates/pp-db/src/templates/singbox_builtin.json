@@ -1,0 +1,85 @@
+{
+  "log": {
+    "level": "warning",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "remote",
+        "address": "https://8.8.8.8/dns-query",
+        "address_resolver": "local",
+        "strategy": "ipv4_only"
+      },
+      {
+        "tag": "local",
+        "address": "223.5.5.5",
+        "strategy": "ipv4_only"
+      },
+      {
+        "tag": "block",
+        "address": "rcode://success"
+      }
+    ],
+    "rules": [
+      {
+        "geosite": "category-ads-all",
+        "server": "block"
+      },
+      {
+        "geosite": "cn",
+        "server": "local"
+      },
+      {
+        "source_geoip": ["cn", "private"],
+        "server": "local"
+      }
+    ],
+    "final": "remote"
+  },
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      {
+        "protocol": "dns",
+        "outbound": "dns-out"
+      },
+      {
+        "geosite": "category-ads-all",
+        "outbound": "block"
+      },
+      {
+        "geosite": "cn",
+        "outbound": "direct"
+      },
+      {
+        "geoip": ["cn", "private"],
+        "outbound": "direct"
+      }
+    ],
+    "final": "proxy"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890
+    }
+  ],
+  "outbounds": [
+    "<OUTBOUND_REPLACE>",
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "dns",
+      "tag": "dns-out"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ]
+}

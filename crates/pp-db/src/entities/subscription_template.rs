@@ -10,6 +10,8 @@ pub struct Model {
     pub base_config: Option<String>,
     pub filter_rules: Option<Json>,
     pub custom_headers: Option<Json>,
+    pub is_builtin: bool,
+    pub is_enabled: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -54,13 +54,8 @@ pub async fn build_proxy_nodes(
         if let (Some(cfg), Some(node)) = (config, node_model) {
             let protocol = match cfg.protocol_type.as_str() {
                 "vless_reality" => pp_common::ProtocolType::VlessReality,
-                "vless_vision" => pp_common::ProtocolType::VlessVision,
                 "vless_xhttp" => pp_common::ProtocolType::VlessXhttp,
-                "vmess" => pp_common::ProtocolType::Vmess,
-                "trojan" => pp_common::ProtocolType::Trojan,
-                "shadowsocks2022" => pp_common::ProtocolType::Shadowsocks2022,
                 "hysteria2" => pp_common::ProtocolType::Hysteria2,
-                "tuic" | "tuic_v5" => pp_common::ProtocolType::TuicV5,
                 "anytls" => pp_common::ProtocolType::Anytls,
                 _ => continue,
             };

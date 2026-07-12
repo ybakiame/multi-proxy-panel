@@ -29,6 +29,8 @@ fn template_to_json(t: subscription_template::Model) -> Value {
         "base_config": t.base_config,
         "filter_rules": t.filter_rules,
         "custom_headers": t.custom_headers,
+        "is_builtin": t.is_builtin,
+        "is_enabled": t.is_enabled,
         "created_at": t.created_at,
         "updated_at": t.updated_at,
     })
@@ -84,17 +86,24 @@ pub async fn create_template(
         ));
     }
 
+    let format = payload.format.unwrap_or_else(|| "base64".to_string());
     let active = subscription_template::ActiveModel {
         id: Set(Uuid::new_v4()),
         name: Set(payload.name),
-        format: Set(payload.format.unwrap_or_else(|| "base64".to_string())),
+        format: Set(format.clone()),
         base_config: Set(payload.base_config),
         filter_rules: Set(payload.filter_rules),
         custom_headers: Set(payload.custom_headers),
+        is_builtin: Set(false),
+        is_enabled: Set(true),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
     };
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
+
+    // Enforce only one enabled template per format.
+    enforce_unique_enabled_template(&state.db, inserted.id, &format, true).await?;
+
     Ok(ApiResponse::new(template_to_json(inserted)))
 }
 
@@ -105,6 +114,7 @@ pub struct UpdateTemplatePayload {
     pub base_config: Option<String>,
     pub filter_rules: Option<Value>,
     pub custom_headers: Option<Value>,
+    pub is_enabled: Option<bool>,
 }
 
 pub async fn update_template(
@@ -118,7 +128,21 @@ pub async fn update_template(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("subscription template not found"))?;
 
-    let mut active: subscription_template::ActiveModel = template.into();
+    // Builtin templates may only have their enabled flag changed.
+    if template.is_builtin
+        && (payload.name.is_some()
+            || payload.format.is_some()
+            || payload.base_config.is_some()
+            || payload.filter_rules.is_some()
+            || payload.custom_headers.is_some())
+    {
+        return Err(ApiError::bad_request(
+            "builtin_readonly",
+            "builtin templates can only be enabled or disabled",
+        ));
+    }
+
+    let mut active: subscription_template::ActiveModel = template.clone().into();
     if let Some(name) = payload.name {
         if name.trim().is_empty() {
             return Err(ApiError::bad_request(
@@ -128,8 +152,10 @@ pub async fn update_template(
         }
         active.name = Set(name);
     }
+    let mut new_format = template.format.clone();
     if let Some(format) = payload.format {
-        active.format = Set(format);
+        active.format = Set(format.clone());
+        new_format = format;
     }
     if payload.base_config.is_some() {
         active.base_config = Set(payload.base_config);
@@ -140,9 +166,18 @@ pub async fn update_template(
     if payload.custom_headers.is_some() {
         active.custom_headers = Set(payload.custom_headers);
     }
+    let mut new_enabled = template.is_enabled;
+    if let Some(enabled) = payload.is_enabled {
+        active.is_enabled = Set(enabled);
+        new_enabled = enabled;
+    }
     active.updated_at = Set(chrono::Utc::now().into());
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
+
+    // Enforce only one enabled template per format.
+    enforce_unique_enabled_template(&state.db, updated.id, &new_format, new_enabled).await?;
+
     Ok(ApiResponse::new(template_to_json(updated)))
 }
 
@@ -150,6 +185,19 @@ pub async fn delete_template(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    let template = subscription_template::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("subscription template not found"))?;
+
+    if template.is_builtin {
+        return Err(ApiError::bad_request(
+            "builtin_protected",
+            "builtin templates cannot be deleted",
+        ));
+    }
+
     let res = subscription_template::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
@@ -319,16 +367,31 @@ pub async fn serve_subscription(
     let format = detect_subscription_format(&params, headers.get(axum::http::header::USER_AGENT));
 
     // Find template matching the requested format
-    let template = find_template_for_format(
+    let template_opt = find_template_for_format(
         &state.db,
         format.as_str(),
         params.get("template").map(|s| s.as_str()),
     )
     .await?;
 
-    let target_format = format
+    let mut target_format = format
         .parse::<SubscriptionFormat>()
         .map_err(|_| ApiError::bad_request("invalid_format", "unknown subscription format"))?;
+
+    // Fall back to base64 when no enabled template exists for the requested format.
+    let template = match template_opt {
+        Some(t) => Some(t),
+        None if target_format != SubscriptionFormat::Base64 => {
+            target_format = SubscriptionFormat::Base64;
+            find_template_for_format(
+                &state.db,
+                "base64",
+                params.get("template").map(|s| s.as_str()),
+            )
+            .await?
+        }
+        None => None,
+    };
 
     // Get client for credential injection
     let client_model = client::Entity::find_by_id(sub.client_id)
@@ -338,12 +401,12 @@ pub async fn serve_subscription(
         .ok_or_else(|| ApiError::not_found("client not found"))?;
 
     // Build proxy nodes from all active bindings + configs
-    let filter_rules = template.filter_rules.as_ref();
+    let filter_rules = template.as_ref().and_then(|t| t.filter_rules.as_ref());
     let proxy_nodes = build_proxy_nodes(&state.db, &client_model, filter_rules)
         .await
         .map_err(ApiError::from)?;
 
-    let base_config = template.base_config.as_deref();
+    let base_config = template.as_ref().and_then(|t| t.base_config.as_deref());
     let content = generate_subscription(target_format, &proxy_nodes, base_config).map_err(|e| {
         tracing::warn!("subscription generation error: {}", e);
         ApiError::internal(format!("subscription generation failed: {e}"))
@@ -385,43 +448,68 @@ fn detect_subscription_format(
     }
 }
 
-/// Find a subscription template matching the requested format.
+/// Find an enabled subscription template matching the requested format.
 /// If `template_name` is provided, try to find a template with that name
-/// and fallback to the first template of the requested format.
+/// and fallback to the first enabled template of the requested format.
+/// Returns None if no matching enabled template exists; callers should fall
+/// back to the base64 format which does not require a template.
 async fn find_template_for_format(
     db: &sea_orm::DatabaseConnection,
     format: &str,
     template_name: Option<&str>,
-) -> Result<subscription_template::Model, ApiError> {
+) -> Result<Option<subscription_template::Model>, ApiError> {
     let format_lower = format.to_ascii_lowercase();
 
     if let Some(name) = template_name {
         if let Some(t) = subscription_template::Entity::find()
             .filter(subscription_template::Column::Name.eq(name))
+            .filter(subscription_template::Column::IsEnabled.eq(true))
             .one(db)
             .await
             .map_err(ApiError::from)?
         {
-            return Ok(t);
+            return Ok(Some(t));
         }
     }
 
     let templates = subscription_template::Entity::find()
         .filter(subscription_template::Column::Format.eq(&format_lower))
+        .filter(subscription_template::Column::IsEnabled.eq(true))
         .all(db)
         .await
         .map_err(ApiError::from)?;
 
-    templates.into_iter().next().ok_or_else(|| {
-        ApiError::new(
-            StatusCode::NOT_FOUND,
-            "template_not_found",
-            format!(
-                "no subscription template found for format '{}'",
-                format_lower
-            ),
-        )
-    })
+    Ok(templates.into_iter().next())
+}
+
+/// Ensure at most one template per format is enabled.
+/// When `enabled` is true, disable all other enabled templates of the same format.
+async fn enforce_unique_enabled_template(
+    db: &sea_orm::DatabaseConnection,
+    template_id: Uuid,
+    format: &str,
+    enabled: bool,
+) -> Result<(), ApiError> {
+    if !enabled {
+        return Ok(());
+    }
+
+    let others = subscription_template::Entity::find()
+        .filter(subscription_template::Column::Id.ne(template_id))
+        .filter(subscription_template::Column::Format.eq(format))
+        .filter(subscription_template::Column::IsEnabled.eq(true))
+        .all(db)
+        .await
+        .map_err(ApiError::from)?;
+
+    for other in others {
+        let mut active: subscription_template::ActiveModel = other.into();
+        active.is_enabled = Set(false);
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(db).await.map_err(ApiError::from)?;
+    }
+
+    Ok(())
 }
 
 /// Fetch group IDs assigned to a client.
@@ -720,9 +808,9 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
         }
 
         match protocol_type {
-            // UUID-based protocols (VLESS, VMess, Trojan)
-            pt if pt.starts_with("vless") || pt == "vmess" || pt == "trojan" => {
-                let flow = if pt == "vless_vision" || pt == "vless_reality" {
+            // UUID-based VLESS protocols
+            pt if pt.starts_with("vless") => {
+                let flow = if pt == "vless_reality" {
                     "xtls-rprx-vision"
                 } else {
                     ""
@@ -755,24 +843,6 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
                     arr.push(client_obj);
                 }
             }
-            // TUIC uses UUID + password
-            "tuic" | "tuic_v5" => {
-                let client_obj = json!({
-                    "name": client.email.as_ref().unwrap_or(&client.name),
-                    "uuid": client.id.to_string(),
-                    "password": client.id.to_string().replace("-", ""),
-                });
-                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
-                    arr.push(client_obj);
-                }
-            }
-            // Shadowsocks
-            "shadowsocks2022" => {
-                obj.insert(
-                    "password".to_string(),
-                    json!(client.id.to_string().replace("-", "")),
-                );
-            }
             _ => {}
         }
     }
@@ -782,13 +852,8 @@ fn parse_protocol_type(s: &str) -> Result<pp_common::ProtocolType, ()> {
     use pp_common::ProtocolType;
     match s {
         "vless_reality" => Ok(ProtocolType::VlessReality),
-        "vless_vision" => Ok(ProtocolType::VlessVision),
         "vless_xhttp" => Ok(ProtocolType::VlessXhttp),
-        "vmess" => Ok(ProtocolType::Vmess),
-        "trojan" => Ok(ProtocolType::Trojan),
-        "shadowsocks2022" => Ok(ProtocolType::Shadowsocks2022),
         "hysteria2" => Ok(ProtocolType::Hysteria2),
-        "tuic" | "tuic_v5" => Ok(ProtocolType::TuicV5),
         "anytls" => Ok(ProtocolType::Anytls),
         _ => Err(()),
     }
@@ -881,7 +946,7 @@ mod tests {
     #[test]
     fn parse_protocol_type_works() {
         assert!(parse_protocol_type("vless_reality").is_ok());
-        assert!(parse_protocol_type("vmess").is_ok());
+        assert!(parse_protocol_type("hysteria2").is_ok());
         assert!(parse_protocol_type("unknown").is_err());
     }
 
