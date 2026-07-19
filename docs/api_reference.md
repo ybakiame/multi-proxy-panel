@@ -607,7 +607,7 @@
 
 ### GET `/api/v1/traffic`
 
-查询流量统计记录。
+查询节点入站级流量统计记录（按小时聚合），按 `hour_bucket` 倒序返回。
 
 **查询参数:**
 
@@ -615,8 +615,9 @@
 |------|------|------|
 | `node_id` | UUID | 按节点筛选 |
 | `client_id` | UUID | 按客户端筛选 |
-| `from` | ISO 8601 | 起始时间 |
-| `to` | ISO 8601 | 结束时间 |
+| `start` | RFC 3339 | 起始时间（含），如 `2024-01-15T00:00:00Z` |
+| `end` | RFC 3339 | 结束时间（含） |
+| `limit` | integer | 最大返回数量（默认 500，上限 5000） |
 
 **响应:**
 
@@ -624,8 +625,10 @@
 {
   "data": [
     {
+      "id": "bb0e8400-e29b-41d4-a716-446655440006",
       "node_id": "550e8400-e29b-41d4-a716-446655440000",
-      "client_id": "880e8400-e29b-41d4-a716-446655440003",
+      "protocol_config_id": null,
+      "client_id": null,
       "hour_bucket": "2024-01-15T08:00:00Z",
       "upload_bytes": 1073741824,
       "download_bytes": 2147483648
@@ -633,6 +636,77 @@
   ]
 }
 ```
+
+---
+
+### GET `/api/v1/usage`
+
+查询用户级用量记录（`node_user_usage_records`，按小时聚合），按 `hour_bucket` 倒序返回。
+
+**查询参数:**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `node_id` | UUID | 按节点筛选 |
+| `client_id` | UUID | 按客户端筛选 |
+| `start` | RFC 3339 | 起始时间（含） |
+| `end` | RFC 3339 | 结束时间（含） |
+| `limit` | integer | 最大返回数量（默认 500） |
+
+**响应:**
+
+```json
+{
+  "data": [
+    {
+      "id": "cc0e8400-e29b-41d4-a716-446655440007",
+      "node_id": "550e8400-e29b-41d4-a716-446655440000",
+      "client_id": "880e8400-e29b-41d4-a716-446655440003",
+      "hour_bucket": "2024-01-15T08:00:00Z",
+      "upload_bytes": 104857600,
+      "download_bytes": 524288000,
+      "rate": 1.0
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/v1/usage/summary`
+
+按客户端或节点聚合用量，按总流量倒序返回。
+
+**查询参数:**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `group_by` | string | 聚合维度：`client`（默认）或 `node` |
+| `node_id` | UUID | 按节点筛选 |
+| `client_id` | UUID | 按客户端筛选 |
+| `start` | RFC 3339 | 起始时间（含） |
+| `end` | RFC 3339 | 结束时间（含） |
+| `limit` | integer | 最大返回数量（默认 20） |
+
+**响应:**
+
+```json
+{
+  "data": [
+    {
+      "id": "880e8400-e29b-41d4-a716-446655440003",
+      "upload_bytes": 104857600,
+      "download_bytes": 524288000,
+      "total_bytes": 629145600
+    }
+  ]
+}
+```
+
+其中 `id` 为客户端 ID（`group_by=client`）或节点 ID（`group_by=node`）。
+
+**错误响应:**
+- `400 Bad Request` — `group_by` 不是 `client` 或 `node`
 
 ---
 

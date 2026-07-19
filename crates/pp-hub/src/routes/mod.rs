@@ -15,4 +15,5 @@ pub mod protocol;
 pub mod protocol_preset;
 pub mod subscription;
 pub mod traffic;
+pub mod usage;
 pub mod webhook;

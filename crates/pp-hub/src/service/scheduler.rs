@@ -1,8 +1,6 @@
 use chrono::{Datelike, Duration};
 use pp_common::PanelError;
-use pp_db::entities::{
-    client, client_online_session, node_binding, protocol_config, system_log, traffic_record,
-};
+use pp_db::entities::{client, client_online_session, node_binding, protocol_config, system_log};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
@@ -206,9 +204,9 @@ async fn check_client_limits(db: &DatabaseConnection) -> Result<HashSet<Uuid>, P
             }
         }
 
-        // 2. Check traffic limit
+        // 2. Check traffic limit (traffic_used_bytes is maintained by agent traffic reports)
         if c.traffic_limit_bytes > 0 {
-            let total_used = get_client_traffic_total(db, c.id).await?;
+            let total_used = c.traffic_used_bytes;
             if total_used >= c.traffic_limit_bytes {
                 let mut active: client::ActiveModel = c.clone().into();
                 active.status = Set("limited".to_string());
@@ -284,22 +282,6 @@ async fn check_on_hold_timeouts(db: &DatabaseConnection) -> Result<HashSet<Uuid>
     }
 
     Ok(expired)
-}
-
-/// Calculate total traffic used by a client from traffic_records.
-async fn get_client_traffic_total(
-    db: &DatabaseConnection,
-    client_id: Uuid,
-) -> Result<i64, PanelError> {
-    let records = traffic_record::Entity::find()
-        .filter(traffic_record::Column::ClientId.eq(client_id))
-        .all(db)
-        .await?;
-    let total: i64 = records
-        .iter()
-        .map(|r| r.upload_bytes + r.download_bytes)
-        .sum();
-    Ok(total)
 }
 
 /// Push updated configs to all nodes that have active bindings.

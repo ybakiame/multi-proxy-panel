@@ -330,3 +330,38 @@ async fn api_key_scope_enforcement() {
         .expect("create");
     assert_eq!(create_response.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn usage_endpoints_smoke() {
+    let (app, _state, key) = bootstrap_app().await;
+
+    // Empty database: both endpoints return empty lists
+    for uri in [
+        "/api/v1/usage",
+        "/api/v1/usage?limit=5",
+        "/api/v1/usage/summary",
+        "/api/v1/usage/summary?group_by=node",
+        "/api/v1/traffic?start=2024-01-01T00:00:00Z&end=2025-01-01T00:00:00Z&limit=10",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(api_request("GET", uri, &key, None))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK, "uri: {}", uri);
+        let body = response_json(response).await;
+        assert_eq!(body["data"].as_array().expect("array").len(), 0);
+    }
+
+    // Invalid group_by is rejected
+    let response = app
+        .oneshot(api_request(
+            "GET",
+            "/api/v1/usage/summary?group_by=bogus",
+            &key,
+            None,
+        ))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

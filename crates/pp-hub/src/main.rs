@@ -32,7 +32,7 @@ use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
     api_key, bindings, client, health, inbound_host, login, logs, metrics, metrics_export,
-    node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic, webhook,
+    node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -332,6 +332,17 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route(
             "/api/v1/traffic",
             get(traffic::query_traffic)
+                .route_layer(middleware::api_key::scope_layer(scopes::TRAFFIC_READ)),
+        )
+        // Usage
+        .route(
+            "/api/v1/usage",
+            get(usage::query_usage)
+                .route_layer(middleware::api_key::scope_layer(scopes::TRAFFIC_READ)),
+        )
+        .route(
+            "/api/v1/usage/summary",
+            get(usage::usage_summary)
                 .route_layer(middleware::api_key::scope_layer(scopes::TRAFFIC_READ)),
         )
         .route(

@@ -43,6 +43,24 @@ impl HubAgentService {
     ) -> Result<Uuid, Status> {
         handle_register(&self.state, req, &hub_tx, remote_addr).await
     }
+
+    #[cfg(test)]
+    pub async fn test_handle_traffic(
+        &self,
+        agent_id: Uuid,
+        traffic: TrafficReport,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        handle_traffic(&self.state, agent_id, traffic).await
+    }
+
+    #[cfg(test)]
+    pub async fn test_handle_online_users(
+        &self,
+        agent_id: Uuid,
+        report: OnlineUsersReport,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        handle_online_users(&self.state, agent_id, report).await
+    }
 }
 
 #[tonic::async_trait]
@@ -93,6 +111,9 @@ impl HubAgent for HubAgentService {
                 state.unregister_agent(id).await;
                 if let Err(e) = update_node_offline(&state.db, id).await {
                     tracing::warn!("failed to mark node offline: {}", e);
+                }
+                if let Err(e) = clear_node_online_sessions(&state.db, id).await {
+                    tracing::warn!("failed to clear online sessions: {}", e);
                 }
             }
         });
@@ -300,6 +321,21 @@ async fn handle_heartbeat(
     Ok(())
 }
 
+/// Resolve a reported user identifier to a client ID.
+/// Agents may report either the client's UUID or its email address.
+async fn resolve_client_id(db: &sea_orm::DatabaseConnection, raw: &str) -> Option<Uuid> {
+    if let Ok(id) = Uuid::parse_str(raw) {
+        return Some(id);
+    }
+    client::Entity::find()
+        .filter(client::Column::Email.eq(raw))
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|c| c.id)
+}
+
 async fn handle_traffic(
     state: &AppState,
     agent_id: Uuid,
@@ -313,8 +349,9 @@ async fn handle_traffic(
     );
 
     let hour = chrono::Utc::now()
-        .with_second(0)
-        .and_then(|d| d.with_minute(0))
+        .with_minute(0)
+        .and_then(|d| d.with_second(0))
+        .and_then(|d| d.with_nanosecond(0))
         .unwrap_or_else(chrono::Utc::now);
 
     // Look up the node to get its usage_coefficient (traffic rate multiplier)
@@ -324,29 +361,48 @@ async fn handle_traffic(
         .map(|n| n.usage_coefficient)
         .unwrap_or(1.0);
 
-    // 1. Persist inbound-level traffic to traffic_records
-    for inbound in &traffic.inbounds {
-        let active = traffic_record::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            node_id: Set(Some(agent_id)),
-            protocol_config_id: Set(None),
-            client_id: Set(None),
-            hour_bucket: Set(hour.into()),
-            upload_bytes: Set(inbound.upload_bytes),
-            download_bytes: Set(inbound.download_bytes),
-            created_at: Set(chrono::Utc::now().into()),
-        };
-        if let Err(e) = active.insert(&state.db).await {
-            tracing::warn!("failed to insert inbound traffic record: {}", e);
+    // 1. Persist inbound-level traffic to traffic_records (hourly aggregated upsert)
+    if !traffic.inbounds.is_empty() {
+        let total_upload: i64 = traffic.inbounds.iter().map(|i| i.upload_bytes).sum();
+        let total_download: i64 = traffic.inbounds.iter().map(|i| i.download_bytes).sum();
+
+        let existing = traffic_record::Entity::find()
+            .filter(traffic_record::Column::NodeId.eq(agent_id))
+            .filter(traffic_record::Column::ProtocolConfigId.is_null())
+            .filter(traffic_record::Column::ClientId.is_null())
+            .filter(traffic_record::Column::HourBucket.eq(hour))
+            .one(&state.db)
+            .await?;
+
+        if let Some(record) = existing {
+            let mut active: traffic_record::ActiveModel = record.into();
+            active.upload_bytes = Set(active.upload_bytes.as_ref() + total_upload);
+            active.download_bytes = Set(active.download_bytes.as_ref() + total_download);
+            if let Err(e) = active.update(&state.db).await {
+                tracing::warn!("failed to update inbound traffic record: {}", e);
+            }
+        } else {
+            let active = traffic_record::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                node_id: Set(Some(agent_id)),
+                protocol_config_id: Set(None),
+                client_id: Set(None),
+                hour_bucket: Set(hour.into()),
+                upload_bytes: Set(total_upload),
+                download_bytes: Set(total_download),
+                created_at: Set(chrono::Utc::now().into()),
+            };
+            if let Err(e) = active.insert(&state.db).await {
+                tracing::warn!("failed to insert inbound traffic record: {}", e);
+            }
         }
     }
 
     // 2. Persist user-level traffic to node_user_usage_records and update client stats
     for user in &traffic.users {
-        let client_id = Uuid::parse_str(&user.client_id).unwrap_or_else(|_| Uuid::nil());
-        if client_id.is_nil() {
+        let Some(client_id) = resolve_client_id(&state.db, &user.client_id).await else {
             continue;
-        }
+        };
 
         // Apply rate multiplier: counted bytes = real bytes × rate
         let counted_upload = (user.upload_bytes as f32 * rate) as i64;
@@ -518,16 +574,31 @@ async fn handle_online_users(
     agent_id: Uuid,
     report: OnlineUsersReport,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Delete old sessions for this node
-    client_online_session::Entity::delete_many()
-        .filter(client_online_session::Column::NodeId.eq(agent_id))
-        .exec(&state.db)
-        .await?;
+    let now = chrono::Utc::now();
 
-    // Insert new sessions and activate on-hold clients on first connection
+    // Load existing sessions for this node, keyed by (client_id, ip_address)
+    let existing_sessions = client_online_session::Entity::find()
+        .filter(client_online_session::Column::NodeId.eq(agent_id))
+        .all(&state.db)
+        .await?;
+    let session_map: std::collections::HashMap<(Uuid, &str), &client_online_session::Model> =
+        existing_sessions
+            .iter()
+            .map(|s| ((s.client_id, s.ip_address.as_str()), s))
+            .collect();
+
+    let mut reported_keys: std::collections::HashSet<(Uuid, String)> =
+        std::collections::HashSet::new();
+    let mut kept_session_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+    // Upsert sessions and activate on-hold clients on first connection
     for user in &report.users {
-        let client_id = Uuid::parse_str(&user.client_id).unwrap_or_else(|_| Uuid::nil());
-        if client_id.is_nil() {
+        let Some(client_id) = resolve_client_id(&state.db, &user.client_id).await else {
+            continue;
+        };
+
+        // Skip duplicates of the same (client_id, ip_address) within one report
+        if !reported_keys.insert((client_id, user.ip_address.clone())) {
             continue;
         }
 
@@ -562,23 +633,49 @@ async fn handle_online_users(
             }
         }
 
-        let active = client_online_session::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            client_id: Set(client_id),
-            node_id: Set(agent_id),
-            ip_address: Set(user.ip_address.clone()),
-            inbound_tag: Set(if user.inbound_tag.is_empty() {
-                None
-            } else {
-                Some(user.inbound_tag.clone())
-            }),
-            connected_at: Set(chrono::DateTime::from_timestamp(report.timestamp, 0)
-                .unwrap_or_else(chrono::Utc::now)
-                .into()),
-            last_active_at: Set(chrono::Utc::now().into()),
-        };
-        active.insert(&state.db).await?;
+        let key = (client_id, user.ip_address.as_str());
+        if let Some(session) = session_map.get(&key) {
+            // Existing session: only refresh last_active_at, keep connected_at
+            kept_session_ids.insert(session.id);
+            let mut active: client_online_session::ActiveModel = (*session).clone().into();
+            active.last_active_at = Set(now.into());
+            if let Err(e) = active.update(&state.db).await {
+                tracing::warn!("failed to refresh online session {}: {}", session.id, e);
+            }
+        } else {
+            let active = client_online_session::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                client_id: Set(client_id),
+                node_id: Set(agent_id),
+                ip_address: Set(user.ip_address.clone()),
+                inbound_tag: Set(if user.inbound_tag.is_empty() {
+                    None
+                } else {
+                    Some(user.inbound_tag.clone())
+                }),
+                connected_at: Set(chrono::DateTime::from_timestamp(report.timestamp, 0)
+                    .unwrap_or_else(chrono::Utc::now)
+                    .into()),
+                last_active_at: Set(now.into()),
+            };
+            match active.insert(&state.db).await {
+                Ok(model) => {
+                    kept_session_ids.insert(model.id);
+                }
+                Err(e) => {
+                    tracing::warn!("failed to insert online session: {}", e);
+                }
+            }
+        }
     }
+
+    // Remove sessions that were not reported in this round
+    let mut delete = client_online_session::Entity::delete_many()
+        .filter(client_online_session::Column::NodeId.eq(agent_id));
+    if !kept_session_ids.is_empty() {
+        delete = delete.filter(client_online_session::Column::Id.is_not_in(kept_session_ids));
+    }
+    delete.exec(&state.db).await?;
 
     tracing::debug!(
         "online users report from {}: {} users",
@@ -598,6 +695,25 @@ async fn update_node_offline(
         active.status = Set("offline".to_string());
         active.updated_at = Set(chrono::Utc::now().into());
         active.update(db).await?;
+    }
+    Ok(())
+}
+
+/// Delete all online sessions of a node whose agent disconnected.
+async fn clear_node_online_sessions(
+    db: &sea_orm::DatabaseConnection,
+    agent_id: Uuid,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let res = client_online_session::Entity::delete_many()
+        .filter(client_online_session::Column::NodeId.eq(agent_id))
+        .exec(db)
+        .await?;
+    if res.rows_affected > 0 {
+        tracing::debug!(
+            "cleared {} online sessions for node {}",
+            res.rows_affected,
+            agent_id
+        );
     }
     Ok(())
 }

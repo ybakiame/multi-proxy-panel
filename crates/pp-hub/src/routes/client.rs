@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{client, client_group_binding, traffic_record};
+use pp_db::entities::{client, client_group_binding, node_user_usage_record};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
@@ -49,31 +49,19 @@ async fn sync_client_groups(
     Ok(())
 }
 
-/// Calculate total traffic used by a client from traffic_records using DB aggregation.
+/// Calculate total traffic used by a client from node_user_usage_records.
 async fn get_client_traffic_total(
     db: &sea_orm::DatabaseConnection,
     client_id: Uuid,
 ) -> Result<i64, sea_orm::DbErr> {
-    use sea_orm::sea_query::Expr;
-
-    #[derive(sea_orm::FromQueryResult)]
-    struct TrafficSum {
-        total: i64,
-    }
-
-    let result = traffic_record::Entity::find()
-        .filter(traffic_record::Column::ClientId.eq(client_id))
-        .select_only()
-        .column_as(
-            Expr::col(traffic_record::Column::UploadBytes)
-                .add(Expr::col(traffic_record::Column::DownloadBytes)),
-            "total",
-        )
-        .into_model::<TrafficSum>()
-        .one(db)
+    let records = node_user_usage_record::Entity::find()
+        .filter(node_user_usage_record::Column::ClientId.eq(client_id))
+        .all(db)
         .await?;
-
-    Ok(result.map(|r| r.total).unwrap_or(0))
+    Ok(records
+        .iter()
+        .map(|r| r.upload_bytes + r.download_bytes)
+        .sum())
 }
 
 fn client_to_json(c: client::Model, group_ids: Vec<Uuid>, traffic_total: i64) -> Value {
