@@ -214,7 +214,7 @@
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `core_type` | string | ❌ | `xray` / `sing-box`（默认 `sing-box`） |
+| `core_type` | string | ❌ | `xray` / `sing-box` / `mihomo`（默认 `sing-box`） |
 | `restart` | boolean | ❌ | 是否重启核心（默认 `true`） |
 | `version` | string | ❌ | 配置版本号 |
 
@@ -313,7 +313,7 @@
 |------|------|------|------|
 | `name` | string | ✅ | 配置名称 |
 | `protocol_type` | string | ❌ | 协议类型（默认 `vless_reality`） |
-| `core_type` | string | ❌ | 目标核心（默认 `xray`） |
+| `core_type` | string | ❌ | 目标核心 `xray` / `sing-box` / `mihomo`（默认 `xray`） |
 | `listen_port` | integer | ❌ | 监听端口（默认 `443`） |
 | `listen_address` | string | ❌ | 监听地址（默认 `0.0.0.0`） |
 | `settings` | object | ❌ | 协议特定配置 |
@@ -323,12 +323,12 @@
 
 | 协议 | 允许的核心 |
 |------|-----------|
-| `vless_reality` | `xray`, `sing-box` |
-| `vless_vision` | `xray` |
-| `vless_xhttp` | `xray` |
-| `hysteria2` | `xray`, `sing-box` |
-| `anytls` | `sing-box` |
-| `tuic` | `sing-box` |
+| `vless_reality` | `xray`, `sing-box`, `mihomo` |
+| `vless_xhttp` | `xray`, `mihomo` |
+| `hysteria2` | `sing-box`, `mihomo` |
+| `anytls` | `sing-box`, `mihomo` |
+
+> mihomo 核心的 TLS 仅支持 `certFile` + `keyFile` 证书文件方式，不支持 ACME 自动证书。
 
 **状态码:**
 - `201 Created`

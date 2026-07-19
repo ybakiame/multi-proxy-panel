@@ -13,7 +13,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 - **多节点管理**: 支持无限节点注册，自动心跳检测与状态监控
 - **多协议支持**: VLESS (REALITY / Vision / XHTTP)、VMess、Trojan、Shadowsocks 2022、Hysteria2、TUIC v5
-- **双核心兼容**: 同时支持 [Xray-core](https://github.com/XTLS/Xray-core) 与 [sing-box](https://github.com/SagerNet/sing-box)
+- **多核心兼容**: 同时支持 [Xray-core](https://github.com/XTLS/Xray-core)、[sing-box](https://github.com/SagerNet/sing-box) 与 [mihomo](https://github.com/MetaCubeX/mihomo)
 - **订阅系统**: 自动生成 Base64、JSON、Clash、SingBox、V2RayNG 格式订阅链接
 - **实时流量统计**: 按入站端口和用户维度统计上传/下载流量
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
@@ -58,7 +58,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 │                          ▼                                          │
 │              ┌─────────────────────┐                                │
 │              │    Core Supervisor  │                                │
-│              │  (xray / sing-box)  │                                │
+│              │ xray/sing-box/mihomo│                                │
 │              └─────────────────────┘                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -149,7 +149,7 @@ proxy-panel/
 │   ├── pp-common/          # 共享类型、错误、工具函数
 │   ├── pp-db/              # Sea-ORM 实体与迁移
 │   ├── pp-proto/           # gRPC Protobuf 生成代码
-│   ├── pp-config/          # xray/sing-box 配置构建器
+│   ├── pp-config/          # xray/sing-box/mihomo 配置构建器
 │   ├── pp-core/            # 核心进程管理抽象
 │   ├── pp-subscription/    # 订阅链接生成器
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
@@ -167,28 +167,29 @@ proxy-panel/
 | Crate | 说明 | 产物 |
 |-------|------|------|
 | `pp-hub` | 中央管理面板，提供 REST API、gRPC 服务和静态文件托管 | `proxy-panel-hub` |
-| `pp-agent` | 节点代理，管理本地 xray/sing-box 进程，上报指标 | `proxy-panel-agent` |
+| `pp-agent` | 节点代理，管理本地 xray/sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
 | `pp-web` | React 前端应用，提供现代化管理界面 | 静态文件 |
 | `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、诊断 | `proxy-panel` |
 | `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
 | `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
-| `pp-config` | 配置抽象：将通用协议配置转译为 xray/sing-box JSON | 库 |
+| `pp-config` | 配置抽象：将通用协议配置转译为 xray/sing-box JSON 或 mihomo YAML | 库 |
 | `pp-core` | 核心进程管理：启动、停止、重载、流量采集 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
 
 ## 支持的协议
 
-| 协议 | Xray | sing-box | 说明 |
-|------|:----:|:--------:|------|
-| VLESS + REALITY | ✅ | ✅ | 推荐，最低特征 |
-| VLESS + Vision | ✅ | ❌ | XTLS 流控 |
-| VLESS + XHTTP | ✅ | ❌ | 新一代传输 |
-| VMess | ✅ | ✅ | 传统协议 |
-| Trojan | ✅ | ✅ | TLS 伪装 |
-| Shadowsocks 2022 | ✅ | ✅ | 现代 SS |
-| Hysteria2 | ✅ | ✅ | QUIC 加速 |
-| TUIC v5 | ❌ | ✅ | UDP 优化 |
+| 协议 | Xray | sing-box | mihomo | 说明 |
+|------|:----:|:--------:|:------:|------|
+| VLESS + REALITY | ✅ | ✅ | ✅ | 推荐，最低特征 |
+| VLESS + Vision | ✅ | ❌ | ✅ | XTLS 流控 |
+| VLESS + XHTTP | ✅ | ❌ | ✅ | 新一代传输 |
+| VMess | ✅ | ✅ | ✅ | 传统协议 |
+| Trojan | ✅ | ✅ | ✅ | TLS 伪装 |
+| Shadowsocks 2022 | ✅ | ✅ | ✅ | 现代 SS |
+| Hysteria2 | ✅ | ✅ | ✅ | QUIC 加速 |
+| TUIC v5 | ❌ | ✅ | ✅ | UDP 优化 |
+| AnyTLS | ❌ | ✅ | ✅ | 新兴协议 |
 
 ## 开发指南
 

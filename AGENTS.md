@@ -9,7 +9,7 @@
 ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
-- **Agent** (`pp-agent`): 部署在代理节点上，管理 xray/sing-box 进程，通过 gRPC 长连接与 Hub 通信
+- **Agent** (`pp-agent`): 部署在代理节点上，管理 xray/sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Web** (`pp-web`): React 前端，通过 HTTP API 与 Hub 交互（Vite + TypeScript + HeroUI + Tailwind CSS）
 
 ---
@@ -186,7 +186,7 @@ NodeBinding (DB: node_id + protocol_config_id)
     ↓
 pp-config BuilderRegistry
     ↓
-xray JSON / sing-box JSON
+xray JSON / sing-box JSON / mihomo YAML（Hub↔Agent 间始终以 JSON 传输，mihomo 由 Agent 落盘时转 YAML）
     ↓
 HubMessage::ConfigPush (gRPC)
     ↓
@@ -279,7 +279,7 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 ### 5.5 添加新的协议支持
 
 1. 在 `pp-common/src/protocol.rs` 的 `ProtocolType` 中添加变体
-2. 在 `pp-config/src/xray.rs` 和/或 `pp-config/src/singbox.rs` 实现对应的 `build_inbound`
+2. 在 `pp-config/src/xray.rs`、`pp-config/src/singbox.rs` 和/或 `pp-config/src/mihomo.rs` 实现对应的 `build_inbound`
 3. 在 `pp-hub/src/routes/protocol.rs` 的 `validate_protocol` 中添加校验规则
 4. 在 `pp-subscription` 相关格式中添加节点序列化逻辑
 
