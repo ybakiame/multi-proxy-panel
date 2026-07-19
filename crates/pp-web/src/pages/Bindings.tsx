@@ -242,7 +242,7 @@ export function Bindings() {
   const renderTlsFields = () => {
     if (!requiresTls) return null;
     return (
-      <div className="space-y-4 rounded-lg border border-default-200 p-4">
+      <div className="space-y-4 rounded-lg border border-border p-4">
         <div className="text-sm font-medium">{t("bindings.tlsOverride")}</div>
         <FormSelect
           label={t("protocols.tlsType")}

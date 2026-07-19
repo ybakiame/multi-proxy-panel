@@ -69,7 +69,7 @@ export function Pagination({
         </Button>
       </div>
       <select
-        className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+        className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground"
         value={selectedPerPage}
         onChange={(e) => handlePerPageChange(e.target.value)}
       >

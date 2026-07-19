@@ -223,8 +223,8 @@ export function Nodes() {
                                   key={cs.core_type}
                                   className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${
                                     cs.running
-                                      ? "bg-success-100 text-success-700"
-                                      : "bg-danger-100 text-danger-700"
+                                      ? "bg-success-soft text-success-soft-foreground"
+                                      : "bg-danger-soft text-danger-soft-foreground"
                                   }`}
                                   title={cs.version}
                                 >
@@ -412,15 +412,15 @@ export function Nodes() {
                 <div className="p-4 text-center text-muted-foreground">{t("common.empty")}</div>
               ) : (
                 nodeLogs.map((log) => (
-                  <div key={log.id} className="border-b border-divider pb-2 text-sm">
+                  <div key={log.id} className="border-b border-separator pb-2 text-sm">
                     <div className="flex items-center gap-2">
                       <span
                         className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                           log.level === "error"
-                            ? "bg-danger-100 text-danger-700"
+                            ? "bg-danger-soft text-danger-soft-foreground"
                             : log.level === "warn"
-                              ? "bg-warning-100 text-warning-700"
-                              : "bg-default-100 text-default-700"
+                              ? "bg-warning-soft text-warning-soft-foreground"
+                              : "bg-default-soft text-default-soft-foreground"
                         }`}
                       >
                         {log.level}

@@ -4,6 +4,7 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
+import { useSettingsStore } from "../../stores/settings";
 
 export type CodeLanguage = "json" | "yaml" | "text";
 
@@ -28,6 +29,7 @@ export function CodeEditor({
   className = "",
   readOnly = false,
 }: CodeEditorProps) {
+  const { theme } = useSettingsStore();
   const extensions = useMemo(() => {
     const base = [EditorView.lineWrapping];
     switch (language) {
@@ -47,11 +49,11 @@ export function CodeEditor({
         value={value}
         height={height}
         extensions={extensions}
-        theme={oneDark}
+        theme={theme === "dark" ? oneDark : "light"}
         placeholder={placeholder}
         onChange={onChange}
         editable={!readOnly}
-        className="rounded-md border border-divider overflow-hidden text-sm font-mono"
+        className="rounded-md border border-border overflow-hidden text-sm font-mono"
         basicSetup={{
           lineNumbers: true,
           highlightActiveLineGutter: true,

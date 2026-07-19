@@ -2,48 +2,80 @@
 @import "@heroui/styles";
 
 @theme {
-  /* App-specific Tailwind utilities not covered by HeroUI tokens */
-  --color-primary: #2563eb;
-  --color-primary-foreground: #ffffff;
-  --color-card: #1e293b;
-  --color-muted-foreground: #94a3b8;
-  --color-warning-foreground: #000000;
+  /* App-specific Tailwind utilities aliased to HeroUI semantic tokens */
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted);
 
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 }
 
-/* HeroUI reads raw CSS variables; override them for the dark slate theme. */
-.dark,
-[data-theme="dark"] {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --muted: #334155;
-  --border: #1e293b;
+/* HeroUI reads raw CSS variables; both themes share the same slate palette. */
+.light,
+[data-theme="light"] {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-foreground: #0f172a;
+  --surface-secondary: #f8fafc;
+  --surface-secondary-foreground: #0f172a;
+  --surface-tertiary: #f1f5f9;
+  --surface-tertiary-foreground: #0f172a;
+  --overlay: #ffffff;
+  --overlay-foreground: #0f172a;
+  --default: #f1f5f9;
+  --default-foreground: #0f172a;
   --accent: #2563eb;
   --accent-foreground: #ffffff;
+  --success: #16a34a;
+  --success-foreground: #ffffff;
   --warning: #f59e0b;
   --warning-foreground: #000000;
   --danger: #dc2626;
   --danger-foreground: #ffffff;
-  --success: #16a34a;
-  --success-foreground: #ffffff;
-  --default: #1e293b;
-  --default-foreground: #f8fafc;
+  --border: #e2e8f0;
+  --separator: #f1f5f9;
+  --field-background: #f1f5f9;
+  --field-foreground: #0f172a;
+  --field-placeholder: var(--muted);
+}
+
+.dark,
+[data-theme="dark"] {
+  --background: #0f172a;
+  --foreground: #f8fafc;
   --surface: #1e293b;
   --surface-foreground: #f8fafc;
   --surface-secondary: #334155;
   --surface-secondary-foreground: #f8fafc;
   --surface-tertiary: #475569;
   --surface-tertiary-foreground: #f8fafc;
-  --overlay: #0f172a;
+  --overlay: #1e293b;
   --overlay-foreground: #f8fafc;
+  --default: #1e293b;
+  --default-foreground: #f8fafc;
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #000000;
+  --danger: #dc2626;
+  --danger-foreground: #ffffff;
+  --border: #334155;
+  --separator: #283548;
+  --field-background: #334155;
+  --field-foreground: #f8fafc;
+  --field-placeholder: var(--muted);
 }
 
 body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
+  background-color: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -55,14 +87,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: color-mix(in srgb, var(--foreground) 15%, transparent);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
 }
