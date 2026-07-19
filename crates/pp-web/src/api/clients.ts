@@ -1,5 +1,5 @@
-import { getPaginated, post, put, del } from "./client";
-import type { Client } from "./types";
+import { get, getPaginated, post, put, del } from "./client";
+import type { Client, ClientIps } from "./types";
 
 export interface CreateClientPayload {
   name: string;
@@ -25,3 +25,4 @@ export const updateClient = (id: string, payload: Partial<CreateClientPayload>) 
 export const deleteClient = (id: string) => del(`/api/v1/clients/${id}`);
 export const resetClientTraffic = (id: string) =>
   post<Client>(`/api/v1/clients/${id}/reset-traffic`, {});
+export const getClientIps = (id: string) => get<ClientIps>(`/api/v1/clients/${id}/ips`);

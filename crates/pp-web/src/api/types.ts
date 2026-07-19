@@ -190,6 +190,28 @@ export interface TrafficRecord {
   created_at: string;
 }
 
+export interface UsageRecord {
+  id: string;
+  node_id: string;
+  client_id: string;
+  hour_bucket: string;
+  upload_bytes: number;
+  download_bytes: number;
+  rate: number;
+}
+
+export interface UsageSummaryItem {
+  id: string;
+  upload_bytes: number;
+  download_bytes: number;
+  total_bytes: number;
+}
+
+export interface ClientIps {
+  client_id: string;
+  ips: string[];
+}
+
 export interface Log {
   id: string;
   level: string;

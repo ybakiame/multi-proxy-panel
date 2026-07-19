@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Card, Spinner, Table } from "@heroui/react";
-import { PageHeader } from "../components/ui";
+import { PageHeader, TrafficChart } from "../components/ui";
+import type { TrafficPoint } from "../components/ui/TrafficChart";
 import { formatDateTime } from "../utils/format";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
@@ -10,7 +12,8 @@ import { getBindings } from "../api/bindings";
 import { getMetrics } from "../api/metrics";
 import { getOnlineCount } from "../api/onlines";
 import { getLogs } from "../api/logs";
-import { Node, ProtocolConfig, Client, Binding, Metric, Log } from "../api/types";
+import { getTraffic } from "../api/traffic";
+import { Node, ProtocolConfig, Client, Binding, Metric, Log, TrafficRecord } from "../api/types";
 
 export function Dashboard() {
   const { t } = useTranslation();
@@ -22,21 +25,32 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [traffic24h, setTraffic24h] = useState<TrafficRecord[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [nodesRes, protocolsRes, clientsRes, bindingsRes, metricsRes, logsRes, countRes] =
-          await Promise.allSettled([
-            getNodes(),
-            getAllProtocols(),
-            getClients(1, 1000),
-            getBindings(),
-            getMetrics(),
-            getLogs(1, 5),
-            getOnlineCount(),
-          ]);
+        const start24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        const [
+          nodesRes,
+          protocolsRes,
+          clientsRes,
+          bindingsRes,
+          metricsRes,
+          logsRes,
+          countRes,
+          trafficRes,
+        ] = await Promise.allSettled([
+          getNodes(),
+          getAllProtocols(),
+          getClients(1, 1000),
+          getBindings(),
+          getMetrics(),
+          getLogs(1, 5),
+          getOnlineCount(),
+          getTraffic({ start: start24h, limit: 5000 }),
+        ]);
 
         if (nodesRes.status === "fulfilled")
           setNodes(Array.isArray(nodesRes.value) ? nodesRes.value : []);
@@ -55,6 +69,10 @@ export function Dashboard() {
         if (logsRes.status === "fulfilled")
           setLogs(logsRes.value && Array.isArray(logsRes.value.data) ? logsRes.value.data : []);
         if (countRes.status === "fulfilled") setOnlineCount(countRes.value?.count ?? 0);
+        if (trafficRes.status === "fulfilled")
+          setTraffic24h(
+            trafficRes.value && Array.isArray(trafficRes.value.data) ? trafficRes.value.data : [],
+          );
 
         const failed = [
           nodesRes,
@@ -64,6 +82,7 @@ export function Dashboard() {
           metricsRes,
           logsRes,
           countRes,
+          trafficRes,
         ].filter((r) => r.status === "rejected").length;
         if (failed > 0) setError(t("dashboard.error"));
       } finally {
@@ -75,14 +94,35 @@ export function Dashboard() {
 
   const onlineNodes = nodes.filter((n) => n.status === "online").length;
 
+  const trafficChartData = useMemo<TrafficPoint[]>(() => {
+    const byHour = new Map<string, TrafficPoint>();
+    for (const r of traffic24h) {
+      const point = byHour.get(r.hour_bucket) || {
+        time: new Date(r.hour_bucket).toLocaleString(undefined, {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+        }),
+        upload: 0,
+        download: 0,
+      };
+      point.upload += r.upload_bytes;
+      point.download += r.download_bytes;
+      byHour.set(r.hour_bucket, point);
+    }
+    return Array.from(byHour.entries())
+      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
+      .map(([, point]) => point);
+  }, [traffic24h]);
+
   const stats = [
-    { label: t("dashboard.totalNodes"), value: nodes.length },
-    { label: t("dashboard.online"), value: onlineNodes },
-    { label: t("dashboard.onlineUsers"), value: onlineCount },
-    { label: t("dashboard.protocols"), value: protocols.length },
-    { label: t("dashboard.clients"), value: clients.length },
-    { label: t("dashboard.bindings"), value: bindings.length },
-    { label: t("dashboard.metricsRecords"), value: metrics.length },
+    { label: t("dashboard.totalNodes"), value: nodes.length, to: "/nodes" },
+    { label: t("dashboard.online"), value: onlineNodes, to: "/nodes" },
+    { label: t("dashboard.onlineUsers"), value: onlineCount, to: "/onlines" },
+    { label: t("dashboard.protocols"), value: protocols.length, to: "/protocols" },
+    { label: t("dashboard.clients"), value: clients.length, to: "/clients" },
+    { label: t("dashboard.bindings"), value: bindings.length, to: "/bindings" },
+    { label: t("dashboard.metricsRecords"), value: metrics.length, to: "/metrics" },
   ];
 
   if (loading) {
@@ -106,14 +146,25 @@ export function Dashboard() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <Card key={s.label}>
-            <Card.Content className="p-5">
-              <p className="text-sm text-muted-foreground">{s.label}</p>
-              <p className="mt-1 text-3xl font-bold">{s.value}</p>
-            </Card.Content>
-          </Card>
+          <Link key={s.label} to={s.to} className="block transition-opacity hover:opacity-80">
+            <Card className="h-full">
+              <Card.Content className="p-5">
+                <p className="text-sm text-muted-foreground">{s.label}</p>
+                <p className="mt-1 text-3xl font-bold">{s.value}</p>
+              </Card.Content>
+            </Card>
+          </Link>
         ))}
       </div>
+
+      <Card>
+        <Card.Header>
+          <h3 className="text-lg font-semibold">{t("dashboard.traffic24h")}</h3>
+        </Card.Header>
+        <Card.Content>
+          <TrafficChart data={trafficChartData} height={220} />
+        </Card.Content>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>

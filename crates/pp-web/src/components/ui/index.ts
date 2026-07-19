@@ -10,3 +10,5 @@ export { FormInput } from "./FormInput";
 export { FormTextArea } from "./FormTextArea";
 export { FormCheckbox } from "./FormCheckbox";
 export { FormSelect } from "./FormSelect";
+export { TrafficChart } from "./TrafficChart";
+export { MetricsChart } from "./MetricsChart";

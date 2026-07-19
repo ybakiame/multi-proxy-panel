@@ -81,6 +81,7 @@
     "clients": "Clients",
     "bindings": "Bindings",
     "metricsRecords": "Metrics Records",
+    "traffic24h": "Traffic (Last 24h)",
     "recentLogs": "Recent Logs",
     "nodeStatus": "Node Status",
     "loading": "Loading dashboard...",
@@ -205,6 +206,7 @@
     "status": "Status",
     "lastReset": "Last Reset",
     "resetTraffic": "Reset Traffic",
+    "trafficDetail": "Traffic Detail",
     "strategy": {
       "noReset": "No Reset",
       "daily": "Daily",
@@ -262,9 +264,14 @@
     "cpu": "CPU %",
     "memory": "Memory",
     "disk": "Disk",
+    "netRx": "Net RX",
+    "netTx": "Net TX",
     "loadAvg": "Load Avg",
     "timestamp": "Timestamp",
     "autoRefresh": "Auto-refresh",
+    "chartTitle": "Metrics Trend",
+    "chartUsage": "CPU / Memory / Disk Usage",
+    "chartNetwork": "Network RX/TX Rate",
     "empty": "No metrics available."
   },
   "onlines": {
@@ -275,7 +282,12 @@
     "ip": "IP Address",
     "inbound": "Inbound",
     "connectedAt": "Connected At",
-    "lastActive": "Last Active"
+    "duration": "Duration",
+    "lastActive": "Last Active",
+    "historyIps": "History IPs",
+    "historyIpsTitle": "History IPs of {{name}}",
+    "noIps": "No IP history recorded.",
+    "searchPlaceholder": "Search by name or IP"
   },
   "traffic": {
     "title": "Traffic Records",
@@ -285,7 +297,14 @@
     "client": "Client",
     "upload": "Upload",
     "download": "Download",
-    "total": "Total"
+    "total": "Total",
+    "start": "Start",
+    "end": "End",
+    "todayTotal": "Today's Total",
+    "weekTotal": "Last 7 Days",
+    "topNode": "Top Node",
+    "topClient": "Top Client",
+    "chartTitle": "Traffic Trend"
   },
   "apiKeys": {
     "title": "API Keys",

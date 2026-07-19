@@ -81,6 +81,7 @@
     "clients": "客户端",
     "bindings": "绑定",
     "metricsRecords": "指标记录",
+    "traffic24h": "近 24 小时流量",
     "recentLogs": "最近日志",
     "nodeStatus": "节点状态",
     "loading": "加载仪表板数据...",
@@ -205,6 +206,7 @@
     "status": "状态",
     "lastReset": "上次重置",
     "resetTraffic": "重置流量",
+    "trafficDetail": "流量明细",
     "strategy": {
       "noReset": "不重置",
       "daily": "每天",
@@ -262,9 +264,14 @@
     "cpu": "CPU %",
     "memory": "内存",
     "disk": "磁盘",
+    "netRx": "网络接收",
+    "netTx": "网络发送",
     "loadAvg": "平均负载",
     "timestamp": "时间戳",
     "autoRefresh": "自动刷新",
+    "chartTitle": "指标趋势",
+    "chartUsage": "CPU / 内存 / 磁盘 使用率",
+    "chartNetwork": "网络收发速率",
     "empty": "暂无指标数据。"
   },
   "onlines": {
@@ -275,7 +282,12 @@
     "ip": "IP 地址",
     "inbound": "入站标签",
     "connectedAt": "连接时间",
-    "lastActive": "最后活跃"
+    "duration": "连接时长",
+    "lastActive": "最后活跃",
+    "historyIps": "历史 IP",
+    "historyIpsTitle": "{{name}} 的历史 IP",
+    "noIps": "暂无历史 IP 记录。",
+    "searchPlaceholder": "按名称或 IP 搜索"
   },
   "traffic": {
     "title": "流量记录",
@@ -285,7 +297,14 @@
     "client": "客户端",
     "upload": "上行",
     "download": "下行",
-    "total": "总计"
+    "total": "总计",
+    "start": "开始时间",
+    "end": "结束时间",
+    "todayTotal": "今日总量",
+    "weekTotal": "近 7 天总量",
+    "topNode": "Top 节点",
+    "topClient": "Top 客户端",
+    "chartTitle": "流量趋势"
   },
   "apiKeys": {
     "title": "API 密钥",

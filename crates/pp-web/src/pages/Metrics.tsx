@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Spinner, Table } from "@heroui/react";
-import { PageHeader, Pagination, FormSelect, FormCheckbox } from "../components/ui";
+import { PageHeader, Pagination, FormSelect, FormCheckbox, MetricsChart } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getMetrics } from "../api/metrics";
 import { getNodes } from "../api/nodes";
@@ -71,6 +71,14 @@ export function Metrics() {
         <Button onPress={fetch}>{t("common.refresh")}</Button>
       </div>
       <Card>
+        <Card.Header>
+          <h3 className="text-lg font-semibold">{t("metrics.chartTitle")}</h3>
+        </Card.Header>
+        <Card.Content>
+          <MetricsChart metrics={metrics} />
+        </Card.Content>
+      </Card>
+      <Card>
         <Card.Content>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
@@ -86,6 +94,8 @@ export function Metrics() {
                       <Table.Column>{t("metrics.cpu")}</Table.Column>
                       <Table.Column>{t("metrics.memory")}</Table.Column>
                       <Table.Column>{t("metrics.disk")}</Table.Column>
+                      <Table.Column>{t("metrics.netRx")}</Table.Column>
+                      <Table.Column>{t("metrics.netTx")}</Table.Column>
                       <Table.Column>{t("metrics.loadAvg")}</Table.Column>
                       <Table.Column>{t("metrics.timestamp")}</Table.Column>
                     </Table.Header>
@@ -108,6 +118,8 @@ export function Metrics() {
                             <Table.Cell>
                               {formatBytes(m.disk_used ?? 0)} / {formatBytes(m.disk_total ?? 0)}
                             </Table.Cell>
+                            <Table.Cell>{formatBytes(m.net_rx ?? 0)}</Table.Cell>
+                            <Table.Cell>{formatBytes(m.net_tx ?? 0)}</Table.Cell>
                             <Table.Cell>
                               {(m.load_avg1 ?? 0).toFixed(2)} / {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
                               {(m.load_avg15 ?? 0).toFixed(2)}

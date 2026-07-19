@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -75,6 +76,7 @@ function formatDuration(seconds: number | null): string {
 
 export function Clients() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -332,6 +334,13 @@ export function Clients() {
                               onPress={() => handleResetTraffic(client)}
                             >
                               {t("clients.resetTraffic")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => navigate(`/traffic?client_id=${client.id}`)}
+                            >
+                              {t("clients.trafficDetail")}
                             </Button>
                             <Button
                               size="sm"
