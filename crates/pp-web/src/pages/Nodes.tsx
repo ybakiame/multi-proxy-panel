@@ -217,11 +217,11 @@ export function Nodes() {
                         <Table.Cell>
                           <div className="flex flex-wrap gap-1">
                             {(node.core_statuses || []).map((cs) => {
-                              const shortVersion = cs.version.split(/\s+/)[0] || cs.version;
+                              const shortVersion = cs.version.match(/\d+\.\d+[\d.]*/)?.[0] ?? "";
                               return (
                                 <span
                                   key={cs.core_type}
-                                  className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${
+                                  className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${
                                     cs.running
                                       ? "bg-success-soft text-success-soft-foreground"
                                       : "bg-danger-soft text-danger-soft-foreground"
@@ -229,7 +229,9 @@ export function Nodes() {
                                   title={cs.version}
                                 >
                                   {cs.core_type}
-                                  <span className="opacity-80">{shortVersion}</span>
+                                  {shortVersion && (
+                                    <span className="opacity-70">{shortVersion}</span>
+                                  )}
                                   <span>
                                     {cs.running ? t("common.running") : t("common.stopped")}
                                   </span>

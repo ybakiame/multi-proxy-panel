@@ -40,6 +40,20 @@
     "yes": "Yes",
     "no": "No"
   },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Connecting",
+    "maintenance": "Maintenance",
+    "degraded": "Degraded",
+    "active": "Active",
+    "inactive": "Inactive",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "expired": "Expired",
+    "on_hold": "On Hold",
+    "limited": "Limited"
+  },
   "pagination": {
     "prev": "Prev",
     "next": "Next",
@@ -89,6 +103,8 @@
   },
   "nodes": {
     "title": "Nodes",
+    "name": "Name",
+    "logs": "Logs",
     "create": "+ Create Node",
     "createTitle": "Create Node",
     "editTitle": "Edit Node",
@@ -121,6 +137,7 @@
     "core": "Core",
     "listen": "Listen Address",
     "port": "Port",
+    "randomPort": "Random",
     "key": "Key",
     "tlsSettings": "TLS Settings (JSON)",
     "tlsType": "TLS Type",

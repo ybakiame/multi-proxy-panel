@@ -40,6 +40,20 @@
     "yes": "是",
     "no": "否"
   },
+  "status": {
+    "online": "在线",
+    "offline": "离线",
+    "connecting": "连接中",
+    "maintenance": "维护中",
+    "degraded": "降级",
+    "active": "激活",
+    "inactive": "未激活",
+    "enabled": "启用",
+    "disabled": "禁用",
+    "expired": "已过期",
+    "on_hold": "暂停",
+    "limited": "受限"
+  },
   "pagination": {
     "prev": "上一页",
     "next": "下一页",
@@ -89,6 +103,8 @@
   },
   "nodes": {
     "title": "节点管理",
+    "name": "名称",
+    "logs": "日志",
     "create": "+ 创建节点",
     "createTitle": "创建节点",
     "editTitle": "编辑节点",
@@ -121,6 +137,7 @@
     "core": "核心",
     "listen": "监听地址",
     "port": "端口",
+    "randomPort": "随机生成",
     "key": "密钥",
     "tlsSettings": "TLS 设置（JSON）",
     "tlsType": "TLS 类型",
