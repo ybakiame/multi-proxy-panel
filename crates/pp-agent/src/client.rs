@@ -2,6 +2,7 @@ use pp_proto::{
     AgentMessage, ConfigPush, CoreCommand, Heartbeat, HostMetrics, HubMessage, OnlineUser,
     OnlineUsersReport, RegisterRequest, hub_agent_client::HubAgentClient,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -11,6 +12,7 @@ use tonic::transport::Channel;
 use pp_core::CoreSupervisor;
 
 use crate::logger::{AgentLogger, collect_core_status, collect_logs};
+use crate::persist;
 
 pub struct AgentStreamClient {
     agent_id: String,
@@ -18,6 +20,7 @@ pub struct AgentStreamClient {
     hostname: String,
     domain: String,
     tls_config: Option<tonic::transport::ClientTlsConfig>,
+    data_dir: PathBuf,
     #[allow(dead_code)]
     hub_tx: mpsc::Sender<AgentMessage>,
     #[allow(dead_code)]
@@ -33,6 +36,7 @@ impl AgentStreamClient {
         domain: String,
         tls_config: Option<tonic::transport::ClientTlsConfig>,
         logger: AgentLogger,
+        data_dir: PathBuf,
     ) -> Self {
         let (hub_tx, _hub_rx) = mpsc::channel::<AgentMessage>(128);
         Self {
@@ -41,6 +45,7 @@ impl AgentStreamClient {
             hostname,
             domain,
             tls_config,
+            data_dir,
             hub_tx,
             hub_rx: None,
             logger,
@@ -213,7 +218,8 @@ impl AgentStreamClient {
         let result: anyhow::Result<()> = async {
             while let Some(msg_result) = stream.message().await? {
                 if let Err(e) =
-                    handle_hub_message(msg_result, &supervisor, outbound_tx.clone()).await
+                    handle_hub_message(msg_result, &supervisor, outbound_tx.clone(), &self.data_dir)
+                        .await
                 {
                     tracing::warn!("error handling hub message: {}", e);
                 }
@@ -234,6 +240,7 @@ async fn handle_hub_message(
     msg: HubMessage,
     supervisor: &CoreSupervisor,
     _outbound: mpsc::Sender<AgentMessage>,
+    data_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     use pp_proto::hub_message::Payload;
 
@@ -251,7 +258,7 @@ async fn handle_hub_message(
                 push.target_core,
                 push.restart_required
             );
-            handle_config_push(supervisor, push).await?;
+            handle_config_push(supervisor, push, data_dir).await?;
         }
         Some(Payload::ConfigReload(reload)) => {
             tracing::info!("received config reload, core={:?}", reload.target_core);
@@ -262,7 +269,7 @@ async fn handle_hub_message(
                 config_version: reload.config_version,
                 core_version: reload.core_version,
             };
-            handle_config_push(supervisor, push).await?;
+            handle_config_push(supervisor, push, data_dir).await?;
         }
         Some(Payload::CoreCmd(cmd)) => {
             handle_core_command(supervisor, cmd).await?;
@@ -283,7 +290,11 @@ async fn handle_hub_message(
     Ok(())
 }
 
-async fn handle_config_push(supervisor: &CoreSupervisor, push: ConfigPush) -> anyhow::Result<()> {
+async fn handle_config_push(
+    supervisor: &CoreSupervisor,
+    push: ConfigPush,
+    data_dir: &std::path::Path,
+) -> anyhow::Result<()> {
     let core_type = core_type_from_i32(push.target_core);
     let config: serde_json::Value = serde_json::from_str(&push.config_json)?;
 
@@ -314,6 +325,10 @@ async fn handle_config_push(supervisor: &CoreSupervisor, push: ConfigPush) -> an
             .map_err(|e| anyhow::anyhow!("{}", e))?;
     }
     tracing::info!("config applied for {:?}", core_type);
+
+    if let Err(e) = persist::save_last_config(data_dir, core_type, &config).await {
+        tracing::warn!("failed to persist config snapshot: {}", e);
+    }
 
     Ok(())
 }

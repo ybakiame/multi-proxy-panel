@@ -7,6 +7,7 @@ use tracing_subscriber::prelude::*;
 
 mod client;
 mod logger;
+mod persist;
 mod reporter;
 
 use client::AgentStreamClient;
@@ -66,6 +67,8 @@ async fn main() -> anyhow::Result<()> {
     let discovered = supervisor.discover(&args.bin_dir, &args.data_dir).await?;
     tracing::info!("discovered cores: {:?}", discovered);
 
+    restore_last_config(&supervisor, &args.data_dir).await;
+
     // Load or generate agent token
     let token = load_or_register_token(&args.data_dir, args.token).await?;
 
@@ -89,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         args.domain.unwrap_or_default(),
         tls_config,
         agent_logger,
+        args.data_dir.clone(),
     );
 
     tokio::select! {
@@ -104,6 +108,39 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("ProxyPanel Agent shutdown complete");
     Ok(())
+}
+
+/// Restart every core recorded in the per-core config snapshots.
+///
+/// Runs before connecting to the Hub so the node serves traffic even when
+/// the Hub is temporarily unreachable. Failures are logged, never fatal —
+/// the Hub can still push a fresh config later.
+async fn restore_last_config(supervisor: &pp_core::CoreSupervisor, data_dir: &Path) {
+    for (core_type, snapshot) in persist::load_last_configs(data_dir).await {
+        let manager = match supervisor.get(core_type).await {
+            Some(manager) => manager,
+            None => match supervisor
+                .ensure_manager_from_discovered(core_type, None)
+                .await
+            {
+                Ok(manager) => manager,
+                Err(e) => {
+                    tracing::warn!("cannot restore {:?}: {}", core_type, e);
+                    continue;
+                }
+            },
+        };
+
+        if manager.is_running().await {
+            tracing::info!("{:?} already running, skipping config restore", core_type);
+            continue;
+        }
+
+        match manager.start(&snapshot.config).await {
+            Ok(()) => tracing::info!("restored {:?} from last applied config", core_type),
+            Err(e) => tracing::warn!("failed to restore {:?} from snapshot: {}", core_type, e),
+        }
+    }
 }
 
 async fn load_or_register_token(
