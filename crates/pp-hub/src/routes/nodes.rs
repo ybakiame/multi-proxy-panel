@@ -291,10 +291,11 @@ pub async fn push_config(
     let core_type = match target_core {
         "xray" => pp_common::CoreType::Xray,
         "sing-box" | "singbox" => pp_common::CoreType::SingBox,
+        "mihomo" => pp_common::CoreType::Mihomo,
         _ => {
             return Err(ApiError::bad_request(
                 "invalid_core_type",
-                "core_type must be 'xray' or 'sing-box'",
+                "core_type must be 'xray', 'sing-box' or 'mihomo'",
             ));
         }
     };

@@ -43,15 +43,16 @@ pub enum CoreType {
     #[default]
     Xray,
     SingBox,
+    Mihomo,
 }
 
 impl CoreType {
     pub fn valid_for(protocol: ProtocolType) -> &'static [CoreType] {
         use {CoreType::*, ProtocolType::*};
         match protocol {
-            VlessReality => &[Xray, SingBox],
-            VlessXhttp => &[Xray],
-            Hysteria2 | Anytls => &[SingBox],
+            VlessReality => &[Xray, SingBox, Mihomo],
+            VlessXhttp => &[Xray, Mihomo],
+            Hysteria2 | Anytls => &[SingBox, Mihomo],
         }
     }
 }
@@ -61,6 +62,7 @@ impl std::fmt::Display for CoreType {
         match self {
             CoreType::Xray => write!(f, "xray"),
             CoreType::SingBox => write!(f, "sing-box"),
+            CoreType::Mihomo => write!(f, "mihomo"),
         }
     }
 }
@@ -72,6 +74,7 @@ impl std::str::FromStr for CoreType {
         match s {
             "xray" => Ok(CoreType::Xray),
             "sing-box" | "singbox" => Ok(CoreType::SingBox),
+            "mihomo" => Ok(CoreType::Mihomo),
             _ => Err(format!("unknown core type: {}", s)),
         }
     }

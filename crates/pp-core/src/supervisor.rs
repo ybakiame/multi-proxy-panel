@@ -78,6 +78,22 @@ impl CoreSupervisor {
             );
         }
 
+        // Check mihomo
+        let mihomo_path = Self::binary_path(bin_dir, "mihomo");
+        if mihomo_path.exists() {
+            if let Ok(manager) =
+                CoreManagerFactory::create(CoreType::Mihomo, &mihomo_path, config_dir)
+            {
+                self.register(Arc::from(manager)).await;
+                discovered.push(CoreType::Mihomo);
+            }
+        } else {
+            tracing::info!(
+                "mihomo binary not found at {}, will install on demand",
+                mihomo_path.display()
+            );
+        }
+
         Ok(discovered)
     }
 

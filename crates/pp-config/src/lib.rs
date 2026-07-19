@@ -3,6 +3,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod builder;
+pub mod mihomo;
 pub mod singbox;
 pub mod xray;
 

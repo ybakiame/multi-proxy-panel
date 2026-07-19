@@ -104,7 +104,11 @@ impl AgentStreamClient {
                     hostname: self.hostname.clone(),
                     domain: self.domain.clone(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
-                    capabilities: vec!["xray".to_string(), "sing-box".to_string()],
+                    capabilities: vec![
+                        "xray".to_string(),
+                        "sing-box".to_string(),
+                        "mihomo".to_string(),
+                    ],
                     labels: Default::default(),
                 },
             )),
@@ -406,6 +410,13 @@ fn minimal_config_for_core(core_type: pp_common::CoreType) -> serde_json::Value 
             "inbounds": [],
             "outbounds": [{ "type": "direct", "tag": "direct" }]
         }),
+        pp_common::CoreType::Mihomo => serde_json::json!({
+            "log-level": "warning",
+            "mode": "rule",
+            "allow-lan": false,
+            "listeners": [],
+            "rules": ["MATCH,DIRECT"]
+        }),
     }
 }
 
@@ -506,6 +517,7 @@ fn core_type_from_i32(value: i32) -> pp_common::CoreType {
     match value {
         1 => pp_common::CoreType::Xray,
         2 => pp_common::CoreType::SingBox,
+        4 => pp_common::CoreType::Mihomo,
         _ => pp_common::CoreType::SingBox,
     }
 }

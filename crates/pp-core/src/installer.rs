@@ -28,6 +28,11 @@ fn release_info(core_type: CoreType) -> ReleaseInfo {
             repo: "sing-box",
             binary_name: "sing-box",
         },
+        CoreType::Mihomo => ReleaseInfo {
+            owner: "MetaCubeX",
+            repo: "mihomo",
+            binary_name: "mihomo",
+        },
     }
 }
 
@@ -35,6 +40,7 @@ fn env_version(core_type: CoreType) -> Option<String> {
     let key = match core_type {
         CoreType::Xray => "PROXYPANEL_XRAY_VERSION",
         CoreType::SingBox => "PROXYPANEL_SINGBOX_VERSION",
+        CoreType::Mihomo => "PROXYPANEL_MIHOMO_VERSION",
     };
     std::env::var(key).ok().filter(|s| !s.is_empty())
 }
@@ -84,6 +90,15 @@ fn asset_name(core_type: CoreType, version: &str) -> PanelResult<(String, String
             Ok((
                 format!("sing-box-{}-{}.{}", version_no_v, sb_arch, ext),
                 "sing-box".to_string(),
+            ))
+        }
+        CoreType::Mihomo => {
+            // mihomo ships a single gzipped binary (zip on Windows), and the
+            // asset name keeps the tag's leading 'v'.
+            let ext = if is_windows { "zip" } else { "gz" };
+            Ok((
+                format!("mihomo-{}-{}.{}", sb_arch, github_tag(version), ext),
+                "mihomo".to_string(),
             ))
         }
     }
@@ -232,10 +247,24 @@ fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
     )))
 }
 
+fn extract_gzip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResult<PathBuf> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(archive)?;
+    let mut decoder = flate2::read::GzDecoder::new(file);
+    let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
+    let mut out = std::fs::File::create(&dest)?;
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf)?;
+    std::io::Write::write_all(&mut out, &buf)?;
+    Ok(dest)
+}
+
 fn core_type_from_name(name: &str) -> PanelResult<CoreType> {
     match name {
         "xray" => Ok(CoreType::Xray),
         "sing-box" => Ok(CoreType::SingBox),
+        "mihomo" => Ok(CoreType::Mihomo),
         _ => Err(PanelError::Core(format!(
             "unknown core binary name: {}",
             name
@@ -297,6 +326,8 @@ pub async fn ensure_core_binary(
             extract_tgz(&tmp_archive, bin_dir, &binary_inside)
         } else if asset.ends_with(".zip") {
             extract_zip(&tmp_archive, bin_dir, &binary_inside)
+        } else if asset.ends_with(".gz") {
+            extract_gzip(&tmp_archive, bin_dir, &binary_inside)
         } else {
             Err(PanelError::Core(format!(
                 "unknown archive format for asset {}",
@@ -329,9 +360,13 @@ mod tests {
 
     #[test]
     fn asset_names_are_well_formed() {
-        for (ct, version) in [(CoreType::Xray, "v25.6.8"), (CoreType::SingBox, "v1.11.0")] {
+        for (ct, version) in [
+            (CoreType::Xray, "v25.6.8"),
+            (CoreType::SingBox, "v1.11.0"),
+            (CoreType::Mihomo, "v1.19.28"),
+        ] {
             let (asset, _) = asset_name(ct, version).unwrap();
-            assert!(asset.ends_with(".zip") || asset.ends_with(".tar.gz"));
+            assert!(asset.ends_with(".zip") || asset.ends_with(".gz"));
         }
     }
 }

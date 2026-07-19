@@ -175,6 +175,7 @@ enum CoreType {
   CORE_TYPE_XRAY = 1;
   CORE_TYPE_SING_BOX = 2;
   CORE_TYPE_BOTH = 3;
+  CORE_TYPE_MIHOMO = 4;
 }
 
 // Agent 关闭指令

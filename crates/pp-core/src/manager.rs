@@ -53,6 +53,10 @@ impl CoreManagerFactory {
                 binary_path,
                 config_dir,
             )?)),
+            CoreType::Mihomo => Ok(Box::new(MihomoProcessManager::new(
+                binary_path,
+                config_dir,
+            )?)),
         }
     }
 }
@@ -452,6 +456,183 @@ impl CoreManager for SingBoxProcessManager {
 
     async fn active_inbounds(&self) -> PanelResult<Vec<String>> {
         // TODO: query sing-box API for active inbounds
+        Ok(vec![])
+    }
+
+    async fn last_error(&self) -> PanelResult<String> {
+        Ok(self.last_error.read().await.clone())
+    }
+}
+
+/// mihomo (Clash.Meta) process manager.
+///
+/// The hub always pushes config as JSON; mihomo only accepts YAML config
+/// files, so the JSON is serialized to `mihomo.yaml` on start. mihomo has an
+/// API-based hot reload (`PUT /configs?force=true` with per-listener diffing)
+/// but it requires the external controller; for now reload falls back to a
+/// full restart, same as xray.
+pub struct MihomoProcessManager {
+    binary: PathBuf,
+    config_dir: PathBuf,
+    process: RwLock<Option<Child>>,
+    start_time: RwLock<Option<Instant>>,
+    last_error: Arc<RwLock<String>>,
+}
+
+impl MihomoProcessManager {
+    pub fn new(binary: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> PanelResult<Self> {
+        Ok(Self {
+            binary: binary.as_ref().to_path_buf(),
+            config_dir: config_dir.as_ref().to_path_buf(),
+            process: RwLock::new(None),
+            start_time: RwLock::new(None),
+            last_error: Arc::new(RwLock::new(String::new())),
+        })
+    }
+
+    fn config_path(&self) -> PathBuf {
+        self.config_dir.join("mihomo.yaml")
+    }
+}
+
+#[async_trait::async_trait]
+impl CoreManager for MihomoProcessManager {
+    fn core_type(&self) -> CoreType {
+        CoreType::Mihomo
+    }
+
+    async fn start(&self, config: &Value) -> PanelResult<()> {
+        if !tokio::fs::try_exists(&self.binary).await.unwrap_or(false) {
+            let msg = format!("mihomo binary not found at {}", self.binary.display());
+            *self.last_error.write().await = msg.clone();
+            return Err(PanelError::Core(msg));
+        }
+
+        let mut proc = self.process.write().await;
+        if proc.is_some() {
+            return Err(PanelError::Core("mihomo already running".into()));
+        }
+
+        let yaml = serde_yaml::to_string(config)
+            .map_err(|e| PanelError::Core(format!("failed to serialize mihomo config: {}", e)))?;
+        let config_path = self.config_path();
+        if let Err(e) = tokio::fs::write(&config_path, yaml).await {
+            let msg = format!("failed to write mihomo config: {}", e);
+            *self.last_error.write().await = msg.clone();
+            return Err(PanelError::Core(msg));
+        }
+
+        let mut child = match Command::new(&self.binary)
+            .arg("-d")
+            .arg(&self.config_dir)
+            .arg("-f")
+            .arg(&config_path)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("failed to spawn mihomo: {}", e);
+                *self.last_error.write().await = msg.clone();
+                return Err(PanelError::Core(msg));
+            }
+        };
+
+        let last_error = self.last_error.clone();
+        *self.last_error.write().await = String::new();
+        if let Some(stderr) = child.stderr.take() {
+            spawn_output_reader(stderr, last_error.clone());
+        }
+        if let Some(stdout) = child.stdout.take() {
+            spawn_output_reader(stdout, last_error);
+        }
+
+        // Give the process a moment to fail on startup (bad config, missing
+        // permissions, etc.) so we can capture the real error message.
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let code = status.code().unwrap_or(-1);
+                record_exit(self.last_error.clone(), code).await;
+                let err = self.last_error.read().await.clone();
+                tracing::error!("mihomo exited immediately: {}", err);
+                return Err(PanelError::Core(err));
+            }
+            Ok(None) => {
+                *proc = Some(child);
+                *self.start_time.write().await = Some(Instant::now());
+                tracing::info!("mihomo started with config {}", config_path.display());
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("failed to check mihomo status after start: {}", e);
+                *self.last_error.write().await = msg.clone();
+                Err(PanelError::Core(msg))
+            }
+        }
+    }
+
+    async fn stop(&self) -> PanelResult<()> {
+        let mut proc = self.process.write().await;
+        if let Some(mut child) = proc.take() {
+            let _ = child.kill().await;
+            *self.start_time.write().await = None;
+            tracing::info!("mihomo stopped");
+        }
+        Ok(())
+    }
+
+    async fn restart(&self, config: &Value) -> PanelResult<()> {
+        self.stop().await?;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        self.start(config).await
+    }
+
+    async fn is_running(&self) -> bool {
+        let mut proc = self.process.write().await;
+        if let Some(ref mut child) = *proc {
+            match child.try_wait() {
+                Ok(None) => true,
+                Ok(Some(status)) => {
+                    let code = status.code().unwrap_or(-1);
+                    record_exit(self.last_error.clone(), code).await;
+                    *proc = None;
+                    false
+                }
+                Err(e) => {
+                    *self.last_error.write().await =
+                        format!("failed to check process status: {}", e);
+                    *proc = None;
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    async fn reload(&self, config: &Value) -> PanelResult<()> {
+        // mihomo hot reload requires the external controller API; restart instead
+        self.restart(config).await
+    }
+
+    async fn version(&self) -> PanelResult<String> {
+        let output = Command::new(&self.binary).arg("-v").output().await?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(first_output_line(&stdout))
+    }
+
+    async fn uptime_secs(&self) -> PanelResult<u64> {
+        Ok(self
+            .start_time
+            .read()
+            .await
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0))
+    }
+
+    async fn active_inbounds(&self) -> PanelResult<Vec<String>> {
         Ok(vec![])
     }
 

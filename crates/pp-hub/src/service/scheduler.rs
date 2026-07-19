@@ -351,7 +351,8 @@ async fn push_config_for_core(
 
             let proto_core = match core_type {
                 pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
-                _ => pp_proto::CoreType::SingBox,
+                pp_common::CoreType::SingBox => pp_proto::CoreType::SingBox,
+                pp_common::CoreType::Mihomo => pp_proto::CoreType::Mihomo,
             };
 
             let message = pp_proto::HubMessage {
@@ -408,6 +409,7 @@ async fn check_bindings_for_core(
         let binding_core = match config.as_str() {
             "xray" => pp_common::CoreType::Xray,
             "sing-box" | "singbox" => pp_common::CoreType::SingBox,
+            "mihomo" => pp_common::CoreType::Mihomo,
             _ => pp_common::CoreType::SingBox,
         };
 

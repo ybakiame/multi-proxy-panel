@@ -215,6 +215,7 @@ pub async fn push_node_config(
     let proto_core = match core_type {
         CoreType::Xray => pp_proto::CoreType::Xray,
         CoreType::SingBox => pp_proto::CoreType::SingBox,
+        CoreType::Mihomo => pp_proto::CoreType::Mihomo,
     };
 
     let message = pp_proto::HubMessage {
@@ -349,6 +350,7 @@ fn parse_core_type(s: &str) -> CoreType {
     match s {
         "xray" => CoreType::Xray,
         "sing-box" | "singbox" => CoreType::SingBox,
+        "mihomo" => CoreType::Mihomo,
         _ => CoreType::SingBox,
     }
 }
