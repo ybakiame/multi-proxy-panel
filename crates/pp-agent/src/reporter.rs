@@ -94,7 +94,7 @@ async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic
 struct SingboxTrafficState {
     /// Previous `(uplink_total, downlink_total)` from `SubscribeStatus`.
     prev_total: Option<(i64, i64)>,
-    /// Previous connection snapshot: connection id -> (user, uplink, downlink).
+    /// Previous connection snapshot: connection id -> (user, uplink_total, downlink_total).
     prev_conns: HashMap<String, (String, i64, i64)>,
 }
 
@@ -224,7 +224,7 @@ fn total_delta(prev: Option<(i64, i64)>, cur: (i64, i64)) -> (i64, i64) {
     }
 }
 
-/// Build a `conn.id -> (user, uplink, downlink)` snapshot from connection events.
+/// Build a `conn.id -> (user, uplink_total, downlink_total)` snapshot from connection events.
 ///
 /// Closed connections, events without a connection payload and connections
 /// without a user are skipped: none of them can be attributed to a client.
@@ -243,7 +243,10 @@ fn connection_snapshot(events: &[ConnectionEvent]) -> HashMap<String, (String, i
         }
         snapshot.insert(
             conn.id.clone(),
-            (conn.user.clone(), conn.uplink, conn.downlink),
+            // sing-box populates the cumulative per-connection counters in
+            // `uplink_total`/`downlink_total`; `uplink`/`downlink` stay zero
+            // in snapshot events.
+            (conn.user.clone(), conn.uplink_total, conn.downlink_total),
         );
     }
     snapshot
@@ -469,8 +472,10 @@ mod tests {
             connection: Some(Connection {
                 id: id.to_string(),
                 user: user.to_string(),
-                uplink,
-                downlink,
+                // sing-box fills the cumulative counters here, not in
+                // `uplink`/`downlink`.
+                uplink_total: uplink,
+                downlink_total: downlink,
                 ..Default::default()
             }),
             ..Default::default()
