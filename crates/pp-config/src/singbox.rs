@@ -142,22 +142,27 @@ fn build_api_service() -> Value {
         .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
     let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
 
-    // sing-box 1.14.0-alpha expects `listen` to be an IP address only
-    // (the port is fixed by the implementation).
-    let listen_addr = http_listen
-        .rsplit_once(':')
-        .map(|(a, _)| a)
-        .unwrap_or(&http_listen);
+    let (listen_addr, listen_port) = split_listen_addr(&http_listen);
 
     let mut api = json!({
         "type": "api",
         "listen": listen_addr,
+        "listen_port": listen_port,
     });
     if !secret.is_empty() {
         api["secret"] = serde_json::json!(secret);
     }
 
     json!([api])
+}
+
+/// Split a `host:port` listen address into (host, port), defaulting to port 9090
+/// when the port is missing or unparsable.
+fn split_listen_addr(http_listen: &str) -> (&str, u16) {
+    match http_listen.rsplit_once(':') {
+        Some((addr, port)) => (addr, port.parse().unwrap_or(9090)),
+        None => (http_listen, 9090),
+    }
 }
 
 /// Build the legacy sing-box experimental clash_api definition (pre-1.14.0).
@@ -624,5 +629,52 @@ mod tests {
         let config = builder.build_full_config(&[inbound]).unwrap();
         assert!(!config["route"]["rules"].as_array().unwrap().is_empty());
         assert_eq!(config["outbounds"][1]["tag"], "block");
+    }
+
+    #[test]
+    fn split_listen_addr_defaults_to_9090() {
+        assert_eq!(split_listen_addr("127.0.0.1:9090"), ("127.0.0.1", 9090));
+        assert_eq!(split_listen_addr("127.0.0.1"), ("127.0.0.1", 9090));
+        assert_eq!(split_listen_addr("127.0.0.1:notaport"), ("127.0.0.1", 9090));
+    }
+
+    #[test]
+    fn split_listen_addr_parses_custom_port() {
+        assert_eq!(split_listen_addr("0.0.0.0:8080"), ("0.0.0.0", 8080));
+    }
+
+    #[test]
+    fn api_service_contains_listen_and_listen_port() {
+        let services = build_api_service();
+        let arr = services.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+
+        let expected = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
+            .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+        let (addr, port) = split_listen_addr(&expected);
+
+        assert_eq!(arr[0]["type"], "api");
+        assert_eq!(arr[0]["listen"], addr);
+        assert_eq!(arr[0]["listen_port"], port);
+    }
+
+    #[test]
+    fn full_config_1_14_api_service_has_listen_port() {
+        let builder = SingBoxConfigBuilder;
+        let inbound = InboundConfig {
+            tag: "vless-reality-in".into(),
+            protocol: ProtocolType::VlessReality,
+            listen: "::".into(),
+            port: 443,
+            settings: reality_settings(),
+            tls: None,
+            sniffing: None,
+            core_version: None,
+        };
+
+        let config = builder.build_full_config(&[inbound]).unwrap();
+        let services = config["services"].as_array().unwrap();
+        assert_eq!(services[0]["type"], "api");
+        assert!(services[0]["listen_port"].is_number());
     }
 }

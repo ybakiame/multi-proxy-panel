@@ -157,8 +157,13 @@ async fn inject_binding_clients(
 }
 
 /// Map a client to the protocol-specific client entry expected by pp-config builders.
+///
+/// The injected identifier (vless `email`, password-protocol `name`) is what the
+/// core reports back as the connection user, so it must stay resolvable by the
+/// hub: fall back to the client UUID when no email is set.
 fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Value {
-    let email = client.email.as_ref().unwrap_or(&client.name);
+    let fallback = client.id.to_string();
+    let email = client.email.as_ref().unwrap_or(&fallback);
     match protocol_type {
         pt if pt.starts_with("vless") => {
             let flow = if pt == "vless_reality" {
@@ -359,5 +364,70 @@ fn parse_protocol_type(s: &str) -> PanelResult<pp_common::ProtocolType> {
             "unknown protocol type: {}",
             s
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_client(id: Uuid, name: &str, email: Option<&str>) -> client::Model {
+        client::Model {
+            id,
+            user_id: Uuid::new_v4(),
+            name: name.to_string(),
+            email: email.map(str::to_string),
+            traffic_limit_bytes: 0,
+            traffic_used_bytes: 0,
+            all_time_used_bytes: 0,
+            expiry_date: None,
+            reset_day: None,
+            data_limit_reset_strategy: "no_reset".to_string(),
+            last_traffic_reset_time: None,
+            max_devices: None,
+            status: "active".to_string(),
+            on_hold_expire_duration_secs: None,
+            on_hold_timeout: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    #[test]
+    fn vless_entry_uses_email_when_set() {
+        let id = Uuid::new_v4();
+        let entry = client_to_protocol_entry(
+            &test_client(id, "alice", Some("alice@example.com")),
+            "vless_reality",
+        );
+        assert_eq!(entry["id"], id.to_string());
+        assert_eq!(entry["email"], "alice@example.com");
+        assert_eq!(entry["flow"], "xtls-rprx-vision");
+    }
+
+    #[test]
+    fn vless_entry_falls_back_to_uuid_without_email() {
+        let id = Uuid::new_v4();
+        let entry = client_to_protocol_entry(&test_client(id, "ybakiame", None), "vless_reality");
+        assert_eq!(entry["email"], id.to_string());
+    }
+
+    #[test]
+    fn hysteria2_entry_falls_back_to_uuid_without_email() {
+        let id = Uuid::new_v4();
+        let entry = client_to_protocol_entry(&test_client(id, "ybakiame", None), "hysteria2");
+        assert_eq!(entry["name"], id.to_string());
+        assert_eq!(entry["password"], id.to_string());
+    }
+
+    #[test]
+    fn anytls_entry_uses_email_as_name_when_set() {
+        let id = Uuid::new_v4();
+        let entry = client_to_protocol_entry(
+            &test_client(id, "alice", Some("alice@example.com")),
+            "anytls",
+        );
+        assert_eq!(entry["name"], "alice@example.com");
+        assert_eq!(entry["password"], id.to_string());
     }
 }
