@@ -14,7 +14,14 @@ import { ProtocolConfig } from "../api/types";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
-const CORE_TYPES = ["xray", "sing-box"];
+// Mirrors CoreType::valid_for() in crates/pp-common/src/protocol.rs
+const CORE_PROTOCOLS: Record<string, string[]> = {
+  xray: ["vless_reality", "vless_xhttp"],
+  "sing-box": ["vless_reality", "hysteria2", "anytls"],
+  mihomo: ["vless_reality", "vless_xhttp", "hysteria2", "anytls"],
+};
+
+const CORE_TYPES = ["xray", "sing-box", "mihomo"];
 const FLOW_OPTIONS = ["xtls-rprx-vision"];
 const XHTTP_MODES = ["auto", "packet-up", "stream-up"];
 const OBFS_TYPES = ["none", "salamander"];
@@ -53,7 +60,7 @@ const defaultForm: ProtocolForm = {
   protocol_type: "vless_reality",
   core_type: "xray",
   core_version: "",
-  listen_address: "",
+  listen_address: "0.0.0.0",
   listen_port: "",
   tls_type: "none",
   tls_cert_file: "",
@@ -273,6 +280,18 @@ export function Protocols() {
     } catch {
       // error handled by axios interceptor
     }
+  };
+
+  const generateRandomPort = (): number => {
+    const usedPorts = new Set(
+      protocols.filter((p) => p.id !== editingProtocol?.id).map((p) => p.listen_port),
+    );
+    let port = 0;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      port = 10000 + Math.floor(Math.random() * 50001);
+      if (!usedPorts.has(port)) return port;
+    }
+    return port;
   };
 
   const openCreate = () => {
@@ -537,20 +556,29 @@ export function Protocols() {
                 isRequired
               />
               <FormSelect
-                label={t("protocols.type")}
-                value={form.protocol_type}
-                onChange={(value) => setForm({ ...form, protocol_type: value })}
-                options={PROTOCOL_TYPES.map((type) => ({
-                  id: type,
-                  label: type,
-                }))}
+                label={t("protocols.core")}
+                value={form.core_type}
+                onChange={(value) => {
+                  const supported = CORE_PROTOCOLS[value] ?? PROTOCOL_TYPES;
+                  setForm({
+                    ...form,
+                    core_type: value,
+                    protocol_type: supported.includes(form.protocol_type)
+                      ? form.protocol_type
+                      : supported[0],
+                  });
+                }}
+                options={CORE_TYPES.map((core) => ({ id: core, label: core }))}
                 isRequired
               />
               <FormSelect
-                label={t("protocols.core")}
-                value={form.core_type}
-                onChange={(value) => setForm({ ...form, core_type: value })}
-                options={CORE_TYPES.map((core) => ({ id: core, label: core }))}
+                label={t("protocols.type")}
+                value={form.protocol_type}
+                onChange={(value) => setForm({ ...form, protocol_type: value })}
+                options={(CORE_PROTOCOLS[form.core_type] ?? PROTOCOL_TYPES).map((type) => ({
+                  id: type,
+                  label: type,
+                }))}
                 isRequired
               />
               <FormInput
@@ -565,13 +593,23 @@ export function Protocols() {
                 onChange={(value) => setForm({ ...form, listen_address: value })}
                 isRequired
               />
-              <FormInput
-                type="number"
-                label={t("protocols.port")}
-                value={form.listen_port}
-                onChange={(value) => setForm({ ...form, listen_port: value })}
-                isRequired
-              />
+              <div className="flex gap-2">
+                <FormInput
+                  className="flex-1"
+                  type="number"
+                  label={t("protocols.port")}
+                  value={form.listen_port}
+                  onChange={(value) => setForm({ ...form, listen_port: value })}
+                  isRequired
+                />
+                <Button
+                  className="self-end"
+                  variant="ghost"
+                  onPress={() => setForm({ ...form, listen_port: String(generateRandomPort()) })}
+                >
+                  {t("protocols.randomPort")}
+                </Button>
+              </div>
               <FormSelect
                 label={t("protocols.tlsType")}
                 value={form.tls_type}
