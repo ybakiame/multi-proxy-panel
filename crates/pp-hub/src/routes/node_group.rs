@@ -13,15 +13,37 @@ use uuid::Uuid;
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
 use crate::state::AppState;
 
-fn group_to_json(g: node_group::Model) -> Value {
+fn group_to_json(g: node_group::Model, binding_ids: Vec<Uuid>) -> Value {
     json!({
         "id": g.id,
         "name": g.name,
         "description": g.description,
         "labels": g.labels.unwrap_or(json!({})),
+        "binding_ids": binding_ids,
         "created_at": g.created_at,
         "updated_at": g.updated_at,
     })
+}
+
+async fn binding_ids_by_group(
+    db: &sea_orm::DatabaseConnection,
+    group_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<Uuid>>, sea_orm::DbErr> {
+    let mut map: std::collections::HashMap<Uuid, Vec<Uuid>> = std::collections::HashMap::new();
+    if group_ids.is_empty() {
+        return Ok(map);
+    }
+
+    let rows = node_binding_group_binding::Entity::find()
+        .filter(node_binding_group_binding::Column::GroupId.is_in(group_ids.iter().copied()))
+        .all(db)
+        .await?;
+    for row in rows {
+        map.entry(row.group_id)
+            .or_default()
+            .push(row.node_binding_id);
+    }
+    Ok(map)
 }
 
 async fn sync_group_bindings(
@@ -73,7 +95,18 @@ pub async fn list_groups(
             (items, total)
         };
 
-    let data: Vec<Value> = groups.into_iter().map(group_to_json).collect();
+    let group_ids: Vec<Uuid> = groups.iter().map(|g| g.id).collect();
+    let binding_map = binding_ids_by_group(&state.db, &group_ids)
+        .await
+        .map_err(ApiError::from)?;
+
+    let data: Vec<Value> = groups
+        .into_iter()
+        .map(|g| {
+            let ids = binding_map.get(&g.id).cloned().unwrap_or_default();
+            group_to_json(g, ids)
+        })
+        .collect();
     Ok(PaginatedResponse::new(data, total))
 }
 
@@ -87,7 +120,11 @@ pub async fn get_group(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("node group not found"))?;
 
-    Ok(ApiResponse::new(group_to_json(g)))
+    let binding_map = binding_ids_by_group(&state.db, &[g.id])
+        .await
+        .map_err(ApiError::from)?;
+    let ids = binding_map.get(&g.id).cloned().unwrap_or_default();
+    Ok(ApiResponse::new(group_to_json(g, ids)))
 }
 
 #[derive(serde::Deserialize)]
@@ -126,7 +163,11 @@ pub async fn create_group(
             .map_err(ApiError::from)?;
     }
 
-    Ok(ApiResponse::new(group_to_json(inserted)))
+    let binding_map = binding_ids_by_group(&state.db, &[inserted.id])
+        .await
+        .map_err(ApiError::from)?;
+    let ids = binding_map.get(&inserted.id).cloned().unwrap_or_default();
+    Ok(ApiResponse::new(group_to_json(inserted, ids)))
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -174,7 +215,11 @@ pub async fn update_group(
             .map_err(ApiError::from)?;
     }
 
-    Ok(ApiResponse::new(group_to_json(updated)))
+    let binding_map = binding_ids_by_group(&state.db, &[updated.id])
+        .await
+        .map_err(ApiError::from)?;
+    let ids = binding_map.get(&updated.id).cloned().unwrap_or_default();
+    Ok(ApiResponse::new(group_to_json(updated, ids)))
 }
 
 pub async fn delete_group(
