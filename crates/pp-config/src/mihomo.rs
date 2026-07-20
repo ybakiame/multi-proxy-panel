@@ -168,10 +168,17 @@ fn password_users(settings: &Value) -> Value {
 /// 变更并自动热加载，sing-box 续期后 mihomo 无需重启。
 const ACME_CERT_DIR: &str = "acme/certificates/acme-v02.api.letsencrypt.org-directory";
 
-/// mihomo TLS：优先使用显式证书文件；ACME 域名则引用 sing-box 内置 ACME
-/// 在同一数据目录下已申请（或将会申请）的证书路径。
+/// mihomo TLS：优先级——托管证书（agent 内置 ACME 签发的统一目录）>
+/// 显式证书文件 > ACME 域名（引用 sing-box 内置 ACME 的证书路径）。
 fn apply_cert_tls(listener: &mut Value, tls: Option<&Value>) -> PanelResult<()> {
     let tls = tls.ok_or_else(|| PanelError::Validation("TLS configuration is required".into()))?;
+
+    let managed = setting_str(tls, &["managed_domain"]).unwrap_or("");
+    if !managed.is_empty() {
+        listener["certificate"] = json!(format!("certs/{0}.crt", managed));
+        listener["private-key"] = json!(format!("certs/{0}.key", managed));
+        return Ok(());
+    }
 
     let cert = setting_str(tls, &["certFile"]).unwrap_or("");
     let key = setting_str(tls, &["keyFile"]).unwrap_or("");

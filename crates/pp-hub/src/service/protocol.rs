@@ -79,6 +79,7 @@ pub async fn generate_node_config(
             config.tls_settings.clone(),
             override_tls,
         );
+        let effective_tls = resolve_managed_cert_tls(db, node_id, effective_tls).await?;
 
         inbounds.push(InboundConfig {
             tag: format!("{}-{}", config.name, config.id),
@@ -101,6 +102,39 @@ pub async fn generate_node_config(
 
     let config = builder.build_full_config(&inbounds)?;
     Ok((config, effective_version))
+}
+
+/// Translate a managed-certificate TLS reference (`{"cert_id": ...}`) into
+/// the agent-side unified layout (`certs/<domain>.{crt,key}`). The
+/// certificate must belong to the node the config is generated for.
+async fn resolve_managed_cert_tls(
+    db: &DatabaseConnection,
+    node_id: Uuid,
+    tls: Option<Value>,
+) -> PanelResult<Option<Value>> {
+    let Some(tls) = tls else {
+        return Ok(None);
+    };
+    let Some(cert_id_raw) = tls.get("cert_id").and_then(|v| v.as_str()) else {
+        return Ok(Some(tls));
+    };
+
+    let cert_id = Uuid::parse_str(cert_id_raw)
+        .map_err(|_| pp_common::PanelError::Validation("invalid cert_id in tls_settings".into()))?;
+    let cert = pp_db::entities::certificate::Entity::find_by_id(cert_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| {
+            pp_common::PanelError::NotFound(format!("certificate {} not found", cert_id))
+        })?;
+    if cert.node_id != node_id {
+        return Err(pp_common::PanelError::Validation(format!(
+            "certificate {} ({}) does not belong to this node",
+            cert_id, cert.domain
+        )));
+    }
+
+    Ok(Some(json!({ "managed_domain": cert.domain })))
 }
 
 /// Find active clients that share at least one group with a node binding and

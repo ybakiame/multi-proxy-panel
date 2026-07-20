@@ -358,6 +358,20 @@ fn build_singbox_reality_tls(settings: &Value, _tls: Option<&Value>) -> Option<V
 fn build_singbox_server_tls(tls: Option<&Value>) -> PanelResult<Value> {
     let tls = tls.ok_or_else(|| PanelError::Validation("TLS configuration is required".into()))?;
 
+    // Managed certificate issued by the agent's built-in ACME client; the
+    // unified certs dir sits next to sing-box's working directory.
+    let managed = tls
+        .get("managed_domain")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !managed.is_empty() {
+        return Ok(json!({
+            "enabled": true,
+            "certificate_path": format!("certs/{0}.crt", managed),
+            "key_path": format!("certs/{0}.key", managed),
+        }));
+    }
+
     // User-provided certificate files
     let cert_file = tls.get("certFile").and_then(|v| v.as_str()).unwrap_or("");
     let key_file = tls.get("keyFile").and_then(|v| v.as_str()).unwrap_or("");
