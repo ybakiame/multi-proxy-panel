@@ -67,6 +67,9 @@ pub struct AgentConnection {
     #[allow(dead_code)]
     pub agent_id: Uuid,
     pub sender: mpsc::Sender<pp_proto::HubMessage>,
+    /// Config version the agent is running per core (core_type -> version),
+    /// reported at register and updated after each successful push.
+    pub config_versions: std::collections::HashMap<String, String>,
 }
 
 /// Application state shared across HTTP handlers and gRPC services.
@@ -98,14 +101,49 @@ impl AppState {
     }
 
     /// Register a new agent connection.
-    pub async fn register_agent(&self, agent_id: Uuid, sender: mpsc::Sender<pp_proto::HubMessage>) {
+    pub async fn register_agent(
+        &self,
+        agent_id: Uuid,
+        sender: mpsc::Sender<pp_proto::HubMessage>,
+        config_versions: std::collections::HashMap<String, String>,
+    ) {
         let mut agents = self.agents.write().await;
-        agents.insert(agent_id, AgentConnection { agent_id, sender });
+        agents.insert(
+            agent_id,
+            AgentConnection {
+                agent_id,
+                sender,
+                config_versions,
+            },
+        );
         tracing::info!(
             "agent {} registered, total agents: {}",
             agent_id,
             agents.len()
         );
+    }
+
+    /// Config version the agent reported (or was last pushed) for a core.
+    pub async fn agent_config_version(&self, agent_id: &Uuid, core_type: &str) -> Option<String> {
+        let agents = self.agents.read().await;
+        agents
+            .get(agent_id)?
+            .config_versions
+            .get(core_type)
+            .cloned()
+    }
+
+    /// Record the config version an agent is expected to be running.
+    pub async fn set_agent_config_version(
+        &self,
+        agent_id: &Uuid,
+        core_type: &str,
+        version: String,
+    ) {
+        let mut agents = self.agents.write().await;
+        if let Some(conn) = agents.get_mut(agent_id) {
+            conn.config_versions.insert(core_type.to_string(), version);
+        }
     }
 
     /// Unregister an agent connection.

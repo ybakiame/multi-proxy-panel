@@ -95,6 +95,16 @@ impl AgentStreamClient {
         // Start bidirectional stream
         let mut stream = client.stream(outbound_stream).await?.into_inner();
 
+        // Report per-core applied config versions so the Hub can skip pushes
+        // for configs this agent already runs (avoids redundant restarts).
+        let core_config_versions: std::collections::HashMap<String, String> =
+            persist::load_last_configs(&self.data_dir)
+                .await
+                .into_iter()
+                .filter(|(_, snapshot)| !snapshot.version.is_empty())
+                .map(|(core_type, snapshot)| (core_type.to_string(), snapshot.version))
+                .collect();
+
         // Send register request
         let register_msg = AgentMessage {
             payload: Some(pp_proto::agent_message::Payload::Register(
@@ -110,6 +120,7 @@ impl AgentStreamClient {
                         "mihomo".to_string(),
                     ],
                     labels: Default::default(),
+                    core_config_versions,
                 },
             )),
         };
@@ -302,6 +313,22 @@ async fn handle_config_push(
     let core_type = core_type_from_i32(push.target_core);
     let config: serde_json::Value = serde_json::from_str(&push.config_json)?;
 
+    if !push.restart_required && !push.config_version.is_empty() {
+        let applied_version = persist::load_last_configs(data_dir)
+            .await
+            .into_iter()
+            .find(|(core, _)| *core == core_type)
+            .map(|(_, snapshot)| snapshot.version);
+        if applied_version.as_deref() == Some(push.config_version.as_str()) {
+            tracing::info!(
+                "config version {} already applied for {:?}, skipping",
+                push.config_version,
+                core_type
+            );
+            return Ok(());
+        }
+    }
+
     let manager = if let Some(manager) = supervisor.get(core_type).await {
         manager
     } else {
@@ -330,7 +357,9 @@ async fn handle_config_push(
     }
     tracing::info!("config applied for {:?}", core_type);
 
-    if let Err(e) = persist::save_last_config(data_dir, core_type, &config).await {
+    if let Err(e) =
+        persist::save_last_config(data_dir, core_type, &config, &push.config_version).await
+    {
         tracing::warn!("failed to persist config snapshot: {}", e);
     }
 

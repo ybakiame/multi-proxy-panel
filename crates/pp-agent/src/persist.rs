@@ -17,6 +17,10 @@ const ALL_CORES: [CoreType; 3] = [CoreType::Xray, CoreType::SingBox, CoreType::M
 pub struct PersistedConfig {
     pub core_type: String,
     pub config: serde_json::Value,
+    /// Hub-assigned config version (content hash); empty for snapshots
+    /// written before versioning was introduced.
+    #[serde(default)]
+    pub version: String,
 }
 
 fn snapshot_path(data_dir: &Path, core_type: CoreType) -> PathBuf {
@@ -28,10 +32,12 @@ pub async fn save_last_config(
     data_dir: &Path,
     core_type: CoreType,
     config: &serde_json::Value,
+    version: &str,
 ) -> anyhow::Result<()> {
     let snapshot = PersistedConfig {
         core_type: core_type.to_string(),
         config: config.clone(),
+        version: version.to_string(),
     };
     let data = serde_json::to_vec_pretty(&snapshot)?;
 
@@ -125,10 +131,10 @@ mod tests {
 
         let xray_cfg = serde_json::json!({"inbounds": []});
         let mihomo_cfg = serde_json::json!({"listeners": []});
-        save_last_config(&dir, CoreType::Xray, &xray_cfg)
+        save_last_config(&dir, CoreType::Xray, &xray_cfg, "v1")
             .await
             .unwrap();
-        save_last_config(&dir, CoreType::Mihomo, &mihomo_cfg)
+        save_last_config(&dir, CoreType::Mihomo, &mihomo_cfg, "v2")
             .await
             .unwrap();
 
@@ -136,7 +142,9 @@ mod tests {
         assert_eq!(loaded.len(), 2);
         let by_core: std::collections::HashMap<_, _> = loaded.into_iter().collect();
         assert_eq!(by_core[&CoreType::Xray].config, xray_cfg);
+        assert_eq!(by_core[&CoreType::Xray].version, "v1");
         assert_eq!(by_core[&CoreType::Mihomo].config, mihomo_cfg);
+        assert_eq!(by_core[&CoreType::Mihomo].version, "v2");
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
@@ -175,6 +183,7 @@ mod tests {
         let loaded = load_last_configs(&dir).await;
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].0, CoreType::SingBox);
+        assert_eq!(loaded[0].1.version, "");
         assert!(!dir.join(LEGACY_SNAPSHOT_FILE).exists());
         assert!(snapshot_path(&dir, CoreType::SingBox).exists());
 

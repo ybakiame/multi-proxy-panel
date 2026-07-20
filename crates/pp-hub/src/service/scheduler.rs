@@ -349,6 +349,17 @@ async fn push_config_for_core(
                 }
             };
 
+            let version = crate::service::protocol::config_version_of(&config_str);
+            let core_name = core_type.to_string();
+            if state
+                .agent_config_version(&node_id, &core_name)
+                .await
+                .as_deref()
+                == Some(version.as_str())
+            {
+                return;
+            }
+
             let proto_core = match core_type {
                 pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
                 pp_common::CoreType::SingBox => pp_proto::CoreType::SingBox,
@@ -361,19 +372,26 @@ async fn push_config_for_core(
                         config_json: config_str,
                         target_core: proto_core as i32,
                         restart_required: false,
-                        config_version: "1".to_string(),
+                        config_version: version.clone(),
                         core_version: core_version.unwrap_or_default(),
                     },
                 )),
             };
 
-            if let Err(e) = state.send_to_agent(node_id, message).await {
-                tracing::warn!(
-                    "failed to push {:?} config to node {}: {}",
-                    core_type,
-                    node_id,
-                    e
-                );
+            match state.send_to_agent(node_id, message).await {
+                Ok(()) => {
+                    state
+                        .set_agent_config_version(&node_id, &core_name, version)
+                        .await;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "failed to push {:?} config to node {}: {}",
+                        core_type,
+                        node_id,
+                        e
+                    );
+                }
             }
         }
         Err(e) => {

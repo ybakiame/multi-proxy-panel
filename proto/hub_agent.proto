@@ -41,6 +41,9 @@ message RegisterRequest {
   repeated string capabilities = 5;
   map<string, string> labels = 6;
   string domain = 7;
+  // 各核心当前已应用的配置版本（core_type -> config_version），
+  // Hub 据此跳过未变更的配置推送，避免重连后不必要的核心重启
+  map<string, string> core_config_versions = 8;
 }
 
 // 注册响应

@@ -283,7 +283,9 @@ async fn handle_register(
     }
 
     // Register the connection
-    state.register_agent(agent_id, hub_tx.clone()).await;
+    state
+        .register_agent(agent_id, hub_tx.clone(), req.core_config_versions)
+        .await;
 
     // Send register response
     let resp = HubMessage {

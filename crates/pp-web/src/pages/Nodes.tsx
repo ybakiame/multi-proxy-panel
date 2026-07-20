@@ -139,7 +139,6 @@ export function Nodes() {
       await pushConfig(node.id, {
         core_type: "sing-box",
         restart: true,
-        version: "1",
       });
     } catch {
       // error handled by axios interceptor

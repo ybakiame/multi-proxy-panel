@@ -193,6 +193,14 @@ fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Valu
     }
 }
 
+/// Content-hash config version (first 16 hex chars of the SHA-256 of the
+/// serialized config). Deterministic: identical config -> identical version.
+pub fn config_version_of(config_str: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(config_str.as_bytes());
+    hex::encode(&digest[..8])
+}
+
 /// Push generated core config to the agent running on a node.
 /// Returns Ok(()) on successful delivery, or an error describing the failure.
 pub async fn push_node_config(
@@ -212,6 +220,10 @@ pub async fn push_node_config(
     let config_str = serde_json::to_string(&config_json)
         .map_err(|e| pp_common::PanelError::Config(format!("failed to serialize config: {e}")))?;
 
+    let version = version
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| config_version_of(&config_str));
+
     let proto_core = match core_type {
         CoreType::Xray => pp_proto::CoreType::Xray,
         CoreType::SingBox => pp_proto::CoreType::SingBox,
@@ -224,7 +236,7 @@ pub async fn push_node_config(
                 config_json: config_str,
                 target_core: proto_core as i32,
                 restart_required: restart,
-                config_version: version.unwrap_or_else(|| "1".to_string()),
+                config_version: version.clone(),
                 core_version: core_version.unwrap_or_default(),
             },
         )),
@@ -234,6 +246,10 @@ pub async fn push_node_config(
         .send_to_agent(node_id, message)
         .await
         .map_err(|e| pp_common::PanelError::Internal(format!("failed to push config: {e}")))?;
+
+    state
+        .set_agent_config_version(&node_id, &core_type.to_string(), version)
+        .await;
 
     Ok(())
 }
