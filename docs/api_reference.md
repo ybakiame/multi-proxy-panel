@@ -457,6 +457,70 @@
 
 ---
 
+## 证书管理
+
+托管证书由节点 Agent 内置 ACME 客户端（Let's Encrypt，HTTP-01 挑战）签发，统一存放于节点数据目录 `certs/<domain>.{crt,key}`，三个核心的 TLS 配置均可引用。协议配置的 `tls_settings` 使用 `{"cert_id": "..."}` 关联（要求证书属于绑定节点且状态为有效）。
+
+### GET `/api/v1/certificates`
+
+列出证书记录。
+
+**查询参数:**
+- `node_id` (可选) — 按节点过滤
+
+**响应:**
+
+```json
+{
+  "data": {
+    "certificates": [
+      {
+        "id": "uuid",
+        "node_id": "uuid",
+        "node_name": "东京-01",
+        "domain": "hy2.example.com",
+        "status": "active",
+        "challenge_type": "http-01",
+        "expires_at": "2026-10-18T00:00:00Z",
+        "last_issued_at": "2026-07-20T00:00:00Z",
+        "last_error": null,
+        "created_at": "2026-07-20T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+`status` 取值：`pending`（签发中）/ `active`（有效）/ `failed`（失败，见 `last_error`）。
+
+### POST `/api/v1/certificates`
+
+创建证书记录并向节点 Agent 下发签发请求。域名需已解析到该节点，签发期间节点 80 端口需可被 Let's Encrypt 访问。Agent 离线时记录保持 `pending`，注册后自动补发。
+
+**请求体:**
+
+```json
+{
+  "domain": "hy2.example.com",
+  "node_id": "uuid",
+  "challenge_type": "http-01"
+}
+```
+
+### POST `/api/v1/certificates/{id}/renew`
+
+手动触发续期（Agent 也会在证书满 60 天时自动续期，Let's Encrypt 证书有效期 90 天）。
+
+### DELETE `/api/v1/certificates/{id}`
+
+删除证书记录（节点上已签发的文件不删除）。
+
+**状态码:**
+- `204 No Content`
+- `404 Not Found`
+
+---
+
 ## 节点绑定
 
 ### GET `/api/v1/bindings`

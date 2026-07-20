@@ -183,6 +183,10 @@ Agent 的 gRPC 客户端实现了指数退避重连：
 
 `core_versions` 表跟踪各核心上游 release/prerelease 版本（`GET /api/v1/core-versions/upstream` 只读拉取 GitHub 版本，用户勾选后 `POST /api/v1/core-versions` 保存）。协议配置的 `core_version` 引用该表，推送时随 `ConfigPush.core_version` 下发，Agent 按需安装对应版本二进制。
 
+### 4.2.2 统一证书管理（Agent 内置 ACME）
+
+`certificates` 表管理托管证书。Agent 内置 instant-acme 客户端，通过临时 80 端口监听完成 HTTP-01 挑战，证书统一落盘 `<data_dir>/certs/<domain>.{crt,key}`，三个核心的 TLS 配置均通过 `tls_settings.cert_id` 引用（Hub 生成配置时翻译为 `managed_domain` 路径）。Agent 每日检查，证书满 60 天自动续期并 reload 引用它的核心（mihomo 靠证书文件监听自动热加载，xray/sing-box 由 Agent 按快照 restart）。
+
 ### 4.3 配置生成流程
 
 ```

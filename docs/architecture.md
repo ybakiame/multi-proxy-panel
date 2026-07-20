@@ -181,7 +181,7 @@ trait ConfigBuilder: Send + Sync {
 **实现：**
 - `XrayConfigBuilder`: 生成 Xray-core 配置
 - `SingBoxConfigBuilder`: 生成 sing-box 配置
-- `MihomoConfigBuilder`: 生成 mihomo 配置（listeners 结构；vless 用户为列表、hysteria2/anytls 用户为映射；TLS 支持证书文件，ACME 域名映射为 sing-box 内置 ACME 在同一数据目录下申请的证书路径）
+- `MihomoConfigBuilder`: 生成 mihomo 配置（listeners 结构；vless 用户为列表、hysteria2/anytls 用户为映射；TLS 支持托管证书（agent 内置 ACME 统一目录）、显式证书文件，以及 ACME 域名映射（复用 sing-box 内置 ACME 证书路径））
 
 **BuilderRegistry**: 运行时注册表，支持按核心类型查找对应的构建器。
 
