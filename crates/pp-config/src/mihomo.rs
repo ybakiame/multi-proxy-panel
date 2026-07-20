@@ -72,10 +72,7 @@ impl ConfigBuilder for MihomoConfigBuilder {
 }
 
 fn listener_base(settings: &Value, default_name: &str) -> Value {
-    let port = settings
-        .get("port")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(443);
+    let port = settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443);
     json!({
         "name": settings.get("tag").and_then(|v| v.as_str()).unwrap_or(default_name),
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
@@ -165,8 +162,14 @@ fn password_users(settings: &Value) -> Value {
     Value::Object(map)
 }
 
-/// mihomo TLS is cert-file based (`certificate`/`private-key`); it has no
-/// ACME support at the listener level.
+/// sing-box 内置 ACME（lego）在共享数据目录下的落盘位置。agent 上
+/// sing-box 与 mihomo 都以该数据目录为工作目录，因此 mihomo 可以用相对
+/// 路径直接引用 sing-box 申请到的证书；mihomo v1.19.18+ 会监听证书文件
+/// 变更并自动热加载，sing-box 续期后 mihomo 无需重启。
+const ACME_CERT_DIR: &str = "acme/certificates/acme-v02.api.letsencrypt.org-directory";
+
+/// mihomo TLS：优先使用显式证书文件；ACME 域名则引用 sing-box 内置 ACME
+/// 在同一数据目录下已申请（或将会申请）的证书路径。
 fn apply_cert_tls(listener: &mut Value, tls: Option<&Value>) -> PanelResult<()> {
     let tls = tls.ok_or_else(|| PanelError::Validation("TLS configuration is required".into()))?;
 
@@ -178,8 +181,16 @@ fn apply_cert_tls(listener: &mut Value, tls: Option<&Value>) -> PanelResult<()> 
         return Ok(());
     }
 
+    let domain = setting_str(tls, &["domain"]).unwrap_or("");
+    if !domain.is_empty() {
+        let base = format!("{ACME_CERT_DIR}/{domain}/{domain}");
+        listener["certificate"] = json!(format!("{}.crt", base));
+        listener["private-key"] = json!(format!("{}.key", base));
+        return Ok(());
+    }
+
     Err(PanelError::Validation(
-        "mihomo TLS requires certFile+keyFile (ACME is not supported)".into(),
+        "mihomo TLS requires certFile+keyFile or an ACME domain".into(),
     ))
 }
 
@@ -187,12 +198,16 @@ fn build_vless_reality_listener(settings: &Value) -> PanelResult<Value> {
     let dest = setting_str(settings, &["reality_dest", "dest"])
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            PanelError::Validation("VLESS+REALITY requires reality_dest and reality_private_key".into())
+            PanelError::Validation(
+                "VLESS+REALITY requires reality_dest and reality_private_key".into(),
+            )
         })?;
     let private_key = setting_str(settings, &["reality_private_key", "private_key"])
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            PanelError::Validation("VLESS+REALITY requires reality_dest and reality_private_key".into())
+            PanelError::Validation(
+                "VLESS+REALITY requires reality_dest and reality_private_key".into(),
+            )
         })?;
 
     let mut server_names = comma_list(setting_str(
@@ -241,7 +256,10 @@ fn build_hysteria2_listener(settings: &Value, tls: Option<&Value>) -> PanelResul
     apply_cert_tls(&mut listener, tls)?;
     listener["alpn"] = json!(["h3"]);
 
-    let up = settings.get("up_mbps").and_then(|v| v.as_u64()).unwrap_or(100);
+    let up = settings
+        .get("up_mbps")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100);
     let down = settings
         .get("down_mbps")
         .and_then(|v| v.as_u64())
@@ -323,7 +341,10 @@ mod tests {
         let err = builder
             .build_inbound(ProtocolType::VlessReality, &settings, None)
             .unwrap_err();
-        assert!(err.to_string().contains("reality_dest and reality_private_key"));
+        assert!(
+            err.to_string()
+                .contains("reality_dest and reality_private_key")
+        );
     }
 
     #[test]
@@ -352,14 +373,17 @@ mod tests {
     }
 
     #[test]
-    fn vless_xhttp_rejects_acme_domain() {
+    fn vless_xhttp_acme_domain_maps_to_shared_acme_cert_paths() {
         let builder = MihomoConfigBuilder;
         let settings = json!({ "tag": "t", "port": 443, "clients": [] });
         let tls = json!({ "domain": "hy2.example.com" });
-        let err = builder
+        let listener = builder
             .build_inbound(ProtocolType::VlessXhttp, &settings, Some(&tls))
-            .unwrap_err();
-        assert!(err.to_string().contains("ACME"));
+            .unwrap();
+
+        let base = "acme/certificates/acme-v02.api.letsencrypt.org-directory/hy2.example.com/hy2.example.com";
+        assert_eq!(listener["certificate"], format!("{}.crt", base));
+        assert_eq!(listener["private-key"], format!("{}.key", base));
     }
 
     #[test]
