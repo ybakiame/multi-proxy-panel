@@ -31,8 +31,9 @@ use middleware::api_key::scopes;
 use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
-    api_key, bindings, client, health, inbound_host, login, logs, metrics, metrics_export,
-    node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic, usage, webhook,
+    api_key, bindings, client, core_version, health, inbound_host, login, logs, metrics,
+    metrics_export, node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic,
+    usage, webhook,
 };
 use state::AppState;
 
@@ -187,6 +188,27 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route(
             "/api/v1/protocols/presets",
             post(protocol_preset::apply_preset)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
+        )
+        // Core Versions
+        .route(
+            "/api/v1/core-versions",
+            get(core_version::list_core_versions)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_READ)),
+        )
+        .route(
+            "/api/v1/core-versions",
+            post(core_version::save_core_versions)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
+        )
+        .route(
+            "/api/v1/core-versions/upstream",
+            get(core_version::list_upstream_versions)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_READ)),
+        )
+        .route(
+            "/api/v1/core-versions/{id}",
+            delete(core_version::delete_core_version)
                 .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
         )
         // Node Bindings

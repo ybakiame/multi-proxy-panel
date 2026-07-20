@@ -55,6 +55,15 @@ impl CoreType {
             Hysteria2 | Anytls => &[SingBox, Mihomo],
         }
     }
+
+    /// GitHub `owner/repo` hosting the core's releases.
+    pub fn github_repo(&self) -> (&'static str, &'static str) {
+        match self {
+            CoreType::Xray => ("XTLS", "Xray-core"),
+            CoreType::SingBox => ("SagerNet", "sing-box"),
+            CoreType::Mihomo => ("MetaCubeX", "mihomo"),
+        }
+    }
 }
 
 impl std::fmt::Display for CoreType {

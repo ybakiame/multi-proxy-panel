@@ -65,6 +65,7 @@
     "dashboard": "Dashboard",
     "nodes": "Nodes",
     "protocols": "Protocols",
+    "coreVersions": "Core Versions",
     "bindings": "Bindings",
     "hosts": "Hosts",
     "clients": "Clients",
@@ -126,6 +127,21 @@
     "deleteTitle": "Delete Node",
     "deleteConfirm": "Are you sure you want to delete this node?"
   },
+  "coreVersions": {
+    "title": "Core Versions",
+    "addFromUpstream": "+ Add from Upstream",
+    "selectVersions": "Select upstream versions to save",
+    "savedBadge": "Saved",
+    "saveSelected": "Save Selected",
+    "core": "Core",
+    "version": "Version",
+    "channel": "Channel",
+    "release": "Release",
+    "prerelease": "Pre-release",
+    "emptyHint": "No versions yet. Click \"Add from Upstream\" to pick the versions you need.",
+    "deleteTitle": "Delete Version",
+    "deleteConfirm": "Delete this version record? Protocol configs referencing it are unaffected."
+  },
   "protocols": {
     "title": "Protocol Configs",
     "create": "+ Create Protocol",
@@ -138,6 +154,8 @@
     "listen": "Listen Address",
     "port": "Port",
     "randomPort": "Random",
+    "coreVersion": "Core Version",
+    "coreVersionDefault": "Default (latest release)",
     "key": "Key",
     "tlsSettings": "TLS Settings (JSON)",
     "tlsType": "TLS Type",

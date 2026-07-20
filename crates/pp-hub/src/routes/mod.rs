@@ -2,6 +2,7 @@ pub mod api_key;
 pub mod bindings;
 pub mod client;
 pub mod common;
+pub mod core_version;
 pub mod health;
 pub mod inbound_host;
 pub mod login;

@@ -17,22 +17,16 @@ struct ReleaseInfo {
 }
 
 fn release_info(core_type: CoreType) -> ReleaseInfo {
-    match core_type {
-        CoreType::Xray => ReleaseInfo {
-            owner: "XTLS",
-            repo: "Xray-core",
-            binary_name: "xray",
-        },
-        CoreType::SingBox => ReleaseInfo {
-            owner: "SagerNet",
-            repo: "sing-box",
-            binary_name: "sing-box",
-        },
-        CoreType::Mihomo => ReleaseInfo {
-            owner: "MetaCubeX",
-            repo: "mihomo",
-            binary_name: "mihomo",
-        },
+    let (owner, repo) = core_type.github_repo();
+    let binary_name = match core_type {
+        CoreType::Xray => "xray",
+        CoreType::SingBox => "sing-box",
+        CoreType::Mihomo => "mihomo",
+    };
+    ReleaseInfo {
+        owner,
+        repo,
+        binary_name,
     }
 }
 

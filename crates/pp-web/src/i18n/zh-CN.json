@@ -65,6 +65,7 @@
     "dashboard": "仪表盘",
     "nodes": "节点",
     "protocols": "协议配置",
+    "coreVersions": "核心版本",
     "bindings": "节点绑定",
     "hosts": "入站主机",
     "clients": "客户端",
@@ -126,6 +127,21 @@
     "deleteTitle": "删除节点",
     "deleteConfirm": "确定要删除该节点吗？"
   },
+  "coreVersions": {
+    "title": "核心版本管理",
+    "addFromUpstream": "+ 从上游添加",
+    "selectVersions": "选择要保存的上游版本",
+    "savedBadge": "已保存",
+    "saveSelected": "保存选中",
+    "core": "核心",
+    "version": "版本",
+    "channel": "渠道",
+    "release": "正式版",
+    "prerelease": "预发布",
+    "emptyHint": "暂无版本记录，点击“从上游添加”选择要使用的版本。",
+    "deleteTitle": "删除版本",
+    "deleteConfirm": "确定要删除该版本记录吗？已引用该版本的协议配置不受影响。"
+  },
   "protocols": {
     "title": "协议配置",
     "create": "+ 创建协议",
@@ -138,6 +154,8 @@
     "listen": "监听地址",
     "port": "端口",
     "randomPort": "随机生成",
+    "coreVersion": "核心版本",
+    "coreVersionDefault": "默认（最新正式版）",
     "key": "密钥",
     "tlsSettings": "TLS 设置（JSON）",
     "tlsType": "TLS 类型",

@@ -13,12 +13,14 @@ import {
   BellIcon,
   SignalIcon,
   ArrowsRightLeftIcon,
+  CpuChipIcon,
 } from "@heroicons/react/24/outline";
 
 export const navItems = [
   { path: "/", labelKey: "nav.dashboard", icon: HomeIcon },
   { path: "/nodes", labelKey: "nav.nodes", icon: ServerIcon },
   { path: "/protocols", labelKey: "nav.protocols", icon: CogIcon },
+  { path: "/core-versions", labelKey: "nav.coreVersions", icon: CpuChipIcon },
   { path: "/bindings", labelKey: "nav.bindings", icon: LinkIcon },
   { path: "/hosts", labelKey: "nav.hosts", icon: GlobeAltIcon },
   { path: "/clients", labelKey: "nav.clients", icon: UsersIcon },

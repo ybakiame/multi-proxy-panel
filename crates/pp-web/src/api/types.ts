@@ -44,6 +44,14 @@ export interface Node {
   core_statuses?: CoreStatus[];
 }
 
+export interface CoreVersion {
+  id: string;
+  core_type: string;
+  version: string;
+  channel: string;
+  created_at: string;
+}
+
 export interface ProtocolConfig {
   id: string;
   name: string;

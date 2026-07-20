@@ -6,6 +6,7 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Nodes } from "./pages/Nodes";
 import { Protocols } from "./pages/Protocols";
+import { CoreVersions } from "./pages/CoreVersions";
 import { Bindings } from "./pages/Bindings";
 import { Hosts } from "./pages/Hosts";
 import { Clients } from "./pages/Clients";
@@ -56,6 +57,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Protocols />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/core-versions"
+        element={
+          <ProtectedRoute>
+            <CoreVersions />
           </ProtectedRoute>
         }
       />

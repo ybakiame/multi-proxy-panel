@@ -10,7 +10,8 @@ import {
   deleteProtocol,
   generateRealityKeys,
 } from "../api/protocols";
-import { ProtocolConfig } from "../api/types";
+import { getCoreVersions } from "../api/coreVersions";
+import { ProtocolConfig, CoreVersion } from "../api/types";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
@@ -88,6 +89,7 @@ export function Protocols() {
   const { t } = useTranslation();
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
+  const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
@@ -108,6 +110,12 @@ export function Protocols() {
   useEffect(() => {
     fetch();
   }, [page, perPage]);
+
+  useEffect(() => {
+    getCoreVersions()
+      .then(setCoreVersions)
+      .catch(() => {});
+  }, []);
 
   const parseSettings = (settings: Record<string, unknown>): Partial<ProtocolForm> => {
     return {
@@ -581,11 +589,24 @@ export function Protocols() {
                 }))}
                 isRequired
               />
-              <FormInput
-                label={"Core Version"}
-                value={form.core_version}
-                onChange={(value) => setForm({ ...form, core_version: value })}
-                placeholder="e.g. 1.14.0-beta.5 (leave empty for default)"
+              <FormSelect
+                label={t("protocols.coreVersion")}
+                value={form.core_version || "__default__"}
+                onChange={(value) =>
+                  setForm({ ...form, core_version: value === "__default__" ? "" : value })
+                }
+                options={[
+                  { id: "__default__", label: t("protocols.coreVersionDefault") },
+                  ...coreVersions
+                    .filter((v) => v.core_type === form.core_type)
+                    .map((v) => ({
+                      id: v.version,
+                      label:
+                        v.channel === "prerelease"
+                          ? `${v.version} (${t("coreVersions.prerelease")})`
+                          : v.version,
+                    })),
+                ]}
               />
               <FormInput
                 label={t("protocols.listen")}
