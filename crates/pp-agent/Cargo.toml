@@ -27,6 +27,8 @@ pp-config = { workspace = true }
 sysinfo = { workspace = true }
 tokio-stream = { workspace = true }
 reqwest = { workspace = true }
+instant-acme = { version = "0.8", features = ["rcgen"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 gethostname = "1.0"
 thiserror = { workspace = true }
 anyhow = { workspace = true }

@@ -229,6 +229,14 @@ impl AgentStreamClient {
         let traffic_tx = outbound_tx.clone();
         let traffic_handle = crate::reporter::spawn_traffic_reporter(traffic_tx, 60);
 
+        // Certificate renewal task (first pass runs immediately on connect)
+        let renew_tx = outbound_tx.clone();
+        let renew_supervisor = supervisor.clone();
+        let renew_data_dir = self.data_dir.clone();
+        let renew_handle = tokio::spawn(async move {
+            crate::acme::run_renewal_loop(renew_data_dir, renew_supervisor, renew_tx).await;
+        });
+
         // Inbound message loop (Hub -> Agent)
         let result: anyhow::Result<()> = async {
             while let Some(msg_result) = stream.message().await? {
@@ -247,6 +255,7 @@ impl AgentStreamClient {
         log_handle.abort();
         status_handle.abort();
         traffic_handle.abort();
+        renew_handle.abort();
         result
     }
 }
@@ -254,7 +263,7 @@ impl AgentStreamClient {
 async fn handle_hub_message(
     msg: HubMessage,
     supervisor: &CoreSupervisor,
-    _outbound: mpsc::Sender<AgentMessage>,
+    outbound: mpsc::Sender<AgentMessage>,
     data_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     use pp_proto::hub_message::Payload;
@@ -288,6 +297,37 @@ async fn handle_hub_message(
         }
         Some(Payload::CoreCmd(cmd)) => {
             handle_core_command(supervisor, cmd).await?;
+        }
+        Some(Payload::CertIssue(issue)) => {
+            tracing::info!("received cert issue request for {}", issue.domain);
+            let data_dir = data_dir.to_path_buf();
+            let report = outbound.clone();
+            tokio::spawn(async move {
+                match crate::acme::issue_certificate(&data_dir, &issue.cert_id, &issue.domain).await
+                {
+                    Ok(expires_at) => {
+                        crate::acme::send_cert_status(
+                            &report,
+                            &issue.cert_id,
+                            "active",
+                            expires_at,
+                            "",
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!("cert issuance for {} failed: {}", issue.domain, e);
+                        crate::acme::send_cert_status(
+                            &report,
+                            &issue.cert_id,
+                            "failed",
+                            0,
+                            &e.to_string(),
+                        )
+                        .await;
+                    }
+                }
+            });
         }
         Some(Payload::Shutdown(shutdown)) => {
             tracing::info!(

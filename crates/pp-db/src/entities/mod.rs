@@ -5,6 +5,7 @@
 
 pub mod agent_log;
 pub mod api_key;
+pub mod certificate;
 pub mod client;
 pub mod client_group_binding;
 pub mod client_online_session;
@@ -26,6 +27,7 @@ pub mod webhook;
 
 pub use agent_log::Entity as AgentLog;
 pub use api_key::Entity as ApiKey;
+pub use certificate::Entity as Certificate;
 pub use client::Entity as Client;
 pub use client_group_binding::Entity as ClientGroupBinding;
 pub use client_online_session::Entity as ClientOnlineSession;

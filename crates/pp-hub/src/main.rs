@@ -31,9 +31,9 @@ use middleware::api_key::scopes;
 use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
-    api_key, bindings, client, core_version, health, inbound_host, login, logs, metrics,
-    metrics_export, node_group, nodes, onlines, protocol, protocol_preset, subscription, traffic,
-    usage, webhook,
+    api_key, bindings, certificates, client, core_version, health, inbound_host, login, logs,
+    metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset, subscription,
+    traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -210,6 +210,27 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             "/api/v1/core-versions/{id}",
             delete(core_version::delete_core_version)
                 .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
+        )
+        // Certificates
+        .route(
+            "/api/v1/certificates",
+            get(certificates::list_certificates)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
+        )
+        .route(
+            "/api/v1/certificates",
+            post(certificates::create_certificate)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+        )
+        .route(
+            "/api/v1/certificates/{id}/renew",
+            post(certificates::renew_certificate)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+        )
+        .route(
+            "/api/v1/certificates/{id}",
+            delete(certificates::delete_certificate)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
         )
         // Node Bindings
         .route(

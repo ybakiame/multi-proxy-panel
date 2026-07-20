@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing_subscriber::prelude::*;
 
+mod acme;
 mod client;
 mod logger;
 mod persist;
@@ -46,6 +47,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // tonic/reqwest pull rustls' ring feature while instant-acme pulls
+    // aws-lc-rs; pin the provider explicitly so rustls doesn't panic on
+    // auto-detection ambiguity.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let agent_logger = AgentLogger::new();
     let log_sender = agent_logger.sender();
 

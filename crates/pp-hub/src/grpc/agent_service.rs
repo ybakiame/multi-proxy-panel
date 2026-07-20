@@ -175,6 +175,9 @@ async fn handle_agent_message(
                 handle_core_status(state, *id, status).await?;
             }
         }
+        Some(Payload::CertStatus(report)) => {
+            crate::routes::certificates::apply_cert_status(state, report).await?;
+        }
         None => {}
     }
 
@@ -286,6 +289,15 @@ async fn handle_register(
     state
         .register_agent(agent_id, hub_tx.clone(), req.core_config_versions)
         .await;
+
+    // Dispatch any certificate issuances queued while the agent was offline.
+    if let Err(e) = crate::routes::certificates::dispatch_pending_for_node(state, agent_id).await {
+        tracing::warn!(
+            "failed to dispatch pending certificates for {}: {}",
+            agent_id,
+            e
+        );
+    }
 
     // Send register response
     let resp = HubMessage {

@@ -156,9 +156,10 @@ pub async fn list_upstream_versions(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Value> {
     let cores: Vec<CoreType> = match params.get("core_type").filter(|s| !s.is_empty()) {
-        Some(raw) => vec![raw
-            .parse::<CoreType>()
-            .map_err(|_| ApiError::bad_request("invalid_core_type", "unknown core type"))?],
+        Some(raw) => vec![
+            raw.parse::<CoreType>()
+                .map_err(|_| ApiError::bad_request("invalid_core_type", "unknown core type"))?,
+        ],
         None => ALL_CORES.to_vec(),
     };
 
@@ -211,7 +212,10 @@ pub async fn save_core_versions(
     Json(payload): Json<SaveVersionsPayload>,
 ) -> ApiResult<Value> {
     if payload.versions.is_empty() {
-        return Err(ApiError::bad_request("empty_selection", "no versions selected"));
+        return Err(ApiError::bad_request(
+            "empty_selection",
+            "no versions selected",
+        ));
     }
 
     let mut added = 0u64;
@@ -222,7 +226,10 @@ pub async fn save_core_versions(
             .map_err(|_| ApiError::bad_request("invalid_core_type", "unknown core type"))?;
         let version = item.version.trim().to_string();
         if version.is_empty() {
-            return Err(ApiError::bad_request("invalid_version", "version is required"));
+            return Err(ApiError::bad_request(
+                "invalid_version",
+                "version is required",
+            ));
         }
         let channel = match item.channel.as_deref().unwrap_or(CHANNEL_RELEASE) {
             CHANNEL_RELEASE => CHANNEL_RELEASE,

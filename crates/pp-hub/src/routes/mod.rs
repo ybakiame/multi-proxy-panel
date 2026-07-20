@@ -1,5 +1,6 @@
 pub mod api_key;
 pub mod bindings;
+pub mod certificates;
 pub mod client;
 pub mod common;
 pub mod core_version;

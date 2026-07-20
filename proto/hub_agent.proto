@@ -18,6 +18,7 @@ message AgentMessage {
     LogBatch logs = 5;
     CoreStatusReport core_status = 6;
     OnlineUsersReport online_users = 7;
+    CertStatusReport cert_status = 8;
   }
 }
 
@@ -29,6 +30,7 @@ message HubMessage {
     ConfigReload config_reload = 3;
     CoreCommand core_cmd = 4;
     AgentShutdown shutdown = 5;
+    CertIssueRequest cert_issue = 6;
   }
 }
 
@@ -179,6 +181,25 @@ enum CoreType {
   CORE_TYPE_SING_BOX = 2;
   CORE_TYPE_BOTH = 3;
   CORE_TYPE_MIHOMO = 4;
+}
+
+// 证书签发请求（Hub → Agent）
+message CertIssueRequest {
+  string cert_id = 1;
+  string domain = 2;
+  // "http-01" | "tls-alpn-01"
+  string challenge_type = 3;
+}
+
+// 证书状态上报（Agent → Hub）
+message CertStatusReport {
+  string cert_id = 1;
+  // "active" | "failed"
+  string status = 2;
+  // unix 时间戳，0 表示未知
+  int64 expires_at = 3;
+  // status = failed 时的错误信息
+  string error = 4;
 }
 
 // Agent 关闭指令
