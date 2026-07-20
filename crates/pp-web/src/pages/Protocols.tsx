@@ -11,7 +11,8 @@ import {
   generateRealityKeys,
 } from "../api/protocols";
 import { getCoreVersions } from "../api/coreVersions";
-import { ProtocolConfig, CoreVersion } from "../api/types";
+import { getCertificates } from "../api/certificates";
+import { ProtocolConfig, CoreVersion, ManagedCertificate } from "../api/types";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
@@ -34,10 +35,11 @@ interface ProtocolForm {
   core_version: string;
   listen_address: string;
   listen_port: string;
-  tls_type: "none" | "certificate" | "acme";
+  tls_type: "none" | "certificate" | "acme" | "managed";
   tls_cert_file: string;
   tls_key_file: string;
   tls_domain: string;
+  tls_cert_id: string;
   uuid: string;
   password: string;
   flow: string;
@@ -67,6 +69,7 @@ const defaultForm: ProtocolForm = {
   tls_cert_file: "",
   tls_key_file: "",
   tls_domain: "",
+  tls_cert_id: "",
   uuid: "",
   password: "",
   flow: "xtls-rprx-vision",
@@ -90,6 +93,7 @@ export function Protocols() {
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
   const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
+  const [certificates, setCertificates] = useState<ManagedCertificate[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
@@ -114,6 +118,9 @@ export function Protocols() {
   useEffect(() => {
     getCoreVersions()
       .then(setCoreVersions)
+      .catch(() => {});
+    getCertificates()
+      .then(setCertificates)
       .catch(() => {});
   }, []);
 
@@ -142,8 +149,12 @@ export function Protocols() {
 
   const parseTlsSettings = (
     tls?: Record<string, unknown> | null,
-  ): Partial<Pick<ProtocolForm, "tls_type" | "tls_cert_file" | "tls_key_file" | "tls_domain">> => {
+  ): Partial<
+    Pick<ProtocolForm, "tls_type" | "tls_cert_file" | "tls_key_file" | "tls_domain" | "tls_cert_id">
+  > => {
     if (!tls) return { tls_type: "none" };
+    const certId = (tls.cert_id as string) || "";
+    if (certId) return { tls_type: "managed", tls_cert_id: certId };
     const certFile = (tls.certFile as string) || "";
     const keyFile = (tls.keyFile as string) || "";
     const domain = (tls.domain as string) || "";
@@ -223,6 +234,9 @@ export function Protocols() {
       case "acme":
         if (!form.tls_domain.trim()) return undefined;
         return { domain: form.tls_domain.trim() };
+      case "managed":
+        if (!form.tls_cert_id) return undefined;
+        return { cert_id: form.tls_cert_id };
       default:
         return undefined;
     }
@@ -641,14 +655,30 @@ export function Protocols() {
                     tls_cert_file: "",
                     tls_key_file: "",
                     tls_domain: "",
+                    tls_cert_id: "",
                   })
                 }
                 options={[
                   { id: "none", label: t("protocols.tlsTypeNone") },
                   { id: "certificate", label: t("protocols.tlsTypeCertificate") },
                   { id: "acme", label: t("protocols.tlsTypeAcme") },
+                  { id: "managed", label: t("protocols.tlsTypeManaged") },
                 ]}
               />
+              {form.tls_type === "managed" && (
+                <FormSelect
+                  label={t("protocols.managedCert")}
+                  value={form.tls_cert_id}
+                  onChange={(value) => setForm({ ...form, tls_cert_id: value })}
+                  options={certificates
+                    .filter((c) => c.status === "active")
+                    .map((c) => ({
+                      id: c.id,
+                      label: `${c.domain}${c.node_name ? ` (${c.node_name})` : ""}`,
+                    }))}
+                  isRequired
+                />
+              )}
               {form.tls_type === "certificate" && (
                 <>
                   <FormInput

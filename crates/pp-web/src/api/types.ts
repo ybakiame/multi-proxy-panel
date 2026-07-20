@@ -44,6 +44,19 @@ export interface Node {
   core_statuses?: CoreStatus[];
 }
 
+export interface ManagedCertificate {
+  id: string;
+  node_id: string;
+  node_name: string | null;
+  domain: string;
+  status: string;
+  challenge_type: string;
+  expires_at: string | null;
+  last_issued_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
 export interface CoreVersion {
   id: string;
   core_type: string;

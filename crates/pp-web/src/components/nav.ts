@@ -14,6 +14,7 @@ import {
   SignalIcon,
   ArrowsRightLeftIcon,
   CpuChipIcon,
+  LockClosedIcon,
 } from "@heroicons/react/24/outline";
 
 export const navItems = [
@@ -21,6 +22,7 @@ export const navItems = [
   { path: "/nodes", labelKey: "nav.nodes", icon: ServerIcon },
   { path: "/protocols", labelKey: "nav.protocols", icon: CogIcon },
   { path: "/core-versions", labelKey: "nav.coreVersions", icon: CpuChipIcon },
+  { path: "/certificates", labelKey: "nav.certificates", icon: LockClosedIcon },
   { path: "/bindings", labelKey: "nav.bindings", icon: LinkIcon },
   { path: "/hosts", labelKey: "nav.hosts", icon: GlobeAltIcon },
   { path: "/clients", labelKey: "nav.clients", icon: UsersIcon },
