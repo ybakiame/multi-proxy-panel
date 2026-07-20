@@ -177,6 +177,12 @@ Agent 的 gRPC 客户端实现了指数退避重连：
 - 最大延迟：60 秒
 - 重连因子：×2
 
+重连注册时 Agent 上报各核心已应用的 `config_version`（来自本地 `last_config.<core>.json` 快照），Hub 调度推送前比对版本，一致则不推送，避免重连后不必要的核心重启。
+
+### 4.2.1 核心版本管理
+
+`core_versions` 表跟踪各核心上游 release/prerelease 版本（`GET /api/v1/core-versions/upstream` 只读拉取 GitHub 版本，用户勾选后 `POST /api/v1/core-versions` 保存）。协议配置的 `core_version` 引用该表，推送时随 `ConfigPush.core_version` 下发，Agent 按需安装对应版本二进制。
+
 ### 4.3 配置生成流程
 
 ```
@@ -187,6 +193,8 @@ NodeBinding (DB: node_id + protocol_config_id)
 pp-config BuilderRegistry
     ↓
 xray JSON / sing-box JSON / mihomo YAML（Hub↔Agent 间始终以 JSON 传输，mihomo 由 Agent 落盘时转 YAML）
+    ↓
+config_version = SHA-256(config_json) 前 16 位（内容哈希，未变更则 Hub 调度推送与 Agent 应用均跳过）
     ↓
 HubMessage::ConfigPush (gRPC)
     ↓

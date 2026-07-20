@@ -205,8 +205,7 @@
 ```json
 {
   "core_type": "sing-box",
-  "restart": true,
-  "version": "1"
+  "restart": true
 }
 ```
 
@@ -216,7 +215,7 @@
 |------|------|------|------|
 | `core_type` | string | ❌ | `xray` / `sing-box` / `mihomo`（默认 `sing-box`） |
 | `restart` | boolean | ❌ | 是否重启核心（默认 `true`） |
-| `version` | string | ❌ | 配置版本号 |
+| `version` | string | ❌ | 配置版本号；缺省时 Hub 使用配置内容的 SHA-256 哈希（前 16 位十六进制）。Agent 对版本一致的重复推送会跳过应用，避免重连后不必要的核心重启 |
 
 **响应:**
 
@@ -328,7 +327,7 @@
 | `hysteria2` | `sing-box`, `mihomo` |
 | `anytls` | `sing-box`, `mihomo` |
 
-> mihomo 核心的 TLS 仅支持 `certFile` + `keyFile` 证书文件方式，不支持 ACME 自动证书。
+> mihomo 核心的 TLS 支持 `certFile` + `keyFile` 证书文件，或 `domain` ACME 域名——mihomo 自身不内置 ACME，面板会将其映射为 sing-box 内置 ACME 在同一数据目录下申请的证书路径（`acme/certificates/...`），因此 mihomo 使用 ACME 域名时要求该节点上 sing-box 已为同域名完成证书申请。
 
 **状态码:**
 - `201 Created`
@@ -369,6 +368,92 @@
   }
 }
 ```
+
+---
+
+## 核心版本
+
+核心版本目录由用户从上游版本中选择保存（release / prerelease），协议配置可通过 `core_version` 引用，Agent 按需安装对应版本的核心二进制。
+
+### GET `/api/v1/core-versions`
+
+列出核心版本记录。
+
+**查询参数:**
+- `core_type` (可选) — 按核心过滤：`xray` / `sing-box` / `mihomo`
+
+**响应:**
+
+```json
+{
+  "data": {
+    "versions": [
+      {
+        "id": "uuid",
+        "core_type": "mihomo",
+        "version": "v1.19.29",
+        "channel": "release",
+        "created_at": "2026-07-20T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+### GET `/api/v1/core-versions/upstream`
+
+从 GitHub Releases 拉取上游版本（只读，不入库），每条记录标注是否已保存。每核心每渠道最多返回 10 个。
+
+**查询参数:**
+- `core_type` (可选) — 只拉取指定核心
+
+**响应:**
+
+```json
+{
+  "data": {
+    "cores": [
+      {
+        "core_type": "mihomo",
+        "versions": [
+          { "version": "v1.19.29", "channel": "release", "saved": true },
+          { "version": "Prerelease-Alpha", "channel": "prerelease", "saved": false }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### POST `/api/v1/core-versions`
+
+保存用户选中的版本（已存在的记录跳过，幂等）。
+
+**请求体:**
+
+```json
+{
+  "versions": [
+    { "core_type": "mihomo", "version": "v1.19.29", "channel": "release" }
+  ]
+}
+```
+
+**响应:**
+
+```json
+{
+  "data": { "added": 1 }
+}
+```
+
+### DELETE `/api/v1/core-versions/{id}`
+
+删除一条版本记录（不影响已引用它的协议配置）。
+
+**状态码:**
+- `204 No Content`
+- `404 Not Found`
 
 ---
 

@@ -181,7 +181,7 @@ trait ConfigBuilder: Send + Sync {
 **实现：**
 - `XrayConfigBuilder`: 生成 Xray-core 配置
 - `SingBoxConfigBuilder`: 生成 sing-box 配置
-- `MihomoConfigBuilder`: 生成 mihomo 配置（listeners 结构；vless 用户为列表、hysteria2/anytls 用户为映射；TLS 仅支持证书文件，不支持 ACME）
+- `MihomoConfigBuilder`: 生成 mihomo 配置（listeners 结构；vless 用户为列表、hysteria2/anytls 用户为映射；TLS 支持证书文件，ACME 域名映射为 sing-box 内置 ACME 在同一数据目录下申请的证书路径）
 
 **BuilderRegistry**: 运行时注册表，支持按核心类型查找对应的构建器。
 
@@ -267,16 +267,19 @@ Hub 查询该节点的所有 active Bindings
 pp-config BuilderRegistry.build_full_config(inbounds)
     │
     ▼
-序列化为 JSON → HubMessage::ConfigPush
+序列化为 JSON → config_version = SHA-256(config) 前 16 位
     │
     ▼
-gRPC Stream → Agent
+gRPC Stream → Agent（Hub 侧对调度推送先比对 Agent 注册时上报的版本，一致则跳过）
+    │
+    ▼
+Agent 比对本地快照版本（非 restart 推送且版本一致则跳过应用）
     │
     ▼
 Agent → CoreManager.reload() / restart()
     │
     ▼
-xray/sing-box 加载新配置
+xray/sing-box/mihomo 加载新配置
 ```
 
 ### 3.3 订阅服务流程
