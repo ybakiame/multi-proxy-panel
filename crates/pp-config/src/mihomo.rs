@@ -162,14 +162,8 @@ fn password_users(settings: &Value) -> Value {
     Value::Object(map)
 }
 
-/// sing-box 内置 ACME（lego）在共享数据目录下的落盘位置。agent 上
-/// sing-box 与 mihomo 都以该数据目录为工作目录，因此 mihomo 可以用相对
-/// 路径直接引用 sing-box 申请到的证书；mihomo v1.19.18+ 会监听证书文件
-/// 变更并自动热加载，sing-box 续期后 mihomo 无需重启。
-const ACME_CERT_DIR: &str = "acme/certificates/acme-v02.api.letsencrypt.org-directory";
-
-/// mihomo TLS：优先级——托管证书（agent 内置 ACME 签发的统一目录）>
-/// 显式证书文件 > ACME 域名（引用 sing-box 内置 ACME 的证书路径）。
+/// mihomo TLS：托管证书（agent 内置 ACME 签发的统一目录）或显式证书文件。
+/// 内置 ACME 为 sing-box 专属能力，mihomo 不接受 domain 形式。
 fn apply_cert_tls(listener: &mut Value, tls: Option<&Value>) -> PanelResult<()> {
     let tls = tls.ok_or_else(|| PanelError::Validation("TLS configuration is required".into()))?;
 
@@ -188,16 +182,8 @@ fn apply_cert_tls(listener: &mut Value, tls: Option<&Value>) -> PanelResult<()> 
         return Ok(());
     }
 
-    let domain = setting_str(tls, &["domain"]).unwrap_or("");
-    if !domain.is_empty() {
-        let base = format!("{ACME_CERT_DIR}/{domain}/{domain}");
-        listener["certificate"] = json!(format!("{}.crt", base));
-        listener["private-key"] = json!(format!("{}.key", base));
-        return Ok(());
-    }
-
     Err(PanelError::Validation(
-        "mihomo TLS requires certFile+keyFile or an ACME domain".into(),
+        "mihomo TLS requires a managed certificate or certFile+keyFile".into(),
     ))
 }
 
@@ -380,17 +366,27 @@ mod tests {
     }
 
     #[test]
-    fn vless_xhttp_acme_domain_maps_to_shared_acme_cert_paths() {
+    fn vless_xhttp_managed_domain_maps_to_unified_cert_paths() {
         let builder = MihomoConfigBuilder;
         let settings = json!({ "tag": "t", "port": 443, "clients": [] });
-        let tls = json!({ "domain": "hy2.example.com" });
+        let tls = json!({ "managed_domain": "hy2.example.com" });
         let listener = builder
             .build_inbound(ProtocolType::VlessXhttp, &settings, Some(&tls))
             .unwrap();
 
-        let base = "acme/certificates/acme-v02.api.letsencrypt.org-directory/hy2.example.com/hy2.example.com";
-        assert_eq!(listener["certificate"], format!("{}.crt", base));
-        assert_eq!(listener["private-key"], format!("{}.key", base));
+        assert_eq!(listener["certificate"], "certs/hy2.example.com.crt");
+        assert_eq!(listener["private-key"], "certs/hy2.example.com.key");
+    }
+
+    #[test]
+    fn vless_xhttp_rejects_acme_domain() {
+        let builder = MihomoConfigBuilder;
+        let settings = json!({ "tag": "t", "port": 443, "clients": [] });
+        let tls = json!({ "domain": "hy2.example.com" });
+        let err = builder
+            .build_inbound(ProtocolType::VlessXhttp, &settings, Some(&tls))
+            .unwrap_err();
+        assert!(err.to_string().contains("managed certificate or certFile"));
     }
 
     #[test]
