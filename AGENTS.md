@@ -185,7 +185,9 @@ Agent 的 gRPC 客户端实现了指数退避重连：
 
 ### 4.2.2 统一证书管理（Agent 内置 ACME）
 
-`certificates` 表管理托管证书。Agent 内置 instant-acme 客户端，通过临时 80 端口监听完成 HTTP-01 挑战，证书统一落盘 `<data_dir>/certs/<domain>.{crt,key}`，三个核心的 TLS 配置均通过 `tls_settings.cert_id` 引用（Hub 生成配置时翻译为 `managed_domain` 路径）。Agent 每日检查，证书满 60 天自动续期并 reload 引用它的核心（mihomo 靠证书文件监听自动热加载，xray/sing-box 由 Agent 按快照 restart）。
+`certificates` 表管理托管证书。Agent 内置 instant-acme 客户端，通过临时 80 端口监听完成 HTTP-01 挑战，证书统一落盘 `<data_dir>/certs/<domain>.{crt,key}`。
+
+TLS 为分层模型：协议配置仅以 `tls_settings.enabled` 声明是否启用 TLS，具体证书在节点绑定的 `override_settings.tls_settings` 复写（`cert_id` 托管证书 / `certFile+keyFile` 显式文件 / `domain` 内置 ACME 仅 sing-box）。Hub 生成配置时把 `cert_id` 翻译为 `managed_domain` 路径（三个核心统一为 `certs/<domain>.{crt,key}`），订阅链接 SNI 取证书域名。Agent 每日检查，证书满 60 天自动续期并 reload 引用它的核心（mihomo 靠证书文件监听自动热加载，xray/sing-box 由 Agent 按快照 restart）。
 
 ### 4.3 配置生成流程
 

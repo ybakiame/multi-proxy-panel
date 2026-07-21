@@ -327,7 +327,7 @@
 | `hysteria2` | `sing-box`, `mihomo` |
 | `anytls` | `sing-box`, `mihomo` |
 
-> mihomo 核心的 TLS 支持 `certFile` + `keyFile` 证书文件，或 `domain` ACME 域名——mihomo 自身不内置 ACME，面板会将其映射为 sing-box 内置 ACME 在同一数据目录下申请的证书路径（`acme/certificates/...`），因此 mihomo 使用 ACME 域名时要求该节点上 sing-box 已为同域名完成证书申请。
+> TLS 采用分层模型：协议配置只声明 `{"enabled": true}` 是否启用 TLS；具体证书在**节点绑定**的 `override_settings.tls_settings` 中复写——`{"cert_id": "..."}`（托管证书，需属于绑定节点）、`{"certFile": "...", "keyFile": "..."}`（显式证书文件）、`{"domain": "..."}`（内置 ACME，**仅 sing-box 协议**）。订阅链接的 SNI 自动取证书域名。
 
 **状态码:**
 - `201 Created`
