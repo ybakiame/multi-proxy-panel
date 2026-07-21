@@ -4,8 +4,8 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use pp_db::entities::{
-    client, client_group_binding, inbound_host, node, node_binding, node_binding_group_binding,
-    node_group, protocol_config, subscription, subscription_template,
+    certificate, client, client_group_binding, inbound_host, node, node_binding,
+    node_binding_group_binding, node_group, protocol_config, subscription, subscription_template,
 };
 use pp_subscription::{ProxyNode, SubscriptionFormat, generate_subscription};
 use sea_orm::{
@@ -718,6 +718,7 @@ async fn build_proxy_nodes(
                     .as_ref()
                     .and_then(|o| o.get("tls_settings").cloned()),
             );
+            let tls = resolve_subscription_tls(db, binding.node_id, tls).await?;
 
             nodes.push(ProxyNode {
                 name: display_name,
@@ -731,6 +732,53 @@ async fn build_proxy_nodes(
     }
 
     Ok(nodes)
+}
+
+/// Normalize TLS settings for client links: managed certificates contribute
+/// their domain as the SNI (serverName), and an ACME domain doubles as the
+/// SNI when nothing more specific is set.
+async fn resolve_subscription_tls(
+    db: &sea_orm::DatabaseConnection,
+    node_id: Uuid,
+    tls: Option<Value>,
+) -> Result<Option<Value>, sea_orm::DbErr> {
+    let Some(mut tls) = tls else {
+        return Ok(None);
+    };
+
+    let cert_id = tls
+        .get("cert_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+    if let Some(cert_id) = cert_id {
+        if let Some(cert) = certificate::Entity::find_by_id(cert_id).one(db).await? {
+            if cert.node_id == node_id {
+                if let Some(obj) = tls.as_object_mut() {
+                    obj.insert("serverName".to_string(), json!(cert.domain));
+                    obj.remove("cert_id");
+                }
+            }
+        }
+    }
+
+    let has_server_name = tls
+        .get("serverName")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    let domain = tls
+        .get("domain")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    if !has_server_name {
+        if let Some(domain) = domain {
+            if let Some(obj) = tls.as_object_mut() {
+                obj.insert("serverName".to_string(), json!(domain));
+            }
+        }
+    }
+
+    Ok(Some(tls))
 }
 
 /// Substitute template variables in a string.

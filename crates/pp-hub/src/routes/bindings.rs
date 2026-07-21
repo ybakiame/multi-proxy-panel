@@ -2,7 +2,9 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{node, node_binding, node_binding_group_binding, protocol_config};
+use pp_db::entities::{
+    certificate, node, node_binding, node_binding_group_binding, protocol_config,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
@@ -90,6 +92,56 @@ pub struct CreateBindingPayload {
     pub is_active: Option<bool>,
 }
 
+/// Validate a binding-level TLS override: managed certificates must belong
+/// to the binding's node, and built-in ACME (domain) is sing-box only.
+async fn validate_tls_override(
+    db: &sea_orm::DatabaseConnection,
+    node_id: Uuid,
+    protocol_config_id: Uuid,
+    override_settings: Option<&Value>,
+) -> Result<(), ApiError> {
+    let Some(tls) = override_settings.and_then(|o| o.get("tls_settings")) else {
+        return Ok(());
+    };
+
+    if let Some(cert_id_raw) = tls.get("cert_id").and_then(|v| v.as_str()) {
+        let cert_id = Uuid::parse_str(cert_id_raw)
+            .map_err(|_| ApiError::bad_request("invalid_cert_id", "invalid cert id"))?;
+        let cert = certificate::Entity::find_by_id(cert_id)
+            .one(db)
+            .await
+            .map_err(ApiError::from)?
+            .ok_or_else(|| ApiError::not_found("certificate not found"))?;
+        if cert.node_id != node_id {
+            return Err(ApiError::bad_request(
+                "cert_node_mismatch",
+                "certificate does not belong to the binding's node",
+            ));
+        }
+    }
+
+    let has_domain = tls
+        .get("domain")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    if has_domain {
+        let core_type = protocol_config::Entity::find_by_id(protocol_config_id)
+            .one(db)
+            .await
+            .map_err(ApiError::from)?
+            .map(|c| c.core_type)
+            .unwrap_or_default();
+        if core_type != "sing-box" {
+            return Err(ApiError::bad_request(
+                "acme_singbox_only",
+                "built-in ACME is only available for sing-box protocols; use a managed certificate instead",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn create_binding(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateBindingPayload>,
@@ -111,6 +163,14 @@ pub async fn create_binding(
     if !config_exists {
         return Err(ApiError::not_found("protocol config not found"));
     }
+
+    validate_tls_override(
+        &state.db,
+        payload.node_id,
+        payload.protocol_config_id,
+        payload.override_settings.as_ref(),
+    )
+    .await?;
 
     let active = node_binding::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -143,12 +203,19 @@ pub async fn update_binding(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("binding not found"))?;
 
-    let mut active: node_binding::ActiveModel = binding.into();
+    let mut active: node_binding::ActiveModel = binding.clone().into();
 
     if let Some(is_active) = payload.is_active {
         active.is_active = Set(is_active);
     }
     if payload.override_settings.is_some() {
+        validate_tls_override(
+            &state.db,
+            binding.node_id,
+            binding.protocol_config_id,
+            payload.override_settings.as_ref(),
+        )
+        .await?;
         active.override_settings = Set(payload.override_settings);
     }
 
