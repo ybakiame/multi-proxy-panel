@@ -181,6 +181,7 @@
     "tlsTypeAcme": "ACME Automatic",
     "tlsTypeManaged": "Managed Certificate",
     "managedCert": "Certificate",
+    "useTls": "Enable TLS (certificate is configured in the node binding)",
     "tlsCertFile": "Certificate Path",
     "tlsKeyFile": "Private Key Path",
     "tlsDomain": "ACME Domain",

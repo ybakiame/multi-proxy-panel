@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
-import { PageHeader, ConfirmDialog, Pagination, FormInput, FormSelect } from "../components/ui";
+import {
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormSelect,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import {
   getProtocols,
@@ -11,8 +18,7 @@ import {
   generateRealityKeys,
 } from "../api/protocols";
 import { getCoreVersions } from "../api/coreVersions";
-import { getCertificates } from "../api/certificates";
-import { ProtocolConfig, CoreVersion, ManagedCertificate } from "../api/types";
+import { ProtocolConfig, CoreVersion } from "../api/types";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
@@ -35,11 +41,7 @@ interface ProtocolForm {
   core_version: string;
   listen_address: string;
   listen_port: string;
-  tls_type: "none" | "certificate" | "acme" | "managed";
-  tls_cert_file: string;
-  tls_key_file: string;
-  tls_domain: string;
-  tls_cert_id: string;
+  tls_enabled: boolean;
   uuid: string;
   password: string;
   flow: string;
@@ -65,11 +67,7 @@ const defaultForm: ProtocolForm = {
   core_version: "",
   listen_address: "0.0.0.0",
   listen_port: "",
-  tls_type: "none",
-  tls_cert_file: "",
-  tls_key_file: "",
-  tls_domain: "",
-  tls_cert_id: "",
+  tls_enabled: false,
   uuid: "",
   password: "",
   flow: "xtls-rprx-vision",
@@ -93,7 +91,6 @@ export function Protocols() {
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
   const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
-  const [certificates, setCertificates] = useState<ManagedCertificate[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
@@ -118,9 +115,6 @@ export function Protocols() {
   useEffect(() => {
     getCoreVersions()
       .then(setCoreVersions)
-      .catch(() => {});
-    getCertificates()
-      .then(setCertificates)
       .catch(() => {});
   }, []);
 
@@ -147,36 +141,18 @@ export function Protocols() {
     };
   };
 
-  const parseTlsSettings = (
-    tls?: Record<string, unknown> | null,
-  ): Partial<
-    Pick<ProtocolForm, "tls_type" | "tls_cert_file" | "tls_key_file" | "tls_domain" | "tls_cert_id">
-  > => {
-    if (!tls) return { tls_type: "none" };
-    const certId = (tls.cert_id as string) || "";
-    if (certId) return { tls_type: "managed", tls_cert_id: certId };
-    const certFile = (tls.certFile as string) || "";
-    const keyFile = (tls.keyFile as string) || "";
-    const domain = (tls.domain as string) || "";
-    if (domain) return { tls_type: "acme", tls_domain: domain };
-    if (certFile || keyFile) {
-      return { tls_type: "certificate", tls_cert_file: certFile, tls_key_file: keyFile };
-    }
-    return { tls_type: "none" };
-  };
-
   const resetForm = (protocol?: ProtocolConfig) => {
     if (protocol) {
       setForm({
         ...defaultForm,
         ...parseSettings(protocol.settings || {}),
-        ...parseTlsSettings(protocol.tls_settings),
         name: protocol.name,
         protocol_type: protocol.protocol_type,
         core_type: protocol.core_type,
         core_version: protocol.core_version || "",
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
+        tls_enabled: !!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0,
       });
     } else {
       setForm(defaultForm);
@@ -224,22 +200,11 @@ export function Protocols() {
   };
 
   const buildTlsSettings = (): Record<string, unknown> | undefined => {
-    switch (form.tls_type) {
-      case "certificate":
-        if (!form.tls_cert_file.trim() || !form.tls_key_file.trim()) return undefined;
-        return {
-          certFile: form.tls_cert_file.trim(),
-          keyFile: form.tls_key_file.trim(),
-        };
-      case "acme":
-        if (!form.tls_domain.trim()) return undefined;
-        return { domain: form.tls_domain.trim() };
-      case "managed":
-        if (!form.tls_cert_id) return undefined;
-        return { cert_id: form.tls_cert_id };
-      default:
-        return undefined;
-    }
+    if (!form.tls_enabled) return undefined;
+    // Legacy detail fields (domain/certFile/cert_id) on the existing record
+    // are preserved so old configs keep working until a binding override
+    // takes over; new configs only carry the enabled flag.
+    return { ...editingProtocol?.tls_settings, enabled: true };
   };
 
   const buildPayload = () => {
@@ -645,67 +610,13 @@ export function Protocols() {
                   {t("protocols.randomPort")}
                 </Button>
               </div>
-              <FormSelect
-                label={t("protocols.tlsType")}
-                value={form.tls_type}
-                onChange={(value) =>
-                  setForm({
-                    ...form,
-                    tls_type: value as ProtocolForm["tls_type"],
-                    tls_cert_file: "",
-                    tls_key_file: "",
-                    tls_domain: "",
-                    tls_cert_id: "",
-                  })
-                }
-                options={[
-                  { id: "none", label: t("protocols.tlsTypeNone") },
-                  { id: "certificate", label: t("protocols.tlsTypeCertificate") },
-                  { id: "acme", label: t("protocols.tlsTypeAcme") },
-                  { id: "managed", label: t("protocols.tlsTypeManaged") },
-                ]}
-              />
-              {form.tls_type === "managed" && (
-                <FormSelect
-                  label={t("protocols.managedCert")}
-                  value={form.tls_cert_id}
-                  onChange={(value) => setForm({ ...form, tls_cert_id: value })}
-                  options={certificates
-                    .filter((c) => c.status === "active")
-                    .map((c) => ({
-                      id: c.id,
-                      label: `${c.domain}${c.node_name ? ` (${c.node_name})` : ""}`,
-                    }))}
-                  isRequired
-                />
-              )}
-              {form.tls_type === "certificate" && (
-                <>
-                  <FormInput
-                    label={t("protocols.tlsCertFile")}
-                    value={form.tls_cert_file}
-                    onChange={(value) => setForm({ ...form, tls_cert_file: value })}
-                    placeholder="/etc/ssl/certs/example.crt"
-                    isRequired
-                  />
-                  <FormInput
-                    label={t("protocols.tlsKeyFile")}
-                    value={form.tls_key_file}
-                    onChange={(value) => setForm({ ...form, tls_key_file: value })}
-                    placeholder="/etc/ssl/private/example.key"
-                    isRequired
-                  />
-                </>
-              )}
-              {form.tls_type === "acme" && (
-                <FormInput
-                  label={t("protocols.tlsDomain")}
-                  value={form.tls_domain}
-                  onChange={(value) => setForm({ ...form, tls_domain: value })}
-                  placeholder="hy2.example.com"
-                  description={t("protocols.tlsDomainDescription")}
-                  isRequired
-                />
+              {form.protocol_type !== "vless_reality" && (
+                <FormCheckbox
+                  isSelected={form.tls_enabled}
+                  onChange={(selected) => setForm({ ...form, tls_enabled: selected })}
+                >
+                  {t("protocols.useTls")}
+                </FormCheckbox>
               )}
               {renderDynamicFields()}
             </Modal.Body>

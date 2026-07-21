@@ -181,6 +181,7 @@
     "tlsTypeAcme": "ACME 自动证书",
     "tlsTypeManaged": "托管证书",
     "managedCert": "选择证书",
+    "useTls": "使用 TLS（证书在节点绑定中配置）",
     "tlsCertFile": "证书路径",
     "tlsKeyFile": "私钥路径",
     "tlsDomain": "ACME 域名",
