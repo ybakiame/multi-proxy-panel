@@ -29,7 +29,7 @@ impl ConfigBuilder for XrayConfigBuilder {
     }
 
     fn build_full_config(&self, inbounds: &[InboundConfig]) -> PanelResult<Value> {
-        let mut xray_inbounds = Vec::with_capacity(inbounds.len());
+        let mut xray_inbounds = Vec::with_capacity(inbounds.len() + 1);
         for inbound in inbounds {
             xray_inbounds.push(self.build_inbound(
                 inbound.protocol,
@@ -38,11 +38,41 @@ impl ConfigBuilder for XrayConfigBuilder {
             )?);
         }
 
+        let (api_addr, api_port) = xray_api_listen();
+        xray_inbounds.push(json!({
+            "tag": "api",
+            "protocol": "dokodemo-door",
+            "listen": api_addr,
+            "port": api_port,
+            "settings": {
+                "address": api_addr
+            }
+        }));
+
         let routing = build_xray_routing();
 
         Ok(json!({
             "log": {
                 "loglevel": "warning"
+            },
+            "api": {
+                "tag": "api",
+                "services": ["StatsService"]
+            },
+            "stats": {},
+            "policy": {
+                "levels": {
+                    "0": {
+                        "statsUserUplink": true,
+                        "statsUserDownlink": true
+                    }
+                },
+                "system": {
+                    "statsInboundUplink": true,
+                    "statsInboundDownlink": true,
+                    "statsUserUplink": true,
+                    "statsUserDownlink": true
+                }
             },
             "inbounds": xray_inbounds,
             "outbounds": [
@@ -60,8 +90,28 @@ impl ConfigBuilder for XrayConfigBuilder {
     }
 }
 
+/// StatsService gRPC listen address for the xray `api` inbound.
+///
+/// Read on the Hub at config-generation time; the Agent reads the same
+/// variable when querying stats, so both sides must agree.
+fn xray_api_listen() -> (String, u16) {
+    let listen = std::env::var("PROXYPANEL_XRAY_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+    match listen.rsplit_once(':') {
+        Some((addr, port)) => (addr.to_string(), port.parse().unwrap_or(8080)),
+        None => (listen, 8080),
+    }
+}
+
 fn build_xray_routing() -> Value {
     let mut rules = Vec::<Value>::new();
+
+    // Route gRPC API requests hitting the dokodemo-door inbound to the api outbound tag.
+    rules.push(json!({
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+    }));
 
     // Block BitTorrent
     rules.push(json!({
@@ -445,5 +495,42 @@ mod tests {
         assert!(config["routing"].is_object());
         assert!(!config["routing"]["rules"].as_array().unwrap().is_empty());
         assert_eq!(config["outbounds"][1]["tag"], "block");
+    }
+
+    #[test]
+    fn full_config_enables_stats_service() {
+        let builder = XrayConfigBuilder;
+        let inbound = InboundConfig {
+            tag: "vless-reality-in".into(),
+            protocol: ProtocolType::VlessReality,
+            listen: "0.0.0.0".into(),
+            port: 443,
+            settings: reality_settings(),
+            tls: None,
+            sniffing: None,
+            core_version: None,
+        };
+
+        let config = builder.build_full_config(&[inbound]).unwrap();
+
+        assert_eq!(config["api"]["tag"], "api");
+        assert_eq!(config["api"]["services"], json!(["StatsService"]));
+        assert!(config["stats"].is_object());
+        assert_eq!(config["policy"]["system"]["statsInboundUplink"], true);
+        assert_eq!(config["policy"]["system"]["statsInboundDownlink"], true);
+        assert_eq!(config["policy"]["system"]["statsUserUplink"], true);
+        assert_eq!(config["policy"]["system"]["statsUserDownlink"], true);
+
+        let inbounds = config["inbounds"].as_array().unwrap();
+        let api_inbound = inbounds
+            .iter()
+            .find(|i| i["tag"] == "api")
+            .expect("api inbound missing");
+        assert_eq!(api_inbound["protocol"], "dokodemo-door");
+        assert_eq!(api_inbound["listen"], "127.0.0.1");
+
+        let rules = config["routing"]["rules"].as_array().unwrap();
+        assert_eq!(rules[0]["inboundTag"], json!(["api"]));
+        assert_eq!(rules[0]["outboundTag"], "api");
     }
 }
