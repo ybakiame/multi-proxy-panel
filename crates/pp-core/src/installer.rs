@@ -216,6 +216,12 @@ fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| PanelError::Core(format!("invalid zip archive: {}", e)))?;
 
+    let is_xray = target_name.eq_ignore_ascii_case("xray");
+    // xray needs geoip.dat/geosite.dat next to the binary for geosite/geoip
+    // routing rules; ship them from the same release archive when present.
+    let dat_files = ["geoip.dat", "geosite.dat"];
+
+    let mut binary_dest: Option<PathBuf> = None;
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -231,14 +237,21 @@ fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
             let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
             let mut out = std::fs::File::create(&dest)?;
             std::io::copy(&mut entry, &mut out)?;
-            return Ok(dest);
+            binary_dest = Some(dest);
+        } else if is_xray && dat_files.iter().any(|d| file_name.eq_ignore_ascii_case(d)) {
+            let dest = dest_dir.join(file_name);
+            let mut out = std::fs::File::create(&dest)?;
+            std::io::copy(&mut entry, &mut out)?;
         }
     }
 
-    Err(PanelError::Core(format!(
-        "binary {} not found in archive {}",
-        target_name, archive_display
-    )))
+    match binary_dest {
+        Some(dest) => Ok(dest),
+        None => Err(PanelError::Core(format!(
+            "binary {} not found in archive {}",
+            target_name, archive_display
+        ))),
+    }
 }
 
 fn extract_gzip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResult<PathBuf> {
@@ -313,31 +326,107 @@ pub async fn ensure_core_binary(
 
     tokio::fs::create_dir_all(bin_dir).await?;
     let tmp_archive = bin_dir.join(format!(".{}", asset));
-    download_file(&url, &tmp_archive).await?;
 
-    let dest = tokio::task::block_in_place(move || {
-        let result = if asset.ends_with(".tar.gz") {
-            extract_tgz(&tmp_archive, bin_dir, &binary_inside)
-        } else if asset.ends_with(".zip") {
-            extract_zip(&tmp_archive, bin_dir, &binary_inside)
-        } else if asset.ends_with(".gz") {
-            extract_gzip(&tmp_archive, bin_dir, &binary_inside)
-        } else {
-            Err(PanelError::Core(format!(
-                "unknown archive format for asset {}",
-                asset
-            )))
-        };
-        // Best-effort cleanup of the archive
-        let _ = std::fs::remove_file(&tmp_archive);
-        result
-    });
+    // Retry the download once: truncated or otherwise corrupted archives
+    // (e.g. from a flaky network) are detected by validating the payload
+    // before extraction.
+    let mut last_err: Option<PanelError> = None;
+    let mut dest: Option<PathBuf> = None;
+    for attempt in 1..=2 {
+        if let Err(e) = download_file(&url, &tmp_archive).await {
+            last_err = Some(e);
+            continue;
+        }
+        if let Err(e) = validate_archive(&tmp_archive, &asset) {
+            tracing::warn!(
+                "downloaded archive failed validation (attempt {}): {}",
+                attempt,
+                e
+            );
+            last_err = Some(e);
+            continue;
+        }
 
-    let path = dest?;
+        let result = tokio::task::block_in_place(|| {
+            if asset.ends_with(".tar.gz") {
+                extract_tgz(&tmp_archive, bin_dir, &binary_inside)
+            } else if asset.ends_with(".zip") {
+                extract_zip(&tmp_archive, bin_dir, &binary_inside)
+            } else if asset.ends_with(".gz") {
+                extract_gzip(&tmp_archive, bin_dir, &binary_inside)
+            } else {
+                Err(PanelError::Core(format!(
+                    "unknown archive format for asset {}",
+                    asset
+                )))
+            }
+        });
+
+        match result {
+            Ok(path) => {
+                dest = Some(path);
+                break;
+            }
+            Err(e) => {
+                tracing::warn!("archive extraction failed (attempt {}): {}", attempt, e);
+                last_err = Some(e);
+            }
+        }
+    }
+    // Best-effort cleanup of the archive
+    let _ = tokio::fs::remove_file(&tmp_archive).await;
+
+    let path = match dest {
+        Some(p) => p,
+        None => {
+            return Err(last_err.unwrap_or_else(|| {
+                PanelError::Core(format!("failed to install {:?} from {}", core_type, url))
+            }));
+        }
+    };
     set_executable(&path)?;
 
     tracing::info!("installed {:?} binary at {}", core_type, path.display());
     Ok(path)
+}
+
+/// Sanity-check a downloaded archive before extraction: it must be larger
+/// than any plausible error page and carry the expected magic bytes.
+fn validate_archive(archive: &Path, asset: &str) -> PanelResult<()> {
+    let meta = std::fs::metadata(archive)?;
+    if meta.len() < 1024 * 1024 {
+        let preview = std::fs::read(archive)
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b[..b.len().min(200)]).to_string())
+            .unwrap_or_default();
+        return Err(PanelError::Core(format!(
+            "downloaded archive {} is suspiciously small ({} bytes): {}",
+            asset,
+            meta.len(),
+            preview
+        )));
+    }
+
+    let mut magic = [0u8; 4];
+    {
+        use std::io::Read;
+        let mut f = std::fs::File::open(archive)?;
+        f.read_exact(&mut magic)
+            .map_err(|e| PanelError::Core(format!("failed to read archive magic: {}", e)))?;
+    }
+    let ok = if asset.ends_with(".zip") {
+        magic.starts_with(b"PK")
+    } else {
+        // .tar.gz and .gz both start with the gzip magic
+        magic.starts_with(b"\x1f\x8b")
+    };
+    if !ok {
+        return Err(PanelError::Core(format!(
+            "downloaded archive {} has unexpected magic bytes {:02x?}",
+            asset, magic
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
