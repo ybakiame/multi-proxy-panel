@@ -57,7 +57,7 @@ impl ConfigBuilder for MihomoConfigBuilder {
             "log-level": "warning",
             "mode": "rule",
             "allow-lan": false,
-            "external-controller": "127.0.0.1:9093",
+            "external-controller": mihomo_api_listen(),
             "listeners": listeners,
             "rules": ["MATCH,DIRECT"],
         });
@@ -69,6 +69,14 @@ impl ConfigBuilder for MihomoConfigBuilder {
 
         Ok(config)
     }
+}
+
+/// Clash API (`external-controller`) listen address.
+///
+/// Read on the Hub at config-generation time; the Agent reads the same
+/// variable when polling traffic and connections, so both sides must agree.
+fn mihomo_api_listen() -> String {
+    std::env::var("PROXYPANEL_MIHOMO_API_LISTEN").unwrap_or_else(|_| "127.0.0.1:9093".to_string())
 }
 
 fn listener_base(settings: &Value, default_name: &str) -> Value {

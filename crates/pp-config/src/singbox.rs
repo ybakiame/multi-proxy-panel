@@ -79,13 +79,19 @@ impl ConfigBuilder for SingBoxConfigBuilder {
                     config["services"] = services;
                 }
             }
-        } else {
-            let experimental = build_legacy_api_services();
-            if let Some(exp_obj) = experimental.as_object() {
-                if !exp_obj.is_empty() {
-                    config["experimental"] = experimental;
-                }
+            // The 1.14 api service's connection tracking and Clash mode methods
+            // require the Clash API to be configured alongside it.
+            let mut experimental = build_clash_api_experimental();
+            if let Some(v2ray_api) = build_v2ray_api(&sb_inbounds) {
+                experimental["v2ray_api"] = v2ray_api;
             }
+            config["experimental"] = experimental;
+        } else {
+            let mut experimental = build_legacy_api_services();
+            if let Some(v2ray_api) = build_v2ray_api(&sb_inbounds) {
+                experimental["v2ray_api"] = v2ray_api;
+            }
+            config["experimental"] = experimental;
         }
 
         Ok(config)
@@ -136,19 +142,32 @@ fn version_gte(version: &str, target: &str) -> bool {
     compare_versions(version, target) != std::cmp::Ordering::Less
 }
 
+/// sing-box API listen address shared by the config generator (Hub) and the
+/// stats collectors (Agent); both sides must agree.
+///
+/// `PROXYPANEL_SINGBOX_API_LISTEN` wins; the legacy
+/// `PROXYPANEL_SINGBOX_HTTP_API_LISTEN` is kept as a fallback.
+fn singbox_api_listen() -> String {
+    std::env::var("PROXYPANEL_SINGBOX_API_LISTEN")
+        .or_else(|_| std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN"))
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string())
+}
+
+fn singbox_api_secret() -> String {
+    std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default()
+}
+
 /// Build the sing-box 1.14.0+ API service definition.
 fn build_api_service() -> Value {
-    let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
-    let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
-
-    let (listen_addr, listen_port) = split_listen_addr(&http_listen);
+    let listen = singbox_api_listen();
+    let (listen_addr, listen_port) = split_listen_addr(&listen);
 
     let mut api = json!({
         "type": "api",
         "listen": listen_addr,
         "listen_port": listen_port,
     });
+    let secret = singbox_api_secret();
     if !secret.is_empty() {
         api["secret"] = serde_json::json!(secret);
     }
@@ -165,14 +184,83 @@ fn split_listen_addr(http_listen: &str) -> (&str, u16) {
     }
 }
 
-/// Build the legacy sing-box experimental clash_api definition (pre-1.14.0).
-fn build_legacy_api_services() -> Value {
-    let http_listen = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
-    let secret = std::env::var("PROXYPANEL_SINGBOX_API_SECRET").unwrap_or_default();
+/// Build the Clash API definition required by the 1.14 api service for
+/// connection tracking and Clash mode methods.
+///
+/// Listens on a separate loopback port from the api service
+/// (`PROXYPANEL_SINGBOX_CLASH_API_LISTEN`, default `127.0.0.1:9091`).
+fn build_clash_api_experimental() -> Value {
+    let listen = std::env::var("PROXYPANEL_SINGBOX_CLASH_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9091".to_string());
+    let secret = singbox_api_secret();
 
     let mut clash_api = json!({
-        "external_controller": http_listen,
+        "external_controller": listen,
+    });
+    if !secret.is_empty() {
+        clash_api["secret"] = serde_json::json!(secret);
+    }
+
+    json!({
+        "clash_api": clash_api,
+    })
+}
+
+/// Build the V2Ray API (xray-compatible StatsService) definition.
+///
+/// Opt-in: only emitted when `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` is set
+/// (e.g. `127.0.0.1:10085`), because official sing-box release binaries are
+/// built without the `with_v2ray_api` tag and refuse to start when the
+/// section is present. Enable it only on nodes running a sing-box build that
+/// includes the tag. The agent falls back to the api service / Clash API
+/// collectors when the endpoint is unreachable.
+///
+/// sing-box only counts traffic for explicitly listed inbounds and users, so
+/// every generated inbound tag and user name is enumerated here.
+fn build_v2ray_api(sb_inbounds: &[Value]) -> Option<Value> {
+    let listen = std::env::var("PROXYPANEL_SINGBOX_V2RAY_API_LISTEN").ok()?;
+    if listen.is_empty() {
+        return None;
+    }
+    Some(v2ray_api_json(&listen, sb_inbounds))
+}
+
+fn v2ray_api_json(listen: &str, sb_inbounds: &[Value]) -> Value {
+    let mut tags: Vec<Value> = Vec::new();
+    let mut users: Vec<Value> = Vec::new();
+    for inbound in sb_inbounds {
+        if let Some(tag) = inbound.get("tag").and_then(|v| v.as_str()) {
+            if !tag.is_empty() {
+                tags.push(json!(tag));
+            }
+        }
+        if let Some(arr) = inbound.get("users").and_then(|v| v.as_array()) {
+            for user in arr {
+                if let Some(name) = user.get("name").and_then(|v| v.as_str()) {
+                    if !name.is_empty() {
+                        users.push(json!(name));
+                    }
+                }
+            }
+        }
+    }
+
+    json!({
+        "listen": listen,
+        "stats": {
+            "enabled": true,
+            "inbounds": tags,
+            "users": users,
+        }
+    })
+}
+
+/// Build the legacy sing-box experimental clash_api definition (pre-1.14.0).
+fn build_legacy_api_services() -> Value {
+    let secret = singbox_api_secret();
+
+    let mut clash_api = json!({
+        "external_controller": singbox_api_listen(),
     });
     if !secret.is_empty() {
         clash_api["secret"] = serde_json::json!(secret);
@@ -663,9 +751,8 @@ mod tests {
         let arr = services.as_array().unwrap();
         assert_eq!(arr.len(), 1);
 
-        let expected = std::env::var("PROXYPANEL_SINGBOX_HTTP_API_LISTEN")
-            .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
-        let (addr, port) = split_listen_addr(&expected);
+        let listen = singbox_api_listen();
+        let (addr, port) = split_listen_addr(&listen);
 
         assert_eq!(arr[0]["type"], "api");
         assert_eq!(arr[0]["listen"], addr);
@@ -690,5 +777,33 @@ mod tests {
         let services = config["services"].as_array().unwrap();
         assert_eq!(services[0]["type"], "api");
         assert!(services[0]["listen_port"].is_number());
+
+        // Connection tracking on the 1.14 api service requires the Clash API.
+        let clash_api = &config["experimental"]["clash_api"];
+        assert!(clash_api["external_controller"].is_string());
+    }
+
+    #[test]
+    fn v2ray_api_collects_tags_and_users() {
+        let inbounds = vec![
+            json!({
+                "type": "vless",
+                "tag": "vless-in",
+                "users": [
+                    { "uuid": "u1", "name": "alice@example.com" },
+                    { "uuid": "u2", "name": "" }
+                ]
+            }),
+            json!({
+                "type": "hysteria2",
+                "tag": "hy2-in",
+                "users": [{ "name": "bob", "password": "x" }]
+            }),
+        ];
+
+        let api = v2ray_api_json("127.0.0.1:10085", &inbounds);
+        assert_eq!(api["listen"], "127.0.0.1:10085");
+        assert_eq!(api["stats"]["inbounds"], json!(["vless-in", "hy2-in"]));
+        assert_eq!(api["stats"]["users"], json!(["alice@example.com", "bob"]));
     }
 }
