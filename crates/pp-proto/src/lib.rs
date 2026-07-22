@@ -5,7 +5,11 @@ pub mod hub_agent {
 }
 
 pub mod xray_stats {
-    tonic::include_proto!("xray.stats");
+    tonic::include_proto!("xray.app.stats.command");
+}
+
+pub mod v2ray_stats {
+    tonic::include_proto!("v2ray.core.app.stats.command");
 }
 
 pub mod singbox_daemon {
@@ -18,5 +22,4 @@ pub use hub_agent::*;
 pub use singbox_daemon::managed_service_client::ManagedServiceClient;
 pub use singbox_daemon::started_service_client::StartedServiceClient;
 pub use singbox_daemon::*;
-pub use xray_stats::stats_service_client::StatsServiceClient;
 pub use xray_stats::*;
