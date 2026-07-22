@@ -163,6 +163,7 @@ fn build_vless_inbound(
         .unwrap_or_else(|| stream_settings_network(&protocol));
 
     let mut inbound = json!({
+        "tag": settings.get("tag").and_then(|v| v.as_str()).unwrap_or("vless-in"),
         "protocol": "vless",
         "listen": settings.get("listen").and_then(|v| v.as_str()).unwrap_or("0.0.0.0"),
         "port": settings.get("port").and_then(|v| v.as_u64()).unwrap_or(443),
@@ -310,6 +311,17 @@ fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
     if dest.is_empty() {
         return None;
     }
+    // Xray requires an explicit host:port target; default to :443 when the
+    // port is omitted (sing-box tolerates the same shorthand).
+    let dest = if dest
+        .rsplit_once(':')
+        .and_then(|(_, p)| p.parse::<u16>().ok())
+        .is_some()
+    {
+        dest.to_string()
+    } else {
+        format!("{}:443", dest)
+    };
     let private_key = settings
         .get("reality_private_key")
         .and_then(|v| v.as_str())
@@ -318,27 +330,8 @@ fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
         return None;
     }
 
-    let server_names_str = settings
-        .get("reality_server_names")
-        .and_then(|v| v.as_str())
-        .or_else(|| settings.get("server_names").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let server_names: Vec<String> = server_names_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    let short_id_str = settings
-        .get("reality_short_id")
-        .and_then(|v| v.as_str())
-        .or_else(|| settings.get("short_id").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let short_ids: Vec<String> = short_id_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let server_names = string_list_setting(settings, &["reality_server_names", "server_names"]);
+    let short_ids = string_list_setting(settings, &["reality_short_id", "short_id"]);
 
     let reality = json!({
         "dest": dest,
@@ -348,6 +341,32 @@ fn build_xray_reality_settings(settings: &Value) -> Option<Value> {
     });
 
     Some(reality)
+}
+
+/// Read a setting that may be encoded either as a comma-separated string or
+/// as a JSON array of strings, trying each key in order.
+fn string_list_setting(settings: &Value, keys: &[&str]) -> Vec<String> {
+    for key in keys {
+        match settings.get(*key) {
+            Some(Value::String(s)) => {
+                return s
+                    .split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect();
+            }
+            Some(Value::Array(arr)) => {
+                return arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect();
+            }
+            _ => continue,
+        }
+    }
+    Vec::new()
 }
 
 fn build_xray_xhttp_settings(settings: &Value) -> Option<Value> {
@@ -405,12 +424,13 @@ mod tests {
     }
 
     #[test]
-    fn vless_reality_inbound_has_reality_settings() {
+    fn vless_reality_inbound_has_tag_and_reality_settings() {
         let builder = XrayConfigBuilder;
         let inbound = builder
             .build_inbound(ProtocolType::VlessReality, &reality_settings(), None)
             .unwrap();
 
+        assert_eq!(inbound["tag"], "vless-reality-in");
         assert_eq!(inbound["protocol"], "vless");
         assert_eq!(inbound["port"], 443);
         assert_eq!(inbound["streamSettings"]["network"], "tcp");
@@ -429,6 +449,41 @@ mod tests {
             .unwrap();
         assert_eq!(server_names.len(), 2);
         assert_eq!(server_names[0], "example.com");
+    }
+
+    #[test]
+    fn vless_reality_accepts_portless_dest_and_array_server_names() {
+        let builder = XrayConfigBuilder;
+        let settings = json!({
+            "tag": "vless-reality-in",
+            "port": 443,
+            "clients": [{ "id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4", "email": "alice@example.com" }],
+            "dest": "www.samsung.com",
+            "server_names": ["www.samsung.com"],
+            "private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "short_id": "915d3f92"
+        });
+        let inbound = builder
+            .build_inbound(ProtocolType::VlessReality, &settings, None)
+            .unwrap();
+
+        let reality = &inbound["streamSettings"]["realitySettings"];
+        assert_eq!(reality["dest"], "www.samsung.com:443");
+        assert_eq!(reality["serverNames"], json!(["www.samsung.com"]));
+        assert_eq!(reality["shortIds"], json!(["915d3f92"]));
+    }
+
+    #[test]
+    fn string_list_setting_accepts_string_and_array() {
+        assert_eq!(
+            string_list_setting(&json!({"a": "x, y"}), &["a"]),
+            vec!["x".to_string(), "y".to_string()]
+        );
+        assert_eq!(
+            string_list_setting(&json!({"a": ["x", "y"]}), &["a"]),
+            vec!["x".to_string(), "y".to_string()]
+        );
+        assert!(string_list_setting(&json!({"b": 1}), &["a"]).is_empty());
     }
 
     #[test]
