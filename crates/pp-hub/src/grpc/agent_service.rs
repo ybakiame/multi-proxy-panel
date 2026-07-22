@@ -1,6 +1,7 @@
 use chrono::Timelike;
 use pp_db::entities::{
-    agent_log, client, client_online_session, node, node_user_usage_record, traffic_record,
+    agent_log, client, client_online_session, node, node_binding, node_user_usage_record,
+    protocol_config, traffic_record,
 };
 use pp_proto::{
     AgentMessage, CoreStatusReport, Heartbeat, HostMetrics, HubMessage, LogBatch,
@@ -335,19 +336,38 @@ async fn handle_heartbeat(
     Ok(())
 }
 
-/// Resolve a reported user identifier to a client ID.
-/// Agents may report either the client's UUID or its email address.
-async fn resolve_client_id(db: &sea_orm::DatabaseConnection, raw: &str) -> Option<Uuid> {
-    if let Ok(id) = Uuid::parse_str(raw) {
-        return Some(id);
+/// Resolve every reported user identifier (client UUID or email) with at
+/// most one email lookup query instead of one query per user.
+async fn resolve_client_ids(
+    db: &sea_orm::DatabaseConnection,
+    raws: &[String],
+) -> std::collections::HashMap<String, Uuid> {
+    let mut resolved = std::collections::HashMap::with_capacity(raws.len());
+    let mut emails: Vec<String> = Vec::new();
+    for raw in raws {
+        if let Ok(id) = Uuid::parse_str(raw) {
+            resolved.insert(raw.clone(), id);
+        } else {
+            emails.push(raw.clone());
+        }
     }
-    client::Entity::find()
-        .filter(client::Column::Email.eq(raw))
-        .one(db)
-        .await
-        .ok()
-        .flatten()
-        .map(|c| c.id)
+    if !emails.is_empty() {
+        match client::Entity::find()
+            .filter(client::Column::Email.is_in(emails))
+            .all(db)
+            .await
+        {
+            Ok(clients) => {
+                for c in clients {
+                    if let Some(email) = c.email {
+                        resolved.insert(email, c.id);
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("failed to batch-resolve client emails: {}", e),
+        }
+    }
+    resolved
 }
 
 async fn handle_traffic(
@@ -375,46 +395,70 @@ async fn handle_traffic(
         .map(|n| n.usage_coefficient)
         .unwrap_or(1.0);
 
-    // 1. Persist inbound-level traffic to traffic_records (hourly aggregated upsert)
+    // 1. Persist per-inbound traffic to traffic_records (hourly aggregated
+    // upsert), resolving each reported tag back to its protocol config.
     if !traffic.inbounds.is_empty() {
-        let total_upload: i64 = traffic.inbounds.iter().map(|i| i.upload_bytes).sum();
-        let total_download: i64 = traffic.inbounds.iter().map(|i| i.download_bytes).sum();
+        let tag_map = inbound_tag_map(state, agent_id).await;
 
-        let existing = traffic_record::Entity::find()
-            .filter(traffic_record::Column::NodeId.eq(agent_id))
-            .filter(traffic_record::Column::ProtocolConfigId.is_null())
-            .filter(traffic_record::Column::ClientId.is_null())
-            .filter(traffic_record::Column::HourBucket.eq(hour))
-            .one(&state.db)
-            .await?;
+        for inbound in &traffic.inbounds {
+            let protocol_config_id = tag_map.get(inbound.tag.as_str()).copied();
 
-        if let Some(record) = existing {
-            let mut active: traffic_record::ActiveModel = record.into();
-            active.upload_bytes = Set(active.upload_bytes.as_ref() + total_upload);
-            active.download_bytes = Set(active.download_bytes.as_ref() + total_download);
-            if let Err(e) = active.update(&state.db).await {
-                tracing::warn!("failed to update inbound traffic record: {}", e);
-            }
-        } else {
-            let active = traffic_record::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                node_id: Set(Some(agent_id)),
-                protocol_config_id: Set(None),
-                client_id: Set(None),
-                hour_bucket: Set(hour.into()),
-                upload_bytes: Set(total_upload),
-                download_bytes: Set(total_download),
-                created_at: Set(chrono::Utc::now().into()),
+            let mut query = traffic_record::Entity::find()
+                .filter(traffic_record::Column::NodeId.eq(agent_id))
+                .filter(traffic_record::Column::ClientId.is_null())
+                .filter(traffic_record::Column::HourBucket.eq(hour));
+            query = match protocol_config_id {
+                Some(id) => query.filter(traffic_record::Column::ProtocolConfigId.eq(id)),
+                None => query.filter(traffic_record::Column::ProtocolConfigId.is_null()),
             };
-            if let Err(e) = active.insert(&state.db).await {
-                tracing::warn!("failed to insert inbound traffic record: {}", e);
+            let existing = query.one(&state.db).await?;
+
+            if let Some(record) = existing {
+                let mut active: traffic_record::ActiveModel = record.into();
+                active.upload_bytes = Set(active.upload_bytes.as_ref() + inbound.upload_bytes);
+                active.download_bytes =
+                    Set(active.download_bytes.as_ref() + inbound.download_bytes);
+                if let Err(e) = active.update(&state.db).await {
+                    tracing::warn!("failed to update inbound traffic record: {}", e);
+                }
+            } else {
+                let active = traffic_record::ActiveModel {
+                    id: Set(Uuid::new_v4()),
+                    node_id: Set(Some(agent_id)),
+                    protocol_config_id: Set(protocol_config_id),
+                    client_id: Set(None),
+                    hour_bucket: Set(hour.into()),
+                    upload_bytes: Set(inbound.upload_bytes),
+                    download_bytes: Set(inbound.download_bytes),
+                    created_at: Set(chrono::Utc::now().into()),
+                };
+                if let Err(e) = active.insert(&state.db).await {
+                    tracing::warn!("failed to insert inbound traffic record: {}", e);
+                }
             }
         }
     }
 
     // 2. Persist user-level traffic to node_user_usage_records and update client stats
+    let raws: Vec<String> = traffic.users.iter().map(|u| u.client_id.clone()).collect();
+    let resolved = resolve_client_ids(&state.db, &raws).await;
+
+    // Prefetch every referenced client once to avoid per-user lookups.
+    let client_ids: Vec<Uuid> = resolved.values().copied().collect();
+    let client_map: std::collections::HashMap<Uuid, client::Model> = if client_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        client::Entity::find()
+            .filter(client::Column::Id.is_in(client_ids))
+            .all(&state.db)
+            .await?
+            .into_iter()
+            .map(|c| (c.id, c))
+            .collect()
+    };
+
     for user in &traffic.users {
-        let Some(client_id) = resolve_client_id(&state.db, &user.client_id).await else {
+        let Some(client_id) = resolved.get(&user.client_id).copied() else {
             continue;
         };
 
@@ -454,13 +498,13 @@ async fn handle_traffic(
         }
 
         // Update client's traffic_used_bytes (using rate-adjusted values)
-        if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
+        if let Some(c) = client_map.get(&client_id) {
             // Skip on_hold clients — their traffic shouldn't count until activated
             if c.status == "on_hold" {
                 continue;
             }
             let prev_used = c.traffic_used_bytes;
-            let mut active: client::ActiveModel = c.into();
+            let mut active: client::ActiveModel = c.clone().into();
             active.traffic_used_bytes = Set(prev_used + counted_upload + counted_download);
             if let Err(e) = active.update(&state.db).await {
                 tracing::warn!("failed to update client traffic: {}", e);
@@ -469,6 +513,45 @@ async fn handle_traffic(
     }
 
     Ok(())
+}
+
+/// Map inbound tags (`{name}-{id}`) reported by agents back to their
+/// protocol config IDs for this node's bindings. Tags that don't resolve
+/// (e.g. synthetic core-level tags) are kept with a NULL protocol_config_id.
+async fn inbound_tag_map(
+    state: &AppState,
+    agent_id: Uuid,
+) -> std::collections::HashMap<String, Uuid> {
+    let bindings = match node_binding::Entity::find()
+        .filter(node_binding::Column::NodeId.eq(agent_id))
+        .all(&state.db)
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("failed to load bindings for tag resolution: {}", e);
+            return std::collections::HashMap::new();
+        }
+    };
+    let config_ids: Vec<Uuid> = bindings.iter().map(|b| b.protocol_config_id).collect();
+    if config_ids.is_empty() {
+        return std::collections::HashMap::new();
+    }
+
+    match protocol_config::Entity::find()
+        .filter(protocol_config::Column::Id.is_in(config_ids))
+        .all(&state.db)
+        .await
+    {
+        Ok(configs) => configs
+            .into_iter()
+            .map(|c| (format!("{}-{}", c.name, c.id), c.id))
+            .collect(),
+        Err(e) => {
+            tracing::warn!("failed to load protocol configs for tag resolution: {}", e);
+            std::collections::HashMap::new()
+        }
+    }
 }
 
 async fn handle_metrics(
@@ -606,8 +689,25 @@ async fn handle_online_users(
     let mut kept_session_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
     // Upsert sessions and activate on-hold clients on first connection
+    let raws: Vec<String> = report.users.iter().map(|u| u.client_id.clone()).collect();
+    let resolved = resolve_client_ids(&state.db, &raws).await;
+
+    // Prefetch referenced clients once for on-hold activation checks.
+    let client_ids: Vec<Uuid> = resolved.values().copied().collect();
+    let client_map: std::collections::HashMap<Uuid, client::Model> = if client_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        client::Entity::find()
+            .filter(client::Column::Id.is_in(client_ids))
+            .all(&state.db)
+            .await?
+            .into_iter()
+            .map(|c| (c.id, c))
+            .collect()
+    };
+
     for user in &report.users {
-        let Some(client_id) = resolve_client_id(&state.db, &user.client_id).await else {
+        let Some(client_id) = resolved.get(&user.client_id).copied() else {
             continue;
         };
 
@@ -617,14 +717,14 @@ async fn handle_online_users(
         }
 
         // Activate on-hold clients on first actual connection
-        if let Ok(Some(c)) = client::Entity::find_by_id(client_id).one(&state.db).await {
+        if let Some(c) = client_map.get(&client_id) {
             if c.status == "on_hold" {
                 let now = chrono::Utc::now();
                 let expire_date = c
                     .on_hold_expire_duration_secs
                     .map(|secs| now + chrono::Duration::seconds(secs));
 
-                let mut active: client::ActiveModel = c.into();
+                let mut active: client::ActiveModel = c.clone().into();
                 active.status = Set("active".to_string());
                 active.expiry_date = Set(expire_date.map(|d| d.into()));
                 active.updated_at = Set(now.into());

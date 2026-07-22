@@ -307,6 +307,7 @@ async fn push_updated_configs_for_clients(
     for node_id in node_ids {
         push_config_for_core(state, node_id, pp_common::CoreType::SingBox).await;
         push_config_for_core(state, node_id, pp_common::CoreType::Xray).await;
+        push_config_for_core(state, node_id, pp_common::CoreType::Mihomo).await;
     }
 
     Ok(())
