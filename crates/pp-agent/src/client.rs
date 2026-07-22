@@ -225,9 +225,11 @@ impl AgentStreamClient {
             tracing::debug!("core status task for agent {} stopped", status_agent_id);
         });
 
-        // Traffic reporter task
+        // Traffic reporter task (interval configurable via
+        // PROXYPANEL_TRAFFIC_REPORT_INTERVAL_SECS, default 60s)
         let traffic_tx = outbound_tx.clone();
-        let traffic_handle = crate::reporter::spawn_traffic_reporter(traffic_tx, 60);
+        let traffic_handle =
+            crate::reporter::spawn_traffic_reporter(traffic_tx, traffic_report_interval_secs());
 
         // Certificate renewal task (first pass runs immediately on connect)
         let renew_tx = outbound_tx.clone();
@@ -589,4 +591,14 @@ fn core_type_from_i32(value: i32) -> pp_common::CoreType {
         4 => pp_common::CoreType::Mihomo,
         _ => pp_common::CoreType::SingBox,
     }
+}
+
+/// Traffic report interval in seconds (`PROXYPANEL_TRAFFIC_REPORT_INTERVAL_SECS`,
+/// default 60, clamped to at least 10).
+fn traffic_report_interval_secs() -> u64 {
+    std::env::var("PROXYPANEL_TRAFFIC_REPORT_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(60)
+        .max(10)
 }

@@ -63,6 +63,17 @@ async fn collect_traffic_report() -> TrafficReport {
         }
     }
 
+    // Collect from mihomo
+    match collect_mihomo_traffic().await {
+        Ok((inbound_entries, user_entries)) => {
+            inbounds.extend(inbound_entries);
+            users.extend(user_entries);
+        }
+        Err(e) => {
+            tracing::trace!("mihomo traffic collection failed: {}", e);
+        }
+    }
+
     TrafficReport {
         timestamp: chrono::Utc::now().timestamp(),
         inbounds,
@@ -72,10 +83,24 @@ async fn collect_traffic_report() -> TrafficReport {
 
 /// Collect traffic stats from sing-box.
 ///
-/// Tries the sing-box 1.14.0+ gRPC API first and falls back to the legacy
-/// HTTP API when gRPC is unavailable.
+/// Tries the xray-compatible v2ray_api StatsService first when
+/// `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` is set (exact per-user and
+/// per-inbound counters with reset semantics), then the sing-box 1.14.0+
+/// gRPC API, and falls back to the legacy HTTP API when both are
+/// unavailable.
 async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)>
 {
+    if let Some(endpoint) = singbox_v2ray_api_endpoint() {
+        match collect_singbox_traffic_v2ray(endpoint).await {
+            Ok(report) => return Ok(report),
+            Err(e) => {
+                tracing::debug!(
+                    "sing-box v2ray_api stats collection failed ({}), falling back to gRPC api service",
+                    e
+                );
+            }
+        }
+    }
     match collect_singbox_traffic_grpc().await {
         Ok(report) => return Ok(report),
         Err(e) => {
@@ -86,6 +111,63 @@ async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic
         }
     }
     collect_singbox_traffic_http().await
+}
+
+/// gRPC endpoint of the sing-box v2ray_api StatsService, enabled via
+/// `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` (e.g. `127.0.0.1:10085`).
+///
+/// Opt-in because official sing-box builds lack the `with_v2ray_api` tag;
+/// must match the `experimental.v2ray_api.listen` address written into the
+/// sing-box config by the Hub.
+fn singbox_v2ray_api_endpoint() -> Option<String> {
+    let listen = std::env::var("PROXYPANEL_SINGBOX_V2RAY_API_LISTEN").ok()?;
+    if listen.is_empty() {
+        return None;
+    }
+    Some(
+        if listen.starts_with("http://") || listen.starts_with("https://") {
+            listen
+        } else {
+            format!("http://{}", listen)
+        },
+    )
+}
+
+/// Collect traffic stats from the sing-box v2ray_api StatsService.
+///
+/// The counter names (`inbound>>>{tag}>>>traffic>>>{uplink|downlink}`,
+/// `user>>>{name}>>>traffic>>>...`) match xray's, so the responses are parsed
+/// by the shared [`stats_to_report`].
+async fn collect_singbox_traffic_v2ray(
+    endpoint: String,
+) -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)> {
+    use pp_proto::v2ray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
+    use tonic::transport::Channel;
+
+    let channel = Channel::from_shared(endpoint)
+        .map_err(|e| pp_common::PanelError::Core(format!("invalid v2ray_api endpoint: {}", e)))?
+        .connect()
+        .await
+        .map_err(|e| pp_common::PanelError::Core(format!("v2ray_api connect failed: {}", e)))?;
+
+    let mut client = StatsServiceClient::new(channel);
+
+    // sing-box matches each pattern with `strings.Contains`; an empty legacy
+    // `pattern` field is ignored when `patterns` is set.
+    let response = client
+        .query_stats(tonic::Request::new(QueryStatsRequest {
+            pattern: String::new(),
+            reset: true,
+            patterns: vec!["inbound>>>".to_string(), "user>>>".to_string()],
+            regexp: false,
+        }))
+        .await
+        .map_err(|e| pp_common::PanelError::Core(format!("v2ray_api query_stats: {}", e)))?
+        .into_inner();
+
+    Ok(stats_to_report(
+        response.stat.into_iter().map(|s| (s.name, s.value)),
+    ))
 }
 
 /// Process-local sing-box sampling state used to turn the cumulative counters
@@ -291,7 +373,7 @@ async fn collect_singbox_traffic_http()
         .map_err(|e| pp_common::PanelError::Core(format!("http client: {}", e)))?;
 
     let resp = client
-        .get("http://127.0.0.1:9090/traffic")
+        .get(format!("{}/traffic", singbox_http_api_base()))
         .send()
         .await
         .map_err(|e| pp_common::PanelError::Core(format!("sing-box traffic API: {}", e)))?;
@@ -356,12 +438,135 @@ async fn collect_singbox_traffic_http()
     Ok((inbounds, users))
 }
 
+/// Base URL of the sing-box API listener (`PROXYPANEL_SINGBOX_API_LISTEN`,
+/// default `127.0.0.1:9090`), scheme added when missing.
+///
+/// Must match the listen address written into the sing-box config by the Hub.
+fn singbox_http_api_base() -> String {
+    let listen = std::env::var("PROXYPANEL_SINGBOX_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let listen = listen
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    format!("http://{}", listen)
+}
+
+/// gRPC endpoint of the xray StatsService (`PROXYPANEL_XRAY_API_LISTEN`,
+/// default `127.0.0.1:8080`), scheme added when missing.
+///
+/// Must match the `api` dokodemo-door inbound written into the xray config
+/// by the Hub.
+fn xray_grpc_endpoint() -> String {
+    let listen = std::env::var("PROXYPANEL_XRAY_API_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+    if listen.starts_with("http://") || listen.starts_with("https://") {
+        listen
+    } else {
+        format!("http://{}", listen)
+    }
+}
+
+/// Process-local mihomo sampling state turning the cumulative `/traffic`
+/// counters into per-period deltas.
+static MIHOMO_TRAFFIC_STATE: OnceLock<tokio::sync::Mutex<Option<(i64, i64)>>> = OnceLock::new();
+
+fn mihomo_traffic_state() -> &'static tokio::sync::Mutex<Option<(i64, i64)>> {
+    MIHOMO_TRAFFIC_STATE.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
+/// Collect node-level traffic from mihomo's Clash API `/traffic` endpoint.
+///
+/// `/traffic` is a streaming endpoint emitting one cumulative
+/// `{"up": .., "down": ..}` JSON object per second; the first complete object
+/// is read and the stream cancelled. mihomo exposes no per-user counters, so
+/// only node-level traffic under the synthetic `mihomo` tag is reported.
+async fn collect_mihomo_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)>
+{
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| pp_common::PanelError::Core(format!("http client: {}", e)))?;
+
+    let mut request = client.get(format!("{}/traffic", pp_core::core_api::mihomo_api_base()));
+    let secret = pp_core::core_api::mihomo_api_secret();
+    if !secret.is_empty() {
+        request = request.bearer_auth(secret);
+    }
+
+    let mut resp = request
+        .send()
+        .await
+        .map_err(|e| pp_common::PanelError::Core(format!("mihomo traffic API: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(pp_common::PanelError::Core(format!(
+            "mihomo traffic API status {}",
+            resp.status()
+        )));
+    }
+
+    let (up, down) = read_first_traffic_sample(&mut resp).await?;
+
+    let mut state = mihomo_traffic_state().lock().await;
+    let (upload, download) = total_delta(*state, (up, down));
+    *state = Some((up, down));
+    drop(state);
+
+    let mut inbounds = Vec::new();
+    if upload > 0 || download > 0 {
+        inbounds.push(InboundTraffic {
+            tag: "mihomo".to_string(),
+            upload_bytes: upload,
+            download_bytes: download,
+        });
+    }
+
+    Ok((inbounds, Vec::new()))
+}
+
+/// Read the first complete `{"up": .., "down": ..}` sample from the
+/// streaming `/traffic` response body, then drop the stream.
+async fn read_first_traffic_sample(
+    resp: &mut reqwest::Response,
+) -> pp_common::PanelResult<(i64, i64)> {
+    let mut buf: Vec<u8> = Vec::new();
+    while buf.len() < 8192 {
+        let chunk = resp
+            .chunk()
+            .await
+            .map_err(|e| pp_common::PanelError::Core(format!("mihomo traffic stream: {}", e)))?
+            .ok_or_else(|| {
+                pp_common::PanelError::Core("mihomo traffic stream closed before sample".into())
+            })?;
+        buf.extend_from_slice(&chunk);
+        if let Some(sample) = parse_traffic_sample(&buf) {
+            return Ok(sample);
+        }
+    }
+    Err(pp_common::PanelError::Core(
+        "mihomo traffic sample exceeded 8 KiB".into(),
+    ))
+}
+
+/// Parse the first complete JSON line in `buf` as a `/traffic` sample.
+fn parse_traffic_sample(buf: &[u8]) -> Option<(i64, i64)> {
+    let text = std::str::from_utf8(buf).ok()?;
+    let line = match text.find('\n') {
+        Some(idx) => &text[..idx],
+        None => text,
+    };
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let up = value.get("up").and_then(|v| v.as_i64())?;
+    let down = value.get("down").and_then(|v| v.as_i64())?;
+    Some((up, down))
+}
+
 /// Collect traffic stats from xray StatsService gRPC.
 async fn collect_xray_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)> {
     use pp_proto::xray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
     use tonic::transport::Channel;
 
-    let channel = match Channel::from_shared("http://127.0.0.1:8080")
+    let channel = match Channel::from_shared(xray_grpc_endpoint())
         .map_err(|e| pp_common::PanelError::Core(format!("invalid xray endpoint: {}", e)))?
         .connect()
         .await
@@ -377,84 +582,74 @@ async fn collect_xray_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, 
 
     let mut client = StatsServiceClient::new(channel);
 
-    // Query inbound traffic
-    let inbound_request = tonic::Request::new(QueryStatsRequest {
-        pattern: "inbound>>>".to_string(),
-        reset: true,
-    });
-
-    let inbound_response = client
-        .query_stats(inbound_request)
-        .await
-        .map_err(|e| pp_common::PanelError::Core(format!("xray inbound stats: {}", e)))?
-        .into_inner();
-
-    let mut inbound_map: std::collections::HashMap<String, (i64, i64)> =
-        std::collections::HashMap::new();
-
-    for stat in inbound_response.stat {
-        let parts: Vec<&str> = stat.name.split(">>>").collect();
-        if parts.len() >= 4 {
-            let tag = parts[1].to_string();
-            let direction = parts[3];
-            let entry = inbound_map.entry(tag).or_default();
-            match direction {
-                "uplink" => entry.0 += stat.value,
-                "downlink" => entry.1 += stat.value,
-                _ => {}
-            }
-        }
+    let mut stats = Vec::new();
+    for pattern in ["inbound>>>", "user>>>"] {
+        let response = client
+            .query_stats(tonic::Request::new(QueryStatsRequest {
+                pattern: pattern.to_string(),
+                reset: true,
+            }))
+            .await
+            .map_err(|e| pp_common::PanelError::Core(format!("xray stats ({}): {}", pattern, e)))?
+            .into_inner();
+        stats.extend(response.stat.into_iter().map(|s| (s.name, s.value)));
     }
 
-    let inbounds: Vec<InboundTraffic> = inbound_map
+    Ok(stats_to_report(stats))
+}
+
+/// Aggregate xray-style stat counters into per-inbound and per-user traffic.
+///
+/// Handles names of the form
+/// `inbound>>>{tag}>>>traffic>>>{uplink|downlink}` and
+/// `user>>>{email}>>>traffic>>>{uplink|downlink}`; anything else is ignored.
+fn stats_to_report(
+    stats: impl IntoIterator<Item = (String, i64)>,
+) -> (Vec<InboundTraffic>, Vec<UserTraffic>) {
+    let mut inbound_map: HashMap<String, (i64, i64)> = HashMap::new();
+    let mut user_map: HashMap<String, (i64, i64)> = HashMap::new();
+
+    for (name, value) in stats {
+        let parts: Vec<&str> = name.split(">>>").collect();
+        if parts.len() < 4 {
+            continue;
+        }
+        let direction = parts[3];
+        let delta = match direction {
+            "uplink" => (value, 0),
+            "downlink" => (0, value),
+            _ => continue,
+        };
+        let map = match parts[0] {
+            "inbound" => &mut inbound_map,
+            "user" => &mut user_map,
+            _ => continue,
+        };
+        let entry = map.entry(parts[1].to_string()).or_default();
+        entry.0 += delta.0;
+        entry.1 += delta.1;
+    }
+
+    let inbounds = inbound_map
         .into_iter()
-        .map(|(tag, (upload, download))| InboundTraffic {
+        .map(|(tag, (upload_bytes, download_bytes))| InboundTraffic {
             tag,
-            upload_bytes: upload,
-            download_bytes: download,
+            upload_bytes,
+            download_bytes,
         })
         .collect();
 
-    // Query user traffic
-    let user_request = tonic::Request::new(QueryStatsRequest {
-        pattern: "user>>>".to_string(),
-        reset: true,
-    });
-
-    let user_response = client
-        .query_stats(user_request)
-        .await
-        .map_err(|e| pp_common::PanelError::Core(format!("xray user stats: {}", e)))?
-        .into_inner();
-
-    let mut user_map: std::collections::HashMap<String, (i64, i64)> =
-        std::collections::HashMap::new();
-
-    for stat in user_response.stat {
-        let parts: Vec<&str> = stat.name.split(">>>").collect();
-        if parts.len() >= 4 {
-            let email = parts[1].to_string();
-            let direction = parts[3];
-            let entry = user_map.entry(email.clone()).or_default();
-            match direction {
-                "uplink" => entry.0 += stat.value,
-                "downlink" => entry.1 += stat.value,
-                _ => {}
-            }
-        }
-    }
-
-    let users: Vec<UserTraffic> = user_map
+    let users = user_map
         .into_iter()
-        .map(|(email, (upload, download))| UserTraffic {
+        .map(|(email, (upload_bytes, download_bytes))| UserTraffic {
             client_id: email.clone(),
             email,
-            upload_bytes: upload,
-            download_bytes: download,
+            upload_bytes,
+            download_bytes,
         })
         .collect();
 
-    Ok((inbounds, users))
+    (inbounds, users)
 }
 
 #[cfg(test)]
@@ -480,6 +675,58 @@ mod tests {
             }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn parse_traffic_sample_reads_first_json_line() {
+        assert_eq!(
+            parse_traffic_sample(b"{\"up\": 100, \"down\": 200}\n{\"up\": 1, \"down\": 2}"),
+            Some((100, 200))
+        );
+        assert_eq!(
+            parse_traffic_sample(b"{\"up\": 5, \"down\": 6}"),
+            Some((5, 6))
+        );
+        assert_eq!(parse_traffic_sample(b"{\"up\": 5"), None);
+        assert_eq!(parse_traffic_sample(b"not json"), None);
+    }
+
+    #[test]
+    fn stats_to_report_aggregates_inbound_and_user_counters() {
+        let stats = vec![
+            ("inbound>>>vless-in>>>traffic>>>uplink".to_string(), 10),
+            ("inbound>>>vless-in>>>traffic>>>downlink".to_string(), 20),
+            ("inbound>>>hy2-in>>>traffic>>>uplink".to_string(), 1),
+            ("user>>>alice@example.com>>>traffic>>>uplink".to_string(), 5),
+            (
+                "user>>>alice@example.com>>>traffic>>>downlink".to_string(),
+                7,
+            ),
+            ("user>>>alice@example.com>>>online".to_string(), 2),
+            ("outbound>>>direct>>>traffic>>>uplink".to_string(), 100),
+        ];
+
+        let (inbounds, users) = stats_to_report(stats);
+
+        assert_eq!(inbounds.len(), 2);
+        let vless = inbounds.iter().find(|i| i.tag == "vless-in").unwrap();
+        assert_eq!((vless.upload_bytes, vless.download_bytes), (10, 20));
+
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].email, "alice@example.com");
+        assert_eq!((users[0].upload_bytes, users[0].download_bytes), (5, 7));
+    }
+
+    #[test]
+    fn stats_to_report_ignores_malformed_names() {
+        let stats = vec![
+            ("user>>>only-two-sections".to_string(), 10),
+            ("".to_string(), 10),
+            ("inbound>>>tag>>>traffic>>>sideways".to_string(), 10),
+        ];
+        let (inbounds, users) = stats_to_report(stats);
+        assert!(inbounds.is_empty());
+        assert!(users.is_empty());
     }
 
     #[test]
