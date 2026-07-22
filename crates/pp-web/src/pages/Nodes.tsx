@@ -7,6 +7,7 @@ import {
   CopyableSecret,
   StatusBadge,
   FormInput,
+  FormSelect,
   FormTextArea,
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
@@ -32,6 +33,9 @@ export function Nodes() {
   const [logNode, setLogNode] = useState<Node | null>(null);
   const [nodeLogs, setNodeLogs] = useState<AgentLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [pushNode, setPushNode] = useState<Node | null>(null);
+  const [pushCore, setPushCore] = useState("sing-box");
+  const [pushing, setPushing] = useState(false);
   const [form, setForm] = useState({
     name: "",
     hostname: "",
@@ -134,14 +138,25 @@ export function Nodes() {
     }
   };
 
-  const handlePush = async (node: Node) => {
+  const openPush = (node: Node) => {
+    const cores = (node.cores_available || []).filter(Boolean);
+    setPushCore(cores[0] || "sing-box");
+    setPushNode(node);
+  };
+
+  const handlePush = async () => {
+    if (!pushNode || !pushCore) return;
+    setPushing(true);
     try {
-      await pushConfig(node.id, {
-        core_type: "sing-box",
+      await pushConfig(pushNode.id, {
+        core_type: pushCore,
         restart: true,
       });
+      setPushNode(null);
     } catch {
       // error handled by axios interceptor
+    } finally {
+      setPushing(false);
     }
   };
 
@@ -253,7 +268,7 @@ export function Nodes() {
                             <Button size="sm" variant="ghost" onPress={() => openLogs(node)}>
                               {t("nodes.logs")}
                             </Button>
-                            <Button size="sm" variant="ghost" onPress={() => handlePush(node)}>
+                            <Button size="sm" variant="ghost" onPress={() => openPush(node)}>
                               {t("nodes.pushConfig")}
                             </Button>
                             <Button
@@ -387,6 +402,42 @@ export function Nodes() {
                 {t("common.cancel")}
               </Button>
               <Button onPress={handleUpdate}>{t("common.update")}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+      <Modal.Backdrop
+        isOpen={!!pushNode}
+        onOpenChange={(open) => {
+          if (!open) setPushNode(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {pushNode ? `${t("nodes.pushTitle")}: ${pushNode.name}` : t("nodes.pushTitle")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <FormSelect
+                label={t("nodes.selectCore")}
+                value={pushCore}
+                onChange={setPushCore}
+                options={((pushNode?.cores_available || []).filter(Boolean).length > 0
+                  ? (pushNode?.cores_available || []).filter(Boolean)
+                  : ["sing-box", "xray", "mihomo"]
+                ).map((core) => ({ id: core, label: core }))}
+                isRequired
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="ghost" onPress={() => setPushNode(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button onPress={handlePush} isDisabled={pushing || !pushCore}>
+                {pushing ? <Spinner size="sm" /> : t("nodes.pushConfig")}
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

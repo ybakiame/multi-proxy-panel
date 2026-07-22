@@ -44,15 +44,15 @@
     "online": "Online",
     "offline": "Offline",
     "connecting": "Connecting",
-    "maintenance": "Maintenance",
     "degraded": "Degraded",
     "active": "Active",
-    "inactive": "Inactive",
     "enabled": "Enabled",
+    "inactive": "Inactive",
     "disabled": "Disabled",
     "expired": "Expired",
     "on_hold": "On Hold",
-    "limited": "Limited"
+    "limited": "Limited",
+    "maintenance": "Maintenance"
   },
   "pagination": {
     "prev": "Prev",
@@ -126,7 +126,9 @@
     "usageCoefficient": "Usage Coefficient",
     "labels": "Labels",
     "deleteTitle": "Delete Node",
-    "deleteConfirm": "Are you sure you want to delete this node?"
+    "deleteConfirm": "Are you sure you want to delete this node?",
+    "pushTitle": "Push Config",
+    "selectCore": "Select Core"
   },
   "certificates": {
     "title": "Certificates",
@@ -390,19 +392,5 @@
     "message": "Message",
     "time": "Time",
     "empty": "No logs match the selected filters."
-  },
-  "status": {
-    "online": "Online",
-    "offline": "Offline",
-    "connecting": "Connecting",
-    "degraded": "Degraded",
-    "active": "Active",
-    "enabled": "Enabled",
-    "inactive": "Inactive",
-    "disabled": "Disabled",
-    "expired": "Expired",
-    "on_hold": "On Hold",
-    "limited": "Limited",
-    "maintenance": "Maintenance"
   }
 }

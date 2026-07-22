@@ -44,15 +44,15 @@
     "online": "在线",
     "offline": "离线",
     "connecting": "连接中",
-    "maintenance": "维护中",
     "degraded": "降级",
-    "active": "激活",
+    "active": "活跃",
+    "enabled": "已启用",
     "inactive": "未激活",
-    "enabled": "启用",
-    "disabled": "禁用",
+    "disabled": "已禁用",
     "expired": "已过期",
     "on_hold": "暂停",
-    "limited": "受限"
+    "limited": "受限",
+    "maintenance": "维护中"
   },
   "pagination": {
     "prev": "上一页",
@@ -126,7 +126,9 @@
     "usageCoefficient": "用量系数",
     "labels": "标签",
     "deleteTitle": "删除节点",
-    "deleteConfirm": "确定要删除该节点吗？"
+    "deleteConfirm": "确定要删除该节点吗？",
+    "pushTitle": "推送配置",
+    "selectCore": "选择核心"
   },
   "certificates": {
     "title": "证书管理",
@@ -390,19 +392,5 @@
     "message": "消息",
     "time": "时间",
     "empty": "没有符合筛选条件的日志。"
-  },
-  "status": {
-    "online": "在线",
-    "offline": "离线",
-    "connecting": "连接中",
-    "degraded": "降级",
-    "active": "活跃",
-    "enabled": "已启用",
-    "inactive": "未激活",
-    "disabled": "已禁用",
-    "expired": "已过期",
-    "on_hold": "暂停",
-    "limited": "受限",
-    "maintenance": "维护中"
   }
 }
