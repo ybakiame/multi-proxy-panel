@@ -24,12 +24,11 @@ const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
 // Mirrors CoreType::valid_for() in crates/pp-common/src/protocol.rs
 const CORE_PROTOCOLS: Record<string, string[]> = {
-  xray: ["vless_reality", "vless_xhttp"],
   "sing-box": ["vless_reality", "hysteria2", "anytls"],
   mihomo: ["vless_reality", "vless_xhttp", "hysteria2", "anytls"],
 };
 
-const CORE_TYPES = ["xray", "sing-box", "mihomo"];
+const CORE_TYPES = ["sing-box", "mihomo"];
 const FLOW_OPTIONS = ["xtls-rprx-vision"];
 const XHTTP_MODES = ["auto", "packet-up", "stream-up"];
 const OBFS_TYPES = ["none", "salamander"];
@@ -63,7 +62,7 @@ interface ProtocolForm {
 const defaultForm: ProtocolForm = {
   name: "",
   protocol_type: "vless_reality",
-  core_type: "xray",
+  core_type: "sing-box",
   core_version: "",
   listen_address: "0.0.0.0",
   listen_port: "",

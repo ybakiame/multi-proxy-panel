@@ -426,7 +426,7 @@ export function Nodes() {
                 onChange={setPushCore}
                 options={((pushNode?.cores_available || []).filter(Boolean).length > 0
                   ? (pushNode?.cores_available || []).filter(Boolean)
-                  : ["sing-box", "xray", "mihomo"]
+                  : ["sing-box", "mihomo"]
                 ).map((core) => ({ id: core, label: core }))}
                 isRequired
               />
