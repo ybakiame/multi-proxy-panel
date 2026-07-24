@@ -34,6 +34,8 @@ fn version_to_json(v: &core_version::Model) -> Value {
         "core_type": v.core_type,
         "version": v.version,
         "channel": v.channel,
+        "published_at": v.published_at,
+        "commit_sha": v.commit_sha,
         "created_at": v.created_at,
     })
 }
@@ -77,6 +79,30 @@ pub async fn delete_core_version(
 struct UpstreamRelease {
     tag: String,
     channel: &'static str,
+    published_at: Option<String>,
+    commit_sha: Option<String>,
+}
+
+impl UpstreamRelease {
+    fn from_json(release: &Value, channel: &'static str) -> Option<Self> {
+        let tag = release.get("tag_name").and_then(|v| v.as_str())?;
+        // Rolling tags (e.g. mihomo Prerelease-Alpha) rebuild assets under an
+        // unchanged release: `published_at` stays frozen while `updated_at`
+        // tracks the latest asset rebuild, so prefer it as the build time.
+        let build_time = release
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .or_else(|| release.get("published_at").and_then(|v| v.as_str()));
+        Some(Self {
+            tag: tag.to_string(),
+            channel,
+            published_at: build_time.map(|s| s.to_string()),
+            commit_sha: release
+                .get("target_commitish")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        })
+    }
 }
 
 async fn fetch_upstream_versions(core_type: CoreType) -> Result<Vec<UpstreamRelease>, ApiError> {
@@ -119,26 +145,21 @@ async fn fetch_upstream_versions(core_type: CoreType) -> Result<Vec<UpstreamRele
 
     let mut stable: Vec<UpstreamRelease> = Vec::new();
     let mut pre: Vec<UpstreamRelease> = Vec::new();
-    for release in releases {
-        let Some(tag) = release.get("tag_name").and_then(|v| v.as_str()) else {
-            continue;
-        };
+    for release in &releases {
         let is_pre = release
             .get("prerelease")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         if is_pre {
             if pre.len() < VERSIONS_PER_CHANNEL {
-                pre.push(UpstreamRelease {
-                    tag: tag.to_string(),
-                    channel: CHANNEL_PRERELEASE,
-                });
+                if let Some(r) = UpstreamRelease::from_json(release, CHANNEL_PRERELEASE) {
+                    pre.push(r);
+                }
             }
         } else if stable.len() < VERSIONS_PER_CHANNEL {
-            stable.push(UpstreamRelease {
-                tag: tag.to_string(),
-                channel: CHANNEL_RELEASE,
-            });
+            if let Some(r) = UpstreamRelease::from_json(release, CHANNEL_RELEASE) {
+                stable.push(r);
+            }
         }
         if stable.len() >= VERSIONS_PER_CHANNEL && pre.len() >= VERSIONS_PER_CHANNEL {
             break;
@@ -163,12 +184,15 @@ pub async fn list_upstream_versions(
         None => ALL_CORES.to_vec(),
     };
 
-    let saved: std::collections::HashSet<(String, String)> = core_version::Entity::find()
+    let saved: std::collections::HashMap<
+        (String, String),
+        Option<chrono::DateTime<chrono::FixedOffset>>,
+    > = core_version::Entity::find()
         .all(&state.db)
         .await
         .map_err(ApiError::from)?
         .into_iter()
-        .map(|v| (v.core_type, v.version))
+        .map(|v| ((v.core_type, v.version), v.published_at))
         .collect();
 
     let mut data = Vec::new();
@@ -177,10 +201,27 @@ pub async fn list_upstream_versions(
         let versions: Vec<Value> = upstream
             .into_iter()
             .map(|r| {
+                let saved_entry = saved.get(&(core_type.to_string(), r.tag.clone()));
+                let upstream_published = r
+                    .published_at
+                    .as_deref()
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+                // A saved rolling tag whose upstream build is newer than the
+                // recorded one has an update available.
+                let update_available = match (saved_entry, upstream_published) {
+                    (Some(saved_at), Some(up)) => match saved_at {
+                        Some(saved_at) => up > *saved_at,
+                        None => true,
+                    },
+                    _ => false,
+                };
                 json!({
                     "version": r.tag,
                     "channel": r.channel,
-                    "saved": saved.contains(&(core_type.to_string(), r.tag.clone())),
+                    "saved": saved_entry.is_some(),
+                    "published_at": r.published_at,
+                    "commit_sha": r.commit_sha,
+                    "update_available": update_available,
                 })
             })
             .collect();
@@ -203,10 +244,13 @@ pub struct SaveVersionItem {
     pub core_type: String,
     pub version: String,
     pub channel: Option<String>,
+    pub published_at: Option<String>,
+    pub commit_sha: Option<String>,
 }
 
 /// Persist the user's selection of upstream versions. Existing records are
-/// skipped, so the call is idempotent.
+/// skipped unless the upstream build is newer (rolling tags such as mihomo's
+/// Prerelease-Alpha), in which case the build metadata is refreshed.
 pub async fn save_core_versions(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<SaveVersionsPayload>,
@@ -219,6 +263,7 @@ pub async fn save_core_versions(
     }
 
     let mut added = 0u64;
+    let mut updated = 0u64;
     for item in payload.versions {
         let core_type = item
             .core_type
@@ -241,15 +286,36 @@ pub async fn save_core_versions(
                 ));
             }
         };
+        let published_at = item
+            .published_at
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
 
-        let exists = core_version::Entity::find()
+        let existing = core_version::Entity::find()
             .filter(core_version::Column::CoreType.eq(core_type.to_string()))
             .filter(core_version::Column::Version.eq(&version))
             .one(&state.db)
             .await
-            .map_err(ApiError::from)?
-            .is_some();
-        if exists {
+            .map_err(ApiError::from)?;
+
+        if let Some(model) = existing {
+            // Rolling tag: refresh build metadata when the upstream build is
+            // newer than what we recorded (or we have none yet).
+            let stale = match (&model.published_at, &published_at) {
+                (Some(old), Some(new)) => {
+                    let old: chrono::DateTime<chrono::FixedOffset> = *old;
+                    *new > old
+                }
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if stale {
+                let mut active: core_version::ActiveModel = model.into();
+                active.published_at = Set(published_at);
+                active.commit_sha = Set(item.commit_sha.clone());
+                active.update(&state.db).await.map_err(ApiError::from)?;
+                updated += 1;
+            }
             continue;
         }
 
@@ -258,11 +324,15 @@ pub async fn save_core_versions(
             core_type: Set(core_type.to_string()),
             version: Set(version),
             channel: Set(channel.to_string()),
+            published_at: Set(published_at),
+            commit_sha: Set(item.commit_sha.clone()),
             created_at: Set(chrono::Utc::now().into()),
         };
         active.insert(&state.db).await.map_err(ApiError::from)?;
         added += 1;
     }
 
-    Ok(ApiResponse::new(json!({ "added": added })))
+    Ok(ApiResponse::new(
+        json!({ "added": added, "updated": updated }),
+    ))
 }
