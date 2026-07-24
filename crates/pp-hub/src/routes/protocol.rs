@@ -2,8 +2,10 @@ use axum::{
     extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::protocol_config;
-use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, QuerySelect, Set};
+use pp_db::entities::{node_binding, node_binding_group_binding, protocol_config};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -255,6 +257,33 @@ pub async fn delete_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    // Find affected node bindings before deleting
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::ProtocolConfigId.eq(id))
+        .all(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    let affected_nodes: std::collections::HashSet<Uuid> =
+        bindings.iter().map(|b| b.node_id).collect();
+
+    // Delete group-bindings for this config's bindings
+    let binding_ids: Vec<Uuid> = bindings.iter().map(|b| b.id).collect();
+    if !binding_ids.is_empty() {
+        let _ = node_binding_group_binding::Entity::delete_many()
+            .filter(node_binding_group_binding::Column::NodeBindingId.is_in(binding_ids.clone()))
+            .exec(&state.db)
+            .await;
+    }
+
+    // Delete the bindings
+    if !binding_ids.is_empty() {
+        let _ = node_binding::Entity::delete_many()
+            .filter(node_binding::Column::Id.is_in(binding_ids))
+            .exec(&state.db)
+            .await;
+    }
+
     let res = protocol_config::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
@@ -263,6 +292,24 @@ pub async fn delete_config(
     if res.rows_affected == 0 {
         Err(ApiError::not_found("protocol config not found"))
     } else {
+        // Push updated configs to all affected nodes
+        for node_id in affected_nodes {
+            for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+                if let Err(e) = crate::service::protocol::push_node_config(
+                    &state, node_id, core_type, true, None,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        "failed to push {:?} config to node {} after deleting config {}: {}",
+                        core_type,
+                        node_id,
+                        id,
+                        e
+                    );
+                }
+            }
+        }
         Ok(axum::http::StatusCode::NO_CONTENT)
     }
 }

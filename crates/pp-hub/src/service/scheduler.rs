@@ -48,6 +48,12 @@ pub async fn run_periodic_checks(state: &Arc<AppState>) -> Result<(), PanelError
     // 5. Cleanup old records
     cleanup_old_records(&state.db).await?;
 
+    // 6. Stop cores that have no active bindings on their node (leftover from
+    //    deleted protocol configs or previous pushes).
+    if let Err(e) = reconcile_orphan_cores(state).await {
+        tracing::warn!("reconcile orphan cores failed: {}", e);
+    }
+
     Ok(())
 }
 
@@ -456,5 +462,61 @@ async fn log_event(db: &DatabaseConnection, source: &str, message: &str) -> Resu
         created_at: Set(chrono::Utc::now().into()),
     };
     active.insert(db).await?;
+    Ok(())
+}
+
+/// For every connected agent node, stop cores that have no active bindings
+/// but still carry a recorded config_version (i.e. they were pushed earlier
+/// and now the last binding was removed).
+async fn reconcile_orphan_cores(state: &Arc<AppState>) -> Result<(), PanelError> {
+    let agent_ids: Vec<Uuid> = state.agents.read().await.keys().copied().collect();
+
+    for node_id in agent_ids {
+        for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+            let has_bindings = check_bindings_for_core(&state.db, node_id, core_type)
+                .await
+                .unwrap_or(true);
+            if has_bindings {
+                continue;
+            }
+
+            let core_name = core_type.to_string();
+            if state
+                .agent_config_version(&node_id, &core_name)
+                .await
+                .is_none()
+            {
+                continue;
+            }
+
+            tracing::info!(
+                "stopping orphan {:?} on node {} (no active bindings)",
+                core_type,
+                node_id
+            );
+
+            let proto_core = match core_type {
+                pp_common::CoreType::SingBox => pp_proto::CoreType::SingBox,
+                pp_common::CoreType::Mihomo => pp_proto::CoreType::Mihomo,
+            };
+
+            let message = pp_proto::HubMessage {
+                payload: Some(pp_proto::hub_message::Payload::CoreCmd(
+                    pp_proto::CoreCommand {
+                        command: Some(pp_proto::core_command::Command::Stop(pp_proto::CoreStop {
+                            core_type: proto_core as i32,
+                        })),
+                    },
+                )),
+            };
+
+            if state.send_to_agent(node_id, message).await.is_ok() {
+                state
+                    .set_agent_config_version(&node_id, &core_name, String::new())
+                    .await;
+            }
+        }
+    }
+
     Ok(())
 }

@@ -332,6 +332,21 @@ pub async fn delete_subscription(
 
 // ========== Subscription Access Endpoint ==========
 
+/// Build the `subscription-userinfo` response header value (standard used by
+/// Clash, sing-box, and V2Ray clients to display traffic/expiry info).
+///
+/// Format: `upload=xxx; download=xxx; total=xxx; expire=xxx`
+fn format_userinfo_header(client: &client::Model) -> String {
+    let upload = client.traffic_used_bytes;
+    let total = client.traffic_limit_bytes;
+    let expire = client.expiry_date.map(|e| e.timestamp()).unwrap_or(0);
+
+    format!(
+        "upload={}; download={}; total={}; expire={}",
+        upload, upload, total, expire
+    )
+}
+
 pub async fn serve_subscription(
     State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
@@ -416,7 +431,16 @@ pub async fn serve_subscription(
         SubscriptionFormat::Base64 => "text/plain; charset=utf-8",
     };
 
-    Ok(([(header::CONTENT_TYPE, content_type)], content).into_response())
+    let userinfo = format_userinfo_header(&client_model);
+    let mut response = ([(header::CONTENT_TYPE, content_type)], content).into_response();
+    if !userinfo.is_empty() {
+        response.headers_mut().insert(
+            header::HeaderName::from_static("subscription-userinfo"),
+            header::HeaderValue::from_str(&userinfo)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
+        );
+    }
+    Ok(response)
 }
 
 /// Detect subscription format from query parameter or User-Agent string.
