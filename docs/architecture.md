@@ -38,7 +38,7 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，由三个主要部分
 ┌─────────────────────────────────────────────────────────────┐
 │                    ProxyPanel Agent × N                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  xray-core   │  │  sing-box    │  │  System Info │      │
+│  │  mihomo      │  │  sing-box    │  │  System Info │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -97,7 +97,7 @@ pp-hub/
 Agent 部署在每个代理节点上，负责：
 
 1. **gRPC 连接管理**: 与 Hub 建立双向流，自动重连
-2. **核心进程管理**: 发现、启动、停止、重载 xray/sing-box/mihomo
+2. **核心进程管理**: 发现、启动、停止、重载 sing-box/mihomo
 3. **指标上报**: 定时采集并上报主机 CPU、内存、网络、负载
 4. **流量上报**: 从核心进程获取并上报流量统计
 5. **日志上报**: 收集核心日志并批量上报
@@ -140,7 +140,7 @@ pp-agent/
 
 ### pp-core — 核心进程管理
 
-提供 xray-core、sing-box 和 mihomo 的统一管理抽象：
+提供 sing-box 和 mihomo 的统一管理抽象：
 
 ```rust
 /// 核心管理器接口
@@ -159,14 +159,14 @@ struct CoreSupervisor {
 ```
 
 **功能：**
-- 自动发现系统中的 xray/sing-box/mihomo 二进制文件（缺失时按需从 GitHub Releases 下载安装）
+- 自动发现系统中的 sing-box/mihomo 二进制文件（缺失时按需从 GitHub Releases 下载安装）
 - 通过子进程管理核心生命周期
 - 配置文件变更监听（`notify` crate）
 - 流量统计采集（通过核心提供的 API / 日志解析）
 
 ### pp-config — 配置构建器
 
-将数据库中存储的通用协议配置转译为 xray 或 sing-box 可识别的 JSON 配置（mihomo 配置同样以 JSON 形式在 Hub↔Agent 间传输，由 Agent 侧的 `MihomoProcessManager` 在落盘时序列化为 `mihomo.yaml`）。
+将数据库中存储的通用协议配置转译为 sing-box 可识别的 JSON 配置（mihomo 配置同样以 JSON 形式在 Hub↔Agent 间传输，由 Agent 侧的 `MihomoProcessManager` 在落盘时序列化为 `mihomo.yaml`）。
 
 **架构：**
 
@@ -179,7 +179,6 @@ trait ConfigBuilder: Send + Sync {
 ```
 
 **实现：**
-- `XrayConfigBuilder`: 生成 Xray-core 配置
 - `SingBoxConfigBuilder`: 生成 sing-box 配置
 - `MihomoConfigBuilder`: 生成 mihomo 配置（listeners 结构；vless 用户为列表、hysteria2/anytls 用户为映射；TLS 支持托管证书（agent 内置 ACME 统一目录）或显式证书文件；内置 ACME 为 sing-box 专属）
 
@@ -279,7 +278,7 @@ Agent 比对本地快照版本（非 restart 推送且版本一致则跳过应�
 Agent → CoreManager.reload() / restart()
     │
     ▼
-xray/sing-box/mihomo 加载新配置
+sing-box/mihomo 加载新配置
 ```
 
 ### 3.3 订阅服务流程
@@ -306,7 +305,7 @@ generate_subscription(Clash, nodes, base_config)
 ### 3.4 流量上报流程
 
 ```
-xray/sing-box 运行中
+sing-box/mihomo 运行中
     │
     ▼
 pp-core 采集流量统计（API / 日志解析）
@@ -483,7 +482,7 @@ service HubAgent {
 ### 添加新的代理协议
 
 1. 在 `ProtocolType` 添加变体
-2. 在 `pp-config` 的 xray/sing-box builder 中实现 `build_inbound`
+2. 在 `pp-config` 的 sing-box/mihomo builder 中实现 `build_inbound`
 3. 在 `pp-subscription` 各格式中实现节点序列化
 4. 在 `validate_protocol` 中注册核心兼容性
 

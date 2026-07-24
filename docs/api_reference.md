@@ -93,7 +93,7 @@
       "name": "Tokyo-01",
       "hostname": "tokyo-01.example.com",
       "address": "1.2.3.4",
-      "cores_available": ["xray", "sing-box"],
+      "cores_available": ["sing-box", "mihomo"],
       "labels": { "region": "ap-northeast", "tier": "premium" },
       "status": "online",
       "last_seen_at": "2024-01-15T08:30:00Z"
@@ -213,7 +213,7 @@
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `core_type` | string | ❌ | `xray` / `sing-box` / `mihomo`（默认 `sing-box`） |
+| `core_type` | string | ❌ | `sing-box` / `mihomo`（默认 `sing-box`） |
 | `restart` | boolean | ❌ | 是否重启核心（默认 `true`） |
 | `version` | string | ❌ | 配置版本号；缺省时 Hub 使用配置内容的 SHA-256 哈希（前 16 位十六进制）。Agent 对版本一致的重复推送会跳过应用，避免重连后不必要的核心重启 |
 
@@ -257,7 +257,7 @@
       "id": "660e8400-e29b-41d4-a716-446655440001",
       "name": "vless-reality-443",
       "protocol_type": "vless_reality",
-      "core_type": "xray",
+      "core_type": "sing-box",
       "listen_port": 443,
       "listen_address": "0.0.0.0",
       "settings": { "clients": [], "decryption": "none" },
@@ -289,7 +289,7 @@
 {
   "name": "vless-reality-443",
   "protocol_type": "vless_reality",
-  "core_type": "xray",
+  "core_type": "sing-box",
   "listen_port": 443,
   "listen_address": "0.0.0.0",
   "settings": {
@@ -312,7 +312,7 @@
 |------|------|------|------|
 | `name` | string | ✅ | 配置名称 |
 | `protocol_type` | string | ❌ | 协议类型（默认 `vless_reality`） |
-| `core_type` | string | ❌ | 目标核心 `xray` / `sing-box` / `mihomo`（默认 `xray`） |
+| `core_type` | string | ❌ | 目标核心 `sing-box` / `mihomo`（默认 `sing-box`） |
 | `listen_port` | integer | ❌ | 监听端口（默认 `443`） |
 | `listen_address` | string | ❌ | 监听地址（默认 `0.0.0.0`） |
 | `settings` | object | ❌ | 协议特定配置 |
@@ -322,8 +322,8 @@
 
 | 协议 | 允许的核心 |
 |------|-----------|
-| `vless_reality` | `xray`, `sing-box`, `mihomo` |
-| `vless_xhttp` | `xray`, `mihomo` |
+| `vless_reality` | `sing-box`, `mihomo` |
+| `vless_xhttp` | `mihomo` |
 | `hysteria2` | `sing-box`, `mihomo` |
 | `anytls` | `sing-box`, `mihomo` |
 
@@ -380,7 +380,7 @@
 列出核心版本记录。
 
 **查询参数:**
-- `core_type` (可选) — 按核心过滤：`xray` / `sing-box` / `mihomo`
+- `core_type` (可选) — 按核心过滤：`sing-box` / `mihomo`
 
 **响应:**
 
@@ -924,7 +924,7 @@
       "id": "cc0e8400-e29b-41d4-a716-446655440007",
       "level": "info",
       "source": "agent-550e8400-e29b-41d4-a716-446655440000",
-      "message": "config applied for Xray",
+      "message": "config applied for SingBox",
       "metadata": { "target": "pp_agent::client" },
       "created_at": "2024-01-15T08:30:00Z"
     }

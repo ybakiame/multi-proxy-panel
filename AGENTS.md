@@ -9,7 +9,7 @@
 ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
-- **Agent** (`pp-agent`): 部署在代理节点上，管理 xray/sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
+- **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Web** (`pp-web`): React 前端，通过 HTTP API 与 Hub 交互（Vite + TypeScript + HeroUI + Tailwind CSS）
 
 ---
@@ -141,6 +141,7 @@ pub use models::*;
 - 主键统一使用应用层生成的 `Uuid v4`
 - JSON 字段使用 Sea-ORM 的 `Json` 类型
 - 时间戳使用 `timestamp_with_time_zone`
+- **数据迁移走版本化升级**：schema 变更用 Migration；逻辑/数据迁移（如清理废弃功能数据）注册到 `crates/pp-db/src/upgrade.rs` 的 `UPGRADE_STEPS`，按 `introduced_in` 版本门控执行一次（存于 `system_meta.app_version`），不要写成每次启动都执行
 
 ### 3.6 Protobuf / gRPC
 
@@ -187,7 +188,7 @@ Agent 的 gRPC 客户端实现了指数退避重连：
 
 `certificates` 表管理托管证书。Agent 内置 instant-acme 客户端，通过临时 80 端口监听完成 HTTP-01 挑战，证书统一落盘 `<data_dir>/certs/<domain>.{crt,key}`。
 
-TLS 为分层模型：协议配置仅以 `tls_settings.enabled` 声明是否启用 TLS，具体证书在节点绑定的 `override_settings.tls_settings` 复写（`cert_id` 托管证书 / `certFile+keyFile` 显式文件 / `domain` 内置 ACME 仅 sing-box）。Hub 生成配置时把 `cert_id` 翻译为 `managed_domain` 路径（三个核心统一为 `certs/<domain>.{crt,key}`），订阅链接 SNI 取证书域名。Agent 每日检查，证书满 60 天自动续期并 reload 引用它的核心（mihomo 靠证书文件监听自动热加载，xray/sing-box 由 Agent 按快照 restart）。
+TLS 为分层模型：协议配置仅以 `tls_settings.enabled` 声明是否启用 TLS，具体证书在节点绑定的 `override_settings.tls_settings` 复写（`cert_id` 托管证书 / `certFile+keyFile` 显式文件 / `domain` 内置 ACME 仅 sing-box）。Hub 生成配置时把 `cert_id` 翻译为 `managed_domain` 路径（三个核心统一为 `certs/<domain>.{crt,key}`），订阅链接 SNI 取证书域名。Agent 每日检查，证书满 60 天自动续期并 reload 引用它的核心（mihomo 靠证书文件监听自动热加载，sing-box 由 Agent 按快照 restart）。
 
 ### 4.3 配置生成流程
 
@@ -198,7 +199,7 @@ NodeBinding (DB: node_id + protocol_config_id)
     ↓
 pp-config BuilderRegistry
     ↓
-xray JSON / sing-box JSON / mihomo YAML（Hub↔Agent 间始终以 JSON 传输，mihomo 由 Agent 落盘时转 YAML）
+sing-box JSON / mihomo YAML（Hub↔Agent 间始终以 JSON 传输，mihomo 由 Agent 落盘时转 YAML）
     ↓
 config_version = SHA-256(config_json) 前 16 位（内容哈希，未变更则 Hub 调度推送与 Agent 应用均跳过）
     ↓
@@ -293,7 +294,7 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 ### 5.5 添加新的协议支持
 
 1. 在 `pp-common/src/protocol.rs` 的 `ProtocolType` 中添加变体
-2. 在 `pp-config/src/xray.rs`、`pp-config/src/singbox.rs` 和/或 `pp-config/src/mihomo.rs` 实现对应的 `build_inbound`
+2. 在 `pp-config/src/singbox.rs` 和/或 `pp-config/src/mihomo.rs` 实现对应的 `build_inbound`
 3. 在 `pp-hub/src/routes/protocol.rs` 的 `validate_protocol` 中添加校验规则
 4. 在 `pp-subscription` 相关格式中添加节点序列化逻辑
 
