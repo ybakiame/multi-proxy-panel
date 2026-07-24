@@ -104,6 +104,11 @@ fn binary_name_on_disk(core_type: CoreType) -> String {
     }
 }
 
+/// On-disk path of a core's binary inside `bin_dir`.
+pub fn core_binary_path(bin_dir: &Path, core_type: CoreType) -> PathBuf {
+    bin_dir.join(binary_name_on_disk(core_type))
+}
+
 async fn fetch_latest_version(owner: &str, repo: &str) -> PanelResult<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(GITHUB_API_TIMEOUT_SECS))
@@ -277,6 +282,93 @@ fn set_executable(path: &Path) -> PanelResult<()> {
     Ok(())
 }
 
+/// Download `url` to `dest`; on failure, resolve the real asset through the
+/// GitHub release API and retry. Rolling tags (e.g. mihomo Prerelease-Alpha)
+/// name assets with a short commit hash that cannot be derived from the tag,
+/// so the conventional direct URL 404s.
+async fn download_with_fallback(
+    url: &str,
+    core_type: CoreType,
+    version: &str,
+    asset: &str,
+    dest: &Path,
+) -> PanelResult<()> {
+    match download_file(url, dest).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            tracing::debug!("direct asset download failed ({}), resolving via API", e);
+            let api_url = resolve_asset_url(core_type, version, asset).await?;
+            download_file(&api_url, dest).await
+        }
+    }
+}
+
+/// Find the browser-download URL of the asset matching this platform in the
+/// GitHub release for `version`.
+async fn resolve_asset_url(core_type: CoreType, version: &str, asset: &str) -> PanelResult<String> {
+    let info = release_info(core_type);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(GITHUB_API_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| PanelError::Core(format!("failed to build http client: {}", e)))?;
+
+    // Try the tag both with and without the conventional 'v' prefix.
+    let bare = version.strip_prefix('v').unwrap_or(version);
+    for tag in [github_tag(version), bare.to_string()] {
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/releases/tags/{}",
+            info.owner, info.repo, tag
+        );
+        let resp = match client
+            .get(&url)
+            .header("User-Agent", "proxy-panel-agent")
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => continue,
+        };
+        let release: Value = resp
+            .json()
+            .await
+            .map_err(|e| PanelError::Core(format!("failed to parse release {}: {}", tag, e)))?;
+
+        // Match assets by platform/arch substrings taken from the
+        // conventionally-named asset (e.g. "linux-amd64" out of
+        // "mihomo-linux-amd64-v1.19.29.gz").
+        let arch_hint = asset_arch_hint(core_type, asset);
+        let ext_ok = |name: &str| {
+            (asset.ends_with(".tar.gz") && name.ends_with(".tar.gz"))
+                || (asset.ends_with(".zip") && name.ends_with(".zip"))
+                || (asset.ends_with(".gz")
+                    && !asset.ends_with(".tar.gz")
+                    && name.ends_with(".gz")
+                    && !name.ends_with(".tar.gz"))
+        };
+        if let Some(assets) = release.get("assets").and_then(|v| v.as_array()) {
+            for a in assets {
+                let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                if name.contains(&arch_hint) && ext_ok(name) {
+                    if let Some(url) = a.get("browser_download_url").and_then(|v| v.as_str()) {
+                        return Ok(url.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Err(PanelError::Core(format!(
+        "no matching asset found for {:?} {}",
+        core_type, version
+    )))
+}
+
+/// Extract the `os-arch` hint from a conventionally named asset.
+fn asset_arch_hint(_core_type: CoreType, _asset: &str) -> String {
+    let (_, sb_arch, _) = target_info().unwrap_or(("linux", "linux-amd64", false));
+    sb_arch.to_string()
+}
+
 /// Ensure the requested core binary exists in `bin_dir`, downloading it from
 /// GitHub releases if necessary. `version` overrides the default (latest/env)
 /// when provided and is non-empty.
@@ -320,9 +412,13 @@ pub async fn ensure_core_binary(
     let mut last_err: Option<PanelError> = None;
     let mut dest: Option<PathBuf> = None;
     for attempt in 1..=2 {
-        if let Err(e) = download_file(&url, &tmp_archive).await {
-            last_err = Some(e);
-            continue;
+        match download_with_fallback(&url, core_type, &version, &asset, &tmp_archive).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::warn!("download failed (attempt {}): {}", attempt, e);
+                last_err = Some(e);
+                continue;
+            }
         }
         if let Err(e) = validate_archive(&tmp_archive, &asset) {
             tracing::warn!(

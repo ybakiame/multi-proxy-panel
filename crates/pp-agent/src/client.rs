@@ -382,6 +382,21 @@ async fn handle_config_push(
             .map_err(|e| anyhow::anyhow!("failed to install {:?}: {}", core_type, e))?
     };
 
+    // Rolling-tag build upgrade: when the Hub reports a newer upstream build
+    // for the pinned version, re-download the binary before applying config.
+    if !push.core_build_id.is_empty() {
+        if let Err(e) = ensure_core_build(
+            supervisor,
+            core_type,
+            &push.core_version,
+            &push.core_build_id,
+        )
+        .await
+        {
+            tracing::warn!("core build upgrade failed for {:?}: {}", core_type, e);
+        }
+    }
+
     if push.restart_required {
         manager
             .restart(&config)
@@ -402,6 +417,61 @@ async fn handle_config_push(
     }
 
     Ok(())
+}
+
+/// Re-download a core binary when the upstream build of its pinned version
+/// changed (rolling tags keep the same version string across builds).
+///
+/// The previous build marker lives in `<bin_dir>/.build_id.<core>`; when it
+/// differs from the Hub-reported build, the binary is removed and fetched
+/// again. Deleting the binary of a running core is safe: the process keeps
+/// its inode until the restart that follows the config push.
+async fn ensure_core_build(
+    supervisor: &CoreSupervisor,
+    core_type: pp_common::CoreType,
+    version: &str,
+    build_id: &str,
+) -> anyhow::Result<()> {
+    let Some(bin_dir) = supervisor.bin_dir().await else {
+        return Ok(());
+    };
+    let marker = bin_dir.join(format!(".build_id.{}", core_type));
+    let current = tokio::fs::read_to_string(&marker).await.unwrap_or_default();
+    if current.trim() == build_id {
+        return Ok(());
+    }
+
+    tracing::info!(
+        "upgrading {:?} binary to upstream build {}",
+        core_type,
+        build_id
+    );
+    let binary = pp_core::core_binary_path(&bin_dir, core_type);
+    // Move the current binary aside first: if the download fails the core
+    // must be able to restart with the old build.
+    let backup = bin_dir.join(format!(".backup.{}", core_type));
+    let has_binary = tokio::fs::try_exists(&binary).await.unwrap_or(false);
+    if has_binary {
+        tokio::fs::rename(&binary, &backup).await?;
+    }
+    let version = if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    };
+    match pp_core::ensure_core_binary(&bin_dir, core_type, version).await {
+        Ok(_) => {
+            let _ = tokio::fs::remove_file(&backup).await;
+            tokio::fs::write(&marker, build_id).await?;
+            Ok(())
+        }
+        Err(e) => {
+            if has_binary {
+                let _ = tokio::fs::rename(&backup, &binary).await;
+            }
+            Err(anyhow::anyhow!("{}", e))
+        }
+    }
 }
 
 async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> anyhow::Result<()> {

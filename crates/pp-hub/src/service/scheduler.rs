@@ -349,7 +349,13 @@ async fn push_config_for_core(
                 }
             };
 
-            let version = crate::service::protocol::config_version_of(&config_str);
+            let build_id = crate::service::protocol::core_build_id_of(
+                &state.db,
+                core_type,
+                core_version.as_deref(),
+            )
+            .await;
+            let version = crate::service::protocol::push_version_of(&config_str, &build_id);
             let core_name = core_type.to_string();
             if state
                 .agent_config_version(&node_id, &core_name)
@@ -373,6 +379,7 @@ async fn push_config_for_core(
                         restart_required: false,
                         config_version: version.clone(),
                         core_version: core_version.unwrap_or_default(),
+                        core_build_id: build_id,
                     },
                 )),
             };

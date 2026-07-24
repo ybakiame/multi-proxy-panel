@@ -1,7 +1,8 @@
 use pp_common::{CoreType, PanelResult};
 use pp_config::{BuilderRegistry, InboundConfig};
 use pp_db::entities::{
-    client, client_group_binding, node_binding, node_binding_group_binding, protocol_config,
+    client, client_group_binding, core_version, node_binding, node_binding_group_binding,
+    protocol_config,
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
@@ -254,9 +255,10 @@ pub async fn push_node_config(
     let config_str = serde_json::to_string(&config_json)
         .map_err(|e| pp_common::PanelError::Config(format!("failed to serialize config: {e}")))?;
 
+    let build_id = core_build_id_of(&state.db, core_type, core_version.as_deref()).await;
     let version = version
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| config_version_of(&config_str));
+        .unwrap_or_else(|| push_version_of(&config_str, &build_id));
 
     let proto_core = match core_type {
         CoreType::SingBox => pp_proto::CoreType::SingBox,
@@ -271,6 +273,7 @@ pub async fn push_node_config(
                 restart_required: restart,
                 config_version: version.clone(),
                 core_version: core_version.unwrap_or_default(),
+                core_build_id: build_id,
             },
         )),
     };
@@ -301,28 +304,68 @@ pub async fn nodes_using_config(
     let node_ids: HashSet<Uuid> = bindings.into_iter().map(|b| b.node_id).collect();
     Ok(node_ids.into_iter().collect())
 }
-/// For sing-box, returns the highest explicitly requested version or a stable
-/// default of v1.13.14. If you need the new gRPC API service, set a protocol
-/// config's core_version to a 1.14.0 alpha tag such as `v1.14.0-alpha.43`.
+/// Resolve the effective pinned core version across inbounds.
+///
+/// sing-box: highest explicitly requested version, or a stable default of
+/// v1.13.14 (set a protocol config's core_version to a 1.14.0 alpha tag such
+/// as `v1.14.0-alpha.43` for the new gRPC API service).
+/// mihomo: highest explicitly requested version, or None (= latest upstream).
 fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Option<String> {
-    if core_type != CoreType::SingBox {
-        return None;
-    }
-
     let requested: Vec<&str> = inbounds
         .iter()
         .filter_map(|i| i.core_version.as_deref())
         .filter(|v| !v.is_empty())
         .collect();
 
-    if requested.is_empty() {
-        return Some("v1.13.14".to_string());
+    match core_type {
+        CoreType::SingBox => {
+            if requested.is_empty() {
+                return Some("v1.13.14".to_string());
+            }
+            requested
+                .into_iter()
+                .max_by(|a, b| compare_versions(a, b))
+                .map(|v| v.to_string())
+        }
+        CoreType::Mihomo => requested
+            .into_iter()
+            .max_by(|a, b| compare_versions(a, b))
+            .map(|v| v.to_string()),
     }
+}
 
-    requested
-        .into_iter()
-        .max_by(|a, b| compare_versions(a, b))
-        .map(|v| v.to_string())
+/// Build identifier for a pinned core version: the upstream publish time
+/// (Unix seconds) recorded in the version catalog. Rolling tags keep the
+/// same version string across builds, so this is what actually tells builds
+/// apart. Empty when the version is unpinned or has no metadata recorded.
+pub async fn core_build_id_of(
+    db: &DatabaseConnection,
+    core_type: CoreType,
+    version: Option<&str>,
+) -> String {
+    let Some(version) = version.filter(|v| !v.is_empty()) else {
+        return String::new();
+    };
+    core_version::Entity::find()
+        .filter(core_version::Column::CoreType.eq(core_type.to_string()))
+        .filter(core_version::Column::Version.eq(version))
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|v| v.published_at)
+        .map(|t| t.timestamp().to_string())
+        .unwrap_or_default()
+}
+
+/// Config version that also changes when the upstream build of a pinned
+/// rolling tag changes, so nodes pick up rebuilt binaries.
+pub fn push_version_of(config_str: &str, build_id: &str) -> String {
+    if build_id.is_empty() {
+        config_version_of(config_str)
+    } else {
+        config_version_of(&format!("{}#build:{}", config_str, build_id))
+    }
 }
 
 /// Simple semver-like comparison. Returns `Ordering` for two version strings.

@@ -82,6 +82,11 @@ impl CoreSupervisor {
         Ok(discovered)
     }
 
+    /// The binary directory provided to the most recent `discover` call.
+    pub async fn bin_dir(&self) -> Option<PathBuf> {
+        self.bin_dir.read().await.clone()
+    }
+
     /// Ensure a manager exists for `core_type`. If the binary is missing, it is
     /// downloaded from the upstream release and a manager is registered.
     pub async fn ensure_manager(

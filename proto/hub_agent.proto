@@ -143,6 +143,10 @@ message ConfigPush {
   bool restart_required = 3;
   string config_version = 4;
   string core_version = 5;
+  // 上游构建标识（发布时间的 Unix 秒）。滚动标签（如 mihomo
+  // Prerelease-Alpha）版本字符串不变时，靠它区分新旧构建；
+  // Agent 与本地标记不一致时重新下载二进制。
+  string core_build_id = 6;
 }
 
 // 配置热重载
