@@ -274,6 +274,91 @@ pub async fn delete_node(
     }
 }
 
+/// Send a core-binary request to the node's agent and await its reply.
+async fn request_core_binaries(
+    state: &Arc<AppState>,
+    node_id: Uuid,
+    message: pp_proto::hub_message::Payload,
+) -> Result<pp_proto::CoreBinaryList, ApiError> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.binary_waiters.write().await.insert(node_id, tx);
+
+    let send_result = state
+        .send_to_agent(
+            node_id,
+            pp_proto::HubMessage {
+                payload: Some(message),
+            },
+        )
+        .await;
+
+    if let Err(e) = send_result {
+        state.binary_waiters.write().await.remove(&node_id);
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "agent_unreachable",
+            e.to_string(),
+        ));
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
+        Ok(Ok(list)) => Ok(list),
+        _ => {
+            state.binary_waiters.write().await.remove(&node_id);
+            Err(ApiError::new(
+                axum::http::StatusCode::GATEWAY_TIMEOUT,
+                "agent_timeout",
+                "agent did not respond in time",
+            ))
+        }
+    }
+}
+
+fn binaries_to_json(list: &pp_proto::CoreBinaryList) -> Value {
+    json!({
+        "binaries": list.binaries.iter().map(|b| json!({
+            "file_name": b.file_name,
+            "size_bytes": b.size_bytes,
+            "modified_at": b.modified_at,
+            "in_use": b.in_use,
+        })).collect::<Vec<_>>(),
+        "error": list.error,
+    })
+}
+
+/// GET /api/v1/nodes/{id}/binaries — list core binaries installed on a node.
+pub async fn list_core_binaries(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Value> {
+    let list = request_core_binaries(
+        &state,
+        id,
+        pp_proto::hub_message::Payload::CoreBinaryList(pp_proto::CoreBinaryListRequest {}),
+    )
+    .await?;
+    Ok(ApiResponse::new(binaries_to_json(&list)))
+}
+
+/// DELETE /api/v1/nodes/{id}/binaries/{file} — delete a core binary on a node.
+pub async fn delete_core_binary(
+    State(state): State<Arc<AppState>>,
+    Path((id, file)): Path<(Uuid, String)>,
+) -> ApiResult<Value> {
+    let list = request_core_binaries(
+        &state,
+        id,
+        pp_proto::hub_message::Payload::CoreBinaryDelete(pp_proto::CoreBinaryDelete {
+            file_name: file,
+        }),
+    )
+    .await?;
+    if !list.error.is_empty() {
+        return Err(ApiError::bad_request("delete_failed", list.error));
+    }
+    Ok(ApiResponse::new(binaries_to_json(&list)))
+}
+
 #[derive(serde::Deserialize)]
 pub struct PushConfigPayload {
     pub core_type: Option<String>,

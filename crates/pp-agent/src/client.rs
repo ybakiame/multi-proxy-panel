@@ -290,11 +290,38 @@ async fn handle_hub_message(
                 restart_required: false,
                 config_version: reload.config_version,
                 core_version: reload.core_version,
+                core_build_id: String::new(),
             };
             handle_config_push(supervisor, push, data_dir).await?;
         }
         Some(Payload::CoreCmd(cmd)) => {
             handle_core_command(supervisor, cmd).await?;
+        }
+        Some(Payload::CoreBinaryList(_)) => {
+            let binaries = list_core_binaries(supervisor).await;
+            outbound
+                .send(AgentMessage {
+                    payload: Some(pp_proto::agent_message::Payload::CoreBinaries(
+                        pp_proto::CoreBinaryList {
+                            binaries,
+                            error: String::new(),
+                        },
+                    )),
+                })
+                .await?;
+        }
+        Some(Payload::CoreBinaryDelete(del)) => {
+            let (binaries, error) = match delete_core_binary(supervisor, &del.file_name).await {
+                Ok(()) => (list_core_binaries(supervisor).await, String::new()),
+                Err(e) => (list_core_binaries(supervisor).await, e),
+            };
+            outbound
+                .send(AgentMessage {
+                    payload: Some(pp_proto::agent_message::Payload::CoreBinaries(
+                        pp_proto::CoreBinaryList { binaries, error },
+                    )),
+                })
+                .await?;
         }
         Some(Payload::CertIssue(issue)) => {
             tracing::info!("received cert issue request for {}", issue.domain);
@@ -472,6 +499,82 @@ async fn ensure_core_build(
             Err(anyhow::anyhow!("{}", e))
         }
     }
+}
+
+/// List the core binaries present in the agent's bin directory.
+async fn list_core_binaries(supervisor: &CoreSupervisor) -> Vec<pp_proto::CoreBinary> {
+    let Some(bin_dir) = supervisor.bin_dir().await else {
+        return Vec::new();
+    };
+
+    let mut in_use = std::collections::HashSet::new();
+    for core in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+        if supervisor.get(core).await.is_some() {
+            in_use.insert(pp_core::core_binary_path(&bin_dir, core));
+        }
+    }
+
+    let mut binaries = Vec::new();
+    let mut entries = match tokio::fs::read_dir(&bin_dir).await {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("failed to read bin dir {}: {}", bin_dir.display(), e);
+            return binaries;
+        }
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(meta) = entry.metadata().await else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified_at = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        binaries.push(pp_proto::CoreBinary {
+            file_name: name,
+            size_bytes: meta.len() as i64,
+            modified_at,
+            in_use: in_use.contains(&entry.path()),
+        });
+    }
+    binaries.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    binaries
+}
+
+/// Delete a core binary from the bin directory, refusing anything that is
+/// not a plain file name or is currently used by a registered core.
+async fn delete_core_binary(supervisor: &CoreSupervisor, file_name: &str) -> Result<(), String> {
+    if file_name.is_empty()
+        || file_name.starts_with('.')
+        || file_name.contains('/')
+        || file_name.contains('\\')
+    {
+        return Err("invalid file name".to_string());
+    }
+    let Some(bin_dir) = supervisor.bin_dir().await else {
+        return Err("bin dir unknown".to_string());
+    };
+    let path = bin_dir.join(file_name);
+
+    for core in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+        if supervisor.get(core).await.is_some() && pp_core::core_binary_path(&bin_dir, core) == path
+        {
+            return Err(format!("{} is in use by a running core", file_name));
+        }
+    }
+
+    tokio::fs::remove_file(&path)
+        .await
+        .map_err(|e| format!("failed to delete {}: {}", file_name, e))
 }
 
 async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> anyhow::Result<()> {

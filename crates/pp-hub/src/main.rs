@@ -113,10 +113,14 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             delete(nodes::delete_node)
                 .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
         )
+        .route("/api/v1/nodes/{id}/push", post(nodes::push_config))
         .route(
-            "/api/v1/nodes/{id}/push",
-            post(nodes::push_config)
-                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+            "/api/v1/nodes/{id}/binaries",
+            get(nodes::list_core_binaries),
+        )
+        .route(
+            "/api/v1/nodes/{id}/binaries/{file}",
+            delete(nodes::delete_core_binary),
         )
         .route(
             "/api/v1/nodes/{id}/logs",

@@ -81,6 +81,9 @@ pub struct AppState {
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
     pub metrics_handle: Option<Arc<MetricsHandle>>,
     pub api_key_cache: ApiKeyCache,
+    /// Pending core-binary list/delete requests awaiting the agent's reply.
+    pub binary_waiters:
+        Arc<RwLock<HashMap<Uuid, tokio::sync::oneshot::Sender<pp_proto::CoreBinaryList>>>>,
 }
 
 impl AppState {
@@ -97,6 +100,7 @@ impl AppState {
             agents: Arc::new(RwLock::new(HashMap::new())),
             metrics_handle,
             api_key_cache: ApiKeyCache::default(),
+            binary_waiters: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 

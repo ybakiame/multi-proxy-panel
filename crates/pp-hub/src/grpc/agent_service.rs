@@ -179,6 +179,14 @@ async fn handle_agent_message(
         Some(Payload::CertStatus(report)) => {
             crate::routes::certificates::apply_cert_status(state, report).await?;
         }
+        Some(Payload::CoreBinaries(list)) => {
+            if let Some(id) = registered_id {
+                let waiter = state.binary_waiters.write().await.remove(id);
+                if let Some(tx) = waiter {
+                    let _ = tx.send(list);
+                }
+            }
+        }
         None => {}
     }
 

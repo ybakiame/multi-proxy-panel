@@ -19,6 +19,7 @@ message AgentMessage {
     CoreStatusReport core_status = 6;
     OnlineUsersReport online_users = 7;
     CertStatusReport cert_status = 8;
+    CoreBinaryList core_binaries = 9;
   }
 }
 
@@ -31,6 +32,8 @@ message HubMessage {
     CoreCommand core_cmd = 4;
     AgentShutdown shutdown = 5;
     CertIssueRequest cert_issue = 6;
+    CoreBinaryListRequest core_binary_list = 7;
+    CoreBinaryDelete core_binary_delete = 8;
   }
 }
 
@@ -226,4 +229,28 @@ message OnlineUser {
   string email = 2;
   string ip_address = 3;
   string inbound_tag = 4;
+}
+
+// 核心二进制列表请求（Hub → Agent）
+message CoreBinaryListRequest {}
+
+// 单个核心二进制文件信息
+message CoreBinary {
+  string file_name = 1;
+  int64 size_bytes = 2;
+  int64 modified_at = 3;
+  // 是否为当前注册核心正在使用的二进制（禁止删除）
+  bool in_use = 4;
+}
+
+// 核心二进制列表（Agent → Hub，响应列举或删除）
+message CoreBinaryList {
+  repeated CoreBinary binaries = 1;
+  // 删除操作失败时的错误描述；为空表示成功
+  string error = 2;
+}
+
+// 删除核心二进制（Hub → Agent）
+message CoreBinaryDelete {
+  string file_name = 1;
 }
