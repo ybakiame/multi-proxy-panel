@@ -30,6 +30,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250712_000001_fix_subscription_template_blob_ids::Migration),
             Box::new(m20260719_000001_create_core_versions::Migration),
             Box::new(m20260720_000001_create_certificates::Migration),
+            Box::new(m20260722_000001_create_system_meta::Migration),
+            Box::new(m20260722_000002_update_core_type_check::Migration),
         ]
     }
 }
@@ -56,3 +58,5 @@ mod m20250711_000004_cleanup_protocols_and_template_flags;
 mod m20250712_000001_fix_subscription_template_blob_ids;
 mod m20260719_000001_create_core_versions;
 mod m20260720_000001_create_certificates;
+mod m20260722_000001_create_system_meta;
+mod m20260722_000002_update_core_type_check;

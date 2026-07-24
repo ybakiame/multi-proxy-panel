@@ -3,6 +3,7 @@
 pub mod connection;
 pub mod entities;
 pub mod migration;
+pub mod upgrade;
 
 use sea_orm::{DatabaseConnection, DbErr};
 use tracing::info;
