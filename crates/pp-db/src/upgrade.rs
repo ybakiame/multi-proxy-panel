@@ -13,7 +13,8 @@ use sea_orm::{
 use tracing::{info, warn};
 
 use crate::entities::{
-    core_version, node, node_binding, node_binding_group_binding, protocol_config, system_meta,
+    agent_log, core_version, node, node_binding, node_binding_group_binding, protocol_config,
+    system_meta,
 };
 
 const VERSION_KEY: &str = "app_version";
@@ -168,6 +169,14 @@ async fn purge_xray_data(conn: &DatabaseConnection) -> Result<(), DbErr> {
         .exec(conn)
         .await?;
     info!("purged {} xray core versions", removed.rows_affected);
+
+    // Core-status history for xray would otherwise linger as "running"
+    // forever now that agents no longer report it.
+    let removed = agent_log::Entity::delete_many()
+        .filter(agent_log::Column::Target.eq("core-xray"))
+        .exec(conn)
+        .await?;
+    info!("purged {} xray core-status logs", removed.rows_affected);
 
     // Drop "xray" from nodes.cores_available (a JSON string array).
     let nodes = node::Entity::find().all(conn).await?;
