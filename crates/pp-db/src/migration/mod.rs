@@ -32,6 +32,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260720_000001_create_certificates::Migration),
             Box::new(m20260722_000001_create_system_meta::Migration),
             Box::new(m20260722_000002_update_core_type_check::Migration),
+            Box::new(m20260724_000001_add_core_version_build_info::Migration),
         ]
     }
 }
@@ -60,3 +61,4 @@ mod m20260719_000001_create_core_versions;
 mod m20260720_000001_create_certificates;
 mod m20260722_000001_create_system_meta;
 mod m20260722_000002_update_core_type_check;
+mod m20260724_000001_add_core_version_build_info;
