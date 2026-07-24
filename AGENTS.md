@@ -184,6 +184,10 @@ Agent 的 gRPC 客户端实现了指数退避重连：
 
 `core_versions` 表跟踪各核心上游 release/prerelease 版本（`GET /api/v1/core-versions/upstream` 只读拉取 GitHub 版本，用户勾选后 `POST /api/v1/core-versions` 保存）。协议配置的 `core_version` 引用该表，推送时随 `ConfigPush.core_version` 下发，Agent 按需安装对应版本二进制。
 
+滚动标签（如 mihomo `Prerelease-Alpha`）版本字符串不变而构建持续替换，表中额外记录 `published_at`（取 release `updated_at`，即资产重建时间）与 `commit_sha`；重复保存时上游构建较新则刷新元数据。推送时 Hub 将构建时间戳作为 `ConfigPush.core_build_id` 下发并计入 config_version 哈希，Agent 与本地 `.build_id.<core>` 标记比对，不一致时以"先备份、下载失败则还原"的方式重下二进制。Agent 安装器对非常规资产名（如 `mihomo-linux-amd64-alpha-<sha>.gz`）在直连 404 时经 GitHub Releases API 按平台解析真实资产。
+
+节点级二进制管理：`GET/DELETE /api/v1/nodes/{id}/binaries[/{file}]`，Hub 经 gRPC `CoreBinaryListRequest`/`CoreBinaryDelete` 与 Agent 交互（oneshot waiter 关联响应），使用中的二进制禁止删除。
+
 ### 4.2.2 统一证书管理（Agent 内置 ACME）
 
 `certificates` 表管理托管证书。Agent 内置 instant-acme 客户端，通过临时 80 端口监听完成 HTTP-01 挑战，证书统一落盘 `<data_dir>/certs/<domain>.{crt,key}`。

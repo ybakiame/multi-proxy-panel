@@ -193,6 +193,40 @@
 
 ---
 
+### GET `/api/v1/nodes/{id}/binaries`
+
+列出节点上已安装的核心二进制文件（实时询问 Agent，10 秒超时）。
+
+**响应:**
+
+```json
+{
+  "data": {
+    "binaries": [
+      { "file_name": "sing-box", "size_bytes": 70160640, "modified_at": 1783731031, "in_use": true }
+    ],
+    "error": ""
+  }
+}
+```
+
+### DELETE `/api/v1/nodes/{id}/binaries/{file}`
+
+删除节点上的核心二进制文件（按需安装时会重新下载）。正在使用中的二进制返回 400。
+
+**路径参数:**
+- `id` — 节点 UUID
+- `file` — 文件名（如 `sing-box-old`）
+
+**响应:** 同 GET，返回删除后的列表。
+
+**状态码:**
+- `200 OK`
+- `400 Bad Request`（文件名为非法路径或二进制使用中）
+- `502 Bad Gateway` / `504 Gateway Timeout`（Agent 不可达或超时）
+
+---
+
 ### POST `/api/v1/nodes/{id}/push`
 
 向指定节点推送配置。
@@ -393,6 +427,8 @@
         "core_type": "mihomo",
         "version": "v1.19.29",
         "channel": "release",
+        "published_at": "2026-07-18T12:34:03Z",
+        "commit_sha": "main",
         "created_at": "2026-07-20T00:00:00Z"
       }
     ]
@@ -403,6 +439,8 @@
 ### GET `/api/v1/core-versions/upstream`
 
 从 GitHub Releases 拉取上游版本（只读，不入库），每条记录标注是否已保存。每核心每渠道最多返回 10 个。
+
+`published_at` 取 release 的 `updated_at`（滚动标签的资产重建时间），`update_available` 表示已保存记录的上游构建较新（滚动标签可重新保存以刷新元数据）。
 
 **查询参数:**
 - `core_type` (可选) — 只拉取指定核心
@@ -416,8 +454,22 @@
       {
         "core_type": "mihomo",
         "versions": [
-          { "version": "v1.19.29", "channel": "release", "saved": true },
-          { "version": "Prerelease-Alpha", "channel": "prerelease", "saved": false }
+          {
+            "version": "v1.19.29",
+            "channel": "release",
+            "saved": true,
+            "published_at": "2026-07-18T12:34:03Z",
+            "commit_sha": "main",
+            "update_available": false
+          },
+          {
+            "version": "Prerelease-Alpha",
+            "channel": "prerelease",
+            "saved": false,
+            "published_at": "2026-07-24T05:17:04Z",
+            "commit_sha": "main",
+            "update_available": false
+          }
         ]
       }
     ]
@@ -427,14 +479,20 @@
 
 ### POST `/api/v1/core-versions`
 
-保存用户选中的版本（已存在的记录跳过，幂等）。
+保存用户选中的版本。已存在的记录跳过，除非上游构建较新（滚动标签），此时刷新 `published_at` / `commit_sha` 元数据（计入 `updated`）。
 
 **请求体:**
 
 ```json
 {
   "versions": [
-    { "core_type": "mihomo", "version": "v1.19.29", "channel": "release" }
+    {
+      "core_type": "mihomo",
+      "version": "Prerelease-Alpha",
+      "channel": "prerelease",
+      "published_at": "2026-07-24T05:17:04Z",
+      "commit_sha": "main"
+    }
   ]
 }
 ```
@@ -443,9 +501,11 @@
 
 ```json
 {
-  "data": { "added": 1 }
+  "data": { "added": 0, "updated": 1 }
 }
 ```
+
+> 滚动标签（如 mihomo `Prerelease-Alpha`）版本字符串不变而构建持续替换。保存记录的 `published_at` 会作为 `ConfigPush.core_build_id` 随推送下发并计入配置版本哈希，Agent 据此重新下载新构建的二进制。
 
 ### DELETE `/api/v1/core-versions/{id}`
 
