@@ -1,7 +1,7 @@
 //! Automatic core binary downloader / installer.
 //!
-//! On first use, the agent can fetch the appropriate xray/sing-box binary from
-//! GitHub releases and extract it into the configured binary directory.
+//! On first use, the agent can fetch the appropriate sing-box/mihomo binary
+//! from GitHub releases and extract it into the configured binary directory.
 
 use pp_common::{CoreType, PanelError, PanelResult};
 use serde_json::Value;
@@ -19,7 +19,6 @@ struct ReleaseInfo {
 fn release_info(core_type: CoreType) -> ReleaseInfo {
     let (owner, repo) = core_type.github_repo();
     let binary_name = match core_type {
-        CoreType::Xray => "xray",
         CoreType::SingBox => "sing-box",
         CoreType::Mihomo => "mihomo",
     };
@@ -32,23 +31,22 @@ fn release_info(core_type: CoreType) -> ReleaseInfo {
 
 fn env_version(core_type: CoreType) -> Option<String> {
     let key = match core_type {
-        CoreType::Xray => "PROXYPANEL_XRAY_VERSION",
         CoreType::SingBox => "PROXYPANEL_SINGBOX_VERSION",
         CoreType::Mihomo => "PROXYPANEL_MIHOMO_VERSION",
     };
     std::env::var(key).ok().filter(|s| !s.is_empty())
 }
 
-fn target_info() -> PanelResult<(&'static str, &'static str, &'static str, bool)> {
+fn target_info() -> PanelResult<(&'static str, &'static str, bool)> {
     let arch = std::env::consts::ARCH;
     let os = std::env::consts::OS;
 
-    let (xray_arch, sb_arch, is_windows) = match (os, arch) {
-        ("linux", "x86_64") => ("linux-64", "linux-amd64", false),
-        ("linux", "aarch64") => ("linux-arm64", "linux-arm64", false),
-        ("macos", "x86_64") => ("macos-64", "darwin-amd64", false),
-        ("macos", "aarch64") => ("macos-arm64", "darwin-arm64", false),
-        ("windows", "x86_64") => ("windows-64", "windows-amd64", true),
+    let (sb_arch, is_windows) = match (os, arch) {
+        ("linux", "x86_64") => ("linux-amd64", false),
+        ("linux", "aarch64") => ("linux-arm64", false),
+        ("macos", "x86_64") => ("darwin-amd64", false),
+        ("macos", "aarch64") => ("darwin-arm64", false),
+        ("windows", "x86_64") => ("windows-amd64", true),
         _ => {
             return Err(PanelError::Core(format!(
                 "unsupported platform for auto-install: {}-{}",
@@ -57,7 +55,7 @@ fn target_info() -> PanelResult<(&'static str, &'static str, &'static str, bool)
         }
     };
 
-    Ok((os, xray_arch, sb_arch, is_windows))
+    Ok((os, sb_arch, is_windows))
 }
 
 /// GitHub release tags include a leading 'v', but callers may pass either
@@ -72,13 +70,12 @@ fn github_tag(version: &str) -> String {
 }
 
 fn asset_name(core_type: CoreType, version: &str) -> PanelResult<(String, String)> {
-    let (_, xray_arch, sb_arch, is_windows) = target_info()?;
+    let (_, sb_arch, is_windows) = target_info()?;
 
     // Asset names usually omit the leading 'v' present in GitHub tags.
     let version_no_v = version.strip_prefix('v').unwrap_or(version);
 
     match core_type {
-        CoreType::Xray => Ok((format!("Xray-{}.zip", xray_arch), "xray".to_string())),
         CoreType::SingBox => {
             let ext = if is_windows { "zip" } else { "tar.gz" };
             Ok((
@@ -216,11 +213,6 @@ fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| PanelError::Core(format!("invalid zip archive: {}", e)))?;
 
-    let is_xray = target_name.eq_ignore_ascii_case("xray");
-    // xray needs geoip.dat/geosite.dat next to the binary for geosite/geoip
-    // routing rules; ship them from the same release archive when present.
-    let dat_files = ["geoip.dat", "geosite.dat"];
-
     let mut binary_dest: Option<PathBuf> = None;
     for i in 0..archive.len() {
         let mut entry = archive
@@ -238,10 +230,6 @@ fn extract_zip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResul
             let mut out = std::fs::File::create(&dest)?;
             std::io::copy(&mut entry, &mut out)?;
             binary_dest = Some(dest);
-        } else if is_xray && dat_files.iter().any(|d| file_name.eq_ignore_ascii_case(d)) {
-            let dest = dest_dir.join(file_name);
-            let mut out = std::fs::File::create(&dest)?;
-            std::io::copy(&mut entry, &mut out)?;
         }
     }
 
@@ -269,7 +257,6 @@ fn extract_gzip(archive: &Path, dest_dir: &Path, target_name: &str) -> PanelResu
 
 fn core_type_from_name(name: &str) -> PanelResult<CoreType> {
     match name {
-        "xray" => Ok(CoreType::Xray),
         "sing-box" => Ok(CoreType::SingBox),
         "mihomo" => Ok(CoreType::Mihomo),
         _ => Err(PanelError::Core(format!(
@@ -444,7 +431,6 @@ mod tests {
     #[test]
     fn asset_names_are_well_formed() {
         for (ct, version) in [
-            (CoreType::Xray, "v25.6.8"),
             (CoreType::SingBox, "v1.11.0"),
             (CoreType::Mihomo, "v1.19.28"),
         ] {

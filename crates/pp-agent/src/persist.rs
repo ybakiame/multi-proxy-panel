@@ -11,7 +11,7 @@ use pp_common::CoreType;
 use serde::{Deserialize, Serialize};
 
 const LEGACY_SNAPSHOT_FILE: &str = "last_config.json";
-const ALL_CORES: [CoreType; 3] = [CoreType::Xray, CoreType::SingBox, CoreType::Mihomo];
+const ALL_CORES: [CoreType; 2] = [CoreType::SingBox, CoreType::Mihomo];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedConfig {
@@ -129,9 +129,9 @@ mod tests {
         let dir = temp_dir();
         tokio::fs::create_dir_all(&dir).await.unwrap();
 
-        let xray_cfg = serde_json::json!({"inbounds": []});
+        let singbox_cfg = serde_json::json!({"inbounds": []});
         let mihomo_cfg = serde_json::json!({"listeners": []});
-        save_last_config(&dir, CoreType::Xray, &xray_cfg, "v1")
+        save_last_config(&dir, CoreType::SingBox, &singbox_cfg, "v1")
             .await
             .unwrap();
         save_last_config(&dir, CoreType::Mihomo, &mihomo_cfg, "v2")
@@ -141,8 +141,8 @@ mod tests {
         let loaded = load_last_configs(&dir).await;
         assert_eq!(loaded.len(), 2);
         let by_core: std::collections::HashMap<_, _> = loaded.into_iter().collect();
-        assert_eq!(by_core[&CoreType::Xray].config, xray_cfg);
-        assert_eq!(by_core[&CoreType::Xray].version, "v1");
+        assert_eq!(by_core[&CoreType::SingBox].config, singbox_cfg);
+        assert_eq!(by_core[&CoreType::SingBox].version, "v1");
         assert_eq!(by_core[&CoreType::Mihomo].config, mihomo_cfg);
         assert_eq!(by_core[&CoreType::Mihomo].version, "v2");
 
@@ -159,7 +159,7 @@ mod tests {
     async fn load_corrupt_is_skipped() {
         let dir = temp_dir();
         tokio::fs::create_dir_all(&dir).await.unwrap();
-        tokio::fs::write(snapshot_path(&dir, CoreType::Xray), b"not json")
+        tokio::fs::write(snapshot_path(&dir, CoreType::SingBox), b"not json")
             .await
             .unwrap();
 

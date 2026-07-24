@@ -114,11 +114,7 @@ impl AgentStreamClient {
                     hostname: self.hostname.clone(),
                     domain: self.domain.clone(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
-                    capabilities: vec![
-                        "xray".to_string(),
-                        "sing-box".to_string(),
-                        "mihomo".to_string(),
-                    ],
+                    capabilities: vec!["sing-box".to_string(), "mihomo".to_string()],
                     labels: Default::default(),
                     core_config_versions,
                 },
@@ -471,11 +467,6 @@ async fn handle_core_command(supervisor: &CoreSupervisor, cmd: CoreCommand) -> a
 /// The real config will be provided by Hub via ConfigPush.
 fn minimal_config_for_core(core_type: pp_common::CoreType) -> serde_json::Value {
     match core_type {
-        pp_common::CoreType::Xray => serde_json::json!({
-            "log": { "loglevel": "warning" },
-            "inbounds": [],
-            "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
-        }),
         pp_common::CoreType::SingBox => serde_json::json!({
             "log": { "level": "warn" },
             "inbounds": [],
@@ -586,7 +577,6 @@ async fn collect_online_users() -> Vec<OnlineUser> {
 
 fn core_type_from_i32(value: i32) -> pp_common::CoreType {
     match value {
-        1 => pp_common::CoreType::Xray,
         2 => pp_common::CoreType::SingBox,
         4 => pp_common::CoreType::Mihomo,
         _ => pp_common::CoreType::SingBox,

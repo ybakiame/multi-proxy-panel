@@ -1,6 +1,5 @@
 use pp_common::PanelResult;
 use serde_json::Value;
-use std::collections::HashSet;
 
 /// Represents an online user detected from a proxy core.
 #[derive(Debug, Clone)]
@@ -22,18 +21,6 @@ fn singbox_api_base() -> String {
         .trim_start_matches("http://")
         .trim_start_matches("https://");
     format!("http://{}", listen)
-}
-
-/// gRPC endpoint of the xray StatsService (`PROXYPANEL_XRAY_API_LISTEN`,
-/// default `127.0.0.1:8080`), scheme added when missing.
-fn xray_grpc_endpoint() -> String {
-    let listen = std::env::var("PROXYPANEL_XRAY_API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-    if listen.starts_with("http://") || listen.starts_with("https://") {
-        listen
-    } else {
-        format!("http://{}", listen)
-    }
 }
 
 /// Base URL of the mihomo Clash API (`PROXYPANEL_MIHOMO_API_LISTEN`,
@@ -215,142 +202,6 @@ async fn query_singbox_online_users_http() -> PanelResult<Vec<OnlineUser>> {
     Ok(users)
 }
 
-/// Query online users from xray StatsService gRPC.
-///
-/// Resolution order:
-/// 1. `GetAllOnlineUsers` (recent Xray) for the online email list;
-/// 2. `QueryStats` for `user>>>{email}>>>online` counters;
-/// 3. legacy heuristic: any user with nonzero traffic counters.
-///
-/// For each online email, `GetStatsOnlineIpList` resolves the real client
-/// IPs; when unavailable the user is reported with `0.0.0.0`.
-/// Returns empty list if the API is unreachable.
-pub async fn query_xray_online_users() -> PanelResult<Vec<OnlineUser>> {
-    use pp_proto::xray_stats::{
-        GetAllOnlineUsersRequest, GetStatsRequest, QueryStatsRequest,
-        stats_service_client::StatsServiceClient,
-    };
-    use tonic::transport::Channel;
-
-    let channel = match Channel::from_shared(xray_grpc_endpoint())
-        .map_err(|e| pp_common::PanelError::Core(format!("invalid xray gRPC endpoint: {}", e)))?
-        .connect()
-        .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!("xray StatsService unreachable: {}", e);
-            return Ok(vec![]);
-        }
-    };
-
-    let mut client = StatsServiceClient::new(channel);
-
-    let emails: Vec<String> = match client
-        .get_all_online_users(tonic::Request::new(GetAllOnlineUsersRequest {}))
-        .await
-    {
-        Ok(resp) => resp.into_inner().users,
-        Err(e) => {
-            tracing::debug!(
-                "xray GetAllOnlineUsers unavailable ({}), falling back to online counters",
-                e
-            );
-            let request = tonic::Request::new(QueryStatsRequest {
-                pattern: "user>>>".to_string(),
-                reset: false,
-            });
-            match client.query_stats(request).await {
-                Ok(resp) => {
-                    let stats = resp.into_inner().stat;
-                    let mut emails: Vec<String> = stats
-                        .iter()
-                        .filter(|s| s.value > 0)
-                        .filter_map(|s| parse_xray_online_stat_email(&s.name))
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect();
-                    if emails.is_empty() {
-                        // Legacy heuristic: treat users with any nonzero
-                        // traffic counter as online.
-                        emails = stats
-                            .iter()
-                            .filter(|s| s.value > 0)
-                            .filter_map(|s| parse_xray_traffic_stat_email(&s.name))
-                            .collect::<HashSet<_>>()
-                            .into_iter()
-                            .collect();
-                    }
-                    emails
-                }
-                Err(e) => {
-                    tracing::debug!("xray query_stats failed: {}", e);
-                    return Ok(vec![]);
-                }
-            }
-        }
-    };
-
-    let mut users = Vec::new();
-    for email in emails {
-        let stat_name = format!("user>>>{}>>>online", email);
-        let request = tonic::Request::new(GetStatsRequest {
-            name: stat_name,
-            reset: false,
-        });
-        match client.get_stats_online_ip_list(request).await {
-            Ok(resp) => {
-                let ips = resp.into_inner().ips;
-                if ips.is_empty() {
-                    users.push(xray_online_user(email, "0.0.0.0".to_string()));
-                } else {
-                    for ip in ips.into_keys() {
-                        users.push(xray_online_user(email.clone(), ip));
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::debug!("xray GetStatsOnlineIpList failed for {}: {}", email, e);
-                users.push(xray_online_user(email, "0.0.0.0".to_string()));
-            }
-        }
-    }
-
-    Ok(users)
-}
-
-fn xray_online_user(email: String, ip_address: String) -> OnlineUser {
-    OnlineUser {
-        client_id: email.clone(),
-        email,
-        ip_address,
-        inbound_tag: None,
-    }
-}
-
-/// Parse an email from an xray online stat name such as
-/// `user>>>example@domain.com>>>online`.
-fn parse_xray_online_stat_email(name: &str) -> Option<String> {
-    let rest = name.strip_prefix("user>>>")?;
-    let email = rest.strip_suffix(">>>online")?;
-    if email.is_empty() {
-        None
-    } else {
-        Some(email.to_string())
-    }
-}
-
-/// Parse an email from an xray traffic stat name such as
-/// `user>>>example@domain.com>>>traffic>>>uplink`.
-fn parse_xray_traffic_stat_email(name: &str) -> Option<String> {
-    let parts: Vec<&str> = name.split(">>>").collect();
-    if parts.len() >= 4 && parts[0] == "user" && !parts[1].is_empty() {
-        Some(parts[1].to_string())
-    } else {
-        None
-    }
-}
-
 /// Query online users from mihomo's Clash API `/connections`.
 ///
 /// Only connections carrying an `inboundUser` (i.e. listeners with user
@@ -422,18 +273,13 @@ pub async fn query_mihomo_online_users() -> PanelResult<Vec<OnlineUser>> {
 }
 
 /// Query online users from all available cores via the supervisor.
-/// Aggregates results from sing-box, xray and mihomo.
+/// Aggregates results from sing-box and mihomo.
 pub async fn query_all_online_users() -> PanelResult<Vec<OnlineUser>> {
     let mut all = Vec::new();
 
     match query_singbox_online_users().await {
         Ok(mut users) => all.append(&mut users),
         Err(e) => tracing::warn!("sing-box online user query failed: {}", e),
-    }
-
-    match query_xray_online_users().await {
-        Ok(mut users) => all.append(&mut users),
-        Err(e) => tracing::warn!("xray online user query failed: {}", e),
     }
 
     match query_mihomo_online_users().await {

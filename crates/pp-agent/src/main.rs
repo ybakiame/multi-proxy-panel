@@ -1,4 +1,4 @@
-//! ProxyPanel Agent — Runs on each node, manages xray/sing-box cores.
+//! ProxyPanel Agent — Runs on each node, manages sing-box/mihomo cores.
 
 use clap::Parser;
 use std::path::{Path, PathBuf};

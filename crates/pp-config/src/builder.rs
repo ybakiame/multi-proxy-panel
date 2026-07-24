@@ -60,7 +60,6 @@ impl BuilderRegistry {
 impl Default for BuilderRegistry {
     fn default() -> Self {
         let mut reg = Self::new();
-        reg.register(crate::xray::XrayConfigBuilder);
         reg.register(crate::singbox::SingBoxConfigBuilder);
         reg.register(crate::mihomo::MihomoConfigBuilder);
         reg

@@ -1,4 +1,4 @@
-//! pp-core — Core process management abstraction for xray and sing-box.
+//! pp-core — Core process management abstraction for sing-box and mihomo.
 
 #![allow(clippy::result_large_err)]
 

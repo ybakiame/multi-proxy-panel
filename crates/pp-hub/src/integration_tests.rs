@@ -242,7 +242,7 @@ async fn protocols_crud_with_validation() {
             Some(json!({
                 "name": "vless-reality",
                 "protocol_type": "vless_reality",
-                "core_type": "xray",
+                "core_type": "sing-box",
                 "listen_port": 443,
                 "settings": {
                     "clients": [],

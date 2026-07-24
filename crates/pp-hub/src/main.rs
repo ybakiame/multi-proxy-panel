@@ -523,6 +523,7 @@ async fn main() -> anyhow::Result<()> {
 
     let db = pp_db::init_db(&hub_config.database_url).await?;
     pp_db::run_migrations(&db).await?;
+    pp_db::upgrade::run_versioned_upgrades(&db, env!("CARGO_PKG_VERSION")).await?;
 
     if let Err(e) = ensure_bootstrap_api_key(&db).await {
         tracing::warn!("failed to ensure bootstrap api key: {}", e);

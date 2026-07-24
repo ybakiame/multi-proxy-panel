@@ -306,7 +306,6 @@ async fn push_updated_configs_for_clients(
 
     for node_id in node_ids {
         push_config_for_core(state, node_id, pp_common::CoreType::SingBox).await;
-        push_config_for_core(state, node_id, pp_common::CoreType::Xray).await;
         push_config_for_core(state, node_id, pp_common::CoreType::Mihomo).await;
     }
 
@@ -362,7 +361,6 @@ async fn push_config_for_core(
             }
 
             let proto_core = match core_type {
-                pp_common::CoreType::Xray => pp_proto::CoreType::Xray,
                 pp_common::CoreType::SingBox => pp_proto::CoreType::SingBox,
                 pp_common::CoreType::Mihomo => pp_proto::CoreType::Mihomo,
             };
@@ -426,7 +424,6 @@ async fn check_bindings_for_core(
             .unwrap_or_default();
 
         let binding_core = match config.as_str() {
-            "xray" => pp_common::CoreType::Xray,
             "sing-box" | "singbox" => pp_common::CoreType::SingBox,
             "mihomo" => pp_common::CoreType::Mihomo,
             _ => pp_common::CoreType::SingBox,

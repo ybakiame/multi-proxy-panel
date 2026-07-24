@@ -78,7 +78,7 @@ fn validate_protocol(
     let core_str = payload
         .get("core_type")
         .and_then(|v| v.as_str())
-        .unwrap_or("xray");
+        .unwrap_or("sing-box");
 
     let protocol = protocol_str
         .parse::<pp_common::ProtocolType>()

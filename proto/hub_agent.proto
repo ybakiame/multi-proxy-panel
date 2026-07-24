@@ -177,7 +177,10 @@ message CoreRestart {
 // 目标内核类型
 enum CoreType {
   CORE_TYPE_UNSPECIFIED = 0;
-  CORE_TYPE_XRAY = 1;
+  // xray support was removed; value 1 is reserved to keep the wire format
+  // stable for older agents.
+  reserved 1;
+  reserved "CORE_TYPE_XRAY";
   CORE_TYPE_SING_BOX = 2;
   CORE_TYPE_BOTH = 3;
   CORE_TYPE_MIHOMO = 4;

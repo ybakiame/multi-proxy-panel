@@ -225,6 +225,7 @@ async fn handle_register(
         let mut active: node::ActiveModel = node.into();
         active.status = Set("online".to_string());
         active.hostname = Set(req.hostname.clone());
+        active.cores_available = Set(serde_json::json!(req.capabilities));
         if let Some(addr) = &remote_addr {
             if !is_loopback_addr(addr) {
                 active.address = Set(addr.clone());

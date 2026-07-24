@@ -78,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
             println!("Initializing database...");
             let db = pp_db::init_db(&database_url).await?;
             pp_db::run_migrations(&db).await?;
+            pp_db::upgrade::run_versioned_upgrades(&db, env!("CARGO_PKG_VERSION")).await?;
             println!("Database initialized and migrations applied.");
         }
         Commands::GenToken => {

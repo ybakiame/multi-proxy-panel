@@ -41,7 +41,6 @@ impl std::str::FromStr for ProtocolType {
 #[serde(rename_all = "lowercase")]
 pub enum CoreType {
     #[default]
-    Xray,
     SingBox,
     Mihomo,
 }
@@ -50,8 +49,8 @@ impl CoreType {
     pub fn valid_for(protocol: ProtocolType) -> &'static [CoreType] {
         use {CoreType::*, ProtocolType::*};
         match protocol {
-            VlessReality => &[Xray, SingBox, Mihomo],
-            VlessXhttp => &[Xray, Mihomo],
+            VlessReality => &[SingBox, Mihomo],
+            VlessXhttp => &[Mihomo],
             Hysteria2 | Anytls => &[SingBox, Mihomo],
         }
     }
@@ -59,7 +58,6 @@ impl CoreType {
     /// GitHub `owner/repo` hosting the core's releases.
     pub fn github_repo(&self) -> (&'static str, &'static str) {
         match self {
-            CoreType::Xray => ("XTLS", "Xray-core"),
             CoreType::SingBox => ("SagerNet", "sing-box"),
             CoreType::Mihomo => ("MetaCubeX", "mihomo"),
         }
@@ -69,7 +67,6 @@ impl CoreType {
 impl std::fmt::Display for CoreType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CoreType::Xray => write!(f, "xray"),
             CoreType::SingBox => write!(f, "sing-box"),
             CoreType::Mihomo => write!(f, "mihomo"),
         }
@@ -81,7 +78,6 @@ impl std::str::FromStr for CoreType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "xray" => Ok(CoreType::Xray),
             "sing-box" | "singbox" => Ok(CoreType::SingBox),
             "mihomo" => Ok(CoreType::Mihomo),
             _ => Err(format!("unknown core type: {}", s)),

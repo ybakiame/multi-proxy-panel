@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 /// Start a periodic traffic reporter task.
 ///
-/// Fetches traffic stats from sing-box/xray APIs every `interval_secs` seconds
+/// Fetches traffic stats from sing-box/mihomo APIs every `interval_secs` seconds
 /// and sends a `TrafficReport` message to the Hub via the provided channel.
 pub fn spawn_traffic_reporter(
     outbound: mpsc::Sender<AgentMessage>,
@@ -52,17 +52,6 @@ async fn collect_traffic_report() -> TrafficReport {
         }
     }
 
-    // Collect from xray
-    match collect_xray_traffic().await {
-        Ok((inbound_entries, user_entries)) => {
-            inbounds.extend(inbound_entries);
-            users.extend(user_entries);
-        }
-        Err(e) => {
-            tracing::trace!("xray traffic collection failed: {}", e);
-        }
-    }
-
     // Collect from mihomo
     match collect_mihomo_traffic().await {
         Ok((inbound_entries, user_entries)) => {
@@ -83,24 +72,10 @@ async fn collect_traffic_report() -> TrafficReport {
 
 /// Collect traffic stats from sing-box.
 ///
-/// Tries the xray-compatible v2ray_api StatsService first when
-/// `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` is set (exact per-user and
-/// per-inbound counters with reset semantics), then the sing-box 1.14.0+
-/// gRPC API, and falls back to the legacy HTTP API when both are
-/// unavailable.
+/// Tries the sing-box 1.14.0+ gRPC API first and falls back to the legacy
+/// HTTP API when gRPC is unavailable.
 async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)>
 {
-    if let Some(endpoint) = singbox_v2ray_api_endpoint() {
-        match collect_singbox_traffic_v2ray(endpoint).await {
-            Ok(report) => return Ok(report),
-            Err(e) => {
-                tracing::debug!(
-                    "sing-box v2ray_api stats collection failed ({}), falling back to gRPC api service",
-                    e
-                );
-            }
-        }
-    }
     match collect_singbox_traffic_grpc().await {
         Ok(report) => return Ok(report),
         Err(e) => {
@@ -111,63 +86,6 @@ async fn collect_singbox_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic
         }
     }
     collect_singbox_traffic_http().await
-}
-
-/// gRPC endpoint of the sing-box v2ray_api StatsService, enabled via
-/// `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` (e.g. `127.0.0.1:10085`).
-///
-/// Opt-in because official sing-box builds lack the `with_v2ray_api` tag;
-/// must match the `experimental.v2ray_api.listen` address written into the
-/// sing-box config by the Hub.
-fn singbox_v2ray_api_endpoint() -> Option<String> {
-    let listen = std::env::var("PROXYPANEL_SINGBOX_V2RAY_API_LISTEN").ok()?;
-    if listen.is_empty() {
-        return None;
-    }
-    Some(
-        if listen.starts_with("http://") || listen.starts_with("https://") {
-            listen
-        } else {
-            format!("http://{}", listen)
-        },
-    )
-}
-
-/// Collect traffic stats from the sing-box v2ray_api StatsService.
-///
-/// The counter names (`inbound>>>{tag}>>>traffic>>>{uplink|downlink}`,
-/// `user>>>{name}>>>traffic>>>...`) match xray's, so the responses are parsed
-/// by the shared [`stats_to_report`].
-async fn collect_singbox_traffic_v2ray(
-    endpoint: String,
-) -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)> {
-    use pp_proto::v2ray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
-    use tonic::transport::Channel;
-
-    let channel = Channel::from_shared(endpoint)
-        .map_err(|e| pp_common::PanelError::Core(format!("invalid v2ray_api endpoint: {}", e)))?
-        .connect()
-        .await
-        .map_err(|e| pp_common::PanelError::Core(format!("v2ray_api connect failed: {}", e)))?;
-
-    let mut client = StatsServiceClient::new(channel);
-
-    // sing-box matches each pattern with `strings.Contains`; an empty legacy
-    // `pattern` field is ignored when `patterns` is set.
-    let response = client
-        .query_stats(tonic::Request::new(QueryStatsRequest {
-            pattern: String::new(),
-            reset: true,
-            patterns: vec!["inbound>>>".to_string(), "user>>>".to_string()],
-            regexp: false,
-        }))
-        .await
-        .map_err(|e| pp_common::PanelError::Core(format!("v2ray_api query_stats: {}", e)))?
-        .into_inner();
-
-    Ok(stats_to_report(
-        response.stat.into_iter().map(|s| (s.name, s.value)),
-    ))
 }
 
 /// Process-local sing-box sampling state used to turn the cumulative counters
@@ -293,7 +211,7 @@ async fn collect_singbox_traffic_grpc()
 
 /// Delta between the previous and current kernel-wide totals.
 ///
-/// The first sample counts the full cumulative value, mirroring xray's
+/// The first sample counts the full cumulative value, mirroring the
 /// `reset = true` first-poll semantics. Counter regressions (e.g. after a
 /// core restart) are clamped to zero.
 fn total_delta(prev: Option<(i64, i64)>, cur: (i64, i64)) -> (i64, i64) {
@@ -451,21 +369,6 @@ fn singbox_http_api_base() -> String {
     format!("http://{}", listen)
 }
 
-/// gRPC endpoint of the xray StatsService (`PROXYPANEL_XRAY_API_LISTEN`,
-/// default `127.0.0.1:8080`), scheme added when missing.
-///
-/// Must match the `api` dokodemo-door inbound written into the xray config
-/// by the Hub.
-fn xray_grpc_endpoint() -> String {
-    let listen = std::env::var("PROXYPANEL_XRAY_API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-    if listen.starts_with("http://") || listen.starts_with("https://") {
-        listen
-    } else {
-        format!("http://{}", listen)
-    }
-}
-
 /// Process-local mihomo sampling state turning the cumulative `/traffic`
 /// counters into per-period deltas.
 static MIHOMO_TRAFFIC_STATE: OnceLock<tokio::sync::Mutex<Option<(i64, i64)>>> = OnceLock::new();
@@ -561,97 +464,6 @@ fn parse_traffic_sample(buf: &[u8]) -> Option<(i64, i64)> {
     Some((up, down))
 }
 
-/// Collect traffic stats from xray StatsService gRPC.
-async fn collect_xray_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>, Vec<UserTraffic>)> {
-    use pp_proto::xray_stats::{QueryStatsRequest, stats_service_client::StatsServiceClient};
-    use tonic::transport::Channel;
-
-    let channel = match Channel::from_shared(xray_grpc_endpoint())
-        .map_err(|e| pp_common::PanelError::Core(format!("invalid xray endpoint: {}", e)))?
-        .connect()
-        .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return Err(pp_common::PanelError::Core(format!(
-                "xray StatsService connect: {}",
-                e
-            )));
-        }
-    };
-
-    let mut client = StatsServiceClient::new(channel);
-
-    let mut stats = Vec::new();
-    for pattern in ["inbound>>>", "user>>>"] {
-        let response = client
-            .query_stats(tonic::Request::new(QueryStatsRequest {
-                pattern: pattern.to_string(),
-                reset: true,
-            }))
-            .await
-            .map_err(|e| pp_common::PanelError::Core(format!("xray stats ({}): {}", pattern, e)))?
-            .into_inner();
-        stats.extend(response.stat.into_iter().map(|s| (s.name, s.value)));
-    }
-
-    Ok(stats_to_report(stats))
-}
-
-/// Aggregate xray-style stat counters into per-inbound and per-user traffic.
-///
-/// Handles names of the form
-/// `inbound>>>{tag}>>>traffic>>>{uplink|downlink}` and
-/// `user>>>{email}>>>traffic>>>{uplink|downlink}`; anything else is ignored.
-fn stats_to_report(
-    stats: impl IntoIterator<Item = (String, i64)>,
-) -> (Vec<InboundTraffic>, Vec<UserTraffic>) {
-    let mut inbound_map: HashMap<String, (i64, i64)> = HashMap::new();
-    let mut user_map: HashMap<String, (i64, i64)> = HashMap::new();
-
-    for (name, value) in stats {
-        let parts: Vec<&str> = name.split(">>>").collect();
-        if parts.len() < 4 {
-            continue;
-        }
-        let direction = parts[3];
-        let delta = match direction {
-            "uplink" => (value, 0),
-            "downlink" => (0, value),
-            _ => continue,
-        };
-        let map = match parts[0] {
-            "inbound" => &mut inbound_map,
-            "user" => &mut user_map,
-            _ => continue,
-        };
-        let entry = map.entry(parts[1].to_string()).or_default();
-        entry.0 += delta.0;
-        entry.1 += delta.1;
-    }
-
-    let inbounds = inbound_map
-        .into_iter()
-        .map(|(tag, (upload_bytes, download_bytes))| InboundTraffic {
-            tag,
-            upload_bytes,
-            download_bytes,
-        })
-        .collect();
-
-    let users = user_map
-        .into_iter()
-        .map(|(email, (upload_bytes, download_bytes))| UserTraffic {
-            client_id: email.clone(),
-            email,
-            upload_bytes,
-            download_bytes,
-        })
-        .collect();
-
-    (inbounds, users)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -689,44 +501,6 @@ mod tests {
         );
         assert_eq!(parse_traffic_sample(b"{\"up\": 5"), None);
         assert_eq!(parse_traffic_sample(b"not json"), None);
-    }
-
-    #[test]
-    fn stats_to_report_aggregates_inbound_and_user_counters() {
-        let stats = vec![
-            ("inbound>>>vless-in>>>traffic>>>uplink".to_string(), 10),
-            ("inbound>>>vless-in>>>traffic>>>downlink".to_string(), 20),
-            ("inbound>>>hy2-in>>>traffic>>>uplink".to_string(), 1),
-            ("user>>>alice@example.com>>>traffic>>>uplink".to_string(), 5),
-            (
-                "user>>>alice@example.com>>>traffic>>>downlink".to_string(),
-                7,
-            ),
-            ("user>>>alice@example.com>>>online".to_string(), 2),
-            ("outbound>>>direct>>>traffic>>>uplink".to_string(), 100),
-        ];
-
-        let (inbounds, users) = stats_to_report(stats);
-
-        assert_eq!(inbounds.len(), 2);
-        let vless = inbounds.iter().find(|i| i.tag == "vless-in").unwrap();
-        assert_eq!((vless.upload_bytes, vless.download_bytes), (10, 20));
-
-        assert_eq!(users.len(), 1);
-        assert_eq!(users[0].email, "alice@example.com");
-        assert_eq!((users[0].upload_bytes, users[0].download_bytes), (5, 7));
-    }
-
-    #[test]
-    fn stats_to_report_ignores_malformed_names() {
-        let stats = vec![
-            ("user>>>only-two-sections".to_string(), 10),
-            ("".to_string(), 10),
-            ("inbound>>>tag>>>traffic>>>sideways".to_string(), 10),
-        ];
-        let (inbounds, users) = stats_to_report(stats);
-        assert!(inbounds.is_empty());
-        assert!(users.is_empty());
     }
 
     #[test]

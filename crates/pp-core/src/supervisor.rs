@@ -47,21 +47,6 @@ impl CoreSupervisor {
 
         let mut discovered = Vec::new();
 
-        // Check xray
-        let xray_path = Self::binary_path(bin_dir, "xray");
-        if xray_path.exists() {
-            if let Ok(manager) = CoreManagerFactory::create(CoreType::Xray, &xray_path, config_dir)
-            {
-                self.register(Arc::from(manager)).await;
-                discovered.push(CoreType::Xray);
-            }
-        } else {
-            tracing::warn!(
-                "xray binary not found at {}, will install on demand",
-                xray_path.display()
-            );
-        }
-
         // Check sing-box
         let singbox_path = Self::binary_path(bin_dir, "sing-box");
         if singbox_path.exists() {

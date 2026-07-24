@@ -81,16 +81,10 @@ impl ConfigBuilder for SingBoxConfigBuilder {
             }
             // The 1.14 api service's connection tracking and Clash mode methods
             // require the Clash API to be configured alongside it.
-            let mut experimental = build_clash_api_experimental();
-            if let Some(v2ray_api) = build_v2ray_api(&sb_inbounds) {
-                experimental["v2ray_api"] = v2ray_api;
-            }
+            let experimental = build_clash_api_experimental();
             config["experimental"] = experimental;
         } else {
-            let mut experimental = build_legacy_api_services();
-            if let Some(v2ray_api) = build_v2ray_api(&sb_inbounds) {
-                experimental["v2ray_api"] = v2ray_api;
-            }
+            let experimental = build_legacy_api_services();
             config["experimental"] = experimental;
         }
 
@@ -203,55 +197,6 @@ fn build_clash_api_experimental() -> Value {
 
     json!({
         "clash_api": clash_api,
-    })
-}
-
-/// Build the V2Ray API (xray-compatible StatsService) definition.
-///
-/// Opt-in: only emitted when `PROXYPANEL_SINGBOX_V2RAY_API_LISTEN` is set
-/// (e.g. `127.0.0.1:10085`), because official sing-box release binaries are
-/// built without the `with_v2ray_api` tag and refuse to start when the
-/// section is present. Enable it only on nodes running a sing-box build that
-/// includes the tag. The agent falls back to the api service / Clash API
-/// collectors when the endpoint is unreachable.
-///
-/// sing-box only counts traffic for explicitly listed inbounds and users, so
-/// every generated inbound tag and user name is enumerated here.
-fn build_v2ray_api(sb_inbounds: &[Value]) -> Option<Value> {
-    let listen = std::env::var("PROXYPANEL_SINGBOX_V2RAY_API_LISTEN").ok()?;
-    if listen.is_empty() {
-        return None;
-    }
-    Some(v2ray_api_json(&listen, sb_inbounds))
-}
-
-fn v2ray_api_json(listen: &str, sb_inbounds: &[Value]) -> Value {
-    let mut tags: Vec<Value> = Vec::new();
-    let mut users: Vec<Value> = Vec::new();
-    for inbound in sb_inbounds {
-        if let Some(tag) = inbound.get("tag").and_then(|v| v.as_str()) {
-            if !tag.is_empty() {
-                tags.push(json!(tag));
-            }
-        }
-        if let Some(arr) = inbound.get("users").and_then(|v| v.as_array()) {
-            for user in arr {
-                if let Some(name) = user.get("name").and_then(|v| v.as_str()) {
-                    if !name.is_empty() {
-                        users.push(json!(name));
-                    }
-                }
-            }
-        }
-    }
-
-    json!({
-        "listen": listen,
-        "stats": {
-            "enabled": true,
-            "inbounds": tags,
-            "users": users,
-        }
     })
 }
 
@@ -781,29 +726,5 @@ mod tests {
         // Connection tracking on the 1.14 api service requires the Clash API.
         let clash_api = &config["experimental"]["clash_api"];
         assert!(clash_api["external_controller"].is_string());
-    }
-
-    #[test]
-    fn v2ray_api_collects_tags_and_users() {
-        let inbounds = vec![
-            json!({
-                "type": "vless",
-                "tag": "vless-in",
-                "users": [
-                    { "uuid": "u1", "name": "alice@example.com" },
-                    { "uuid": "u2", "name": "" }
-                ]
-            }),
-            json!({
-                "type": "hysteria2",
-                "tag": "hy2-in",
-                "users": [{ "name": "bob", "password": "x" }]
-            }),
-        ];
-
-        let api = v2ray_api_json("127.0.0.1:10085", &inbounds);
-        assert_eq!(api["listen"], "127.0.0.1:10085");
-        assert_eq!(api["stats"]["inbounds"], json!(["vless-in", "hy2-in"]));
-        assert_eq!(api["stats"]["users"], json!(["alice@example.com", "bob"]));
     }
 }

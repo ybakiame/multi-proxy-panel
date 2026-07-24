@@ -26,7 +26,7 @@ const VERSIONS_PER_CHANNEL: usize = 10;
 const CHANNEL_RELEASE: &str = "release";
 const CHANNEL_PRERELEASE: &str = "prerelease";
 
-const ALL_CORES: [CoreType; 3] = [CoreType::Xray, CoreType::SingBox, CoreType::Mihomo];
+const ALL_CORES: [CoreType; 2] = [CoreType::SingBox, CoreType::Mihomo];
 
 fn version_to_json(v: &core_version::Model) -> Value {
     json!({

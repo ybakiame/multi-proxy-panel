@@ -100,11 +100,7 @@ pub async fn collect_logs(rx: &mut mpsc::Receiver<LogEntry>, limit: usize) -> Lo
 /// Collect core status from the supervisor and return a report.
 pub async fn collect_core_status(supervisor: &pp_core::CoreSupervisor) -> Vec<CoreStatusReport> {
     let mut reports = Vec::new();
-    for core_type in [
-        pp_common::CoreType::Xray,
-        pp_common::CoreType::SingBox,
-        pp_common::CoreType::Mihomo,
-    ] {
+    for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
         if let Some(manager) = supervisor.get(core_type).await {
             let running = manager.is_running().await;
             let version = manager.version().await.unwrap_or_default();

@@ -20,7 +20,7 @@ use crate::state::AppState;
 pub enum ProtocolPreset {
     /// VLESS + REALITY + vision flow
     VlessReality,
-    /// VLESS + XHTTP + TLS (xray only)
+    /// VLESS + XHTTP + TLS (mihomo)
     VlessXhttpTls,
     /// Hysteria2 (sing-box only)
     Hysteria2,
@@ -47,14 +47,14 @@ pub fn list_presets() -> Vec<PresetInfo> {
             description: "Recommended. VLESS with REALITY handshake and xtls-rprx-vision flow."
                 .to_string(),
             protocol_type: ProtocolType::VlessReality.to_string(),
-            core_type: CoreType::Xray.to_string(),
+            core_type: CoreType::SingBox.to_string(),
         },
         PresetInfo {
             id: "vless_xhttp_tls".to_string(),
             name: "VLESS + XHTTP + TLS".to_string(),
-            description: "VLESS over XHTTP (HTTPUpgrade), xray only.".to_string(),
+            description: "VLESS over XHTTP (HTTPUpgrade), mihomo.".to_string(),
             protocol_type: ProtocolType::VlessXhttp.to_string(),
-            core_type: CoreType::Xray.to_string(),
+            core_type: CoreType::Mihomo.to_string(),
         },
         PresetInfo {
             id: "hysteria2".to_string(),
@@ -99,7 +99,12 @@ pub fn expand_preset(
                 "reality_short_id": pp_common::generate_short_id(),
                 "fingerprint": "chrome",
             });
-            (ProtocolType::VlessReality, CoreType::Xray, settings, None)
+            (
+                ProtocolType::VlessReality,
+                CoreType::SingBox,
+                settings,
+                None,
+            )
         }
         ProtocolPreset::VlessXhttpTls => {
             let settings = json!({
@@ -113,7 +118,7 @@ pub fn expand_preset(
             let tls = default_tls_settings(sni);
             (
                 ProtocolType::VlessXhttp,
-                CoreType::Xray,
+                CoreType::Mihomo,
                 settings,
                 Some(tls),
             )
@@ -282,7 +287,7 @@ mod tests {
             None,
         );
         assert_eq!(payload["protocol_type"], "vless_reality");
-        assert_eq!(payload["core_type"], "xray");
+        assert_eq!(payload["core_type"], "sing-box");
         assert_eq!(payload["listen_port"], 443);
         assert!(payload["settings"]["reality_private_key"].is_string());
     }
