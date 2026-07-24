@@ -21,3 +21,18 @@ export const pushConfig = (id: string, config: Record<string, unknown>) =>
   post(`/api/v1/nodes/${id}/push`, config);
 export const getNodeLogs = (id: string, limit = 100) =>
   get<AgentLog[]>(`/api/v1/nodes/${id}/logs?limit=${limit}`);
+
+export interface CoreBinary {
+  file_name: string;
+  size_bytes: number;
+  modified_at: number;
+  in_use: boolean;
+}
+
+export const getCoreBinaries = (id: string) =>
+  get<{ binaries: CoreBinary[]; error: string }>(`/api/v1/nodes/${id}/binaries`).then(
+    (res) => res.binaries,
+  );
+
+export const deleteCoreBinary = (id: string, fileName: string) =>
+  del(`/api/v1/nodes/${id}/binaries/${encodeURIComponent(fileName)}`);

@@ -128,7 +128,15 @@
     "deleteTitle": "Delete Node",
     "deleteConfirm": "Are you sure you want to delete this node?",
     "pushTitle": "Push Config",
-    "selectCore": "Select Core"
+    "selectCore": "Select Core",
+    "binaries": "Binaries",
+    "binariesTitle": "Core Binaries",
+    "binaryName": "File",
+    "binarySize": "Size",
+    "binaryModified": "Modified",
+    "binaryInUse": "In Use",
+    "deleteBinaryTitle": "Delete Core Binary",
+    "deleteBinaryConfirm": "Delete binary {{file}}? It will be re-downloaded on demand."
   },
   "certificates": {
     "title": "Certificates",
@@ -159,7 +167,9 @@
     "prerelease": "Pre-release",
     "emptyHint": "No versions yet. Click \"Add from Upstream\" to pick the versions you need.",
     "deleteTitle": "Delete Version",
-    "deleteConfirm": "Delete this version record? Protocol configs referencing it are unaffected."
+    "deleteConfirm": "Delete this version record? Protocol configs referencing it are unaffected.",
+    "publishedAt": "Published",
+    "updateAvailable": "Update"
   },
   "protocols": {
     "title": "Protocol Configs",

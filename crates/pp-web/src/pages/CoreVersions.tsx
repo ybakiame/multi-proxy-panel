@@ -117,6 +117,7 @@ export function CoreVersions() {
                     <Table.Column isRowHeader>{t("coreVersions.core")}</Table.Column>
                     <Table.Column>{t("coreVersions.version")}</Table.Column>
                     <Table.Column>{t("coreVersions.channel")}</Table.Column>
+                    <Table.Column>{t("coreVersions.publishedAt")}</Table.Column>
                     <Table.Column>{t("common.createdAt")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
                   </Table.Header>
@@ -132,6 +133,9 @@ export function CoreVersions() {
                         <Table.Cell>{v.core_type}</Table.Cell>
                         <Table.Cell className="font-mono text-sm">{v.version}</Table.Cell>
                         <Table.Cell>{channelBadge(v.channel)}</Table.Cell>
+                        <Table.Cell>
+                          {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
+                        </Table.Cell>
                         <Table.Cell>{new Date(v.created_at).toLocaleString()}</Table.Cell>
                         <Table.Cell>
                           <Button size="sm" variant="danger" onPress={() => setDeleteId(v.id)}>
@@ -178,14 +182,16 @@ export function CoreVersions() {
                         return (
                           <FormCheckbox
                             key={key}
-                            isSelected={v.saved || selected.has(key)}
-                            isDisabled={v.saved}
+                            isSelected={(v.saved && !v.update_available) || selected.has(key)}
+                            isDisabled={v.saved && !v.update_available}
                             onChange={(checked) =>
                               toggleVersion(
                                 {
                                   core_type: core.core_type,
                                   version: v.version,
                                   channel: v.channel,
+                                  published_at: v.published_at,
+                                  commit_sha: v.commit_sha,
                                 },
                                 checked,
                               )
@@ -194,9 +200,14 @@ export function CoreVersions() {
                             <span className="inline-flex items-center gap-1">
                               <span className="font-mono text-sm">{v.version}</span>
                               {channelBadge(v.channel)}
-                              {v.saved && (
+                              {v.saved && !v.update_available && (
                                 <span className="text-xs text-muted-foreground">
                                   {t("coreVersions.savedBadge")}
+                                </span>
+                              )}
+                              {v.saved && v.update_available && (
+                                <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
+                                  {t("coreVersions.updateAvailable")}
                                 </span>
                               )}
                             </span>

@@ -128,7 +128,15 @@
     "deleteTitle": "删除节点",
     "deleteConfirm": "确定要删除该节点吗？",
     "pushTitle": "推送配置",
-    "selectCore": "选择核心"
+    "selectCore": "选择核心",
+    "binaries": "核心",
+    "binariesTitle": "核心二进制",
+    "binaryName": "文件",
+    "binarySize": "大小",
+    "binaryModified": "修改时间",
+    "binaryInUse": "使用中",
+    "deleteBinaryTitle": "删除核心二进制",
+    "deleteBinaryConfirm": "确定要删除二进制文件 {{file}} 吗？删除后按需安装时会重新下载。"
   },
   "certificates": {
     "title": "证书管理",
@@ -159,7 +167,9 @@
     "prerelease": "预发布",
     "emptyHint": "暂无版本记录，点击“从上游添加”选择要使用的版本。",
     "deleteTitle": "删除版本",
-    "deleteConfirm": "确定要删除该版本记录吗？已引用该版本的协议配置不受影响。"
+    "deleteConfirm": "确定要删除该版本记录吗？已引用该版本的协议配置不受影响。",
+    "publishedAt": "发布时间",
+    "updateAvailable": "有更新"
   },
   "protocols": {
     "title": "协议配置",

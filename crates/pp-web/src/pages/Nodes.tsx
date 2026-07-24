@@ -18,6 +18,9 @@ import {
   deleteNode,
   pushConfig,
   getNodeLogs,
+  getCoreBinaries,
+  deleteCoreBinary,
+  CoreBinary,
 } from "../api/nodes";
 import { Node, AgentLog } from "../api/types";
 
@@ -36,6 +39,10 @@ export function Nodes() {
   const [pushNode, setPushNode] = useState<Node | null>(null);
   const [pushCore, setPushCore] = useState("sing-box");
   const [pushing, setPushing] = useState(false);
+  const [binNode, setBinNode] = useState<Node | null>(null);
+  const [binaries, setBinaries] = useState<CoreBinary[]>([]);
+  const [binLoading, setBinLoading] = useState(false);
+  const [deleteBinary, setDeleteBinary] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     hostname: "",
@@ -160,6 +167,35 @@ export function Nodes() {
     }
   };
 
+  const openBinaries = async (node: Node) => {
+    setBinNode(node);
+    setBinLoading(true);
+    try {
+      setBinaries(await getCoreBinaries(node.id));
+    } catch {
+      // error handled by axios interceptor
+    } finally {
+      setBinLoading(false);
+    }
+  };
+
+  const handleDeleteBinary = async () => {
+    if (!binNode || !deleteBinary) return;
+    try {
+      await deleteCoreBinary(binNode.id, deleteBinary);
+      setDeleteBinary(null);
+      setBinaries(await getCoreBinaries(binNode.id));
+    } catch {
+      // error handled by axios interceptor
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
+
   const openEdit = (node: Node) => {
     resetForm(node);
     setEditNode(node);
@@ -270,6 +306,9 @@ export function Nodes() {
                             </Button>
                             <Button size="sm" variant="ghost" onPress={() => openPush(node)}>
                               {t("nodes.pushConfig")}
+                            </Button>
+                            <Button size="sm" variant="ghost" onPress={() => openBinaries(node)}>
+                              {t("nodes.binaries")}
                             </Button>
                             <Button
                               size="sm"
@@ -442,6 +481,90 @@ export function Nodes() {
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+      <Modal.Backdrop
+        isOpen={!!binNode}
+        onOpenChange={(open) => {
+          if (!open) setBinNode(null);
+        }}
+      >
+        <Modal.Container className="max-w-2xl">
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {binNode
+                  ? `${t("nodes.binariesTitle")}: ${binNode.name}`
+                  : t("nodes.binariesTitle")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="max-h-[60vh] overflow-auto">
+              {binLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : binaries.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">{t("common.empty")}</div>
+              ) : (
+                <Table aria-label="core binaries">
+                  <Table.Content>
+                    <Table.Header>
+                      <Table.Column isRowHeader>{t("nodes.binaryName")}</Table.Column>
+                      <Table.Column>{t("nodes.binarySize")}</Table.Column>
+                      <Table.Column>{t("nodes.binaryModified")}</Table.Column>
+                      <Table.Column>{t("common.status")}</Table.Column>
+                      <Table.Column>{t("common.actions")}</Table.Column>
+                    </Table.Header>
+                    <Table.Body>
+                      {binaries.map((b) => (
+                        <Table.Row key={b.file_name}>
+                          <Table.Cell className="font-mono text-sm">{b.file_name}</Table.Cell>
+                          <Table.Cell>{formatSize(b.size_bytes)}</Table.Cell>
+                          <Table.Cell>
+                            {b.modified_at ? new Date(b.modified_at * 1000).toLocaleString() : "-"}
+                          </Table.Cell>
+                          <Table.Cell>
+                            {b.in_use ? (
+                              <span className="rounded bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
+                                {t("nodes.binaryInUse")}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              isDisabled={b.in_use}
+                              onPress={() => setDeleteBinary(b.file_name)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" onPress={() => setBinNode(null)}>
+                {t("common.close")}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <ConfirmDialog
+        title={t("nodes.deleteBinaryTitle")}
+        isOpen={!!deleteBinary}
+        onClose={() => setDeleteBinary(null)}
+        onConfirm={handleDeleteBinary}
+      >
+        {t("nodes.deleteBinaryConfirm", { file: deleteBinary })}
+      </ConfirmDialog>
+
       <Modal.Backdrop
         isOpen={!!logNode}
         onOpenChange={(open) => {

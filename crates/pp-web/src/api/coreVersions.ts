@@ -5,6 +5,9 @@ export interface UpstreamVersion {
   version: string;
   channel: string;
   saved: boolean;
+  published_at?: string | null;
+  commit_sha?: string | null;
+  update_available?: boolean;
 }
 
 export interface UpstreamCore {
@@ -16,6 +19,8 @@ export interface SaveVersionItem {
   core_type: string;
   version: string;
   channel: string;
+  published_at?: string | null;
+  commit_sha?: string | null;
 }
 
 export const getCoreVersions = (coreType?: string) =>
@@ -27,6 +32,6 @@ export const getUpstreamCoreVersions = () =>
   get<{ cores: UpstreamCore[] }>("/api/v1/core-versions/upstream").then((res) => res.cores);
 
 export const saveCoreVersions = (versions: SaveVersionItem[]) =>
-  post<{ added: number }>("/api/v1/core-versions", { versions });
+  post<{ added: number; updated: number }>("/api/v1/core-versions", { versions });
 
 export const deleteCoreVersion = (id: string) => del(`/api/v1/core-versions/${id}`);
