@@ -3,6 +3,13 @@ use serde_json::Value;
 
 use crate::generator::ProxyNode;
 
+/// Validate a generated sing-box config against the official JSON Schema.
+/// Maps schema errors into `PanelError::Subscription`.
+fn validate(config: &Value) -> PanelResult<()> {
+    pp_config::validate_singbox_config(config)
+        .map_err(|e| PanelError::Subscription(format!("sing-box schema: {e}")))
+}
+
 /// Protocols supported by the sing-box subscription generator.
 fn is_supported(protocol: ProtocolType) -> bool {
     matches!(
@@ -28,6 +35,7 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<S
     if let Some(base) = base_config {
         if base.contains("<OUTBOUND_REPLACE>") || base.contains("<NODE_REPLACE>") {
             let rendered = render_template(base.to_string(), &outbounds, &node_names)?;
+            validate(&rendered)?;
             return Ok(serde_json::to_string_pretty(&rendered)?);
         }
 
@@ -35,11 +43,13 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<S
             PanelError::Subscription(format!("failed to parse sing-box template json: {e}"))
         })?;
         config["outbounds"] = serde_json::Value::Array(outbounds);
+        validate(&config)?;
         return Ok(serde_json::to_string_pretty(&config)?);
     }
 
     let mut config = serde_json::json!({ "outbounds": [] });
     config["outbounds"] = serde_json::Value::Array(outbounds);
+    validate(&config)?;
     Ok(serde_json::to_string_pretty(&config)?)
 }
 
@@ -51,13 +61,40 @@ fn render_template(
     let outbounds_json = serde_json::to_string(&outbounds)?;
     let names_json = serde_json::to_string(&node_names)?;
 
-    let rendered = base_str
-        .replace("\"<OUTBOUND_REPLACE>\"", &outbounds_json)
-        .replace("\"<NODE_REPLACE>\"", &names_json);
+    // Splice array elements into the template's array position: strip the
+    // outer brackets so `<OUTBOUND_REPLACE>` inside `[ ... ]` expands inline,
+    // avoiding double-nested arrays (e.g. `[[{...},{...}], {"type":"direct"}]`).
+    let outbounds_inner = outbounds_json
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(&outbounds_json);
+    let names_inner = names_json
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(&names_json);
+
+    let rendered = splice_placeholder(base_str, "\"<OUTBOUND_REPLACE>\"", outbounds_inner);
+    let rendered = splice_placeholder(rendered, "\"<NODE_REPLACE>\"", names_inner);
 
     serde_json::from_str(&rendered).map_err(|e| {
         PanelError::Subscription(format!("failed to render subscription template: {e}"))
     })
+}
+
+/// Replace a quoted JSON placeholder with spliced array elements.
+/// When `inner` is empty (no elements), remove the placeholder together with
+/// any adjacent comma to avoid invalid JSON like `[ , {...} ]`.
+fn splice_placeholder(template: String, quoted_marker: &str, inner: &str) -> String {
+    if inner.trim().is_empty() {
+        template
+            .replace(&format!("{}, ", quoted_marker), "")
+            .replace(&format!("{},", quoted_marker), "")
+            .replace(&format!(", {}", quoted_marker), "")
+            .replace(&format!(",{}", quoted_marker), "")
+            .replace(quoted_marker, "null")
+    } else {
+        template.replace(quoted_marker, inner)
+    }
 }
 
 fn build_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
@@ -332,5 +369,43 @@ mod tests {
         node.settings["public_key"] = json!("");
         let err = build_vless_reality_outbound(&node).unwrap_err();
         assert!(err.to_string().contains("public_key"));
+    }
+
+    // --- Template rendering tests (Task A) ---
+
+    const BUILTIN_TEMPLATE: &str = r#"{
+        "outbounds": [
+            "<OUTBOUND_REPLACE>",
+            { "type": "direct", "tag": "direct" }
+        ]
+    }"#;
+
+    #[test]
+    fn render_template_splices_outbound_elements_not_array() {
+        let outbounds = vec![
+            json!({"type": "vless", "tag": "node1", "server": "1.2.3.4"}),
+            json!({"type": "hysteria2", "tag": "node2", "server": "5.6.7.8"}),
+        ];
+        let names = vec!["node1".into(), "node2".into()];
+        let result = render_template(BUILTIN_TEMPLATE.to_string(), &outbounds, &names).unwrap();
+        let outbounds_arr = result["outbounds"].as_array().unwrap();
+        // Should have 3 elements: 2 spliced + 1 direct
+        assert_eq!(outbounds_arr.len(), 3);
+        // First element must be an object, NOT an array (no double-nesting)
+        assert!(outbounds_arr[0].is_object());
+        assert_eq!(outbounds_arr[0]["tag"], "node1");
+        assert_eq!(outbounds_arr[1]["tag"], "node2");
+        assert_eq!(outbounds_arr[2]["type"], "direct");
+    }
+
+    #[test]
+    fn render_template_empty_outbounds_produces_valid_json() {
+        let outbounds: Vec<Value> = vec![];
+        let names: Vec<String> = vec![];
+        let result = render_template(BUILTIN_TEMPLATE.to_string(), &outbounds, &names).unwrap();
+        let outbounds_arr = result["outbounds"].as_array().unwrap();
+        // With 0 nodes, only the direct outbound remains
+        assert_eq!(outbounds_arr.len(), 1);
+        assert_eq!(outbounds_arr[0]["type"], "direct");
     }
 }
