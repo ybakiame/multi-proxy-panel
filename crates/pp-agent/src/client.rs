@@ -410,8 +410,9 @@ async fn handle_config_push(
     };
 
     // Rolling-tag build upgrade: when the Hub reports a newer upstream build
-    // for the pinned version, re-download the binary before applying config.
-    if !push.core_build_id.is_empty() {
+    // for the pinned version, or a pinned version change, re-download
+    // the binary before applying config.
+    if !push.core_build_id.is_empty() || !push.core_version.is_empty() {
         if let Err(e) = ensure_core_build(
             supervisor,
             core_type,
@@ -463,8 +464,9 @@ async fn ensure_core_build(
         return Ok(());
     };
     let marker = bin_dir.join(format!(".build_id.{}", core_type));
+    let expected = format!("{}|{}", version, build_id);
     let current = tokio::fs::read_to_string(&marker).await.unwrap_or_default();
-    if current.trim() == build_id {
+    if current.trim() == expected {
         return Ok(());
     }
 
@@ -489,7 +491,7 @@ async fn ensure_core_build(
     match pp_core::ensure_core_binary(&bin_dir, core_type, version).await {
         Ok(_) => {
             let _ = tokio::fs::remove_file(&backup).await;
-            tokio::fs::write(&marker, build_id).await?;
+            tokio::fs::write(&marker, &expected).await?;
             Ok(())
         }
         Err(e) => {
