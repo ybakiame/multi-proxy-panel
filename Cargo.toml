@@ -90,6 +90,9 @@ tokio-rustls = "0.26"
 
 # Template / rendering
 tera = { version = "1.20", default-features = false }
+
+# JSON Schema validation
+jsonschema = "0.26"
 base64 = "0.22"
 url = "2.5"
 qrcode = "0.14"

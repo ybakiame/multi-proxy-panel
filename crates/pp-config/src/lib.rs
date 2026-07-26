@@ -5,7 +5,9 @@
 pub mod builder;
 pub mod mihomo;
 pub mod relay;
+pub mod schema;
 pub mod singbox;
 
 pub use builder::*;
 pub use relay::*;
+pub use schema::*;

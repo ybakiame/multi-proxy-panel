@@ -104,6 +104,12 @@ pub async fn generate_node_config(
 
     let mut config = builder.build_full_config(&inbounds)?;
     apply_relay_rules(db, node_id, target_core, &mut config).await?;
+
+    // Validate generated sing-box configs against the official JSON Schema.
+    if target_core == CoreType::SingBox {
+        pp_config::validate_singbox_config(&config)?;
+    }
+
     Ok((config, effective_version))
 }
 
