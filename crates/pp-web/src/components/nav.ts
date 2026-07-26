@@ -15,6 +15,7 @@ import {
   ArrowsRightLeftIcon,
   CpuChipIcon,
   LockClosedIcon,
+  ArrowPathRoundedSquareIcon,
 } from "@heroicons/react/24/outline";
 
 export const navItems = [
@@ -23,6 +24,11 @@ export const navItems = [
   { path: "/protocols", labelKey: "nav.protocols", icon: CogIcon },
   { path: "/core-versions", labelKey: "nav.coreVersions", icon: CpuChipIcon },
   { path: "/certificates", labelKey: "nav.certificates", icon: LockClosedIcon },
+  {
+    path: "/relay-rules",
+    labelKey: "nav.relayRules",
+    icon: ArrowPathRoundedSquareIcon,
+  },
   { path: "/bindings", labelKey: "nav.bindings", icon: LinkIcon },
   { path: "/hosts", labelKey: "nav.hosts", icon: GlobeAltIcon },
   { path: "/clients", labelKey: "nav.clients", icon: UsersIcon },

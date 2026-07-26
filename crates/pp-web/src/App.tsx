@@ -19,6 +19,7 @@ import { ApiKeys } from "./pages/ApiKeys";
 import { Webhooks } from "./pages/Webhooks";
 import { Onlines } from "./pages/Onlines";
 import { Traffic } from "./pages/Traffic";
+import { RelayRules } from "./pages/RelayRules";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -162,6 +163,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Traffic />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/relay-rules"
+        element={
+          <ProtectedRoute>
+            <RelayRules />
           </ProtectedRoute>
         }
       />
