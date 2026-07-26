@@ -44,6 +44,8 @@ pub async fn query_metrics(
                 "mem_total": r.mem_total,
                 "disk_used": r.disk_used,
                 "disk_total": r.disk_total,
+                "net_rx": r.net_rx,
+                "net_tx": r.net_tx,
                 "load_avg1": r.load_avg1,
                 "load_avg5": r.load_avg5,
                 "load_avg15": r.load_avg15,
