@@ -137,7 +137,13 @@
     "binaryModified": "Modified",
     "binaryInUse": "In Use",
     "deleteBinaryTitle": "Delete Core Binary",
-    "deleteBinaryConfirm": "Delete binary {{file}}? It will be re-downloaded on demand."
+    "deleteBinaryConfirm": "Delete binary {{file}}? It will be re-downloaded on demand.",
+    "pending": "Pending",
+    "pendingConfig": "Config",
+    "pendingCore": "Core",
+    "pendingSummary": "{{count}} node(s) have pending updates",
+    "pushAllPending": "Push All Pending",
+    "pushResult": "Succeeded {{ok}} / Failed {{fail}}"
   },
   "certificates": {
     "title": "Certificates",
@@ -194,7 +200,9 @@
     "deleteTitle": "Delete Version",
     "deleteConfirm": "Delete this version record? Protocol configs referencing it are unaffected.",
     "publishedAt": "Published",
-    "updateAvailable": "Update"
+    "updateAvailable": "Update",
+    "inUse": "In Use",
+    "setActive": "Set Active"
   },
   "protocols": {
     "title": "Protocol Configs",

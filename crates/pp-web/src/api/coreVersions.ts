@@ -35,3 +35,6 @@ export const saveCoreVersions = (versions: SaveVersionItem[]) =>
   post<{ added: number; updated: number }>("/api/v1/core-versions", { versions });
 
 export const deleteCoreVersion = (id: string) => del(`/api/v1/core-versions/${id}`);
+
+export const activateCoreVersion = (id: string) =>
+  post<{ activated: boolean; pending_nodes: number }>(`/api/v1/core-versions/${id}/activate`, {});

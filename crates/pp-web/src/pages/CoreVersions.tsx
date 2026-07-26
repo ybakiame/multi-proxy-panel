@@ -7,6 +7,7 @@ import {
   getUpstreamCoreVersions,
   saveCoreVersions,
   deleteCoreVersion,
+  activateCoreVersion,
   UpstreamCore,
   SaveVersionItem,
 } from "../api/coreVersions";
@@ -81,6 +82,15 @@ export function CoreVersions() {
     }
   };
 
+  const handleActivate = async (id: string) => {
+    try {
+      await activateCoreVersion(id);
+      fetch();
+    } catch {
+      // error handled by axios interceptor
+    }
+  };
+
   const channelBadge = (channel: string) => (
     <span
       className={`inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${
@@ -117,6 +127,7 @@ export function CoreVersions() {
                     <Table.Column isRowHeader>{t("coreVersions.core")}</Table.Column>
                     <Table.Column>{t("coreVersions.version")}</Table.Column>
                     <Table.Column>{t("coreVersions.channel")}</Table.Column>
+                    <Table.Column>{t("coreVersions.inUse")}</Table.Column>
                     <Table.Column>{t("coreVersions.publishedAt")}</Table.Column>
                     <Table.Column>{t("common.createdAt")}</Table.Column>
                     <Table.Column>{t("common.actions")}</Table.Column>
@@ -134,13 +145,36 @@ export function CoreVersions() {
                         <Table.Cell className="font-mono text-sm">{v.version}</Table.Cell>
                         <Table.Cell>{channelBadge(v.channel)}</Table.Cell>
                         <Table.Cell>
+                          {v.is_active ? (
+                            <span className="inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium bg-success-soft text-success-soft-foreground">
+                              {t("coreVersions.inUse")}
+                            </span>
+                          ) : null}
+                        </Table.Cell>
+                        <Table.Cell>
                           {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
                         </Table.Cell>
                         <Table.Cell>{new Date(v.created_at).toLocaleString()}</Table.Cell>
                         <Table.Cell>
-                          <Button size="sm" variant="danger" onPress={() => setDeleteId(v.id)}>
-                            {t("common.delete")}
-                          </Button>
+                          <div className="flex gap-2">
+                            {!v.is_active && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onPress={() => handleActivate(v.id)}
+                              >
+                                {t("coreVersions.setActive")}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              isDisabled={v.is_active}
+                              onPress={() => setDeleteId(v.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
                         </Table.Cell>
                       </Table.Row>
                     ))}

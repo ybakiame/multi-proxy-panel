@@ -5,7 +5,6 @@ export interface CreateProtocolPayload {
   name: string;
   protocol_type: string;
   core_type: string;
-  core_version?: string;
   listen_address: string;
   listen_port: number;
   settings: Record<string, unknown>;

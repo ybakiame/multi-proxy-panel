@@ -20,6 +20,9 @@ import {
   getNodeLogs,
   getCoreBinaries,
   deleteCoreBinary,
+  getPendingUpdates,
+  pushPendingUpdates,
+  PendingUpdate,
   CoreBinary,
 } from "../api/nodes";
 import { Node, AgentLog } from "../api/types";
@@ -43,6 +46,9 @@ export function Nodes() {
   const [binaries, setBinaries] = useState<CoreBinary[]>([]);
   const [binLoading, setBinLoading] = useState(false);
   const [deleteBinary, setDeleteBinary] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingUpdate[]>([]);
+  const [pushResult, setPushResult] = useState<string | null>(null);
+  const [pushPushing, setPushPushing] = useState(false);
   const [form, setForm] = useState({
     name: "",
     hostname: "",
@@ -52,14 +58,36 @@ export function Nodes() {
     parent_id: "",
   });
 
+  const fetchPending = async () => {
+    try {
+      setPending(await getPendingUpdates());
+    } catch {
+      // error handled by axios interceptor
+    }
+  };
+
   const fetch = async () => {
     setLoading(true);
     try {
-      const nodesRes = await getNodesPaginated(page, perPage);
+      const [nodesRes] = await Promise.all([getNodesPaginated(page, perPage), fetchPending()]);
       setNodes(nodesRes.data);
       setTotal(nodesRes.pagination.total);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePushAll = async () => {
+    setPushPushing(true);
+    setPushResult(null);
+    try {
+      const r = await pushPendingUpdates({});
+      setPushResult(t("nodes.pushResult", { ok: r.succeeded, fail: r.failed }));
+      fetch();
+    } catch {
+      // error handled by axios interceptor
+    } finally {
+      setPushPushing(false);
     }
   };
 
@@ -160,6 +188,7 @@ export function Nodes() {
         restart: true,
       });
       setPushNode(null);
+      fetchPending();
     } catch {
       // error handled by axios interceptor
     } finally {
@@ -228,6 +257,21 @@ export function Nodes() {
 
       {newToken && <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />}
 
+      {pending.length > 0 && (
+        <div className="flex items-center gap-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning-soft-foreground">
+          <span className="flex-1">{t("nodes.pendingSummary", { count: pending.length })}</span>
+          <Button size="sm" variant="primary" onPress={handlePushAll} isDisabled={pushPushing}>
+            {pushPushing ? <Spinner size="sm" /> : t("nodes.pushAllPending")}
+          </Button>
+        </div>
+      )}
+
+      {pushResult && (
+        <div className="rounded-lg bg-default-soft px-4 py-2 text-sm text-default-soft-foreground">
+          {pushResult}
+        </div>
+      )}
+
       <Card>
         <Card.Content>
           {loading ? (
@@ -243,6 +287,7 @@ export function Nodes() {
                     <Table.Column>{t("nodes.hostname")}</Table.Column>
                     <Table.Column>{t("nodes.address")}</Table.Column>
                     <Table.Column>{t("common.status")}</Table.Column>
+                    <Table.Column>{t("nodes.pending")}</Table.Column>
                     <Table.Column>{t("nodes.coreStatus")}</Table.Column>
                     <Table.Column>{t("nodes.parentId")}</Table.Column>
                     <Table.Column>{t("nodes.coresAvailable")}</Table.Column>
@@ -263,6 +308,23 @@ export function Nodes() {
                         <Table.Cell>{node.address}</Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={node.status} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="flex flex-wrap gap-1">
+                            {pending
+                              .filter((p) => p.node_id === node.id)
+                              .map((p, i) => (
+                                <span
+                                  key={i}
+                                  className="inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium bg-warning-soft text-warning-soft-foreground"
+                                >
+                                  {p.update_type === "core"
+                                    ? `${t("nodes.pendingCore")} ${p.core_type}`
+                                    : `${t("nodes.pendingConfig")} ${p.core_type}`}
+                                </span>
+                              ))}
+                            {pending.filter((p) => p.node_id === node.id).length === 0 && null}
+                          </div>
                         </Table.Cell>
                         <Table.Cell>
                           <div className="flex flex-wrap gap-1">

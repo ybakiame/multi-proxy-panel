@@ -137,7 +137,13 @@
     "binaryModified": "修改时间",
     "binaryInUse": "使用中",
     "deleteBinaryTitle": "删除核心二进制",
-    "deleteBinaryConfirm": "确定要删除二进制文件 {{file}} 吗？删除后按需安装时会重新下载。"
+    "deleteBinaryConfirm": "确定要删除二进制文件 {{file}} 吗？删除后按需安装时会重新下载。",
+    "pending": "待更新",
+    "pendingConfig": "配置",
+    "pendingCore": "核心",
+    "pendingSummary": "{{count}} 个节点有待推送更新",
+    "pushAllPending": "推送全部待更新",
+    "pushResult": "成功 {{ok}} / 失败 {{fail}}"
   },
   "certificates": {
     "title": "证书管理",
@@ -194,7 +200,9 @@
     "deleteTitle": "删除版本",
     "deleteConfirm": "确定要删除该版本记录吗？已引用该版本的协议配置不受影响。",
     "publishedAt": "发布时间",
-    "updateAvailable": "有更新"
+    "updateAvailable": "有更新",
+    "inUse": "使用中",
+    "setActive": "设为使用"
   },
   "protocols": {
     "title": "协议配置",

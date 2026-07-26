@@ -62,6 +62,7 @@ export interface CoreVersion {
   core_type: string;
   version: string;
   channel: string;
+  is_active: boolean;
   published_at?: string | null;
   commit_sha?: string | null;
   created_at: string;

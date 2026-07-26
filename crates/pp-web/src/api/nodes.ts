@@ -1,6 +1,28 @@
 import { get, getPaginated, post, put, del } from "./client";
 import type { AgentLog, Node } from "./types";
 
+export interface PendingUpdate {
+  node_id: string;
+  node_name: string;
+  core_type: string;
+  update_type: string;
+  updated_at: string;
+}
+
+export interface PushPendingResult {
+  node_id: string;
+  core_type: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface PushPendingResults {
+  results: PushPendingResult[];
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
 export interface CreateNodePayload {
   name: string;
   hostname?: string;
@@ -36,3 +58,9 @@ export const getCoreBinaries = (id: string) =>
 
 export const deleteCoreBinary = (id: string, fileName: string) =>
   del(`/api/v1/nodes/${id}/binaries/${encodeURIComponent(fileName)}`);
+
+export const getPendingUpdates = () =>
+  get<{ pending: PendingUpdate[] }>("/api/v1/nodes/pending-updates").then((r) => r.pending);
+
+export const pushPendingUpdates = (payload: { node_ids?: string[]; core_type?: string }) =>
+  post<PushPendingResults>("/api/v1/nodes/push-pending", payload);

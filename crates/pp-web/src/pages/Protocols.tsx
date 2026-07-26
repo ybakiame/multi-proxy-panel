@@ -17,8 +17,7 @@ import {
   deleteProtocol,
   generateRealityKeys,
 } from "../api/protocols";
-import { getCoreVersions } from "../api/coreVersions";
-import { ProtocolConfig, CoreVersion } from "../api/types";
+import { ProtocolConfig } from "../api/types";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
@@ -37,7 +36,6 @@ interface ProtocolForm {
   name: string;
   protocol_type: string;
   core_type: string;
-  core_version: string;
   listen_address: string;
   listen_port: string;
   tls_enabled: boolean;
@@ -63,7 +61,6 @@ const defaultForm: ProtocolForm = {
   name: "",
   protocol_type: "vless_reality",
   core_type: "sing-box",
-  core_version: "",
   listen_address: "0.0.0.0",
   listen_port: "",
   tls_enabled: false,
@@ -89,7 +86,6 @@ export function Protocols() {
   const { t } = useTranslation();
   const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
   const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
-  const [coreVersions, setCoreVersions] = useState<CoreVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
@@ -110,12 +106,6 @@ export function Protocols() {
   useEffect(() => {
     fetch();
   }, [page, perPage]);
-
-  useEffect(() => {
-    getCoreVersions()
-      .then(setCoreVersions)
-      .catch(() => {});
-  }, []);
 
   const parseSettings = (settings: Record<string, unknown>): Partial<ProtocolForm> => {
     return {
@@ -148,7 +138,6 @@ export function Protocols() {
         name: protocol.name,
         protocol_type: protocol.protocol_type,
         core_type: protocol.core_type,
-        core_version: protocol.core_version || "",
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
         tls_enabled: !!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0,
@@ -211,7 +200,6 @@ export function Protocols() {
       name: form.name,
       protocol_type: form.protocol_type,
       core_type: form.core_type,
-      core_version: form.core_version || undefined,
       listen_address: form.listen_address,
       listen_port: Number(form.listen_port) || 0,
       settings: buildSettings(),
@@ -566,25 +554,6 @@ export function Protocols() {
                   label: type,
                 }))}
                 isRequired
-              />
-              <FormSelect
-                label={t("protocols.coreVersion")}
-                value={form.core_version || "__default__"}
-                onChange={(value) =>
-                  setForm({ ...form, core_version: value === "__default__" ? "" : value })
-                }
-                options={[
-                  { id: "__default__", label: t("protocols.coreVersionDefault") },
-                  ...coreVersions
-                    .filter((v) => v.core_type === form.core_type)
-                    .map((v) => ({
-                      id: v.version,
-                      label:
-                        v.channel === "prerelease"
-                          ? `${v.version} (${t("coreVersions.prerelease")})`
-                          : v.version,
-                    })),
-                ]}
               />
               <FormInput
                 label={t("protocols.listen")}
