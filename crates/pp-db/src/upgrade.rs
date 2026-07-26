@@ -14,8 +14,10 @@ use tracing::{info, warn};
 
 use crate::entities::{
     agent_log, core_version, node, node_binding, node_binding_group_binding, protocol_config,
-    system_meta,
+    subscription_template, system_meta,
 };
+
+const SINGBOX_BUILTIN_TEMPLATE: &str = include_str!("templates/singbox_builtin.json");
 
 const VERSION_KEY: &str = "app_version";
 
@@ -34,11 +36,18 @@ struct UpgradeStep {
     run: for<'a> fn(&'a DatabaseConnection) -> UpgradeFuture<'a>,
 }
 
-const UPGRADE_STEPS: &[UpgradeStep] = &[UpgradeStep {
-    introduced_in: "0.2.0",
-    name: "purge_xray_data",
-    run: |conn| Box::pin(purge_xray_data(conn)),
-}];
+const UPGRADE_STEPS: &[UpgradeStep] = &[
+    UpgradeStep {
+        introduced_in: "0.2.0",
+        name: "purge_xray_data",
+        run: |conn| Box::pin(purge_xray_data(conn)),
+    },
+    UpgradeStep {
+        introduced_in: "0.3.1",
+        name: "refresh_singbox_builtin_template",
+        run: |conn| Box::pin(refresh_singbox_builtin_template(conn)),
+    },
+];
 
 /// Run every upgrade step whose version falls in `(stored_version, app_version]`,
 /// then record `app_version` in `system_meta`.
@@ -196,6 +205,26 @@ async fn purge_xray_data(conn: &DatabaseConnection) -> Result<(), DbErr> {
         }
     }
 
+    Ok(())
+}
+
+/// 0.3.1 — replace the built-in sing-box subscription template with the
+/// 1.12+/1.14-compatible format (legacy DNS/geosite fields were removed
+/// upstream). Only rows flagged is_builtin are touched; user-customized
+/// templates are left alone.
+async fn refresh_singbox_builtin_template(conn: &DatabaseConnection) -> Result<(), DbErr> {
+    let templates = subscription_template::Entity::find()
+        .filter(subscription_template::Column::IsBuiltin.eq(true))
+        .filter(subscription_template::Column::Format.eq("sing-box"))
+        .all(conn)
+        .await?;
+    for t in templates {
+        let mut active: subscription_template::ActiveModel = t.into();
+        active.base_config = Set(Some(SINGBOX_BUILTIN_TEMPLATE.to_string()));
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(conn).await?;
+        info!("refreshed builtin sing-box subscription template");
+    }
     Ok(())
 }
 
