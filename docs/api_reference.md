@@ -267,6 +267,16 @@
 - `502 Bad Gateway` — Agent 未连接
 - `500 Internal Server Error`
 
+### GET `/api/v1/nodes/pending-updates`
+
+列出待推送更新：`{ "data": { "pending": [{ "node_id", "node_name", "core_type", "update_type": "config"|"core", "updated_at" }] } }`。协议/绑定/中继配置变更产生 `config` 标记，核心版本激活产生 `core` 标记。
+
+### POST `/api/v1/nodes/push-pending`
+
+手动批量推送待更新项（灰度发布）。请求体可空或 `{"node_ids": [...], "core_type": "sing-box"}` 过滤。推送成功自动消除对应标记。
+
+**响应:** `{ "data": { "results": [{ "node_id", "core_type", "ok", "error" }], "total": 2, "succeeded": 2, "failed": 0 } }`
+
 ---
 
 ## 协议配置
@@ -407,7 +417,7 @@
 
 ## 核心版本
 
-核心版本目录由用户从上游版本中选择保存（release / prerelease），协议配置可通过 `core_version` 引用，Agent 按需安装对应版本的核心二进制。
+核心版本目录由用户从上游版本中选择保存（release / prerelease），Agent 按需安装对应版本的核心二进制。
 
 ### GET `/api/v1/core-versions`
 
@@ -507,6 +517,12 @@
 
 > 滚动标签（如 mihomo `Prerelease-Alpha`）版本字符串不变而构建持续替换。保存记录的 `published_at` 会作为 `ConfigPush.core_build_id` 随推送下发并计入配置版本哈希，Agent 据此重新下载新构建的二进制。
 
+### POST `/api/v1/core-versions/{id}/activate`
+
+将该版本设为对应核心类型的全局在用版本（`is_active`，互斥）。不直接推送，仅为所有持有该核心绑定的节点写入 `core` 类型待更新标记。
+
+**响应:** `{ "data": { "activated": "v1.14.0-beta.2", "pending_nodes": 2 } }`
+
 ### DELETE `/api/v1/core-versions/{id}`
 
 删除一条版本记录（不影响已引用它的协议配置）。
@@ -527,7 +543,7 @@
 
 ### POST `/api/v1/relay-rules`
 
-创建中继规则。创建时自动开通 `relay-<name>` 系统客户端并复制出口绑定的分组（其凭证注入出口入站 users，中继流量按该客户端单独记账），随后对入口与出口节点重推配置。
+创建中继规则。创建时自动开通 `relay-<name>` 系统客户端并复制出口绑定的分组（其凭证注入出口入站 users，中继流量按该客户端单独记账），随后为入口与出口节点写入待更新标记（config），需手动推送生效。
 
 **请求体:**
 
@@ -553,7 +569,7 @@
 
 ### DELETE `/api/v1/relay-rules/{id}`
 
-删除规则并回收其系统客户端，入口与出口节点重推配置。
+删除规则并回收其系统客户端，为入口与出口节点写入待更新标记（config），需手动推送生效。
 
 ---
 
