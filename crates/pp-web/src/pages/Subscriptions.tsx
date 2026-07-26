@@ -611,9 +611,11 @@ export function Subscriptions() {
                                   }
                                   aria-label={t("subscriptions.enabled")}
                                 >
-                                  <Switch.Control>
-                                    <Switch.Thumb />
-                                  </Switch.Control>
+                                  <Switch.Content>
+                                    <Switch.Control>
+                                      <Switch.Thumb />
+                                    </Switch.Control>
+                                  </Switch.Content>
                                 </Switch>
                               </Table.Cell>
                               <Table.Cell>
@@ -775,10 +777,12 @@ export function Subscriptions() {
                 }
                 aria-label={t("subscriptions.enabled")}
               >
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
-                {templateForm.is_enabled ? t("common.enabled") : t("common.disabled")}
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  {templateForm.is_enabled ? t("common.enabled") : t("common.disabled")}
+                </Switch.Content>
               </Switch>
               <CodeEditor
                 label={t("subscriptions.baseConfig")}
