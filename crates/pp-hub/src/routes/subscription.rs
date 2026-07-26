@@ -1064,7 +1064,6 @@ mod tests {
             name: "vless-reality".to_string(),
             protocol_type: "vless_reality".to_string(),
             core_type: "sing-box".to_string(),
-            core_version: None,
             listen_port: 443,
             listen_address: "0.0.0.0".to_string(),
             settings: serde_json::json!({"network": "tcp"}),

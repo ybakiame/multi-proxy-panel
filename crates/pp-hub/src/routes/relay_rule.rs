@@ -430,30 +430,32 @@ pub async fn create_relay_rule(
 
     let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
 
-    // Push configs to affected nodes
+    // Mark affected nodes as pending update
     let exit_node_id = node_binding::Entity::find_by_id(inserted.exit_binding_id)
         .one(&state.db)
         .await
         .map_err(ApiError::from)?
         .map(|b| b.node_id);
 
-    for nid in [inserted.node_id, exit_node_id.unwrap_or(Uuid::nil())]
-        .iter()
+    let affected: Vec<Uuid> = [inserted.node_id, exit_node_id.unwrap_or(Uuid::nil())]
+        .into_iter()
         .filter(|id| !id.is_nil())
-    {
-        for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
-            if let Err(e) =
-                crate::service::protocol::push_node_config(&state, *nid, core_type, true, None)
-                    .await
-            {
-                tracing::warn!(
-                    "failed to push {:?} config to node {} after creating relay rule {}: {}",
-                    core_type,
-                    nid,
-                    inserted.id,
-                    e
-                );
-            }
+        .collect();
+
+    for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+        if let Err(e) = crate::service::protocol::mark_pending(
+            &state.db,
+            affected.clone(),
+            core_type,
+            crate::service::protocol::UPDATE_TYPE_CONFIG,
+        )
+        .await
+        {
+            tracing::warn!(
+                "failed to mark pending for nodes after creating relay rule {}: {}",
+                inserted.id,
+                e
+            );
         }
     }
 
@@ -549,7 +551,7 @@ pub async fn update_relay_rule(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    // Push configs to entry node, old exit node, and new exit node
+    // Mark affected nodes as pending update
     let mut affected_nodes = vec![rule.node_id];
 
     let old_exit_node_id = node_binding::Entity::find_by_id(rule.exit_binding_id)
@@ -574,19 +576,20 @@ pub async fn update_relay_rule(
         }
     }
 
-    for nid in affected_nodes {
-        for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
-            if let Err(e) =
-                crate::service::protocol::push_node_config(&state, nid, core_type, true, None).await
-            {
-                tracing::warn!(
-                    "failed to push {:?} config to node {} after updating relay rule {}: {}",
-                    core_type,
-                    nid,
-                    updated.id,
-                    e
-                );
-            }
+    for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+        if let Err(e) = crate::service::protocol::mark_pending(
+            &state.db,
+            affected_nodes.clone(),
+            core_type,
+            crate::service::protocol::UPDATE_TYPE_CONFIG,
+        )
+        .await
+        {
+            tracing::warn!(
+                "failed to mark pending for nodes after updating relay rule {}: {}",
+                updated.id,
+                e
+            );
         }
     }
 
@@ -621,7 +624,7 @@ pub async fn delete_relay_rule(
         .await
         .map_err(ApiError::from)?;
 
-    // Push configs to affected nodes
+    // Mark affected nodes as pending update
     let mut affected_nodes = vec![rule.node_id];
     if let Some(nid) = exit_node_id {
         if nid != rule.node_id {
@@ -629,19 +632,20 @@ pub async fn delete_relay_rule(
         }
     }
 
-    for nid in affected_nodes {
-        for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
-            if let Err(e) =
-                crate::service::protocol::push_node_config(&state, nid, core_type, true, None).await
-            {
-                tracing::warn!(
-                    "failed to push {:?} config to node {} after deleting relay rule {}: {}",
-                    core_type,
-                    nid,
-                    id,
-                    e
-                );
-            }
+    for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+        if let Err(e) = crate::service::protocol::mark_pending(
+            &state.db,
+            affected_nodes.clone(),
+            core_type,
+            crate::service::protocol::UPDATE_TYPE_CONFIG,
+        )
+        .await
+        {
+            tracing::warn!(
+                "failed to mark pending for nodes after deleting relay rule {}: {}",
+                id,
+                e
+            );
         }
     }
 

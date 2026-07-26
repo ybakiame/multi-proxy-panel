@@ -115,6 +115,16 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         )
         .route("/api/v1/nodes/{id}/push", post(nodes::push_config))
         .route(
+            "/api/v1/nodes/pending-updates",
+            get(nodes::list_pending_updates)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
+        )
+        .route(
+            "/api/v1/nodes/push-pending",
+            post(nodes::push_pending)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+        )
+        .route(
             "/api/v1/nodes/{id}/binaries",
             get(nodes::list_core_binaries),
         )
@@ -213,6 +223,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route(
             "/api/v1/core-versions/{id}",
             delete(core_version::delete_core_version)
+                .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
+        )
+        .route(
+            "/api/v1/core-versions/{id}/activate",
+            post(core_version::activate_core_version)
                 .route_layer(middleware::api_key::scope_layer(scopes::PROTOCOLS_WRITE)),
         )
         // Certificates

@@ -395,6 +395,11 @@ async fn push_config_for_core(
                     state
                         .set_agent_config_version(&node_id, &core_name, version)
                         .await;
+                    if let Err(e) =
+                        crate::service::protocol::clear_pending(&state.db, node_id, core_type).await
+                    {
+                        tracing::warn!("failed to clear pending for node {}: {}", node_id, e);
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(

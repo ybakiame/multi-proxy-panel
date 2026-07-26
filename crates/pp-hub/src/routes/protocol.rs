@@ -19,7 +19,6 @@ fn config_to_json(c: protocol_config::Model) -> Value {
         "name": c.name,
         "protocol_type": c.protocol_type,
         "core_type": c.core_type,
-        "core_version": c.core_version,
         "listen_port": c.listen_port,
         "listen_address": c.listen_address,
         "settings": c.settings,
@@ -105,7 +104,6 @@ pub struct CreateConfigPayload {
     pub name: String,
     pub protocol_type: String,
     pub core_type: String,
-    pub core_version: Option<String>,
     pub listen_port: Option<u64>,
     pub listen_address: Option<String>,
     pub settings: Option<Value>,
@@ -126,7 +124,6 @@ pub async fn create_config(
         name: Set(payload.name),
         protocol_type: Set(protocol_type.to_string()),
         core_type: Set(core_type.to_string()),
-        core_version: Set(payload.core_version),
         listen_port: Set(payload.listen_port.unwrap_or(443) as i32),
         listen_address: Set(payload
             .listen_address
@@ -147,7 +144,6 @@ pub struct UpdateConfigPayload {
     pub name: Option<String>,
     pub protocol_type: Option<String>,
     pub core_type: Option<String>,
-    pub core_version: Option<String>,
     pub listen_port: Option<u64>,
     pub listen_address: Option<String>,
     pub settings: Option<Value>,
@@ -196,9 +192,6 @@ pub async fn update_config(
     if let Some(addr) = payload.listen_address {
         active.listen_address = Set(addr);
     }
-    if payload.core_version.is_some() {
-        active.core_version = Set(payload.core_version);
-    }
     if let Some(settings) = payload.settings {
         active.settings = Set(settings);
     }
@@ -207,32 +200,28 @@ pub async fn update_config(
 
     let updated = active.update(&state.db).await.map_err(ApiError::from)?;
 
-    // Push updated config to all nodes that have an active binding using this config.
-    // Failures are logged but do not fail the HTTP request, so the config change is
-    // persisted even if an agent is temporarily offline.
+    // Mark nodes using this config as pending update (actual push handled by
+    // scheduler or user-triggered push). Failures are logged but do not fail
+    // the HTTP request.
     match crate::service::protocol::nodes_using_config(&state.db, updated.id).await {
         Ok(node_ids) => {
             let core_type = updated
                 .core_type
                 .parse::<pp_common::CoreType>()
                 .unwrap_or(pp_common::CoreType::SingBox);
-            for node_id in node_ids {
-                if let Err(e) = crate::service::protocol::push_node_config(
-                    &state,
-                    node_id,
-                    core_type,
-                    true,
-                    updated.core_version.clone(),
-                )
-                .await
-                {
-                    tracing::warn!(
-                        "failed to push config to node {} after updating config {}: {}",
-                        node_id,
-                        updated.id,
-                        e
-                    );
-                }
+            if let Err(e) = crate::service::protocol::mark_pending(
+                &state.db,
+                node_ids,
+                core_type,
+                crate::service::protocol::UPDATE_TYPE_CONFIG,
+            )
+            .await
+            {
+                tracing::warn!(
+                    "failed to mark pending for nodes after updating config {}: {}",
+                    updated.id,
+                    e
+                );
             }
         }
         Err(e) => {
@@ -292,22 +281,21 @@ pub async fn delete_config(
     if res.rows_affected == 0 {
         Err(ApiError::not_found("protocol config not found"))
     } else {
-        // Push updated configs to all affected nodes
-        for node_id in affected_nodes {
-            for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
-                if let Err(e) = crate::service::protocol::push_node_config(
-                    &state, node_id, core_type, true, None,
-                )
-                .await
-                {
-                    tracing::warn!(
-                        "failed to push {:?} config to node {} after deleting config {}: {}",
-                        core_type,
-                        node_id,
-                        id,
-                        e
-                    );
-                }
+        // Mark affected nodes as pending update
+        for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
+            if let Err(e) = crate::service::protocol::mark_pending(
+                &state.db,
+                affected_nodes.clone(),
+                core_type,
+                crate::service::protocol::UPDATE_TYPE_CONFIG,
+            )
+            .await
+            {
+                tracing::warn!(
+                    "failed to mark pending for nodes after deleting config {}: {}",
+                    id,
+                    e
+                );
             }
         }
         Ok(axum::http::StatusCode::NO_CONTENT)

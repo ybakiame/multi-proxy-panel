@@ -36,6 +36,7 @@ fn version_to_json(v: &core_version::Model) -> Value {
         "channel": v.channel,
         "published_at": v.published_at,
         "commit_sha": v.commit_sha,
+        "is_active": v.is_active,
         "created_at": v.created_at,
     })
 }
@@ -326,6 +327,7 @@ pub async fn save_core_versions(
             channel: Set(channel.to_string()),
             published_at: Set(published_at),
             commit_sha: Set(item.commit_sha.clone()),
+            is_active: Set(false),
             created_at: Set(chrono::Utc::now().into()),
         };
         active.insert(&state.db).await.map_err(ApiError::from)?;
@@ -335,4 +337,69 @@ pub async fn save_core_versions(
     Ok(ApiResponse::new(
         json!({ "added": added, "updated": updated }),
     ))
+}
+
+/// Activate a core version: deactivate all versions of the same core type,
+/// set this one as active, and mark all nodes with bindings for that core
+/// as having a pending core-update.
+pub async fn activate_core_version(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Value> {
+    let row = core_version::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("core version not found"))?;
+
+    let core_type_str = row.core_type.clone();
+    let core: CoreType = core_type_str
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid_core_type", "unknown core type"))?;
+
+    // Deactivate all versions of the same core type
+    let all_same = core_version::Entity::find()
+        .filter(core_version::Column::CoreType.eq(&core_type_str))
+        .all(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    for v in all_same {
+        let mut active: core_version::ActiveModel = v.into();
+        active.is_active = Set(false);
+        active.update(&state.db).await.map_err(ApiError::from)?;
+    }
+
+    // Now mark the target row as active
+    let mut target_active: core_version::ActiveModel = row.into();
+    target_active.is_active = Set(true);
+    let updated = target_active
+        .update(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Mark nodes with bindings for this core as pending core-update
+    let node_ids = crate::service::protocol::nodes_with_bindings(&state.db, core)
+        .await
+        .map_err(|e| ApiError::internal(format!("failed to query nodes: {}", e)))?;
+    let pending_count = node_ids.len();
+
+    if let Err(e) = crate::service::protocol::mark_pending(
+        &state.db,
+        node_ids,
+        core,
+        crate::service::protocol::UPDATE_TYPE_CORE,
+    )
+    .await
+    {
+        tracing::warn!(
+            "failed to mark pending for nodes after activating version: {}",
+            e
+        );
+    }
+
+    Ok(ApiResponse::new(json!({
+        "activated": updated.version,
+        "pending_nodes": pending_count,
+    })))
 }

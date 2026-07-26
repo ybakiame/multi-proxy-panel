@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     response::Json,
 };
-use pp_db::entities::{agent_log, node};
+use pp_db::entities::{agent_log, node, node_pending_update};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
@@ -366,6 +366,114 @@ pub struct PushConfigPayload {
     pub version: Option<String>,
 }
 
+/// GET /api/v1/nodes/pending-updates — list all nodes with pending updates.
+pub async fn list_pending_updates(State(state): State<Arc<AppState>>) -> ApiResult<Value> {
+    use sea_orm::QueryOrder;
+
+    let pendings = node_pending_update::Entity::find()
+        .order_by_desc(node_pending_update::Column::UpdatedAt)
+        .all(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+
+    let mut results = Vec::with_capacity(pendings.len());
+    for p in pendings {
+        let node_name = node::Entity::find_by_id(p.node_id)
+            .one(&state.db)
+            .await
+            .map_err(ApiError::from)?
+            .map(|n| n.name)
+            .unwrap_or_default();
+
+        results.push(json!({
+            "node_id": p.node_id,
+            "node_name": node_name,
+            "core_type": p.core_type,
+            "update_type": p.update_type,
+            "updated_at": p.updated_at,
+        }));
+    }
+
+    Ok(ApiResponse::new(json!({ "pending": results })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PushPendingPayload {
+    pub node_ids: Option<Vec<Uuid>>,
+    pub core_type: Option<String>,
+}
+
+/// POST /api/v1/nodes/push-pending — push pending updates for specified filters.
+pub async fn push_pending(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PushPendingPayload>,
+) -> ApiResult<Value> {
+    let mut query = node_pending_update::Entity::find();
+
+    if let Some(ref ids) = payload.node_ids {
+        if !ids.is_empty() {
+            query = query.filter(node_pending_update::Column::NodeId.is_in(ids.clone()));
+        }
+    }
+    if let Some(ref core_type) = payload.core_type {
+        if !core_type.is_empty() {
+            query = query.filter(node_pending_update::Column::CoreType.eq(core_type));
+        }
+    }
+
+    let pendings = query.all(&state.db).await.map_err(ApiError::from)?;
+
+    let total = pendings.len();
+    let mut succeeded = 0u64;
+    let mut failed = 0u64;
+    let mut results = Vec::with_capacity(total);
+
+    for p in pendings {
+        let core = match p.core_type.as_str() {
+            "sing-box" | "singbox" => pp_common::CoreType::SingBox,
+            "mihomo" => pp_common::CoreType::Mihomo,
+            _ => {
+                failed += 1;
+                results.push(json!({
+                    "node_id": p.node_id,
+                    "core_type": p.core_type,
+                    "ok": false,
+                    "error": "unknown core type",
+                }));
+                continue;
+            }
+        };
+
+        match crate::service::protocol::push_node_config(&state, p.node_id, core, true, None).await
+        {
+            Ok(()) => {
+                succeeded += 1;
+                results.push(json!({
+                    "node_id": p.node_id,
+                    "core_type": p.core_type,
+                    "ok": true,
+                }));
+            }
+            Err(e) => {
+                failed += 1;
+                results.push(json!({
+                    "node_id": p.node_id,
+                    "core_type": p.core_type,
+                    "ok": false,
+                    "error": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    Ok(ApiResponse::new(json!({
+        "results": results,
+        "total": total,
+        "succeeded": succeeded,
+        "failed": failed,
+    })))
+}
+
 pub async fn push_config(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
@@ -400,6 +508,11 @@ pub async fn push_config(
             e.to_string(),
         )
     })?;
+
+    // Clear pending update marker after manual push
+    if let Err(e) = crate::service::protocol::clear_pending(&state.db, id, core_type).await {
+        tracing::warn!("failed to clear pending update for node {}: {}", id, e);
+    }
 
     Ok(ApiResponse::new(json!({
         "success": true,

@@ -2,21 +2,24 @@ use pp_common::{CoreType, PanelResult};
 use pp_config::{BuilderRegistry, InboundConfig};
 use pp_db::entities::{
     certificate, client, client_group_binding, core_version, node, node_binding,
-    node_binding_group_binding, protocol_config, relay_rule,
+    node_binding_group_binding, node_pending_update, protocol_config, relay_rule,
 };
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use uuid::Uuid;
 
 /// Generate core configuration for a specific node based on its bindings.
-/// Returns the config JSON and the effective core binary version (for sing-box
-/// only) derived from the active protocol configs.
+/// Returns the config JSON and the effective core binary version derived from
+/// the active core_versions catalog.
 pub async fn generate_node_config(
     db: &DatabaseConnection,
     node_id: Uuid,
     target_core: CoreType,
 ) -> PanelResult<(Value, Option<String>)> {
+    // Resolve the active core version once, before the inbounds loop.
+    let effective_version = effective_core_version(db, target_core).await;
+
     let bindings = node_binding::Entity::find()
         .filter(node_binding::Column::NodeId.eq(node_id))
         .filter(node_binding::Column::IsActive.eq(true))
@@ -90,11 +93,9 @@ pub async fn generate_node_config(
             settings,
             tls: effective_tls,
             sniffing: None,
-            core_version: config.core_version.clone(),
+            core_version: effective_version.clone(),
         });
     }
-
-    let effective_version = effective_core_version(target_core, &inbounds);
 
     let registry = BuilderRegistry::default();
     let builder = registry.get(target_core).ok_or_else(|| {
@@ -288,6 +289,11 @@ pub async fn push_node_config(
         .set_agent_config_version(&node_id, &core_type.to_string(), version)
         .await;
 
+    // Clear pending update marker after successful push.
+    if let Err(e) = clear_pending(&state.db, node_id, core_type).await {
+        tracing::warn!("failed to clear pending update for node {}: {}", node_id, e);
+    }
+
     Ok(())
 }
 
@@ -305,34 +311,108 @@ pub async fn nodes_using_config(
     let node_ids: HashSet<Uuid> = bindings.into_iter().map(|b| b.node_id).collect();
     Ok(node_ids.into_iter().collect())
 }
-/// Resolve the effective pinned core version across inbounds.
+/// Resolve the effective pinned core version from the active core_versions catalog.
 ///
-/// sing-box: highest explicitly requested version, or a stable default of
-/// v1.13.14 (set a protocol config's core_version to a 1.14.0 alpha tag such
-/// as `v1.14.0-alpha.43` for the new gRPC API service).
-/// mihomo: highest explicitly requested version, or None (= latest upstream).
-fn effective_core_version(core_type: CoreType, inbounds: &[InboundConfig]) -> Option<String> {
-    let requested: Vec<&str> = inbounds
-        .iter()
-        .filter_map(|i| i.core_version.as_deref())
-        .filter(|v| !v.is_empty())
-        .collect();
+/// Looks up `core_versions` for a row matching `core_type` with `is_active=true`.
+/// sing-box defaults to `v1.13.14` when no active version is found.
+/// mihomo returns `None` (= latest upstream) when no active version is found.
+pub async fn effective_core_version(
+    db: &DatabaseConnection,
+    core_type: CoreType,
+) -> Option<String> {
+    let active = core_version::Entity::find()
+        .filter(core_version::Column::CoreType.eq(core_type.to_string()))
+        .filter(core_version::Column::IsActive.eq(true))
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|v| v.version);
 
-    match core_type {
-        CoreType::SingBox => {
-            if requested.is_empty() {
-                return Some("v1.13.14".to_string());
-            }
-            requested
-                .into_iter()
-                .max_by(|a, b| compare_versions(a, b))
-                .map(|v| v.to_string())
+    active.or_else(|| match core_type {
+        CoreType::SingBox => Some("v1.13.14".to_string()),
+        CoreType::Mihomo => None,
+    })
+}
+
+pub const UPDATE_TYPE_CONFIG: &str = "config";
+pub const UPDATE_TYPE_CORE: &str = "core";
+
+/// Mark (node, core) pairs as having a pending update (upsert by node+core).
+pub async fn mark_pending(
+    db: &DatabaseConnection,
+    node_ids: impl IntoIterator<Item = Uuid>,
+    core_type: CoreType,
+    update_type: &str,
+) -> PanelResult<()> {
+    let now = chrono::Utc::now().into();
+    let core_type_str = core_type.to_string();
+
+    for node_id in node_ids {
+        let existing = node_pending_update::Entity::find()
+            .filter(node_pending_update::Column::NodeId.eq(node_id))
+            .filter(node_pending_update::Column::CoreType.eq(&core_type_str))
+            .one(db)
+            .await?;
+
+        if let Some(row) = existing {
+            let mut active: node_pending_update::ActiveModel = row.into();
+            active.update_type = Set(update_type.to_string());
+            active.updated_at = Set(now);
+            active.update(db).await?;
+        } else {
+            let active = node_pending_update::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                node_id: Set(node_id),
+                core_type: Set(core_type_str.clone()),
+                update_type: Set(update_type.to_string()),
+                updated_at: Set(now),
+            };
+            active.insert(db).await?;
         }
-        CoreType::Mihomo => requested
-            .into_iter()
-            .max_by(|a, b| compare_versions(a, b))
-            .map(|v| v.to_string()),
     }
+
+    Ok(())
+}
+
+/// Clear the pending marker after a successful push.
+pub async fn clear_pending(
+    db: &DatabaseConnection,
+    node_id: Uuid,
+    core_type: CoreType,
+) -> PanelResult<()> {
+    node_pending_update::Entity::delete_many()
+        .filter(node_pending_update::Column::NodeId.eq(node_id))
+        .filter(node_pending_update::Column::CoreType.eq(core_type.to_string()))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Nodes having at least one active binding whose protocol config targets `core_type`.
+pub async fn nodes_with_bindings(
+    db: &DatabaseConnection,
+    core_type: CoreType,
+) -> PanelResult<Vec<Uuid>> {
+    let core_type_str = core_type.to_string();
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    let mut node_ids = HashSet::new();
+    for binding in bindings {
+        let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
+            .one(db)
+            .await?;
+        if let Some(cfg) = config {
+            if cfg.core_type == core_type_str {
+                node_ids.insert(binding.node_id);
+            }
+        }
+    }
+
+    Ok(node_ids.into_iter().collect())
 }
 
 /// Build identifier for a pinned core version: the upstream publish time
@@ -367,18 +447,6 @@ pub fn push_version_of(config_str: &str, build_id: &str) -> String {
     } else {
         config_version_of(&format!("{}#build:{}", config_str, build_id))
     }
-}
-
-/// Simple semver-like comparison. Returns `Ordering` for two version strings.
-/// Pre-release segments (e.g. `-beta.5`) are treated as lower than release.
-fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    fn parse(v: &str) -> Vec<u32> {
-        v.split(|c: char| !c.is_ascii_digit())
-            .filter(|s| !s.is_empty())
-            .filter_map(|s| s.parse().ok())
-            .collect()
-    }
-    parse(a).cmp(&parse(b))
 }
 
 /// Validate that active bindings on a node do not ask two cores to listen on the

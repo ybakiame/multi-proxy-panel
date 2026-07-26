@@ -13,6 +13,7 @@ pub struct Model {
     pub published_at: Option<DateTimeWithTimeZone>,
     /// Upstream target commitish for the release tag, when known.
     pub commit_sha: Option<String>,
+    pub is_active: bool,
     pub created_at: DateTimeWithTimeZone,
 }
 
