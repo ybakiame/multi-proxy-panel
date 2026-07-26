@@ -405,6 +405,7 @@ Hub 写入 host_metrics 表
 | `nodes` | 代理节点 | `status`, `last_seen_at` |
 | `protocol_configs` | 协议入站配置 | `protocol_type`, `core_type` |
 | `node_bindings` | 节点与配置的绑定关系 | `node_id`, `protocol_config_id` |
+| `relay_rules` | 服务端中继路由：入口节点按规则集/域名分流到出口绑定 | `node_id`, `enabled` |
 | `clients` | 代理客户端（最终用户） | `user_id`, `status` |
 | `subscription_templates` | 订阅输出格式模板 | — |
 | `subscriptions` | 客户端订阅记录 | `token` (unique) |

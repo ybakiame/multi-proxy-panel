@@ -517,6 +517,46 @@
 
 ---
 
+### GET `/api/v1/relay-rules`
+
+列出中继规则（可选 `node_id` 过滤）。每条规则包含入口节点、出口绑定（联查节点/协议配置名称）、匹配配置与 `relay_client_id`。
+
+### GET `/api/v1/relay-rules/library`
+
+列出内置社区规则集（netflix/disney/openai/youtube/tiktok/hbo/primevideo），每项含 sing-box（url/format）与 mihomo（url/behavior）双格式来源。
+
+### POST `/api/v1/relay-rules`
+
+创建中继规则。创建时自动开通 `relay-<name>` 系统客户端并复制出口绑定的分组（其凭证注入出口入站 users，中继流量按该客户端单独记账），随后对入口与出口节点重推配置。
+
+**请求体:**
+
+```json
+{
+  "node_id": "入口节点 uuid",
+  "exit_binding_id": "出口绑定 uuid",
+  "name": "test-unlock",
+  "match_type": "rule_set",
+  "match_config": { "library": "netflix" },
+  "enabled": true,
+  "sort_order": 0
+}
+```
+
+- `match_type: "inline"` → `match_config: {"domains": [], "domain_suffixes": []}`
+- `match_type: "rule_set"` → `{"library": "<内置名>"}` 或 `{"custom": {"singbox": {"url","format"}, "mihomo": {"url","behavior"}}}`
+- 出口绑定不能与入口同节点；出口协议限 vless_reality/hysteria2/anytls
+
+### PUT `/api/v1/relay-rules/{id}`
+
+更新规则（可改 exit_binding_id，变更时回收旧系统客户端并重新开通）。
+
+### DELETE `/api/v1/relay-rules/{id}`
+
+删除规则并回收其系统客户端，入口与出口节点重推配置。
+
+---
+
 ## 证书管理
 
 托管证书由节点 Agent 内置 ACME 客户端（Let's Encrypt，HTTP-01 挑战）签发，统一存放于节点数据目录 `certs/<domain>.{crt,key}`，三个核心的 TLS 配置均可引用。协议配置的 `tls_settings` 使用 `{"cert_id": "..."}` 关联（要求证书属于绑定节点且状态为有效）。

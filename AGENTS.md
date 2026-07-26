@@ -212,6 +212,15 @@ HubMessage::ConfigPush (gRPC)
 Agent → CoreManager::reload() / restart()
 ```
 
+### 4.3.1 服务端中继路由（relay_rules）
+
+`relay_rules` 表定义入口节点的服务端分流：入口节点照常接入客户端，命中的域名经核心路由规则转发到出口绑定的入站（链式 outbound），其余流量直连。用于"好线路入口 + 原生 IP 出口"组合解锁。
+
+- 匹配模式：`inline`（domain/domain_suffix 列表）或 `rule_set`（内置社区规则集 / 自定义 per-core URL；sing-box 用 remote rule_set，mihomo 用 rule-providers，格式按核心分别取自规则集库）
+- 中继凭证：创建规则时自动开通 `relay-<name>` 系统客户端并复制出口绑定分组，凭证随分组注入出口入站 users；中继流量在出口节点按该客户端单独记账
+- 出口协议限 vless_reality / hysteria2 / anytls；relay outbound 由 `pp-config/src/relay.rs` 按双核心分别构建，SNI 取出口绑定 TLS 复写的证书域名
+- 配置注入在 `generate_node_config` 末尾（`apply_relay_rules`），规则增删改对入口与出口节点均重推配置
+
 ### 4.4 订阅生成流程
 
 ```
