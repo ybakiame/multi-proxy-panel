@@ -4,6 +4,8 @@
 
 pub mod builder;
 pub mod mihomo;
+pub mod relay;
 pub mod singbox;
 
 pub use builder::*;
+pub use relay::*;
