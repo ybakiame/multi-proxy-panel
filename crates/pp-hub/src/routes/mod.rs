@@ -15,6 +15,7 @@ pub mod nodes;
 pub mod onlines;
 pub mod protocol;
 pub mod protocol_preset;
+pub mod relay_rule;
 pub mod subscription;
 pub mod traffic;
 pub mod usage;

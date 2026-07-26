@@ -32,8 +32,8 @@ use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
     api_key, bindings, certificates, client, core_version, health, inbound_host, login, logs,
-    metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset, subscription,
-    traffic, usage, webhook,
+    metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset, relay_rule,
+    subscription, traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -256,6 +256,32 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             "/api/v1/bindings/{id}",
             delete(bindings::delete_binding)
                 .route_layer(middleware::api_key::scope_layer(scopes::BINDINGS_WRITE)),
+        )
+        // Relay Rules
+        .route(
+            "/api/v1/relay-rules",
+            get(relay_rule::list_relay_rules)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
+        )
+        .route(
+            "/api/v1/relay-rules/library",
+            get(relay_rule::library)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_READ)),
+        )
+        .route(
+            "/api/v1/relay-rules",
+            post(relay_rule::create_relay_rule)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+        )
+        .route(
+            "/api/v1/relay-rules/{id}",
+            put(relay_rule::update_relay_rule)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
+        )
+        .route(
+            "/api/v1/relay-rules/{id}",
+            delete(relay_rule::delete_relay_rule)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
         )
         // Inbound Hosts (user-facing address overrides)
         .route(
