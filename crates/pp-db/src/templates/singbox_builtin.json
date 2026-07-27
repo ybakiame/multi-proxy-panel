@@ -88,6 +88,16 @@
   "outbounds": [
     "<OUTBOUND_REPLACE>",
     {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": ["<NODE_REPLACE>"]
+    },
+    {
+      "type": "selector",
+      "tag": "global",
+      "outbounds": ["proxy", "<NODE_REPLACE>", "direct"]
+    },
+    {
       "type": "direct",
       "tag": "direct"
     }

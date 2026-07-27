@@ -52,6 +52,11 @@ const UPGRADE_STEPS: &[UpgradeStep] = &[
         name: "refresh_singbox_builtin_template_v2",
         run: |conn| Box::pin(refresh_singbox_builtin_template(conn)),
     },
+    UpgradeStep {
+        introduced_in: "0.3.3",
+        name: "refresh_singbox_builtin_template_v3",
+        run: |conn| Box::pin(refresh_singbox_builtin_template(conn)),
+    },
 ];
 
 /// Run every upgrade step whose version falls in `(stored_version, app_version]`,
