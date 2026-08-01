@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type CoreType = "singbox" | "mihomo";
 
-export type MitmScriptDialect = "Surge" | "QuantumultX" | "Loon";
+export type MitmScriptDialect = "Surge" | "Loon";
 
 export interface ClientConfig {
   data_dir: string;
@@ -68,7 +68,7 @@ export interface RemoteResource {
   url: string;
   /** `Script`（纯 JS 脚本） / `Snippet`（配置片段）。 */
   kind: RemoteKind;
-  /** 脚本方言：`Surge` / `Loon`（UI 已移除 QuantumultX 选项）。 */
+  /** 脚本方言：`Surge` / `Loon`。 */
   dialect: string;
   /** 资源描述（null = 未配置）。 */
   description: string | null;
@@ -133,7 +133,7 @@ export interface ConfigMetaView {
 export interface DetectRemoteView {
   /** 嗅探出的资源类型（`Script` / `Snippet`；无法识别时为 null）。 */
   kind: string | null;
-  /** 嗅探出的脚本方言（`Surge` / `QuantumultX` / `Loon`；无法识别时为 null）。 */
+  /** 嗅探出的脚本方言（`Surge` / `Loon`；无法识别时为 null）。 */
   dialect: string | null;
   /** 配置头元数据（仅 Snippet 且 URL 可访问时返回；拉取失败或非 Snippet 时为 null）。 */
   meta: ConfigMetaView | null;

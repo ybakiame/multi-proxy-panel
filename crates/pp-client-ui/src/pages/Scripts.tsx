@@ -29,10 +29,10 @@ import {
 import type { ArgSpecView, DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
 
 /**
- * 远程资源添加表单的方言选项（UI 已放弃 QuantumultX，仅保留 Surge / Loon）。
+ * 远程资源添加表单的方言选项（仅保留 Surge / Loon）。
  *
- * `detect_remote` 对 `.conf` / `.js` 仍会判定为 QuantumultX，前端在填充时
- * 通过 {@link normalizeDialect} 归一为 Loon（Loon 同时注入 QX 与 Surge 两套 API）。
+ * 旧数据中的 QuantumultX 由 {@link normalizeDialect} 归一为 Loon
+ * （Loon 方言同时注入 QuantumultX 与 Surge 两套 API）。
  */
 const REMOTE_DIALECT_OPTIONS = [
   { id: "Surge", label: "Surge" },
@@ -41,7 +41,6 @@ const REMOTE_DIALECT_OPTIONS = [
 
 /** 配置导入的方言选项（与 `import_config` 命令的小写方言值一致）。 */
 const IMPORT_DIALECT_OPTIONS = [
-  { id: "quantumultx", label: "QuantumultX" },
   { id: "surge", label: "Surge" },
   { id: "loon", label: "Loon" },
 ] as const;
@@ -77,7 +76,7 @@ function normalizeKind(kind: string | null): string | null {
   return kind.trim();
 }
 
-/** 将 `detect_remote` 返回的方言归一为 UI 选项：QuantumultX → Loon（已放弃 QX）。 */
+/** 将方言字符串归一为 UI 选项：QuantumultX 兼容旧数据 → Loon。 */
 function normalizeDialect(dialect: string | null | undefined): string | null {
   if (!dialect) {
     return null;
@@ -180,7 +179,7 @@ export default function Scripts() {
 
   // 配置导入
   const [importText, setImportText] = useState("");
-  const [importDialect, setImportDialect] = useState<string>("quantumultx");
+  const [importDialect, setImportDialect] = useState<string>("loon");
 
   const refreshRemotes = useCallback(async () => {
     try {
@@ -682,9 +681,7 @@ export default function Scripts() {
           <Card>
             <Card.Header>
               <Card.Title>导入配置</Card.Title>
-              <Card.Description>
-                粘贴 QX / Surge / Loon 的 rewrite / script / mitm 片段，合并进本地缓存
-              </Card.Description>
+              <Card.Description>粘贴 Surge / Loon 的 rewrite / script / mitm 片段，合并进本地缓存</Card.Description>
             </Card.Header>
             <Card.Content className="flex flex-col gap-4">
               <Select
@@ -853,7 +850,7 @@ export default function Scripts() {
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
                     <ListBox.Item id="Snippet" textValue="片段">
-                      片段（QX / Surge / Loon 配置）
+                      片段（Surge / Loon 配置）
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
                   </ListBox>
@@ -1028,7 +1025,7 @@ export default function Scripts() {
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
                     <ListBox.Item id="Snippet" textValue="片段">
-                      片段（QX / Surge / Loon 配置）
+                      片段（Surge / Loon 配置）
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
                   </ListBox>
