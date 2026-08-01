@@ -193,31 +193,47 @@ impl ClientState {
 
         // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
         let chain = self.start_mitm_chain().await?;
+        // TUN / Clash 面板配置（设置页最高优先级）：在 compose（build_core_config +
+        // 复写）之后强制注入，模板/复写中的同名字段以设置为准整体替换。
+        let features = core_config::PanelFeatures {
+            tun_enabled: self.config.tun_enabled,
+            tun_stack: self.config.tun_stack.clone(),
+            tun_auto_route: self.config.tun_auto_route,
+            clash_api_enabled: self.config.clash_api_enabled,
+            clash_api_port: self.config.clash_api_port,
+            clash_api_secret: self.config.clash_api_secret.clone(),
+        };
         let config_json = match self.config.core_type {
             CoreType::SingBox => {
-                let cfg = core_config::compose_singbox_config(
+                let mut cfg = match core_config::compose_singbox_config(
                     &profile_cfg,
                     self.config.mixed_port,
                     chain,
-                );
-                match cfg {
+                ) {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         self.rollback_mitm_started().await;
                         return Err(e);
                     }
-                }
+                };
+                core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
+                cfg
             }
             CoreType::Mihomo => {
                 let yaml = serde_yaml::to_string(&profile_cfg)?;
-                let cfg = core_config::compose_mihomo_config(&yaml, self.config.mixed_port, chain);
-                match cfg {
+                let mut cfg = match core_config::compose_mihomo_config(
+                    &yaml,
+                    self.config.mixed_port,
+                    chain,
+                ) {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         self.rollback_mitm_started().await;
                         return Err(e);
                     }
-                }
+                };
+                core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
+                cfg
             }
         };
         self.start_services(&config_json).await

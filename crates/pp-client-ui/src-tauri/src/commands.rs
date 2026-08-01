@@ -7,11 +7,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::{
-    build_core_config_v2, compose_mihomo_config, compose_singbox_config, detect_resource_from_url,
-    fetch_subscription_with_ua, infer_core_type, parse_config_meta, resolve_remote_overrides,
-    ClientConfig, ClientCoreInventory, ClientState, ConfigMeta, EffectiveOverrides, Profile,
-    ProfileStoreV2, RemoteKind, RemoteManager, RemoteResource, SubContent, Subscription,
-    SubscriptionFetcher, SubscriptionStore,
+    apply_panel_features, build_core_config_v2, compose_mihomo_config, compose_singbox_config,
+    detect_resource_from_url, fetch_subscription_with_ua, infer_core_type, parse_config_meta,
+    resolve_remote_overrides, ClientConfig, ClientCoreInventory, ClientState, ConfigMeta,
+    EffectiveOverrides, PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager,
+    RemoteResource, SubContent, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
@@ -76,6 +76,18 @@ pub struct ClientConfigView {
     /// MITM 脚本方言：`Surge` / `QuantumultX` / `Loon`。
     pub mitm_script_dialect: String,
     pub system_proxy_enabled: bool,
+    /// 是否启用 TUN 虚拟网卡（需 root/管理员权限）。
+    pub tun_enabled: bool,
+    /// TUN 协议栈：`gvisor` / `system` / `mixed`。
+    pub tun_stack: String,
+    /// TUN 自动路由。
+    pub tun_auto_route: bool,
+    /// 是否启用 Clash 面板 API。
+    pub clash_api_enabled: bool,
+    /// Clash 面板 API 监听端口。
+    pub clash_api_port: u16,
+    /// Clash 面板 API 密钥（空串 = 不鉴权）。
+    pub clash_api_secret: String,
 }
 
 impl Default for ClientConfigView {
@@ -91,6 +103,12 @@ impl Default for ClientConfigView {
             mitm_hostnames: Vec::new(),
             mitm_script_dialect: "Surge".to_string(),
             system_proxy_enabled: false,
+            tun_enabled: false,
+            tun_stack: "mixed".to_string(),
+            tun_auto_route: true,
+            clash_api_enabled: false,
+            clash_api_port: 9090,
+            clash_api_secret: String::new(),
         }
     }
 }
@@ -115,6 +133,12 @@ impl ClientConfigView {
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_default(),
             system_proxy_enabled: cfg.system_proxy_enabled,
+            tun_enabled: cfg.tun_enabled,
+            tun_stack: cfg.tun_stack.clone(),
+            tun_auto_route: cfg.tun_auto_route,
+            clash_api_enabled: cfg.clash_api_enabled,
+            clash_api_port: cfg.clash_api_port,
+            clash_api_secret: cfg.clash_api_secret.clone(),
         }
     }
 
@@ -134,6 +158,12 @@ impl ClientConfigView {
                 "script_dialect": self.mitm_script_dialect,
             },
             "system_proxy_enabled": self.system_proxy_enabled,
+            "tun_enabled": self.tun_enabled,
+            "tun_stack": self.tun_stack,
+            "tun_auto_route": self.tun_auto_route,
+            "clash_api_enabled": self.clash_api_enabled,
+            "clash_api_port": self.clash_api_port,
+            "clash_api_secret": self.clash_api_secret,
         });
         serde_json::from_value::<ClientConfig>(value).map_err(|e| e.to_string())
     }
@@ -985,17 +1015,33 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
         .await
         .map_err(|e| format!("生成配置失败: {e}"))?;
 
-    match cfg.core_type {
-        CoreType::SingBox => {
-            let value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
-                .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;
-            serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
-        }
+    // 设置页最高优先级的 TUN / Clash 面板配置：compose 之后强制注入，预览与实际
+    // 启动路径（state.rs）一致。
+    let features = PanelFeatures {
+        tun_enabled: cfg.tun_enabled,
+        tun_stack: cfg.tun_stack.clone(),
+        tun_auto_route: cfg.tun_auto_route,
+        clash_api_enabled: cfg.clash_api_enabled,
+        clash_api_port: cfg.clash_api_port,
+        clash_api_secret: cfg.clash_api_secret.clone(),
+    };
+    let mut value = match cfg.core_type {
+        CoreType::SingBox => compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
+            .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?,
         CoreType::Mihomo => {
             let yaml =
                 serde_yaml::to_string(&profile_cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
-            let value = compose_mihomo_config(&yaml, cfg.mixed_port, None)
-                .map_err(|e| format!("合成 mihomo 配置失败: {e}"))?;
+            compose_mihomo_config(&yaml, cfg.mixed_port, None)
+                .map_err(|e| format!("合成 mihomo 配置失败: {e}"))?
+        }
+    };
+    apply_panel_features(&mut value, cfg.core_type, &features);
+
+    match cfg.core_type {
+        CoreType::SingBox => {
+            serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
+        }
+        CoreType::Mihomo => {
             serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
         }
     }
@@ -1415,12 +1461,18 @@ mod tests {
     // ---------- 项 1 回归：命令层序列化往返 ----------
 
     #[test]
-    fn save_config_roundtrip_preserves_basic_settings() {
+    fn save_config_roundtrip_preserves_basic_settings_and_panel_features() {
         let dir = TestDir::new();
         let mut view = full_view(dir.path());
         view.mixed_port = 20000;
         view.mitm_enabled = false;
         view.system_proxy_enabled = true;
+        view.tun_enabled = true;
+        view.tun_stack = "system".to_string();
+        view.tun_auto_route = false;
+        view.clash_api_enabled = true;
+        view.clash_api_port = 9091;
+        view.clash_api_secret = "sekret".to_string();
 
         let result = with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
         assert!(
@@ -1433,12 +1485,22 @@ mod tests {
         assert_eq!(saved.mixed_port, 20000);
         assert!(!saved.mitm_enabled);
         assert!(saved.system_proxy_enabled);
+        assert!(saved.tun_enabled);
+        assert_eq!(saved.tun_stack, "system");
+        assert!(!saved.tun_auto_route);
+        assert!(saved.clash_api_enabled);
+        assert_eq!(saved.clash_api_port, 9091);
+        assert_eq!(saved.clash_api_secret, "sekret");
 
         // load → from_config 往返保真（前端下次保存时的 payload 基础）。
         let view2 = ClientConfigView::from_config(&saved);
         assert_eq!(view2.mixed_port, 20000);
         assert!(!view2.mitm_enabled);
         assert!(view2.system_proxy_enabled);
+        assert!(view2.tun_enabled);
+        assert_eq!(view2.tun_stack, "system");
+        assert!(view2.clash_api_enabled);
+        assert_eq!(view2.clash_api_secret, "sekret");
     }
 
     #[test]

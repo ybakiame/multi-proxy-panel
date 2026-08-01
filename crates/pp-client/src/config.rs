@@ -51,6 +51,18 @@ pub struct ClientConfig {
     pub mitm: MitmClientConfig,
     /// 是否启用系统代理。
     pub system_proxy_enabled: bool,
+    /// 是否启用 TUN 虚拟网卡（需要 root/管理员权限）。
+    pub tun_enabled: bool,
+    /// TUN 协议栈：`gvisor` / `system` / `mixed`。
+    pub tun_stack: String,
+    /// TUN 自动路由（默认开启）。
+    pub tun_auto_route: bool,
+    /// 是否启用 Clash 面板 API（RESTful 控制接口）。
+    pub clash_api_enabled: bool,
+    /// Clash 面板 API 监听端口。
+    pub clash_api_port: u16,
+    /// Clash 面板 API 密钥（空串 = 不鉴权，合成配置时省略该字段）。
+    pub clash_api_secret: String,
 }
 
 impl Default for ClientConfig {
@@ -65,6 +77,12 @@ impl Default for ClientConfig {
             mitm_enabled: true,
             mitm: MitmClientConfig::default(),
             system_proxy_enabled: false,
+            tun_enabled: false,
+            tun_stack: "mixed".to_string(),
+            tun_auto_route: true,
+            clash_api_enabled: false,
+            clash_api_port: 9090,
+            clash_api_secret: String::new(),
         }
     }
 }
@@ -128,6 +146,13 @@ mod tests {
             cfg.mitm.script_dialect,
             pp_script::ScriptDialect::Surge
         ));
+        // TUN / Clash 面板配置默认关闭，默认值向后兼容。
+        assert!(!cfg.tun_enabled);
+        assert_eq!(cfg.tun_stack, "mixed");
+        assert!(cfg.tun_auto_route);
+        assert!(!cfg.clash_api_enabled);
+        assert_eq!(cfg.clash_api_port, 9090);
+        assert!(cfg.clash_api_secret.is_empty());
     }
 
     #[test]
@@ -144,16 +169,45 @@ mod tests {
 
     #[test]
     fn serde_roundtrip() {
-        let cfg = ClientConfig::new(
+        let mut cfg = ClientConfig::new(
             PathBuf::from("/tmp/pp-client-test"),
             "http://127.0.0.1:50052",
             "abc123",
             CoreType::Mihomo,
             PathBuf::from("/usr/local/bin/mihomo"),
         );
+        cfg.tun_enabled = true;
+        cfg.tun_stack = "system".to_string();
+        cfg.tun_auto_route = false;
+        cfg.clash_api_enabled = true;
+        cfg.clash_api_port = 9091;
+        cfg.clash_api_secret = "sekret".to_string();
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ClientConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn serde_missing_new_fields_defaults() {
+        // 旧版 client.json 缺失 TUN / Clash 字段时按默认值解析（serde default 全兼容）。
+        let json = r#"{
+            "data_dir": "/tmp/pp-client-test",
+            "hub_url": "http://127.0.0.1:50052",
+            "sub_token": "tok",
+            "core_type": "singbox",
+            "core_binary": "/usr/local/bin/sing-box",
+            "mixed_port": 17890,
+            "mitm_enabled": true,
+            "mitm": { "ca_dir": "/tmp/pp-client-test/certs", "hostnames": [], "script_dialect": "Surge" },
+            "system_proxy_enabled": false
+        }"#;
+        let cfg: ClientConfig = serde_json::from_str(json).unwrap();
+        assert!(!cfg.tun_enabled);
+        assert_eq!(cfg.tun_stack, "mixed");
+        assert!(cfg.tun_auto_route);
+        assert!(!cfg.clash_api_enabled);
+        assert_eq!(cfg.clash_api_port, 9090);
+        assert!(cfg.clash_api_secret.is_empty());
     }
 
     #[test]

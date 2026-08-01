@@ -15,6 +15,138 @@ pub struct MitmChain {
     pub hostnames: Vec<String>,
 }
 
+/// 设置页的 TUN 与 Clash 面板配置。
+///
+/// 属于「设置优先级最高」字段：在 `compose_*` 之后由 [`apply_panel_features`]
+/// 强制注入，模板/复写中同名字段（tun 入站、`experimental.clash_api`、
+/// `external-controller`）以设置为准整体替换，复写不可覆盖。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelFeatures {
+    /// 是否启用 TUN 虚拟网卡（需 root/管理员权限）。
+    pub tun_enabled: bool,
+    /// TUN 协议栈：`gvisor` / `system` / `mixed`。
+    pub tun_stack: String,
+    /// TUN 自动路由。
+    pub tun_auto_route: bool,
+    /// 是否启用 Clash 面板 API。
+    pub clash_api_enabled: bool,
+    /// Clash 面板 API 监听端口。
+    pub clash_api_port: u16,
+    /// Clash 面板 API 密钥（空串 = 不鉴权，输出时省略该字段）。
+    pub clash_api_secret: String,
+}
+
+/// 按核心类型把设置页的 TUN / Clash 面板配置强制注入已合成的核心配置。
+///
+/// 必须在 `compose_singbox_config` / `compose_mihomo_config`（即
+/// `build_core_config` + 复写叠加）之后执行，保证设置的优先级最高。
+pub fn apply_panel_features(
+    composed: &mut Value,
+    core_type: pp_common::CoreType,
+    features: &PanelFeatures,
+) {
+    match core_type {
+        pp_common::CoreType::SingBox => apply_singbox_panel_features(composed, features),
+        pp_common::CoreType::Mihomo => apply_mihomo_panel_features(composed, features),
+    }
+}
+
+/// sing-box 面板注入：
+///
+/// - `tun_enabled` → `inbounds` 追加 `{type: "tun", tag: "tun-in", address:
+///   "172.19.0.1/30", mtu: 9000, auto_route, stack}`（模板/复写已含 tun 入站时
+///   整体替换为设置值，`tun-in` 只能有一个）；
+/// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
+///   "127.0.0.1:port"}`，`secret` 非空时追加（模板已含 `experimental.clash_api`
+///   时整体替换）。
+pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatures) {
+    if features.tun_enabled {
+        let Some(obj) = composed.as_object_mut() else {
+            return;
+        };
+        let tun_inbound = json!({
+            "type": "tun",
+            "tag": "tun-in",
+            "address": "172.19.0.1/30",
+            "mtu": 9000,
+            "auto_route": features.tun_auto_route,
+            "stack": features.tun_stack,
+        });
+        let inbounds = obj
+            .entry("inbounds")
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Some(arr) = inbounds.as_array_mut() {
+            // 强制覆盖：移除模板/复写自带的 tun 入站，以设置值为准整体替换。
+            arr.retain(|inb| inb.get("type").and_then(|t| t.as_str()) != Some("tun"));
+            arr.push(tun_inbound);
+        }
+    }
+
+    if features.clash_api_enabled {
+        let Some(obj) = composed.as_object_mut() else {
+            return;
+        };
+        let mut clash_api = serde_json::Map::new();
+        clash_api.insert(
+            "external_controller".to_string(),
+            Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
+        );
+        if !features.clash_api_secret.is_empty() {
+            clash_api.insert(
+                "secret".to_string(),
+                Value::String(features.clash_api_secret.clone()),
+            );
+        }
+        // 强制覆盖：整个 experimental.clash_api 以设置值为准替换，保留其余 experimental 字段。
+        let experimental = obj
+            .entry("experimental")
+            .or_insert_with(|| Value::Object(Default::default()));
+        if let Some(exp) = experimental.as_object_mut() {
+            exp.insert("clash_api".to_string(), Value::Object(clash_api));
+        }
+    }
+}
+
+/// mihomo 面板注入：
+///
+/// - `tun_enabled` → `tun = {enable: true, stack, auto-route, auto-detect-interface:
+///   true, dns-hijack: ["any:53"]}`（模板已含 `tun` 键时整体替换）；
+/// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，`secret` 非空时
+///   写 `secret` 键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
+pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeatures) {
+    let Some(obj) = composed.as_object_mut() else {
+        return;
+    };
+
+    if features.tun_enabled {
+        obj.insert(
+            "tun".to_string(),
+            json!({
+                "enable": true,
+                "stack": features.tun_stack,
+                "auto-route": features.tun_auto_route,
+                "auto-detect-interface": true,
+                "dns-hijack": ["any:53"],
+            }),
+        );
+    }
+
+    if features.clash_api_enabled {
+        obj.insert(
+            "external-controller".to_string(),
+            Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
+        );
+        if features.clash_api_secret.is_empty() {
+            obj.remove("secret");
+        } else {
+            obj.insert(
+                "secret".to_string(),
+                Value::String(features.clash_api_secret.clone()),
+            );
+        }
+    }
+}
+
 /// 将订阅配置合成为可直接传给 sing-box 的本地配置。
 ///
 /// 不带 MITM 链路时，入站整体替换为单个 mixed 入站（仅监听 `127.0.0.1`），
@@ -270,6 +402,8 @@ pub fn compose_mihomo_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pp_common::CoreType;
+    use std::path::PathBuf;
 
     fn sample_subscription() -> Value {
         json!({
@@ -542,5 +676,255 @@ rules:
     fn compose_mihomo_rejects_non_mapping_yaml() {
         let err = compose_mihomo_config("- a\n- b", 17890, None).unwrap_err();
         assert!(matches!(err, PanelError::Client(_)));
+    }
+
+    // ---------- TUN + Clash 面板注入（设置优先级最高，强制覆盖） ----------
+
+    fn singbox_features() -> PanelFeatures {
+        PanelFeatures {
+            tun_enabled: true,
+            tun_stack: "mixed".to_string(),
+            tun_auto_route: true,
+            clash_api_enabled: true,
+            clash_api_port: 9090,
+            clash_api_secret: "sekret".to_string(),
+        }
+    }
+
+    #[test]
+    fn apply_singbox_panel_features_injects_tun_and_clash_api() {
+        let sub = json!({
+            "inbounds": [{ "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 17890 }],
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+
+        // tun 入站追加：tag / address / mtu / auto_route / stack。
+        let inbounds = cfg["inbounds"].as_array().unwrap();
+        let tun = inbounds
+            .iter()
+            .find(|i| i["type"] == "tun")
+            .expect("应注入 tun 入站");
+        assert_eq!(tun["tag"], "tun-in");
+        assert_eq!(tun["address"], "172.19.0.1/30");
+        assert_eq!(tun["mtu"], 9000);
+        assert_eq!(tun["auto_route"], true);
+        assert_eq!(tun["stack"], "mixed");
+        assert_eq!(inbounds.len(), 2, "mixed-in 保留 + tun-in 追加");
+
+        // experimental.clash_api 注入（含 secret）。
+        assert_eq!(
+            cfg["experimental"]["clash_api"]["external_controller"],
+            "127.0.0.1:9090"
+        );
+        assert_eq!(cfg["experimental"]["clash_api"]["secret"], "sekret");
+    }
+
+    #[test]
+    fn apply_singbox_panel_features_overrides_template_tun() {
+        // 模板/复写已含 tun 入站与 experimental.clash_api → 以设置值为准整体替换。
+        let sub = json!({
+            "inbounds": [
+                { "type": "tun", "tag": "tun-in", "address": "10.0.0.1/24", "mtu": 1500, "auto_route": false, "stack": "system" },
+                { "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 17890 }
+            ],
+            "experimental": { "clash_api": { "external_controller": "0.0.0.0:60000", "secret": "old" } },
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+
+        let inbounds = cfg["inbounds"].as_array().unwrap();
+        let tun: Vec<_> = inbounds.iter().filter(|i| i["type"] == "tun").collect();
+        assert_eq!(tun.len(), 1, "模板 tun 被替换，只能保留一个 tun 入站");
+        assert_eq!(tun[0]["address"], "172.19.0.1/30");
+        assert_eq!(tun[0]["mtu"], 9000);
+        assert_eq!(tun[0]["stack"], "mixed");
+
+        // experimental.clash_api 整体替换，其余 experimental 字段（如有）保留。
+        assert_eq!(
+            cfg["experimental"]["clash_api"]["external_controller"],
+            "127.0.0.1:9090"
+        );
+        assert_eq!(cfg["experimental"]["clash_api"]["secret"], "sekret");
+    }
+
+    #[test]
+    fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
+        let sub = json!({
+            "inbounds": [{ "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 17890 }],
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        let disabled = PanelFeatures {
+            tun_enabled: false,
+            ..singbox_features()
+        };
+        let disabled = PanelFeatures {
+            tun_stack: String::new(),
+            clash_api_enabled: false,
+            ..disabled
+        };
+        apply_panel_features(&mut cfg, CoreType::SingBox, &disabled);
+
+        assert!(
+            !cfg["inbounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i["type"] == "tun")
+        );
+        assert!(cfg.get("experimental").is_none());
+    }
+
+    #[test]
+    fn apply_mihomo_panel_features_injects_tun_and_external_controller() {
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &singbox_features());
+
+        // tun map 注入。
+        assert_eq!(cfg["tun"]["enable"], true);
+        assert_eq!(cfg["tun"]["stack"], "mixed");
+        assert_eq!(cfg["tun"]["auto-route"], true);
+        assert_eq!(cfg["tun"]["auto-detect-interface"], true);
+        assert_eq!(cfg["tun"]["dns-hijack"], json!(["any:53"]));
+        // external-controller + secret 注入。
+        assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
+        assert_eq!(cfg["secret"], "sekret");
+    }
+
+    #[test]
+    fn apply_mihomo_panel_features_overrides_and_omits_empty_secret() {
+        let yaml = r#"
+mixed-port: 17890
+tun:
+  enable: false
+  stack: system
+external-controller: 0.0.0.0:60000
+proxies:
+  - name: n1
+    type: direct
+rules:
+  - MATCH,DIRECT
+"#;
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        let features = PanelFeatures {
+            tun_stack: "gvisor".to_string(),
+            tun_auto_route: false,
+            clash_api_secret: String::new(), // 空 secret → 省略该键
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
+
+        // 模板 tun / external-controller 被设置值整体替换。
+        assert_eq!(cfg["tun"]["enable"], true);
+        assert_eq!(cfg["tun"]["stack"], "gvisor");
+        assert_eq!(cfg["tun"]["auto-route"], false);
+        assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
+        // secret 空串 → 输出省略。
+        assert!(cfg.get("secret").is_none());
+    }
+
+    #[test]
+    fn apply_mihomo_panel_features_disabled_leaves_config_untouched() {
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        let disabled = PanelFeatures {
+            tun_enabled: false,
+            tun_stack: String::new(),
+            clash_api_enabled: false,
+            clash_api_secret: String::new(),
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &disabled);
+
+        assert!(cfg.get("tun").is_none());
+        assert!(cfg.get("external-controller").is_none());
+        assert!(cfg.get("secret").is_none());
+    }
+
+    // ---------- 真实核心 check（target/test-cores 存在时验证 tun + clash_api 通过） ----------
+
+    /// 真实核心二进制目录：`target/test-cores`（工作区根下）。缺失时相关测试直接跳过。
+    fn test_core_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-cores")
+    }
+
+    fn sing_box_binary() -> Option<PathBuf> {
+        let p = test_core_dir().join("sing-box");
+        p.is_file().then_some(p)
+    }
+
+    fn mihomo_binary() -> Option<PathBuf> {
+        let p = test_core_dir().join("mihomo");
+        p.is_file().then_some(p)
+    }
+
+    /// 本地已下载的 mihomo geoip.metadb（`~/.config/mihomo`），避免 `mihomo -t` 联网下载。
+    fn geoip_metadb() -> Option<PathBuf> {
+        let p = PathBuf::from(std::env::var("HOME").unwrap_or_default())
+            .join(".config/mihomo/geoip.metadb");
+        p.is_file().then_some(p)
+    }
+
+    #[test]
+    fn singbox_tun_clash_api_passes_real_singbox_check() {
+        let Some(bin) = sing_box_binary() else {
+            return;
+        };
+        let sub = json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "direct" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+        let out = std::process::Command::new(&bin)
+            .args(["check", "-c"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "sing-box check failed (tun + clash_api): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn mihomo_tun_clash_api_passes_real_mihomo_check() {
+        let Some(bin) = mihomo_binary() else {
+            return;
+        };
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &singbox_features());
+
+        let dir = tempfile::tempdir().unwrap();
+        // 预置 geoip.metadb（存在时）避免 `mihomo -t` 联网下载 geo 数据。
+        if let Some(mmdb) = geoip_metadb() {
+            std::fs::copy(mmdb, dir.path().join("geoip.metadb")).unwrap();
+        }
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+        let out = std::process::Command::new(&bin)
+            .args(["-t", "-f"])
+            .arg(&path)
+            .arg("-d")
+            .arg(dir.path())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "mihomo check failed (tun + clash_api): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }
