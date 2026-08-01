@@ -41,6 +41,12 @@ pub struct RemoteResource {
     pub enabled: bool,
     /// 资源描述（可选；新增字段，旧清单缺省为 `None`）。
     pub description: Option<String>,
+    /// 用户为模块参数配置的值 `(key, value)`（键对应 `#!arguments=` 声明；旧清单缺省为空）。
+    #[serde(default)]
+    pub argument_values: Vec<(String, String)>,
+    /// 资源图标 URL（可选；新建资源时可由嗅探结果预填；旧清单缺省为 `None`）。
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 impl Default for RemoteResource {
@@ -53,6 +59,8 @@ impl Default for RemoteResource {
             update_interval_secs: 86400,
             enabled: true,
             description: None,
+            argument_values: Vec::new(),
+            icon: None,
         }
     }
 }
@@ -154,6 +162,43 @@ pub fn resolve_argument_template(
         out = out.replace(&format!("{{{key}}}"), value);
     }
     out
+}
+
+/// 对缓存合并后的脚本钩子规则做 argument 模板替换：`{key}` → 用户值 →
+/// 参数声明默认值 → 保留原样（见 [`resolve_argument_template`]）。
+///
+/// `remotes` 提供用户配置的参数值（[`RemoteResource::argument_values`]），
+/// `metas` 提供各资源 `#!arguments=` 声明的键与默认值（[`ConfigMeta::arguments`]）。
+pub fn apply_argument_templates(
+    rules: Vec<ScriptRule>,
+    metas: &[ConfigMeta],
+    remotes: &[RemoteResource],
+) -> Vec<ScriptRule> {
+    let mut user_values = HashMap::new();
+    for remote in remotes {
+        for (key, value) in &remote.argument_values {
+            user_values.insert(key.clone(), value.clone());
+        }
+    }
+    let mut defaults = HashMap::new();
+    for meta in metas {
+        for arg in &meta.arguments {
+            defaults.insert(arg.key.clone(), arg.default_value.clone());
+        }
+    }
+    rules
+        .into_iter()
+        .map(|mut rule| {
+            if let Some(template) = rule.argument.take() {
+                rule.argument = Some(resolve_argument_template(
+                    &template,
+                    &user_values,
+                    &defaults,
+                ));
+            }
+            rule
+        })
+        .collect()
 }
 
 /// 远程资源管理器：负责 remotes 清单读写、定时拉取与缓存读取。
@@ -716,6 +761,7 @@ impl CachedScriptRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::import::ArgSpec;
     use axum::http::StatusCode;
 
     /// 启动本地 HTTP 服务（禁外部网络）：
@@ -1232,6 +1278,91 @@ mod tests {
             resolve_argument_template("{server}", &HashMap::new(), &HashMap::new()),
             "{server}"
         );
+    }
+
+    /// `apply_argument_templates`：用户值优先于默认值，未声明占位保留。
+    #[test]
+    fn apply_argument_templates_prefers_user_values_over_defaults() {
+        let rules = vec![
+            ScriptRule {
+                name: "r1".into(),
+                kind: ScriptKind::HttpResponse,
+                pattern: Regex::new(".*").unwrap(),
+                requires_body: false,
+                max_size: 131072,
+                source: String::new(),
+                argument: Some("{server}|{token}|{extra}".to_string()),
+            },
+            ScriptRule {
+                name: "r2".into(),
+                kind: ScriptKind::HttpRequest,
+                pattern: Regex::new(".*").unwrap(),
+                requires_body: false,
+                max_size: 131072,
+                source: String::new(),
+                argument: None,
+            },
+        ];
+        let metas = vec![ConfigMeta {
+            arguments: vec![
+                ArgSpec {
+                    key: "server".into(),
+                    default_value: "api.example.com".into(),
+                    description: None,
+                },
+                ArgSpec {
+                    key: "token".into(),
+                    default_value: "default-token".into(),
+                    description: None,
+                },
+            ],
+            ..ConfigMeta::default()
+        }];
+        let remotes = vec![RemoteResource {
+            argument_values: vec![("token".to_string(), "abc".to_string())],
+            ..RemoteResource::default()
+        }];
+
+        let out = apply_argument_templates(rules, &metas, &remotes);
+        assert_eq!(
+            out[0].argument.as_deref(),
+            Some("api.example.com|abc|{extra}")
+        );
+        // argument 为 None 的规则原样保留。
+        assert_eq!(out[1].argument, None);
+    }
+
+    /// `RemoteResource` 新增字段（argument_values / icon）经 save → load 往返保留；
+    /// 旧清单缺省这些字段（serde default）。
+    #[test]
+    fn remote_resource_argument_values_and_icon_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "args".into(),
+            url: "http://example.com/mod.sgmodule".into(),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            argument_values: vec![
+                ("server".to_string(), "api.example.com".to_string()),
+                ("token".to_string(), "abc".to_string()),
+            ],
+            icon: Some("https://example.com/icon.png".to_string()),
+            ..RemoteResource::default()
+        }];
+        manager.save(&remotes).unwrap();
+        assert_eq!(manager.load().unwrap(), remotes);
+
+        // 旧清单（无新字段）读取回退为默认值，不报错。
+        std::fs::write(
+            manager.remotes_file(),
+            r#"[{"name":"old","url":"http://example.com/x.js","kind":"Script","dialect":"Surge","update_interval_secs":86400,"enabled":true}]"#,
+        )
+        .unwrap();
+        let loaded = manager.load().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].argument_values.is_empty());
+        assert_eq!(loaded[0].icon, None);
     }
 
     /// `#!arguments` 声明与 `argument=` 模板经 fetch → cache → load 往返不丢失，

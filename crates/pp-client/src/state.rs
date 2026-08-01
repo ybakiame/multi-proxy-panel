@@ -239,6 +239,11 @@ impl ClientState {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
+        // 模块 argument 模板替换：用户值（remotes.argument_values）→ 参数默认值
+        // （metas.arguments）→ 保留原样；替换结果随 ScriptRule 透传为 $argument。
+        let remotes = remote.load().unwrap_or_default();
+        let hook_rules =
+            crate::remote::apply_argument_templates(merged.scripts, &merged.metas, &remotes);
         // 合并白名单（本地配置 + 远程订阅），供 MITM 与核心路由规则共用。
         let mut hostnames = self.config.mitm.hostnames.clone();
         for extra in &merged.hostnames {
@@ -260,7 +265,7 @@ impl ClientState {
             Arc::clone(&host),
             self.config.mitm.script_dialect,
             ScriptLimits::default(),
-            merged.scripts,
+            hook_rules,
         );
         // MITM 上游指向核心回流 mixed 入口（mixed_port + 1）。
         let return_port = self.config.mixed_port + 1;

@@ -280,6 +280,10 @@ pub struct RemoteResourceView {
     pub description: Option<String>,
     pub update_interval_secs: u64,
     pub enabled: bool,
+    /// 用户为模块参数配置的值 `(key, value)`（对应 `#!arguments=` 声明的键）。
+    pub argument_values: Vec<(String, String)>,
+    /// 资源图标 URL（可选；嗅探结果预填）。
+    pub icon: Option<String>,
 }
 
 impl RemoteResourceView {
@@ -298,6 +302,8 @@ impl RemoteResourceView {
             description: remote.description.clone(),
             update_interval_secs: remote.update_interval_secs,
             enabled: remote.enabled,
+            argument_values: remote.argument_values.clone(),
+            icon: remote.icon.clone(),
         }
     }
 
@@ -310,6 +316,8 @@ impl RemoteResourceView {
             "description": self.description,
             "update_interval_secs": self.update_interval_secs,
             "enabled": self.enabled,
+            "argument_values": self.argument_values,
+            "icon": self.icon,
         });
         serde_json::from_value::<RemoteResource>(value).map_err(|e| e.to_string())
     }
@@ -325,6 +333,14 @@ pub struct FetchReportView {
     pub warnings: Vec<String>,
 }
 
+/// 模块参数声明的对外视图（`#!arguments=` 键/默认值/描述）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArgSpecView {
+    pub key: String,
+    pub default_value: String,
+    pub description: Option<String>,
+}
+
 /// 配置头 `#!key=value` 元数据的对外视图。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigMetaView {
@@ -335,6 +351,8 @@ pub struct ConfigMetaView {
     pub date: Option<String>,
     pub category: Option<String>,
     pub open_url: Option<String>,
+    /// 模块参数声明（`#!arguments=` / `#!arguments-desc=`；无声明时为空列表）。
+    pub arguments: Vec<ArgSpecView>,
 }
 
 impl ConfigMetaView {
@@ -347,6 +365,15 @@ impl ConfigMetaView {
             date: meta.date.clone(),
             category: meta.category.clone(),
             open_url: meta.open_url.clone(),
+            arguments: meta
+                .arguments
+                .iter()
+                .map(|arg| ArgSpecView {
+                    key: arg.key.clone(),
+                    default_value: arg.default_value.clone(),
+                    description: arg.description.clone(),
+                })
+                .collect(),
         }
     }
 }
