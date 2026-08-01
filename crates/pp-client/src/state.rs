@@ -9,6 +9,7 @@
 //! **停止**：按启动逆序逐项关闭（best-effort，单项失败不影响其余）。
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,6 +24,7 @@ use crate::config::ClientConfig;
 use crate::core_config;
 use crate::http_exec::ReqwestHttpExecutor;
 use crate::mitm::{MitmBuildOptions, build_mitm_proxy};
+use crate::privilege::{TunAuthStatus, tun_auth_status};
 use crate::profile;
 use crate::remote::{RemoteManager, TracingNotifier};
 use crate::runner::CoreRunner;
@@ -59,6 +61,8 @@ pub struct ClientState {
     recorder: Arc<MemoryRecorder>,
     /// 远程订阅 task 脚本调度器（MITM 就绪后启动，stop 时停止）。
     scheduler: Option<SchedulerHandle>,
+    /// TUN 权限检测函数（默认 [`tun_auth_status`]；测试可注入覆盖以绕过真实权限检查）。
+    tun_auth_check: Arc<dyn Fn(&Path) -> TunAuthStatus + Send + Sync>,
 }
 
 impl ClientState {
@@ -95,6 +99,7 @@ impl ClientState {
             notifier,
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
+            tun_auth_check: Arc::new(tun_auth_status),
         }
     }
 
@@ -131,6 +136,26 @@ impl ClientState {
         let mut loaded = ClientConfig::load(&data_dir)?;
         loaded.data_dir = data_dir;
         self.config = loaded;
+
+        // TUN 模式前置提权检查：未授权则拒绝启动并返回明确错误（错误信息以
+        // `tun_auth_required` 开头并含二进制路径，前端据此展示授权入口）。
+        if self.config.tun_enabled {
+            match (self.tun_auth_check)(&self.config.core_binary) {
+                TunAuthStatus::Authorized => {}
+                TunAuthStatus::NeedsAuth => {
+                    return Err(PanelError::Client(format!(
+                        "tun_auth_required: TUN 模式需要特权，请先授权核心二进制 {}",
+                        self.config.core_binary.display()
+                    )));
+                }
+                TunAuthStatus::Unsupported(reason) => {
+                    return Err(PanelError::Client(format!(
+                        "tun_auth_required: {reason}（核心二进制 {}）",
+                        self.config.core_binary.display()
+                    )));
+                }
+            }
+        }
 
         tracing::info!("客户端启动：解析订阅");
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
@@ -1165,6 +1190,8 @@ mod tests {
         stale.tun_enabled = true;
 
         let mock = Arc::new(MockSystemProxy::new());
+        // 磁盘 tun_enabled=false：reload 生效后不触发 TUN 前置提权检查，
+        // 用默认权限检测即可（若 reload 失效，start 会因 NeedsAuth 报错失败）。
         let mut state = ClientState::with_system_proxy(stale, mock.clone());
         state.start().await.unwrap();
 
@@ -1180,6 +1207,92 @@ mod tests {
         assert!(
             !inbounds.iter().any(|i| i["type"] == "tun"),
             "磁盘 tun_enabled=false 时不应注入 tun 入站: {core_config}"
+        );
+
+        state.stop().await;
+    }
+
+    /// 项 2：`tun_enabled=true` 但核心未授权 → start 返回 `tun_auth_required` 错误，
+    /// 核心不启动、系统代理零调用（前端据此展示授权入口）。
+    #[tokio::test]
+    async fn start_requires_tun_authorization_when_tun_enabled() {
+        let body = r#"{
+            "log": {"level": "info"},
+            "outbounds": [{"type": "direct"}]
+        }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(&dir, format!("http://{addr}"));
+        cfg.tun_enabled = true;
+        cfg.save().unwrap();
+        let binary = cfg.core_binary.clone();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        let err = state.start().await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("tun_auth_required"),
+            "应含 tun_auth_required 标记: {msg}"
+        );
+        assert!(
+            msg.contains(binary.to_string_lossy().as_ref()),
+            "应含核心二进制路径: {msg}"
+        );
+
+        // 核心未启动、系统代理零调用。
+        let status = state.status().await;
+        assert!(!status.core_running);
+        assert_eq!(mock.calls(), vec![]);
+    }
+
+    /// 项 2：`tun_enabled=true` 且已授权（注入 Authorized 检测）→ 注入 tun 入站。
+    #[tokio::test]
+    async fn start_injects_tun_inbound_when_authorized() {
+        let body = r#"{
+            "log": {"level": "info"},
+            "outbounds": [{"type": "direct"}]
+        }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let capture = dir.path().join("core-config-capture.json");
+        let core_bin = fake_core_capturing_args(&dir, &capture);
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            format!("http://{addr}"),
+            "tok",
+            CoreType::SingBox,
+            core_bin,
+        );
+        cfg.tun_enabled = true;
+        cfg.save().unwrap();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState {
+            config: cfg,
+            core: None,
+            mitm: None,
+            sysproxy: mock,
+            notifier: Arc::new(TracingNotifier::new()),
+            recorder: Arc::new(MemoryRecorder::new(2048)),
+            scheduler: None,
+            tun_auth_check: Arc::new(|_| TunAuthStatus::Authorized),
+        };
+        state.start().await.unwrap();
+
+        let mut attempts = 0;
+        while !capture.exists() && attempts < 100 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            attempts += 1;
+        }
+        assert!(capture.exists(), "假核心应已复制合成配置");
+        let core_config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
+        let inbounds = core_config["inbounds"].as_array().unwrap();
+        assert!(
+            inbounds.iter().any(|i| i["type"] == "tun"),
+            "tun_enabled=true 且已授权时应注入 tun 入站: {core_config}"
         );
 
         state.stop().await;

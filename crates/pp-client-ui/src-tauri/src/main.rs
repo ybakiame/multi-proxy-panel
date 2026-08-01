@@ -29,6 +29,8 @@ fn main() {
             commands::save_config,
             commands::start_proxy,
             commands::stop_proxy,
+            commands::tun_auth_status,
+            commands::authorize_tun,
             commands::proxy_status,
             commands::list_traffic,
             commands::list_remotes,

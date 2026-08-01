@@ -343,6 +343,26 @@ pub async fn stop_proxy(state: State<'_, AppState>) -> Result<ClientStatusView, 
     Ok(ClientStatusView::from_status(&status))
 }
 
+/// TUN 提权状态（基于当前配置的 `core_binary`）。
+///
+/// 返回前端字符串：`authorized` / `needs_auth` / `unsupported:<reason>`。
+/// 启动流程在 `tun_enabled` 时前置检查，未授权返回 `tun_auth_required` 错误，
+/// 前端据此展示授权按钮。
+#[tauri::command]
+pub async fn tun_auth_status(state: State<'_, AppState>) -> Result<String, String> {
+    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+}
+
+/// 执行 TUN 提权（Linux `pkexec setcap` / macOS `osascript` setuid / Windows
+/// 提示以管理员身份重启），返回授权后的最新状态。
+#[tauri::command]
+pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String> {
+    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
+    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+}
+
 /// 查询代理运行状态。
 #[tauri::command]
 pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView, String> {
