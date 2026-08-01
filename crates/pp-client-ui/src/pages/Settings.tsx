@@ -4,6 +4,7 @@ import {
   detectSystemCores,
   downloadCore,
   listCores,
+  listDownloadedVersions,
   listRemoteCoreVersions,
   setActiveCore,
   toErrorMessage,
@@ -46,6 +47,13 @@ const TUN_STACK_OPTIONS = [
   { id: "system", label: "system" },
 ] as const;
 
+/** Clash 面板 UI 选项（与后端 `ClientConfigView.clash_api_ui` 的 serde 值一致，默认 zashboard）。 */
+const CLASH_UI_OPTIONS = [
+  { id: "zashboard", label: "zashboard" },
+  { id: "yacd", label: "yacd" },
+  { id: "metacubexd", label: "metacubexd" },
+] as const;
+
 /**
  * 按后端 `preferred_binary` 语义取某类型首选本地核心：已下载优先，其次系统探测。
  * 仅用于 core_type 变更时的联动结果预览（实际回填由 `save_config` 完成）。
@@ -60,8 +68,6 @@ function preferredCoreFor(cores: LocalCoreView[], coreType: CoreType): LocalCore
 
 export default function Settings() {
   const { config, loading, error, clearError, loadConfig, saveConfig } = useAppStore();
-  const [hubUrl, setHubUrl] = useState("");
-  const [subToken, setSubToken] = useState("");
   const [coreType, setCoreType] = useState<string>("singbox");
   const [coreBinary, setCoreBinary] = useState("");
   const [mixedPort, setMixedPort] = useState(1080);
@@ -76,11 +82,13 @@ export default function Settings() {
   const [clashApiEnabled, setClashApiEnabled] = useState(false);
   const [clashApiPort, setClashApiPort] = useState(9090);
   const [clashApiSecret, setClashApiSecret] = useState("");
+  const [clashApiUi, setClashApiUi] = useState<string>("zashboard");
   // 保存后的非阻塞提示（后端 SaveConfigView.warning）
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
 
   // ---------- 核心管理 ----------
   const [cores, setCores] = useState<LocalCoreView[]>([]);
+  const [coreVersions, setCoreVersions] = useState<string[]>([]);
   const [remoteVersions, setRemoteVersions] = useState<string[]>([]);
   const [downloadType, setDownloadType] = useState<CoreType>("singbox");
   const [downloadVersion, setDownloadVersion] = useState("");
@@ -96,8 +104,6 @@ export default function Settings() {
     if (!config) {
       return;
     }
-    setHubUrl(config.hub_url);
-    setSubToken(config.sub_token);
     setCoreType(normalizeCoreType(config.core_type));
     setCoreBinary(config.core_binary);
     setMixedPort(config.mixed_port);
@@ -109,6 +115,7 @@ export default function Settings() {
     setClashApiEnabled(config.clash_api_enabled);
     setClashApiPort(config.clash_api_port);
     setClashApiSecret(config.clash_api_secret);
+    setClashApiUi(config.clash_api_ui || "zashboard");
   }, [config]);
 
   const refreshCores = useCallback(async () => {
@@ -125,6 +132,17 @@ export default function Settings() {
       const versions = await listRemoteCoreVersions(coreType);
       setRemoteVersions(versions);
       setDownloadVersion(versions[0] ?? "");
+      setCoresError(null);
+    } catch (err) {
+      setCoresError(toErrorMessage(err));
+    }
+  }, []);
+
+  /** 核心版本 Select 选项来源：当前类型已下载版本（语义化倒序）。 */
+  const refreshDownloadedVersions = useCallback(async (coreType: CoreType) => {
+    try {
+      const versions = await listDownloadedVersions(coreType);
+      setCoreVersions(versions);
       setCoresError(null);
     } catch (err) {
       setCoresError(toErrorMessage(err));
@@ -148,8 +166,6 @@ export default function Settings() {
     clearError();
     const payload: ClientConfig = {
       ...config,
-      hub_url: hubUrl.trim(),
-      sub_token: subToken.trim(),
       core_type: coreType,
       core_binary: coreBinary,
       mixed_port: mixedPort,
@@ -161,6 +177,7 @@ export default function Settings() {
       clash_api_enabled: clashApiEnabled,
       clash_api_port: clashApiPort,
       clash_api_secret: clashApiSecret,
+      clash_api_ui: clashApiUi,
     };
     try {
       const warning = await saveConfig(payload);
@@ -224,6 +241,17 @@ export default function Settings() {
     }
   };
 
+  /** 版本 Select 选中即启用：按「类型 + 版本」在本地清单中定位核心并调用 set_active_core。 */
+  const handleSelectCoreVersion = async (version: string) => {
+    if (!version) {
+      return;
+    }
+    const core = cores.find((c) => normalizeCoreType(c.core_type) === normalizedCoreType && c.version === version);
+    if (core) {
+      await handleUseCore(core);
+    }
+  };
+
   // 后端已放宽校验：hub_url / sub_token 为空仅降级为 warning，不再阻塞开关/端口等基本设置保存。
   const canSave = true;
   const activeCore = cores.find((core) => core.active) ?? null;
@@ -231,6 +259,19 @@ export default function Settings() {
   // core_type 变更时的联动预览（实际回填由 save_config 完成后端按 preferred_binary 执行）。
   const coreTypeChanged = config ? normalizeCoreType(config.core_type) !== coreType : false;
   const linkedCore = coreTypeChanged ? preferredCoreFor(cores, normalizedCoreType) : null;
+
+  useEffect(() => {
+    void refreshDownloadedVersions(normalizedCoreType);
+  }, [normalizedCoreType, refreshDownloadedVersions]);
+
+  // 版本 Select 选项 = 当前类型已下载版本 + 当前 core_binary 版本（系统核心等不在下载列表时补入）。
+  const activeCoreForType =
+    activeCore && normalizeCoreType(activeCore.core_type) === normalizedCoreType ? activeCore : null;
+  const coreVersionOptions = [...coreVersions];
+  if (activeCoreForType && !coreVersionOptions.includes(activeCoreForType.version)) {
+    coreVersionOptions.push(activeCoreForType.version);
+  }
+  const selectedCoreVersion = activeCoreForType?.version ?? "";
 
   return (
     <div className="flex max-w-xl flex-col gap-6">
@@ -246,29 +287,6 @@ export default function Settings() {
         </Card.Header>
         <Card.Content>
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="settings-hub-url">Hub 地址</Label>
-              <Input
-                id="settings-hub-url"
-                value={hubUrl}
-                onChange={(event) => setHubUrl(event.target.value)}
-                placeholder="https://hub.example.com"
-                fullWidth
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="settings-sub-token">订阅 Token</Label>
-              <Input
-                id="settings-sub-token"
-                type="password"
-                value={subToken}
-                onChange={(event) => setSubToken(event.target.value)}
-                placeholder="sub token"
-                fullWidth
-              />
-            </div>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label>核心类型</Label>
@@ -291,14 +309,36 @@ export default function Settings() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="settings-core-binary">核心二进制路径</Label>
-                <Input
-                  id="settings-core-binary"
-                  value={coreBinary}
-                  onChange={(event) => setCoreBinary(event.target.value)}
-                  placeholder="留空则自动定位"
+                <Label htmlFor="settings-core-version">核心版本</Label>
+                <Select
+                  id="settings-core-version"
+                  value={selectedCoreVersion}
+                  isDisabled={coreVersionOptions.length === 0}
+                  onChange={(value) => void handleSelectCoreVersion(String(value ?? ""))}
                   fullWidth
-                />
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {coreVersionOptions.length === 0 ? (
+                        <ListBox.Item id="__empty" textValue="暂无已下载版本">
+                          暂无已下载版本
+                        </ListBox.Item>
+                      ) : (
+                        coreVersionOptions.map((version) => (
+                          <ListBox.Item key={version} id={version} textValue={version}>
+                            {version}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                <span className="text-xs text-muted">选择后立即启用该版本</span>
               </div>
             </div>
 
@@ -475,12 +515,38 @@ export default function Settings() {
             </div>
           </div>
 
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="settings-clash-ui">面板 UI</Label>
+            <Select
+              id="settings-clash-ui"
+              value={clashApiUi}
+              onChange={(value) => setClashApiUi(String(value ?? "zashboard"))}
+              fullWidth
+            >
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {CLASH_UI_OPTIONS.map((option) => (
+                    <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                      {option.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <span className="text-xs text-muted">首次访问面板地址时自动下载所选面板资源</span>
+          </div>
+
           <Alert status="default">
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Title>访问方式</Alert.Title>
               <Alert.Description>
-                面板地址 http://127.0.0.1:{clashApiPort}/ui，兼容 yacd / metacubexd 等外部面板
+                面板地址 http://127.0.0.1:{clashApiPort}/ui，默认 {clashApiUi}，可切换 yacd / metacubexd
               </Alert.Description>
             </Alert.Content>
           </Alert>

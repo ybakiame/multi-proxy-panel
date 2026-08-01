@@ -37,6 +37,8 @@ export interface ClientConfig {
   clash_api_port: number;
   /** Clash 面板 API 密钥（空串 = 不鉴权）。 */
   clash_api_secret: string;
+  /** Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（默认 `zashboard`）。 */
+  clash_api_ui: string;
 }
 
 export interface ClientStatus {
@@ -365,6 +367,11 @@ export function listCores(): Promise<LocalCoreView[]> {
 /** 列出远端最近 10 个发布版本（GitHub releases）。 */
 export function listRemoteCoreVersions(coreType: string): Promise<string[]> {
   return invoke<string[]>("list_remote_core_versions", { core_type: coreType });
+}
+
+/** 列出指定核心类型已下载的版本（版本目录扫描，语义化版本倒序）。 */
+export function listDownloadedVersions(coreType: string): Promise<string[]> {
+  return invoke<string[]>("list_downloaded_versions", { core_type: coreType });
 }
 
 /** 下载指定版本核心并返回其视图。 */
