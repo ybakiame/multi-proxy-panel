@@ -23,6 +23,7 @@ use crate::config::ClientConfig;
 use crate::core_config;
 use crate::http_exec::ReqwestHttpExecutor;
 use crate::mitm::{MitmBuildOptions, build_mitm_proxy};
+use crate::profile;
 use crate::remote::{RemoteManager, TracingNotifier};
 use crate::runner::CoreRunner;
 use crate::subscription;
@@ -112,24 +113,48 @@ impl ClientState {
         self.scheduler.as_ref().map(|h| Arc::clone(&h.scheduler))
     }
 
-    /// 启动：订阅 → MITM → 合成配置（MITM 链路）→ 核心 → 系统代理，失败回滚。
+    /// 启动：订阅 → Profile（模板 + 双复写）→ MITM → 合成配置（MITM 链路）→ 核心 →
+    /// 系统代理，失败回滚。
     ///
-    /// 启动顺序：先拉取订阅，MITM 启用时先启动 MITM（拿到监听地址），合成配置时
-    /// 注入 [`MitmChain`]（路由规则 + 回流入口），再启动核心，最后启用系统代理
-    /// （始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。
+    /// 启动顺序：先拉取订阅并经 Profile 层生成基础配置（订阅只取节点 → 本地模板 →
+    /// YAML/JS 双复写），MITM 启用时再启动 MITM（拿到监听地址），合成配置时注入
+    /// [`MitmChain`]（路由规则 + 回流入口），随后启动核心，最后启用系统代理
+    /// （始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。Profile
+    /// 构建失败时尚未启动任何组件，无需回滚。
     pub async fn start(&mut self) -> PanelResult<()> {
         tracing::info!(hub_url = %self.config.hub_url, "客户端启动：拉取订阅");
         let fetcher = subscription::SubscriptionFetcher::new();
 
-        let config_json = match self.config.core_type {
+        // 订阅 → Profile 层：订阅内容只用于提取节点，本地模板生成分组/路由，
+        // YAML 与 JS 双复写（来自 data_dir/profile.json）。
+        let sub_content = match self.config.core_type {
             CoreType::SingBox => {
                 let (sub_config, _info) = fetcher
                     .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
                     .await?;
-                // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
-                let chain = self.start_mitm_chain().await?;
-                let cfg =
-                    core_config::compose_singbox_config(&sub_config, self.config.mixed_port, chain);
+                profile::SubContent::SingBox(sub_config)
+            }
+            CoreType::Mihomo => {
+                let (yaml, _info) = fetcher
+                    .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
+                    .await?;
+                profile::SubContent::Mihomo(yaml)
+            }
+        };
+        let store = profile::ProfileStore::new(self.config.data_dir.clone());
+        let overrides = store.load()?;
+        let profile_cfg =
+            profile::build_core_config(self.config.core_type, &sub_content, &overrides).await?;
+
+        // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
+        let chain = self.start_mitm_chain().await?;
+        let config_json = match self.config.core_type {
+            CoreType::SingBox => {
+                let cfg = core_config::compose_singbox_config(
+                    &profile_cfg,
+                    self.config.mixed_port,
+                    chain,
+                );
                 match cfg {
                     Ok(cfg) => cfg,
                     Err(e) => {
@@ -139,10 +164,7 @@ impl ClientState {
                 }
             }
             CoreType::Mihomo => {
-                let (yaml, _info) = fetcher
-                    .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
-                    .await?;
-                let chain = self.start_mitm_chain().await?;
+                let yaml = serde_yaml::to_string(&profile_cfg)?;
                 let cfg = core_config::compose_mihomo_config(&yaml, self.config.mixed_port, chain);
                 match cfg {
                     Ok(cfg) => cfg,
@@ -499,10 +521,20 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let base = format!("http://{addr}");
+        // 订阅内容现在只取节点：含 2 个叶子节点 + selector / direct（提取时被过滤）。
         let sub_body = r#"{
-            "log": {"level": "info"},
+            "log": {"level": "debug"},
             "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 1}],
-            "outbounds": [{"type": "direct"}]
+            "outbounds": [
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+                  "uuid": "12345678-1234-1234-1234-123456789012",
+                  "tls": { "enabled": true, "server_name": "example.com" } },
+                { "type": "hysteria2", "tag": "n2", "server": "example.org", "server_port": 8443,
+                  "password": "pw", "tls": { "enabled": true, "server_name": "example.org" } },
+                { "type": "selector", "tag": "proxy", "outbounds": ["n1"] },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "direct" }
         }"#;
         let snippet = format!(
             "[rewrite_local]\n\
@@ -696,6 +728,132 @@ mod tests {
         let status = state.status().await;
         assert!(status.mitm_addr.is_none());
         assert!(!status.core_running);
+    }
+
+    /// Profile 层集成：订阅（2 节点 + selector/direct 组）经模板分组、profile.json
+    /// 的 JS 复写生效，compose 正常注入 inbounds 与 MITM 链。
+    #[tokio::test]
+    async fn start_with_profile_applies_template_groups_and_js_override() {
+        let body = r#"{
+            "log": {"level": "debug"},
+            "outbounds": [
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+                  "uuid": "12345678-1234-1234-1234-123456789012",
+                  "tls": { "enabled": true, "server_name": "example.com" } },
+                { "type": "hysteria2", "tag": "n2", "server": "example.org", "server_port": 8443,
+                  "password": "pw", "tls": { "enabled": true, "server_name": "example.org" } },
+                { "type": "selector", "tag": "proxy", "outbounds": ["n1"] },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "direct" }
+        }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 预置 profile.json：js_override 修改 dns.strategy。
+        profile::ProfileStore::new(dir.path().to_path_buf())
+            .save(&profile::ProfileOverrides {
+                yaml_override: String::new(),
+                js_override: r#"function main(c) { c.dns.strategy = "ipv4_only"; return c; }"#
+                    .to_string(),
+            })
+            .unwrap();
+
+        let capture = dir.path().join("core-config-capture.json");
+        let core_bin = fake_core_capturing_args(&dir, &capture);
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            format!("http://{addr}"),
+            "tok",
+            CoreType::SingBox,
+            core_bin,
+        );
+        cfg.mitm_enabled = true;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        let status = state.status().await;
+        let mitm_addr = status.mitm_addr.expect("MITM 应已运行");
+
+        let mut attempts = 0;
+        while !capture.exists() && attempts < 100 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            attempts += 1;
+        }
+        assert!(capture.exists(), "假核心应已复制合成配置");
+        let core_config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
+
+        // 节点经模板分组：n1/n2 保留并被 proxy（select）/ auto（url-test）组引用。
+        let outbounds = core_config["outbounds"].as_array().unwrap();
+        assert!(outbounds.iter().any(|o| o["tag"] == "n1"));
+        assert!(outbounds.iter().any(|o| o["tag"] == "n2"));
+        let proxy = outbounds.iter().find(|o| o["tag"] == "proxy").unwrap();
+        assert_eq!(proxy["type"], "selector");
+        let proxy_out: Vec<&str> = proxy["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(proxy_out.contains(&"n1") && proxy_out.contains(&"n2"));
+        let auto = outbounds.iter().find(|o| o["tag"] == "auto").unwrap();
+        assert_eq!(auto["type"], "urltest");
+
+        // 模板替换订阅自带 log/route，JS 复写生效。
+        assert_eq!(core_config["log"]["level"], "info");
+        assert_eq!(core_config["dns"]["strategy"], "ipv4_only");
+        assert_eq!(core_config["route"]["final"], "proxy");
+
+        // compose 注入 inbounds 与 MITM 链。
+        let inbounds = core_config["inbounds"].as_array().unwrap();
+        assert_eq!(inbounds.len(), 2);
+        assert_eq!(inbounds[0]["tag"], "main-in");
+        assert_eq!(inbounds[1]["tag"], "mitm-return");
+        let pp_mitm = outbounds.iter().find(|o| o["tag"] == "pp-mitm").unwrap();
+        assert_eq!(pp_mitm["type"], "http");
+        assert_eq!(pp_mitm["server_port"], mitm_addr.port());
+
+        state.stop().await;
+    }
+
+    /// profile.json 预置非法 JS 复写 → start 返回 Err；核心未启动、系统代理零调用。
+    #[tokio::test]
+    async fn start_rolls_back_on_invalid_profile_js_override() {
+        let body = r#"{
+            "outbounds": [
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+                  "uuid": "12345678-1234-1234-1234-123456789012",
+                  "tls": { "enabled": true, "server_name": "example.com" } }
+            ]
+        }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 预置非法 JS 复写（括号未闭合）。
+        profile::ProfileStore::new(dir.path().to_path_buf())
+            .save(&profile::ProfileOverrides {
+                yaml_override: String::new(),
+                js_override: "function main(c) { return c;".to_string(),
+            })
+            .unwrap();
+
+        let mut cfg = test_config(&dir, format!("http://{addr}"));
+        cfg.mitm_enabled = true;
+        cfg.system_proxy_enabled = true;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        assert!(state.start().await.is_err());
+
+        // Profile 构建失败发生在任何组件启动之前：核心未启动、MITM 未启动、
+        // 系统代理零调用。
+        let status = state.status().await;
+        assert!(!status.core_running);
+        assert!(status.mitm_addr.is_none());
+        assert_eq!(mock.calls(), vec![]);
     }
 
     /// 注入的自定义 Notifier 到达 ScriptHost：手动运行含 `$notify` 的任务时被记录。
