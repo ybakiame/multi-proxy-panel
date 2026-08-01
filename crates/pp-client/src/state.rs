@@ -11,7 +11,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use pp_common::PanelResult;
-use pp_mitm::RunningProxy;
+use pp_mitm::{MemoryRecorder, RunningProxy};
 
 use crate::config::ClientConfig;
 use crate::core_config;
@@ -38,6 +38,8 @@ pub struct ClientState {
     core: Option<CoreRunner>,
     mitm: Option<RunningProxy>,
     sysproxy: Arc<dyn SystemProxy>,
+    /// 抓包记录器（内存环形缓冲，容量 2048；随 MITM 代理启动注入）。
+    recorder: Arc<MemoryRecorder>,
 }
 
 impl ClientState {
@@ -53,7 +55,13 @@ impl ClientState {
             core: None,
             mitm: None,
             sysproxy,
+            recorder: Arc::new(MemoryRecorder::new(2048)),
         }
+    }
+
+    /// 抓包记录器（内存环形缓冲，容量 2048）。
+    pub fn recorder(&self) -> Arc<MemoryRecorder> {
+        Arc::clone(&self.recorder)
     }
 
     /// 启动：订阅 → 合成配置 → 核心 → MITM → 系统代理，失败回滚。
@@ -83,7 +91,7 @@ impl ClientState {
 
         if self.config.mitm_enabled {
             tracing::info!("启动 MITM 代理");
-            let proxy = match build_mitm_proxy(&self.config, None) {
+            let proxy = match build_mitm_proxy(&self.config, None, self.recorder.clone()) {
                 Ok(p) => p,
                 Err(e) => {
                     self.stop_core().await;

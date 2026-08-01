@@ -3,23 +3,26 @@
 //! 将客户端配置转换为可启动的 [`MitmProxy`]：
 //! - CA 从 `client_config.mitm.ca_dir` 加载，缺失时自动生成
 //! - 上游指向本机核心 mixed 入站端口（[`UpstreamProxy::Http`]）
-//! - 重写引擎为空、流量记录为内存实现
+//! - 重写引擎为空、流量记录由调用方传入
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use pp_common::PanelResult;
 use pp_mitm::{
-    CaStore, FileCaStore, HostnameMatcher, MemoryRecorder, MitmConfig, MitmProxy, RewriteEngine,
-    ScriptHookEngine, TrafficRecorder, UpstreamProxy,
+    CaStore, FileCaStore, HostnameMatcher, MitmConfig, MitmProxy, RewriteEngine, ScriptHookEngine,
+    TrafficRecorder, UpstreamProxy,
 };
 
 use crate::config::ClientConfig;
 
 /// 基于客户端配置构建 MITM 代理（不启动）。
+///
+/// `recorder` 由调用方注入并持有，供外部通过 `TrafficRecorder::list()` 取回抓包记录。
 pub fn build_mitm_proxy(
     client_config: &ClientConfig,
     hooks: Option<ScriptHookEngine>,
+    recorder: Arc<dyn TrafficRecorder>,
 ) -> PanelResult<MitmProxy> {
     let ca = FileCaStore::new(client_config.mitm.ca_dir.clone());
     let ca_material = ca.load_or_generate()?;
@@ -43,7 +46,6 @@ pub fn build_mitm_proxy(
     };
 
     let rewrite = RewriteEngine::default();
-    let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(2048));
 
     Ok(MitmProxy::new(
         config,
@@ -58,6 +60,7 @@ pub fn build_mitm_proxy(
 mod tests {
     use super::*;
     use pp_common::CoreType;
+    use pp_mitm::MemoryRecorder;
     use std::path::PathBuf;
 
     use crate::config::ClientConfig;
@@ -72,7 +75,8 @@ mod tests {
             CoreType::SingBox,
             PathBuf::from("/bin/sleep"),
         );
-        let _proxy = build_mitm_proxy(&cfg, None).unwrap();
+        let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(2048));
+        let _proxy = build_mitm_proxy(&cfg, None, recorder).unwrap();
 
         // CA 已在 ca_dir 生成。
         assert!(cfg.mitm.ca_dir.join("ca.crt").exists());
