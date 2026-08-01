@@ -126,7 +126,7 @@ impl ClientState {
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
 
         // 订阅 → Profile 层：订阅内容只用于提取节点，本地模板生成分组/路由，
-        // YAML 与 JS 双复写（来自 data_dir/profile.json）。
+        // YAML 与 JS 双复写（取 data_dir/profiles.json 中当前核心类型启用的模板）。
         //
         // 新路径：SubscriptionStore 取第一个 enabled 订阅，经 fetch_subscription
         // 嗅探格式并转成双核心节点。subscriptions.json 为空且旧 hub_url/sub_token
@@ -169,8 +169,8 @@ impl ClientState {
                 "no enabled subscription and no legacy hub subscription configured".to_string(),
             ));
         };
-        let store = profile::ProfileStore::new(self.config.data_dir.clone());
-        let overrides = store.load()?;
+        let store = profile::ProfileStoreV2::new(self.config.data_dir.clone());
+        let overrides = store.active_for(self.config.core_type)?.unwrap_or_default();
         let profile_cfg =
             profile::build_core_config(self.config.core_type, &sub_content, &overrides).await?;
 
@@ -809,8 +809,8 @@ mod tests {
         assert!(!status.core_running);
     }
 
-    /// Profile 层集成：订阅（2 节点 + selector/direct 组）经模板分组、profile.json
-    /// 的 JS 复写生效，compose 正常注入 inbounds 与 MITM 链。
+    /// Profile 层集成：订阅（2 节点 + selector/direct 组）经模板分组、profiles.json
+    /// 中启用模板的 JS 复写生效，compose 正常注入 inbounds 与 MITM 链。
     #[tokio::test]
     async fn start_with_profile_applies_template_groups_and_js_override() {
         let body = r#"{
@@ -829,13 +829,17 @@ mod tests {
         let addr = spawn_server(StatusCode::OK, body).await;
         let dir = tempfile::tempdir().unwrap();
 
-        // 预置 profile.json：js_override 修改 dns.strategy。
-        profile::ProfileStore::new(dir.path().to_path_buf())
-            .save(&profile::ProfileOverrides {
+        // 预置 profiles.json：启用一个 SingBox 模板，其 js_override 修改 dns.strategy。
+        profile::ProfileStoreV2::new(dir.path().to_path_buf())
+            .save(&[profile::Profile {
+                id: uuid::Uuid::new_v4(),
+                name: "默认".to_string(),
+                core_type: pp_common::CoreType::SingBox,
                 yaml_override: String::new(),
                 js_override: r#"function main(c) { c.dns.strategy = "ipv4_only"; return c; }"#
                     .to_string(),
-            })
+                enabled: true,
+            }])
             .unwrap();
 
         let capture = dir.path().join("core-config-capture.json");
@@ -898,7 +902,7 @@ mod tests {
         state.stop().await;
     }
 
-    /// profile.json 预置非法 JS 复写 → start 返回 Err；核心未启动、系统代理零调用。
+    /// profiles.json 预置非法 JS 复写 → start 返回 Err；核心未启动、系统代理零调用。
     #[tokio::test]
     async fn start_rolls_back_on_invalid_profile_js_override() {
         let body = r#"{
@@ -911,12 +915,16 @@ mod tests {
         let addr = spawn_server(StatusCode::OK, body).await;
         let dir = tempfile::tempdir().unwrap();
 
-        // 预置非法 JS 复写（括号未闭合）。
-        profile::ProfileStore::new(dir.path().to_path_buf())
-            .save(&profile::ProfileOverrides {
+        // 预置非法 JS 复写（括号未闭合）的启用模板。
+        profile::ProfileStoreV2::new(dir.path().to_path_buf())
+            .save(&[profile::Profile {
+                id: uuid::Uuid::new_v4(),
+                name: "默认".to_string(),
+                core_type: pp_common::CoreType::SingBox,
                 yaml_override: String::new(),
                 js_override: "function main(c) { return c;".to_string(),
-            })
+                enabled: true,
+            }])
             .unwrap();
 
         let mut cfg = test_config(&dir, format!("http://{addr}"));
