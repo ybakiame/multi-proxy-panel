@@ -25,6 +25,18 @@ export interface ClientConfig {
   mitm_hostnames: string[];
   mitm_script_dialect: string;
   system_proxy_enabled: boolean;
+  /** 是否启用 TUN 虚拟网卡（需管理员/root 权限）。 */
+  tun_enabled: boolean;
+  /** TUN 协议栈：`mixed` / `gvisor` / `system`。 */
+  tun_stack: string;
+  /** TUN 自动路由。 */
+  tun_auto_route: boolean;
+  /** 是否启用 Clash 面板 API。 */
+  clash_api_enabled: boolean;
+  /** Clash 面板 API 监听端口。 */
+  clash_api_port: number;
+  /** Clash 面板 API 密钥（空串 = 不鉴权）。 */
+  clash_api_secret: string;
 }
 
 export interface ClientStatus {
@@ -184,8 +196,14 @@ export function getConfig(): Promise<ClientConfig> {
   return invoke<ClientConfig>("get_config");
 }
 
-export function saveConfig(cfg: ClientConfig): Promise<void> {
-  return invoke<void>("save_config", { cfg });
+/** `save_config` 的返回视图（携带非阻塞提示）。 */
+export interface SaveConfigView {
+  /** 非阻塞提示（空 hub_url/sub_token、core_type 联动后缺少本地核心等）。 */
+  warning: string | null;
+}
+
+export function saveConfig(cfg: ClientConfig): Promise<SaveConfigView> {
+  return invoke<SaveConfigView>("save_config", { cfg });
 }
 
 export function startProxy(): Promise<ClientStatus> {

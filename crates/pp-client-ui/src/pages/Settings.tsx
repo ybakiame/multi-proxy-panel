@@ -39,6 +39,25 @@ const CORE_CHIP_COLORS: Record<CoreType, "accent" | "warning"> = {
   mihomo: "warning",
 };
 
+/** TUN 协议栈选项（与后端 `ClientConfigView.tun_stack` 的 serde 值一致）。 */
+const TUN_STACK_OPTIONS = [
+  { id: "mixed", label: "mixed" },
+  { id: "gvisor", label: "gvisor" },
+  { id: "system", label: "system" },
+] as const;
+
+/**
+ * 按后端 `preferred_binary` 语义取某类型首选本地核心：已下载优先，其次系统探测。
+ * 仅用于 core_type 变更时的联动结果预览（实际回填由 `save_config` 完成）。
+ */
+function preferredCoreFor(cores: LocalCoreView[], coreType: CoreType): LocalCoreView | null {
+  const byType = cores.filter((core) => normalizeCoreType(core.core_type) === coreType);
+  if (byType.length === 0) {
+    return null;
+  }
+  return byType.find((core) => core.source === "downloaded") ?? byType[0];
+}
+
 export default function Settings() {
   const { config, loading, error, clearError, loadConfig, saveConfig } = useAppStore();
   const [hubUrl, setHubUrl] = useState("");
@@ -49,6 +68,16 @@ export default function Settings() {
   const [mitmEnabled, setMitmEnabled] = useState(false);
   const [systemProxyEnabled, setSystemProxyEnabled] = useState(false);
   const [saved, setSaved] = useState(false);
+  // TUN 模式
+  const [tunEnabled, setTunEnabled] = useState(false);
+  const [tunStack, setTunStack] = useState<string>("mixed");
+  const [tunAutoRoute, setTunAutoRoute] = useState(true);
+  // Clash 面板
+  const [clashApiEnabled, setClashApiEnabled] = useState(false);
+  const [clashApiPort, setClashApiPort] = useState(9090);
+  const [clashApiSecret, setClashApiSecret] = useState("");
+  // 保存后的非阻塞提示（后端 SaveConfigView.warning）
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
 
   // ---------- 核心管理 ----------
   const [cores, setCores] = useState<LocalCoreView[]>([]);
@@ -74,6 +103,12 @@ export default function Settings() {
     setMixedPort(config.mixed_port);
     setMitmEnabled(config.mitm_enabled);
     setSystemProxyEnabled(config.system_proxy_enabled);
+    setTunEnabled(config.tun_enabled);
+    setTunStack(config.tun_stack);
+    setTunAutoRoute(config.tun_auto_route);
+    setClashApiEnabled(config.clash_api_enabled);
+    setClashApiPort(config.clash_api_port);
+    setClashApiSecret(config.clash_api_secret);
   }, [config]);
 
   const refreshCores = useCallback(async () => {
@@ -109,6 +144,7 @@ export default function Settings() {
       return;
     }
     setSaved(false);
+    setSaveWarning(null);
     clearError();
     const payload: ClientConfig = {
       ...config,
@@ -119,10 +155,19 @@ export default function Settings() {
       mixed_port: mixedPort,
       mitm_enabled: mitmEnabled,
       system_proxy_enabled: systemProxyEnabled,
+      tun_enabled: tunEnabled,
+      tun_stack: tunStack,
+      tun_auto_route: tunAutoRoute,
+      clash_api_enabled: clashApiEnabled,
+      clash_api_port: clashApiPort,
+      clash_api_secret: clashApiSecret,
     };
     try {
-      await saveConfig(payload);
+      const warning = await saveConfig(payload);
       setSaved(true);
+      setSaveWarning(warning);
+      // 重新加载以反映后端 core_type 联动后的 core_binary 回填。
+      await loadConfig();
     } catch {
       // 错误已由 store 记录并展示。
     }
@@ -179,9 +224,13 @@ export default function Settings() {
     }
   };
 
-  const canSave = hubUrl.trim().length > 0 && subToken.trim().length > 0;
+  // 后端已放宽校验：hub_url / sub_token 为空仅降级为 warning，不再阻塞开关/端口等基本设置保存。
+  const canSave = true;
   const activeCore = cores.find((core) => core.active) ?? null;
   const normalizedCoreType = normalizeCoreType(coreType) as CoreType;
+  // core_type 变更时的联动预览（实际回填由 save_config 完成后端按 preferred_binary 执行）。
+  const coreTypeChanged = config ? normalizeCoreType(config.core_type) !== coreType : false;
+  const linkedCore = coreTypeChanged ? preferredCoreFor(cores, normalizedCoreType) : null;
 
   return (
     <div className="flex max-w-xl flex-col gap-6">
@@ -253,6 +302,15 @@ export default function Settings() {
               </div>
             </div>
 
+            {coreTypeChanged &&
+              (linkedCore ? (
+                <span className="text-xs text-muted">
+                  保存后将自动使用 {CORE_LABELS[normalizedCoreType]} {linkedCore.version}（core_binary 联动回填）
+                </span>
+              ) : (
+                <span className="text-xs text-warning">该类型暂无本地核心，保存后请到下方「核心管理」下载</span>
+              ))}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="settings-mixed-port">混合端口</Label>
               <Input
@@ -287,6 +345,16 @@ export default function Settings() {
                 </Switch.Content>
               </Switch>
             </div>
+
+            {saveWarning && (
+              <Alert status="warning">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>已保存，但有提示</Alert.Title>
+                  <Alert.Description>{saveWarning}</Alert.Description>
+                </Alert.Content>
+              </Alert>
+            )}
           </div>
         </Card.Content>
         <Card.Footer>
@@ -295,6 +363,128 @@ export default function Settings() {
           </Button>
           {saved && <span className="text-sm text-success">已保存</span>}
         </Card.Footer>
+      </Card>
+
+      {/* TUN 模式 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>TUN 模式</Card.Title>
+          <Card.Description>虚拟网卡接管全部流量，需管理员/root 权限</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <Switch isSelected={tunEnabled} onChange={setTunEnabled}>
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              启用 TUN 模式
+            </Switch.Content>
+          </Switch>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="settings-tun-stack">协议栈</Label>
+              <Select
+                id="settings-tun-stack"
+                value={tunStack}
+                onChange={(value) => setTunStack(String(value ?? "mixed"))}
+                fullWidth
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {TUN_STACK_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Switch isSelected={tunAutoRoute} onChange={setTunAutoRoute}>
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  自动路由
+                </Switch.Content>
+              </Switch>
+            </div>
+          </div>
+
+          <Alert status="default">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>权限说明</Alert.Title>
+              <Alert.Description>
+                TUN 模式需要管理员 / root 权限；设置页的 TUN / Clash 面板配置优先级高于协议配置中的复写
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        </Card.Content>
+      </Card>
+
+      {/* Clash 面板 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>Clash 面板</Card.Title>
+          <Card.Description>通过本地面板 API 查看连接与切换节点</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <Switch isSelected={clashApiEnabled} onChange={setClashApiEnabled}>
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              启用 Clash 面板 API
+            </Switch.Content>
+          </Switch>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="settings-clash-port">端口</Label>
+              <Input
+                id="settings-clash-port"
+                type="number"
+                min={1}
+                max={65535}
+                value={String(clashApiPort)}
+                onChange={(event) => {
+                  const parsed = Number(event.target.value);
+                  setClashApiPort(Number.isFinite(parsed) ? parsed : 0);
+                }}
+                fullWidth
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="settings-clash-secret">密钥（可选）</Label>
+              <Input
+                id="settings-clash-secret"
+                type="password"
+                value={clashApiSecret}
+                onChange={(event) => setClashApiSecret(event.target.value)}
+                placeholder="留空则不鉴权"
+                fullWidth
+              />
+            </div>
+          </div>
+
+          <Alert status="default">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>访问方式</Alert.Title>
+              <Alert.Description>
+                面板地址 http://127.0.0.1:{clashApiPort}/ui，兼容 yacd / metacubexd 等外部面板
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        </Card.Content>
       </Card>
 
       {/* 核心管理 */}

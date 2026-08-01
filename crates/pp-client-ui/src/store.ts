@@ -25,7 +25,8 @@ interface AppStore {
   loadConfig: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   refreshTraffic: () => Promise<void>;
-  saveConfig: (cfg: ClientConfig) => Promise<void>;
+  /** 保存配置；返回后端 `SaveConfigView.warning`（非阻塞提示，无则为 null）。 */
+  saveConfig: (cfg: ClientConfig) => Promise<string | null>;
   start: () => Promise<void>;
   stop: () => Promise<void>;
   clearError: () => void;
@@ -68,8 +69,9 @@ export const useAppStore = create<AppStore>((set) => ({
   saveConfig: async (cfg) => {
     set({ loading: true });
     try {
-      await saveConfigApi(cfg);
+      const view = await saveConfigApi(cfg);
       set({ config: cfg, error: null });
+      return view.warning ?? null;
     } catch (err) {
       set({ error: toErrorMessage(err) });
       throw err;
