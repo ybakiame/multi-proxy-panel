@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use pp_script::{QuickJsEngine, ScriptEngine, ScriptHost, ScriptKind, ScriptOutput};
+use pp_script::{ScriptHost, ScriptKind, ScriptOutput, ScriptWorker};
 
 /// 一条脚本钩子规则：URL 正则匹配 + 脚本源码。
 pub struct ScriptRule {
@@ -18,26 +18,25 @@ pub struct ScriptRule {
     pub source: String,
 }
 
-/// 脚本钩子引擎：持有宿主能力、方言、资源限制与规则列表。
+/// 脚本钩子引擎：持有脚本执行 worker（收敛 `!Send` 的 QuickJS 执行）与规则列表。
 pub struct ScriptHookEngine {
-    host: Arc<ScriptHost>,
+    worker: ScriptWorker,
     dialect: pp_script::ScriptDialect,
-    limits: pp_script::ScriptLimits,
     rules: Vec<ScriptRule>,
 }
 
 impl ScriptHookEngine {
-    /// 构造脚本钩子引擎。
+    /// 构造脚本钩子引擎（内部创建 [`ScriptWorker`]，对外 API 保持不变）。
     pub fn new(
         host: Arc<ScriptHost>,
         dialect: pp_script::ScriptDialect,
         limits: pp_script::ScriptLimits,
         rules: Vec<ScriptRule>,
     ) -> Self {
+        let worker = ScriptWorker::new(host, limits);
         Self {
-            host,
+            worker,
             dialect,
-            limits,
             rules,
         }
     }
@@ -116,7 +115,7 @@ impl ScriptHookEngine {
         }
     }
 
-    /// 执行单条规则：每次新建 QuickJS 引擎，成功时回写输出，失败/超时仅记录警告。
+    /// 执行单条规则：经 [`ScriptWorker`] 串行执行，成功时回写输出，失败/超时仅记录警告。
     async fn run_one(
         &self,
         rule: &ScriptRule,
@@ -126,19 +125,11 @@ impl ScriptHookEngine {
         headers: &mut Vec<(String, String)>,
         body: &mut Option<String>,
     ) {
-        let mut engine = match QuickJsEngine::new(
-            Arc::clone(&self.host),
-            self.dialect,
-            self.limits,
-            rule.name.clone(),
-        ) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(script = %rule.name, "quickjs engine init failed: {e}");
-                return;
-            }
-        };
-        match engine.run_script(&rule.source, kind, arg).await {
+        match self
+            .worker
+            .run_script(&rule.source, kind, arg, self.dialect, &rule.name)
+            .await
+        {
             Ok(ScriptOutput(out)) => apply_output(&out, status, headers, body),
             Err(e) => {
                 tracing::warn!(script = %rule.name, "hook script failed: {e}");

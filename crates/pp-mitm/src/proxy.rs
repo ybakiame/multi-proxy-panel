@@ -226,14 +226,9 @@ impl HttpHandler for Handler {
         }
 
         if let Some(hooks) = &self.hooks {
-            run_request_hooks_send(
-                Arc::clone(hooks),
-                url.clone(),
-                method.clone(),
-                &mut headers,
-                &mut body,
-            )
-            .await;
+            hooks
+                .run_request_hooks(&url, &method, &mut headers, &mut body)
+                .await;
         }
 
         parts.headers = vec_to_headers(&headers);
@@ -268,14 +263,9 @@ impl HttpHandler for Handler {
         }
 
         if let Some(hooks) = &self.hooks {
-            run_response_hooks_send(
-                Arc::clone(hooks),
-                url.clone(),
-                &mut status,
-                &mut headers,
-                &mut body,
-            )
-            .await;
+            hooks
+                .run_response_hooks(&url, &mut status, &mut headers, &mut body)
+                .await;
         }
 
         if self.config.record_enabled {
@@ -318,89 +308,6 @@ impl HttpHandler for Handler {
             return true;
         }
         self.config.hostnames.iter().any(|m| m.matches(host))
-    }
-}
-
-/// 在独立阻塞线程的 current_thread 运行时中执行请求阶段脚本钩子。
-///
-/// QuickJS 引擎的 future 不是 `Send`，无法直接在 hudsucker 的 `+ Send`
-/// handler 中 `.await`，因此把数据搬进 `spawn_blocking` 线程后在其内部新建
-/// 单线程运行时执行，结束后把改写结果搬回。
-async fn run_request_hooks_send(
-    hooks: Arc<ScriptHookEngine>,
-    url: String,
-    method: String,
-    headers: &mut Vec<(String, String)>,
-    body: &mut Option<String>,
-) {
-    let mut out_headers = headers.clone();
-    let mut out_body = body.clone();
-    let out = tokio::task::spawn_blocking(move || {
-        let rt = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(e) => {
-                tracing::warn!("init script hook runtime: {e}");
-                return (out_headers, out_body);
-            }
-        };
-        rt.block_on(hooks.run_request_hooks(&url, &method, &mut out_headers, &mut out_body));
-        (out_headers, out_body)
-    })
-    .await;
-    match out {
-        Ok((h, b)) => {
-            *headers = h;
-            *body = b;
-        }
-        Err(e) => {
-            tracing::warn!("script hook task failed: {e}");
-        }
-    }
-}
-
-/// 响应阶段脚本钩子的 `Send` 安全包装，机制同 [`run_request_hooks_send`]。
-async fn run_response_hooks_send(
-    hooks: Arc<ScriptHookEngine>,
-    url: String,
-    status: &mut u16,
-    headers: &mut Vec<(String, String)>,
-    body: &mut Option<String>,
-) {
-    let mut out_status = *status;
-    let mut out_headers = headers.clone();
-    let mut out_body = body.clone();
-    let out = tokio::task::spawn_blocking(move || {
-        let rt = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(e) => {
-                tracing::warn!("init script hook runtime: {e}");
-                return (out_status, out_headers, out_body);
-            }
-        };
-        rt.block_on(hooks.run_response_hooks(
-            &url,
-            &mut out_status,
-            &mut out_headers,
-            &mut out_body,
-        ));
-        (out_status, out_headers, out_body)
-    })
-    .await;
-    match out {
-        Ok((s, h, b)) => {
-            *status = s;
-            *headers = h;
-            *body = b;
-        }
-        Err(e) => {
-            tracing::warn!("script hook task failed: {e}");
-        }
     }
 }
 
