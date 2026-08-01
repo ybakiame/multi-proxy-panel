@@ -282,11 +282,14 @@ impl SubscriptionFetcher {
     }
 
     /// 通用订阅拉取：任意 URL，自动嗅探格式（见 [`fetch_subscription`]）。
+    ///
+    /// GitHub blob/raw 链接在进入请求前归一化为 `raw.githubusercontent.com`。
     pub async fn fetch(&self, url: &str) -> PanelResult<FetchResult> {
+        let url = crate::normalize_resource_url(url);
         tracing::debug!(url = %url, "fetching subscription");
         let resp = self
             .client
-            .get(url)
+            .get(&url)
             .send()
             .await
             .map_err(|e| PanelError::Client(format!("subscription request failed: {e}")))?;

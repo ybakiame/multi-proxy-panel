@@ -36,3 +36,78 @@ pub use share_link::*;
 pub use state::*;
 pub use subscription::*;
 pub use sysproxy::*;
+
+/// 归一化 GitHub 资源 URL：`github.com/<owner>/<repo>/{blob,raw}/<branch>/<path>` →
+/// `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`；其他 URL 原样返回。
+///
+/// 供订阅拉取 / 远程资源拉取 / 导入脚本 URL / 远端嗅探在进入 HTTP 请求前统一调用，
+/// 避免 GitHub 网页端 blob 链接被当作原始文件拉取。
+pub fn normalize_resource_url(url: &str) -> String {
+    let Some(rest) = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+    else {
+        return url.to_string();
+    };
+    let mut parts = rest.splitn(5, '/');
+    let (Some(owner), Some(repo), Some(kind), Some(branch)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return url.to_string();
+    };
+    if owner.is_empty() || repo.is_empty() || branch.is_empty() {
+        return url.to_string();
+    }
+    match kind {
+        "blob" | "raw" => {
+            let path = parts.next().unwrap_or("");
+            let suffix = if path.is_empty() {
+                String::new()
+            } else {
+                format!("/{path}")
+            };
+            format!("https://raw.githubusercontent.com/{owner}/{repo}/{branch}{suffix}")
+        }
+        _ => url.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_resource_url;
+
+    #[test]
+    fn normalizes_github_blob_and_raw_to_raw_githubusercontent() {
+        assert_eq!(
+            normalize_resource_url(
+                "https://github.com/SagerNet/sing-box/blob/main/transport/splithttp/client.go"
+            ),
+            "https://raw.githubusercontent.com/SagerNet/sing-box/main/transport/splithttp/client.go"
+        );
+        assert_eq!(
+            normalize_resource_url("https://github.com/owner/repo/raw/main/sub/module.sgmodule"),
+            "https://raw.githubusercontent.com/owner/repo/main/sub/module.sgmodule"
+        );
+    }
+
+    #[test]
+    fn leaves_already_raw_and_non_github_urls_unchanged() {
+        assert_eq!(
+            normalize_resource_url("https://raw.githubusercontent.com/o/r/main/x.js"),
+            "https://raw.githubusercontent.com/o/r/main/x.js"
+        );
+        assert_eq!(
+            normalize_resource_url("https://example.com/not/github/blob/main/x.js"),
+            "https://example.com/not/github/blob/main/x.js"
+        );
+        assert_eq!(
+            normalize_resource_url("http://github.com/o/r/tree/main/x.js"),
+            "http://github.com/o/r/tree/main/x.js"
+        );
+        // 结构不完整（缺 branch / path）时原样返回。
+        assert_eq!(
+            normalize_resource_url("https://github.com/owner/repo"),
+            "https://github.com/owner/repo"
+        );
+    }
+}

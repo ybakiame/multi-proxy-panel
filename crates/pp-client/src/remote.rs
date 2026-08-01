@@ -442,10 +442,13 @@ impl RemoteManager {
     }
 
     /// 拉取单个 URL 的文本内容；非 2xx 视为失败。
+    ///
+    /// GitHub blob/raw 链接在进入请求前归一化为 `raw.githubusercontent.com`。
     async fn fetch_text(&self, url: &str) -> PanelResult<String> {
+        let url = crate::normalize_resource_url(url);
         let resp = self
             .client
-            .get(url)
+            .get(&url)
             .send()
             .await
             .map_err(|e| PanelError::Client(format!("remote fetch failed ({url}): {e}")))?;

@@ -603,12 +603,14 @@ async fn fetch_detect_text(url: &str) -> Option<String> {
 
 /// 嗅探远端资源 URL：按后缀判定类型/方言；Snippet 且 URL 可访问时拉取内容解析配置头元数据。
 ///
+/// GitHub blob/raw 链接在嗅探与拉取前归一化为 `raw.githubusercontent.com`（与
+/// 拉取路径一致，避免网页端 blob 链接拉不到原始内容）。
 /// 拉取失败不报错：后缀判定结果（`kind` / `dialect`）照常返回，`meta` 置 `None`，
 /// 前端仅用返回字段预填添加表单。
 #[tauri::command]
 pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
-    let url = url.trim();
-    let (kind, dialect) = match detect_resource_from_url(url) {
+    let url = pp_client::normalize_resource_url(url.trim());
+    let (kind, dialect) = match detect_resource_from_url(&url) {
         Some((kind, dialect)) => (
             Some(remote_kind_str(kind).to_string()),
             Some(script_dialect_str(dialect).to_string()),
@@ -620,7 +622,7 @@ pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
     let meta = if kind.as_deref() == Some("Snippet")
         && (url.starts_with("http://") || url.starts_with("https://"))
     {
-        fetch_detect_text(url)
+        fetch_detect_text(&url)
             .await
             .map(|text| {
                 let parsed = parse_config_meta(&text);
