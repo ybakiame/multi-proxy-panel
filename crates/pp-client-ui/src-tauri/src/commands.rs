@@ -593,6 +593,33 @@ async fn fetch_detect_text(url: &str) -> Option<String> {
     resp.text().await.ok()
 }
 
+/// 补充提取配置头中的描述（兼容 `#!description=` 全拼键）。
+///
+/// `parse_config_meta` 仅识别 `#!desc=`；部分 Surge 模块使用 `#!description=` 全拼键，
+/// 被静默丢弃后嗅探结果出现「名称/图标自动填充但描述为空」。此处仅在 `desc` 缺失时
+/// 扫描头部 `#!key=value` 段做一次回填（与 `parse_config_meta` 相同的停止规则）。
+fn normalize_meta_desc(meta: &mut ConfigMeta, text: &str) {
+    if meta.desc.is_some() {
+        return;
+    }
+    for raw in text.lines() {
+        let line = raw.trim();
+        if !line.starts_with("#!") {
+            break;
+        }
+        let Some((key, value)) = line[2..].trim().split_once('=') else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("description") {
+            let value = value.trim();
+            if !value.is_empty() {
+                meta.desc = Some(value.to_string());
+            }
+            return;
+        }
+    }
+}
+
 /// 嗅探远端资源 URL：按后缀判定类型/方言；Snippet 且 URL 可访问时拉取内容解析配置头元数据。
 ///
 /// 拉取失败不报错：后缀判定结果（`kind` / `dialect`）照常返回，`meta` 置 `None`，
@@ -615,7 +642,9 @@ pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
         fetch_detect_text(url)
             .await
             .map(|text| {
-                let parsed = parse_config_meta(&text);
+                let mut parsed = parse_config_meta(&text);
+                // 兼容 `#!description=` 全拼键，避免描述无法自动填充。
+                normalize_meta_desc(&mut parsed, &text);
                 if parsed != ConfigMeta::default() {
                     Some(ConfigMetaView::from_meta(&parsed))
                 } else {
