@@ -26,6 +26,10 @@ pub struct MitmChain {
 /// - outbounds 追加 `pp-mitm` http outbound（指向 MITM 监听地址）
 /// - route.rules 前插一条白名单规则：`inbound = [main-in]`，`*.` 前缀主机名
 ///   进入 `domain_suffix`、其余进入 `domain`，`outbound = "pp-mitm"`
+///
+/// 两路径均会做 sing-box 1.12+ 的 DNS 兼容适配：订阅含 `dns.servers` 时，
+/// 保证 `route.default_domain_resolver` 存在（指向第一个 DNS server 的 tag，
+/// 缺 tag 时自动生成），否则配置被当前 sing-box 拒绝。
 pub fn compose_singbox_config(
     sub_config: &Value,
     mixed_port: u16,
@@ -34,6 +38,8 @@ pub fn compose_singbox_config(
     let mut obj = sub_config.as_object().cloned().ok_or_else(|| {
         PanelError::Client("subscription config must be a JSON object".to_string())
     })?;
+
+    ensure_domain_resolver(&mut obj);
 
     let Some(chain) = mitm_chain else {
         let mixed_inbound = json!({
@@ -108,6 +114,66 @@ pub fn compose_singbox_config(
     Ok(Value::Object(obj))
 }
 
+/// sing-box 1.12+ DNS 兼容适配。
+///
+/// sing-box 1.12 起要求 DNS 相关配置显式声明 domain resolver：配置含
+/// `dns.servers`（且非空）时，`route.default_domain_resolver` 必须存在，否则
+/// 配置检查直接拒绝（`missing route.default_domain_resolver`）。订阅模板通常
+/// 只声明 `dns.servers`，本函数为第一个 server 取 tag（缺 tag 时按索引生成
+/// `dns-<i>`）并写入 `route.default_domain_resolver`。
+fn ensure_domain_resolver(obj: &mut serde_json::Map<String, Value>) {
+    let has_servers = obj
+        .get("dns")
+        .and_then(|d| d.as_object())
+        .and_then(|d| d.get("servers"))
+        .and_then(|s| s.as_array())
+        .map(|arr| !arr.is_empty())
+        .unwrap_or(false);
+    if !has_servers {
+        return;
+    }
+    // 已有显式 resolver 则跳过。
+    let has_resolver = obj
+        .get("route")
+        .and_then(|r| r.as_object())
+        .and_then(|r| r.get("default_domain_resolver"))
+        .is_some();
+    if has_resolver {
+        return;
+    }
+
+    let mut resolver_tag: Option<String> = None;
+    if let Some(servers) = obj
+        .get_mut("dns")
+        .and_then(|d| d.as_object_mut())
+        .and_then(|d| d.get_mut("servers"))
+        .and_then(|s| s.as_array_mut())
+    {
+        for (i, server) in servers.iter_mut().enumerate() {
+            if let Some(s) = server.as_object_mut() {
+                if !s.contains_key("tag") {
+                    s.insert("tag".to_string(), Value::String(format!("dns-{i}")));
+                }
+                if let Some(tag) = s.get("tag").and_then(|t| t.as_str()) {
+                    resolver_tag = Some(tag.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(tag) = resolver_tag else { return };
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if let Some(r) = route.as_object_mut() {
+        r.insert(
+            "default_domain_resolver".to_string(),
+            json!({ "server": tag }),
+        );
+    }
+}
+
 /// 将 clash YAML 订阅配置合成为 mihomo 本地启动配置。
 ///
 /// 解析 YAML 后注入本地 mixed 入口：不带 MITM 链路时写入 `mixed-port`，移除
@@ -118,8 +184,8 @@ pub fn compose_singbox_config(
 /// 带 MITM 链路时（`mitm_chain = Some`）改用显式 `listeners` 声明主入口
 /// `main-in`（`mixed-port` 被替代，确保 `IN-NAME` 可匹配）与回流入口
 /// `mitm-return`，`proxies` 追加 `pp-mitm` http 代理，`rules` 前插白名单规则
-/// （`AND((IN-NAME,main-in),(DOMAIN-SUFFIX,<suffix>)),pp-mitm` /
-/// `AND((IN-NAME,main-in),(DOMAIN,<exact>)),pp-mitm`）。
+/// （`AND,((IN-NAME,main-in),(DOMAIN-SUFFIX,<suffix>)),pp-mitm` /
+/// `AND,((IN-NAME,main-in),(DOMAIN,<exact>)),pp-mitm`）。
 pub fn compose_mihomo_config(
     sub_yaml: &str,
     mixed_port: u16,
@@ -180,6 +246,8 @@ pub fn compose_mihomo_config(
     obj.insert("proxies".to_string(), Value::Array(proxies));
 
     // rules 前插白名单规则（每域名一条，原规则保留）。
+    // 逻辑规则语法为 `LOGIC_TYPE,((payload1),(payload2)),Proxy`：`AND` 与
+    // `((` 之间必须有逗号（mihomo 按 `,` 解析规则名与参数）。
     let rules = obj
         .remove("rules")
         .and_then(|r| r.as_array().cloned())
@@ -187,8 +255,10 @@ pub fn compose_mihomo_config(
     let mut prepended = Vec::new();
     for hostname in &chain.hostnames {
         let rule = match hostname.strip_prefix("*.") {
-            Some(suffix) => format!("AND((IN-NAME,main-in),(DOMAIN-SUFFIX,{suffix})),pp-mitm"),
-            None => format!("AND((IN-NAME,main-in),(DOMAIN,{hostname})),pp-mitm"),
+            Some(suffix) => {
+                format!("AND,((IN-NAME,main-in),(DOMAIN-SUFFIX,{suffix})),pp-mitm")
+            }
+            None => format!("AND,((IN-NAME,main-in),(DOMAIN,{hostname})),pp-mitm"),
         };
         prepended.push(Value::String(rule));
     }
@@ -300,6 +370,60 @@ mod tests {
         assert_eq!(rules[0]["outbound"], "pp-mitm");
     }
 
+    /// sing-box 1.12+ 要求 `route.default_domain_resolver` 指向已声明 tag 的
+    /// DNS server，否则真实 sing-box 拒绝配置（legacy resolver 缺失）。
+    #[test]
+    fn compose_singbox_injects_default_domain_resolver_when_dns_present() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": { "servers": [{ "type": "udp", "tag": "dns1", "server": "1.1.1.1" }] }
+        });
+        let cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+
+        assert_eq!(
+            cfg["route"]["default_domain_resolver"],
+            json!({ "server": "dns1" })
+        );
+        // 已有 tag 的 server 不被改写。
+        assert_eq!(cfg["dns"]["servers"][0]["tag"], "dns1");
+    }
+
+    #[test]
+    fn compose_singbox_generates_tag_for_tagless_dns_server() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": { "servers": [{ "type": "udp", "server": "1.1.1.1" }] }
+        });
+        let cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+
+        // 无 tag 的 server 自动补 tag，resolver 指向它。
+        assert_eq!(cfg["dns"]["servers"][0]["tag"], "dns-0");
+        assert_eq!(
+            cfg["route"]["default_domain_resolver"],
+            json!({ "server": "dns-0" })
+        );
+    }
+
+    #[test]
+    fn compose_singbox_keeps_existing_resolver_and_skips_when_no_dns() {
+        // 订阅已显式声明 resolver → 不覆盖。
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": { "servers": [{ "type": "udp", "tag": "a", "server": "1.1.1.1" }] },
+            "route": { "default_domain_resolver": { "server": "a" } }
+        });
+        let cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        assert_eq!(
+            cfg["route"]["default_domain_resolver"],
+            json!({ "server": "a" })
+        );
+
+        // 无 dns → 不注入 resolver。
+        let bare = json!({ "outbounds": [{ "type": "direct", "tag": "direct" }] });
+        let cfg = compose_singbox_config(&bare, 17890, None).unwrap();
+        assert!(cfg["route"].get("default_domain_resolver").is_none());
+    }
+
     #[test]
     fn compose_mihomo_injects_mixed_and_removes_conflicting_ports() {
         let yaml = r#"
@@ -393,15 +517,17 @@ rules:
         assert_eq!(proxies[0]["name"], "n1");
 
         // 白名单规则前插（精确→DOMAIN，通配→DOMAIN-SUFFIX），原规则保留。
+        // 逻辑规则语法为 `LOGIC_TYPE,((payload1),(payload2)),Proxy`：AND 与
+        // 子规则之间必须有逗号，否则 mihomo 无法解析。
         let rules = cfg["rules"].as_array().unwrap();
         assert_eq!(rules.len(), 3);
         assert_eq!(
             rules[0],
-            "AND((IN-NAME,main-in),(DOMAIN,example.com)),pp-mitm"
+            "AND,((IN-NAME,main-in),(DOMAIN,example.com)),pp-mitm"
         );
         assert_eq!(
             rules[1],
-            "AND((IN-NAME,main-in),(DOMAIN-SUFFIX,cdn.example.net)),pp-mitm"
+            "AND,((IN-NAME,main-in),(DOMAIN-SUFFIX,cdn.example.net)),pp-mitm"
         );
         assert_eq!(rules[2], "MATCH,DIRECT");
     }
