@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
 import {
   detectSystemCores,
@@ -67,13 +67,12 @@ function preferredCoreFor(cores: LocalCoreView[], coreType: CoreType): LocalCore
 }
 
 export default function Settings() {
-  const { config, loading, error, clearError, loadConfig, saveConfig } = useAppStore();
+  const { config, error, loadConfig, saveConfig } = useAppStore();
   const [coreType, setCoreType] = useState<string>("singbox");
   const [coreBinary, setCoreBinary] = useState("");
   const [mixedPort, setMixedPort] = useState(1080);
   const [mitmEnabled, setMitmEnabled] = useState(false);
   const [systemProxyEnabled, setSystemProxyEnabled] = useState(false);
-  const [saved, setSaved] = useState(false);
   // TUN 模式
   const [tunEnabled, setTunEnabled] = useState(false);
   const [tunStack, setTunStack] = useState<string>("mixed");
@@ -83,8 +82,12 @@ export default function Settings() {
   const [clashApiPort, setClashApiPort] = useState(9090);
   const [clashApiSecret, setClashApiSecret] = useState("");
   const [clashApiUi, setClashApiUi] = useState<string>("zashboard");
-  // 保存后的非阻塞提示（后端 SaveConfigView.warning）
+  // 保存后的轻量反馈：后端非阻塞提示（SaveConfigView.warning）、失败回显、短暂「已保存」。
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------- 核心管理 ----------
   const [cores, setCores] = useState<LocalCoreView[]>([]);
@@ -157,38 +160,48 @@ export default function Settings() {
     void refreshRemoteVersions(downloadType);
   }, [downloadType, refreshRemoteVersions]);
 
-  const handleSave = async () => {
-    if (!config) {
-      return;
-    }
-    setSaved(false);
-    setSaveWarning(null);
-    clearError();
-    const payload: ClientConfig = {
-      ...config,
-      core_type: coreType,
-      core_binary: coreBinary,
-      mixed_port: mixedPort,
-      mitm_enabled: mitmEnabled,
-      system_proxy_enabled: systemProxyEnabled,
-      tun_enabled: tunEnabled,
-      tun_stack: tunStack,
-      tun_auto_route: tunAutoRoute,
-      clash_api_enabled: clashApiEnabled,
-      clash_api_port: clashApiPort,
-      clash_api_secret: clashApiSecret,
-      clash_api_ui: clashApiUi,
-    };
-    try {
-      const warning = await saveConfig(payload);
-      setSaved(true);
-      setSaveWarning(warning);
-      // 重新加载以反映后端 core_type 联动后的 core_binary 回填。
-      await loadConfig();
-    } catch {
-      // 错误已由 store 记录并展示。
-    }
-  };
+  /**
+   * 即改即存：以最新持久化配置为基底叠加补丁后调用 `save_config`。
+   *
+   * 读取 `useAppStore.getState().config` 而非闭包捕获，避免防抖保存时覆盖
+   * 期间其它控件的更新；失败时回滚控件值（重新 loadConfig 同步）并用本地
+   * `saveError` 回显错误（store.loadConfig 成功会清掉 store.error）。
+   */
+  const persist = useCallback(
+    async (patch: Partial<ClientConfig>) => {
+      const current = useAppStore.getState().config;
+      if (!current) {
+        return;
+      }
+      setSaveWarning(null);
+      setSaveError(null);
+      try {
+        const warning = await saveConfig({ ...current, ...patch });
+        setSaveWarning(warning);
+        setJustSaved(true);
+        if (savedTimerRef.current) {
+          clearTimeout(savedTimerRef.current);
+        }
+        savedTimerRef.current = setTimeout(() => setJustSaved(false), 1500);
+        await loadConfig();
+      } catch (err) {
+        setSaveError(toErrorMessage(err));
+        await loadConfig();
+      }
+    },
+    [saveConfig, loadConfig],
+  );
+
+  /** 输入类控件的防抖保存（500ms）。 */
+  const persistDebounced = useCallback(
+    (patch: Partial<ClientConfig>) => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      debounceRef.current = setTimeout(() => void persist(patch), 500);
+    },
+    [persist],
+  );
 
   const handleUseCore = async (core: LocalCoreView) => {
     setCoresBusy(true);
@@ -253,7 +266,6 @@ export default function Settings() {
   };
 
   // 后端已放宽校验：hub_url / sub_token 为空仅降级为 warning，不再阻塞开关/端口等基本设置保存。
-  const canSave = true;
   const activeCore = cores.find((core) => core.active) ?? null;
   const normalizedCoreType = normalizeCoreType(coreType) as CoreType;
   // core_type 变更时的联动预览（实际回填由 save_config 完成后端按 preferred_binary 执行）。
@@ -290,7 +302,15 @@ export default function Settings() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label>核心类型</Label>
-                <Select value={coreType} onChange={(key) => setCoreType(String(key))} fullWidth>
+                <Select
+                  value={coreType}
+                  onChange={(key) => {
+                    const value = String(key);
+                    setCoreType(value);
+                    void persist({ core_type: value });
+                  }}
+                  fullWidth
+                >
                   <Select.Trigger>
                     <Select.Value />
                     <Select.Indicator />
@@ -361,14 +381,22 @@ export default function Settings() {
                 value={String(mixedPort)}
                 onChange={(event) => {
                   const parsed = Number(event.target.value);
-                  setMixedPort(Number.isFinite(parsed) ? parsed : 0);
+                  const next = Number.isFinite(parsed) ? parsed : 0;
+                  setMixedPort(next);
+                  persistDebounced({ mixed_port: next });
                 }}
                 fullWidth
               />
             </div>
 
             <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-surface p-4">
-              <Switch isSelected={mitmEnabled} onChange={setMitmEnabled}>
+              <Switch
+                isSelected={mitmEnabled}
+                onChange={(next) => {
+                  setMitmEnabled(next);
+                  void persist({ mitm_enabled: next });
+                }}
+              >
                 <Switch.Content>
                   <Switch.Control>
                     <Switch.Thumb />
@@ -376,7 +404,13 @@ export default function Settings() {
                   启用 MITM
                 </Switch.Content>
               </Switch>
-              <Switch isSelected={systemProxyEnabled} onChange={setSystemProxyEnabled}>
+              <Switch
+                isSelected={systemProxyEnabled}
+                onChange={(next) => {
+                  setSystemProxyEnabled(next);
+                  void persist({ system_proxy_enabled: next });
+                }}
+              >
                 <Switch.Content>
                   <Switch.Control>
                     <Switch.Thumb />
@@ -398,10 +432,10 @@ export default function Settings() {
           </div>
         </Card.Content>
         <Card.Footer>
-          <Button variant="primary" isPending={loading} isDisabled={!canSave} onPress={() => void handleSave()}>
-            保存配置
-          </Button>
-          {saved && <span className="text-sm text-success">已保存</span>}
+          <div className="flex w-full items-center justify-between gap-3">
+            <span className="text-xs text-muted">所有修改即时保存</span>
+            {justSaved && <span className="text-sm text-success">已保存</span>}
+          </div>
         </Card.Footer>
       </Card>
 
@@ -412,7 +446,13 @@ export default function Settings() {
           <Card.Description>虚拟网卡接管全部流量，需管理员/root 权限</Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
-          <Switch isSelected={tunEnabled} onChange={setTunEnabled}>
+          <Switch
+            isSelected={tunEnabled}
+            onChange={(next) => {
+              setTunEnabled(next);
+              void persist({ tun_enabled: next });
+            }}
+          >
             <Switch.Content>
               <Switch.Control>
                 <Switch.Thumb />
@@ -427,7 +467,11 @@ export default function Settings() {
               <Select
                 id="settings-tun-stack"
                 value={tunStack}
-                onChange={(value) => setTunStack(String(value ?? "mixed"))}
+                onChange={(value) => {
+                  const next = String(value ?? "mixed");
+                  setTunStack(next);
+                  void persist({ tun_stack: next });
+                }}
                 fullWidth
               >
                 <Select.Trigger>
@@ -447,7 +491,13 @@ export default function Settings() {
               </Select>
             </div>
             <div className="flex items-end">
-              <Switch isSelected={tunAutoRoute} onChange={setTunAutoRoute}>
+              <Switch
+                isSelected={tunAutoRoute}
+                onChange={(next) => {
+                  setTunAutoRoute(next);
+                  void persist({ tun_auto_route: next });
+                }}
+              >
                 <Switch.Content>
                   <Switch.Control>
                     <Switch.Thumb />
@@ -477,7 +527,13 @@ export default function Settings() {
           <Card.Description>通过本地面板 API 查看连接与切换节点</Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
-          <Switch isSelected={clashApiEnabled} onChange={setClashApiEnabled}>
+          <Switch
+            isSelected={clashApiEnabled}
+            onChange={(next) => {
+              setClashApiEnabled(next);
+              void persist({ clash_api_enabled: next });
+            }}
+          >
             <Switch.Content>
               <Switch.Control>
                 <Switch.Thumb />
@@ -497,7 +553,9 @@ export default function Settings() {
                 value={String(clashApiPort)}
                 onChange={(event) => {
                   const parsed = Number(event.target.value);
-                  setClashApiPort(Number.isFinite(parsed) ? parsed : 0);
+                  const next = Number.isFinite(parsed) ? parsed : 0;
+                  setClashApiPort(next);
+                  persistDebounced({ clash_api_port: next });
                 }}
                 fullWidth
               />
@@ -508,7 +566,10 @@ export default function Settings() {
                 id="settings-clash-secret"
                 type="password"
                 value={clashApiSecret}
-                onChange={(event) => setClashApiSecret(event.target.value)}
+                onChange={(event) => {
+                  setClashApiSecret(event.target.value);
+                  persistDebounced({ clash_api_secret: event.target.value });
+                }}
                 placeholder="留空则不鉴权"
                 fullWidth
               />
@@ -520,7 +581,11 @@ export default function Settings() {
             <Select
               id="settings-clash-ui"
               value={clashApiUi}
-              onChange={(value) => setClashApiUi(String(value ?? "zashboard"))}
+              onChange={(value) => {
+                const next = String(value ?? "zashboard");
+                setClashApiUi(next);
+                void persist({ clash_api_ui: next });
+              }}
               fullWidth
             >
               <Select.Trigger>
@@ -733,11 +798,21 @@ export default function Settings() {
         </Card.Content>
       </Card>
 
+      {saveError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>保存失败，已回滚</Alert.Title>
+            <Alert.Description>{saveError}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
       {error && (
         <Alert status="danger">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Title>保存失败</Alert.Title>
+            <Alert.Title>加载失败</Alert.Title>
             <Alert.Description>{error}</Alert.Description>
           </Alert.Content>
         </Alert>
