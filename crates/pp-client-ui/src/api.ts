@@ -165,6 +165,57 @@ export function previewCoreConfig(): Promise<string> {
   return invoke<string>("preview_core_config");
 }
 
+/** 订阅用户信息（与 Rust 侧 `SubscriptionUserInfoView` 对齐）。 */
+export interface SubscriptionUserInfo {
+  /** 已用上行字节数。 */
+  upload: number | null;
+  /** 已用下行字节数。 */
+  download: number | null;
+  /** 总流量字节数。 */
+  total: number | null;
+  /** 到期时间戳（秒）。 */
+  expire: number | null;
+}
+
+/** 一条订阅的对外视图（与 Rust 侧 `SubscriptionView` 对齐）。 */
+export interface SubscriptionView {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  userinfo: SubscriptionUserInfo | null;
+  /** 最近一次 fetch 成功的节点数。 */
+  node_count: number;
+  /** 最近一次 fetch 的错误信息（失败时记录；不阻塞已有数据展示）。 */
+  error: string | null;
+}
+
+/** 添加订阅的入参。 */
+export interface AddSubscriptionInput {
+  name: string;
+  url: string;
+}
+
+export function listSubscriptions(): Promise<SubscriptionView[]> {
+  return invoke<SubscriptionView[]>("list_subscriptions");
+}
+
+export function addSubscription(input: AddSubscriptionInput): Promise<SubscriptionView> {
+  return invoke<SubscriptionView>("add_subscription", { input });
+}
+
+export function removeSubscription(id: string): Promise<void> {
+  return invoke<void>("remove_subscription", { id });
+}
+
+export function setSubscriptionEnabled(id: string, enabled: boolean): Promise<void> {
+  return invoke<void>("set_subscription_enabled", { id, enabled });
+}
+
+export function refreshSubscription(id: string): Promise<SubscriptionView> {
+  return invoke<SubscriptionView>("refresh_subscription", { id });
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {

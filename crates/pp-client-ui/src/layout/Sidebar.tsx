@@ -19,7 +19,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "仪表盘", icon: Squares2X2Icon },
-  { to: "/nodes", label: "节点", icon: ServerStackIcon },
+  { to: "/nodes", label: "订阅", icon: ServerStackIcon },
   { to: "/mitm", label: "MITM", icon: BeakerIcon },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon },
   { to: "/override", label: "复写", icon: AdjustmentsHorizontalIcon },
