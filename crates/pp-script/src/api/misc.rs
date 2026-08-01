@@ -43,15 +43,16 @@ pub(crate) fn install<'js>(
 
     // console.log(...args)
     let console = Object::new(ctx.clone())?;
-    let log_fn = move |ctx: Ctx<'js>, args: rquickjs::prelude::Rest<Value<'js>>| -> rquickjs::Result<()> {
-        let parts: Vec<String> = args
-            .0
-            .iter()
-            .map(|v| value_to_string(&ctx, v.clone()))
-            .collect();
-        tracing::info!(target: "pp_script::console", "{}", parts.join(" "));
-        Ok(())
-    };
+    let log_fn =
+        move |ctx: Ctx<'js>, args: rquickjs::prelude::Rest<Value<'js>>| -> rquickjs::Result<()> {
+            let parts: Vec<String> = args
+                .0
+                .iter()
+                .map(|v| value_to_string(&ctx, v.clone()))
+                .collect();
+            tracing::info!(target: "pp_script::console", "{}", parts.join(" "));
+            Ok(())
+        };
     console.set("log", Func::from(log_fn))?;
     globals.set("console", console)?;
 

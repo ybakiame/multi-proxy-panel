@@ -47,7 +47,8 @@ impl ScriptEngine for QuickJsEngine {
         let timeout_ms = self.limits.timeout_ms;
         let timeout = Duration::from_millis(timeout_ms);
 
-        let rt = AsyncRuntime::new().map_err(|e| PanelError::Script(format!("init runtime: {e}")))?;
+        let rt =
+            AsyncRuntime::new().map_err(|e| PanelError::Script(format!("init runtime: {e}")))?;
         rt.set_memory_limit(self.limits.memory_limit_bytes).await;
         // 默认栈限制：4MB（足够常见脚本，防深度递归撑爆宿主栈）。
         rt.set_max_stack_size(4 * 1024 * 1024).await;
@@ -193,10 +194,17 @@ impl ScriptEngine for QuickJsEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::{MemoryPersistentStore, MockHttpExecutor, PersistentStore, RecordingNotifier};
+    use crate::host::{
+        MemoryPersistentStore, MockHttpExecutor, PersistentStore, RecordingNotifier,
+    };
     use crate::types::{HttpResponseData, ScriptDialect, ScriptLimits};
 
-    fn test_host() -> (Arc<ScriptHost>, Arc<MockHttpExecutor>, Arc<RecordingNotifier>, Arc<MemoryPersistentStore>) {
+    fn test_host() -> (
+        Arc<ScriptHost>,
+        Arc<MockHttpExecutor>,
+        Arc<RecordingNotifier>,
+        Arc<MemoryPersistentStore>,
+    ) {
         let http = Arc::new(MockHttpExecutor::with_responses(vec![
             HttpResponseData {
                 status: 200,
@@ -239,7 +247,10 @@ mod tests {
                 $done(JSON.stringify({code: data.code, token: data.token}));
             })();
         "#;
-        let out = engine.run_script(source, ScriptKind::Generic, None).await.unwrap();
+        let out = engine
+            .run_script(source, ScriptKind::Generic, None)
+            .await
+            .unwrap();
         let v = out.0;
         assert_eq!(v["code"], 0);
         assert_eq!(v["token"], "tok123");
@@ -308,10 +319,16 @@ mod tests {
                 }
             });
         "#;
-        let out = engine.run_script(source, ScriptKind::Generic, None).await.unwrap();
+        let out = engine
+            .run_script(source, ScriptKind::Generic, None)
+            .await
+            .unwrap();
         assert_eq!(out.0["status"], 200);
         // Loon 的 $persistentStore 与 $httpClient 均生效
-        assert_eq!(store.read("pstore:loon_test", "k1"), Some("pv1".to_string()));
+        assert_eq!(
+            store.read("pstore:loon_test", "k1"),
+            Some("pv1".to_string())
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -329,8 +346,14 @@ mod tests {
         .unwrap();
 
         let source = "while(true) {}";
-        let err = engine.run_script(source, ScriptKind::Generic, None).await.unwrap_err();
-        assert!(matches!(err, PanelError::Script(_)), "expected Script error, got {err:?}");
+        let err = engine
+            .run_script(source, ScriptKind::Generic, None)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, PanelError::Script(_)),
+            "expected Script error, got {err:?}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -345,11 +368,17 @@ mod tests {
         .unwrap();
 
         let source = r#"throw new Error("boom");"#;
-        let err = engine.run_script(source, ScriptKind::Generic, None).await.unwrap_err();
+        let err = engine
+            .run_script(source, ScriptKind::Generic, None)
+            .await
+            .unwrap_err();
         let PanelError::Script(msg) = &err else {
             panic!("expected Script error, got {err:?}");
         };
-        assert!(msg.contains("boom"), "error message should contain boom, got: {msg}");
+        assert!(
+            msg.contains("boom"),
+            "error message should contain boom, got: {msg}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -393,7 +422,4 @@ mod tests {
         })
         .await;
     }
-
-
-
 }

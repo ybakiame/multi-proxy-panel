@@ -72,7 +72,10 @@ pub(crate) fn inject_script_arg<'js>(
 }
 
 /// serde_json::Value → JS 值（递归）。
-pub(crate) fn json_to_js<'js>(ctx: &Ctx<'js>, v: &serde_json::Value) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn json_to_js<'js>(
+    ctx: &Ctx<'js>,
+    v: &serde_json::Value,
+) -> rquickjs::Result<Value<'js>> {
     match v {
         serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
         serde_json::Value::Bool(b) => Ok(Value::new_bool(ctx.clone(), *b)),
@@ -81,10 +84,16 @@ pub(crate) fn json_to_js<'js>(ctx: &Ctx<'js>, v: &serde_json::Value) -> rquickjs
                 if let Ok(i) = i32::try_from(i) {
                     Ok(Value::new_int(ctx.clone(), i))
                 } else {
-                    Ok(Value::new_float(ctx.clone(), n.as_f64().unwrap_or_default()))
+                    Ok(Value::new_float(
+                        ctx.clone(),
+                        n.as_f64().unwrap_or_default(),
+                    ))
                 }
             } else {
-                Ok(Value::new_float(ctx.clone(), n.as_f64().unwrap_or_default()))
+                Ok(Value::new_float(
+                    ctx.clone(),
+                    n.as_f64().unwrap_or_default(),
+                ))
             }
         }
         serde_json::Value::String(s) => {
@@ -112,7 +121,10 @@ pub(crate) fn json_to_js<'js>(ctx: &Ctx<'js>, v: &serde_json::Value) -> rquickjs
 
 /// JS 值 → serde_json::Value（递归）。
 #[allow(clippy::only_used_in_recursion)]
-pub(crate) fn js_to_json<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> rquickjs::Result<serde_json::Value> {
+pub(crate) fn js_to_json<'js>(
+    ctx: &Ctx<'js>,
+    v: Value<'js>,
+) -> rquickjs::Result<serde_json::Value> {
     if v.is_undefined() || v.is_null() {
         return Ok(serde_json::Value::Null);
     }
@@ -123,9 +135,9 @@ pub(crate) fn js_to_json<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> rquickjs::Result
         // as_number() 返回 f64。
         if n.trunc() == n && n.is_finite() {
             if n >= 0.0 {
-                return Ok(serde_json::Value::Number(
-                    serde_json::Number::from(n as u64),
-                ));
+                return Ok(serde_json::Value::Number(serde_json::Number::from(
+                    n as u64,
+                )));
             }
             return Ok(serde_json::Value::Number(serde_json::Number::from(
                 n as i64,

@@ -10,7 +10,12 @@ pub(crate) fn install_qx<'js>(ctx: &Ctx<'js>, host: &Arc<ScriptHost>) -> rquickj
     let h = Arc::clone(host);
     // Ctx 由框架作为首参注入（不捕获，避免 JS 对象持有 Ctx 形成引用循环）。
     // opts 用 Opt<Value>（rquickjs 可选参数），否则 Option 会被计为必传参数。
-    let f = move |ctx: Ctx<'js>, title: String, subtitle: String, body: String, opts: Opt<Value<'js>>| -> rquickjs::Result<()> {
+    let f = move |ctx: Ctx<'js>,
+                  title: String,
+                  subtitle: String,
+                  body: String,
+                  opts: Opt<Value<'js>>|
+          -> rquickjs::Result<()> {
         let options = convert_opts(&ctx, opts)?;
         h.notifier.notify(&title, &subtitle, &body, options);
         Ok(())
@@ -22,7 +27,12 @@ pub(crate) fn install_qx<'js>(ctx: &Ctx<'js>, host: &Arc<ScriptHost>) -> rquickj
 /// 注入 $notification（Surge）：$notification.post(title, subtitle, body[, opts])。
 pub(crate) fn install_surge<'js>(ctx: &Ctx<'js>, host: &Arc<ScriptHost>) -> rquickjs::Result<()> {
     let h = Arc::clone(host);
-    let f = move |ctx: Ctx<'js>, title: String, subtitle: String, body: String, opts: Opt<Value<'js>>| -> rquickjs::Result<()> {
+    let f = move |ctx: Ctx<'js>,
+                  title: String,
+                  subtitle: String,
+                  body: String,
+                  opts: Opt<Value<'js>>|
+          -> rquickjs::Result<()> {
         let options = convert_opts(&ctx, opts)?;
         h.notifier.notify(&title, &subtitle, &body, options);
         Ok(())

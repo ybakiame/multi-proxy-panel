@@ -25,21 +25,25 @@ pub(crate) fn install_qx<'js>(
     let scope = base_scope.clone();
     prefs.set(
         "valueForKey",
-        Func::from(move |key: Opt<String>| -> rquickjs::Result<Option<String>> {
-            let k = key.0.unwrap_or_else(|| DEFAULT_KEY.to_string());
-            Ok(s.store.read(&scope, &k))
-        }),
+        Func::from(
+            move |key: Opt<String>| -> rquickjs::Result<Option<String>> {
+                let k = key.0.unwrap_or_else(|| DEFAULT_KEY.to_string());
+                Ok(s.store.read(&scope, &k))
+            },
+        ),
     )?;
 
     let s = Arc::clone(host);
     let scope = base_scope.clone();
     prefs.set(
         "setValueForKey",
-        Func::from(move |value: String, key: Opt<String>| -> rquickjs::Result<()> {
-            let k = key.0.unwrap_or_else(|| DEFAULT_KEY.to_string());
-            s.store.write(&scope, &k, &value);
-            Ok(())
-        }),
+        Func::from(
+            move |value: String, key: Opt<String>| -> rquickjs::Result<()> {
+                let k = key.0.unwrap_or_else(|| DEFAULT_KEY.to_string());
+                s.store.write(&scope, &k, &value);
+                Ok(())
+            },
+        ),
     )?;
 
     let s = Arc::clone(host);
