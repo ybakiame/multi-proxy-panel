@@ -8,8 +8,10 @@
 
 pub mod config;
 pub mod core_config;
+pub mod http_exec;
 pub mod import;
 pub mod mitm;
+pub mod remote;
 pub mod runner;
 pub mod state;
 pub mod subscription;
@@ -17,8 +19,10 @@ pub mod sysproxy;
 
 pub use config::*;
 pub use core_config::*;
+pub use http_exec::*;
 pub use import::*;
 pub use mitm::*;
+pub use remote::*;
 pub use runner::*;
 pub use state::*;
 pub use subscription::*;
