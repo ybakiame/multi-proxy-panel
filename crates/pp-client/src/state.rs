@@ -120,13 +120,13 @@ impl ClientState {
                 let (sub_config, _info) = fetcher
                     .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
                     .await?;
-                core_config::compose_singbox_config(&sub_config, self.config.mixed_port)?
+                core_config::compose_singbox_config(&sub_config, self.config.mixed_port, None)?
             }
             CoreType::Mihomo => {
                 let (yaml, _info) = fetcher
                     .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
                     .await?;
-                core_config::compose_mihomo_config(&yaml, self.config.mixed_port)?
+                core_config::compose_mihomo_config(&yaml, self.config.mixed_port, None)?
             }
         };
         self.start_services(&config_json).await
@@ -175,6 +175,7 @@ impl ClientState {
             );
             let options = MitmBuildOptions {
                 extra_hostnames: merged.hostnames,
+                upstream_port: None,
                 rewrite,
                 hooks: Some(hooks),
             };
