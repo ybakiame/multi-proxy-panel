@@ -77,6 +77,8 @@ export interface RemoteResource {
   enabled: boolean;
   /** 用户为模块参数配置的值 `[key, value]`（对应 `#!arguments=` 声明的键）。 */
   argument_values: [string, string][];
+  /** 模块参数声明（`#!arguments=` / Loon `[Argument]` 段；旧数据缺省为空）。 */
+  arguments?: ArgSpecView[];
   /** 资源图标 URL（null = 未配置）。 */
   icon: string | null;
 }
@@ -236,6 +238,11 @@ export function listRemotes(): Promise<RemoteResource[]> {
 
 export function addRemote(remote: RemoteResource): Promise<void> {
   return invoke<void>("add_remote", { remote });
+}
+
+/** 按 name 定位全量更新一条远程资源（替代「删除重加」，保留既有缓存）。 */
+export function updateRemote(resource: RemoteResource): Promise<void> {
+  return invoke<void>("update_remote", { resource });
 }
 
 /** 嗅探远端资源 URL：按后缀判定类型/方言，Snippet 可访问时解析配置头元数据。 */

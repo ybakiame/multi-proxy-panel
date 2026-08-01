@@ -24,6 +24,7 @@ import {
   removeRemote,
   runTask,
   toErrorMessage,
+  updateRemote,
 } from "../api";
 import type { ArgSpecView, DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
 
@@ -56,9 +57,8 @@ interface ArgEdit {
   value: string;
 }
 
-/** 编辑 Modal 中一条参数值的编辑态。 */
-interface ArgValueEdit {
-  key: string;
+/** 编辑 Modal 中一条参数值的编辑态（声明 + 用户填写值）。 */
+interface ArgValueEdit extends ArgSpecView {
   value: string;
 }
 
@@ -128,8 +128,8 @@ function formatInterval(secs: number): string {
 }
 
 /** 按参数分组标签（`tag`）分组；无 tag 的归入默认组。 */
-function groupArgsByTag(args: ArgEdit[]): { tag: string | null; args: ArgEdit[] }[] {
-  const groups = new Map<string | null, ArgEdit[]>();
+function groupArgsByTag<T extends { key: string; tag: string | null }>(args: T[]): { tag: string | null; args: T[] }[] {
+  const groups = new Map<string | null, T[]>();
   for (const arg of args) {
     const tag = arg.tag ?? null;
     const group = groups.get(tag) ?? [];
@@ -165,9 +165,17 @@ export default function Scripts() {
   // 已嗅探过的 URL：避免失焦与「嗅探」按钮同时触发时重复拉取。
   const lastDetectedUrlRef = useRef("");
 
-  // 已添加资源的模块参数编辑对话框
+  // 已添加资源的编辑对话框（名称/描述/URL/类型/方言/更新间隔 + 模块参数）
   const [editOpen, setEditOpen] = useState(false);
   const [editRemote, setEditRemote] = useState<RemoteResource | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    description: "",
+    url: "",
+    kind: "Script",
+    dialect: "Surge",
+    interval: "86400",
+  });
   const [editArgs, setEditArgs] = useState<ArgValueEdit[]>([]);
 
   // 配置导入
@@ -300,6 +308,15 @@ export default function Scripts() {
         argument_values: argEdits
           .filter((arg) => arg.value.trim() !== "")
           .map((arg) => [arg.key, arg.value.trim()] as [string, string]),
+        // 参数声明随添加持久化，供后续「编辑」Modal 按 kind/options 渲染控件。
+        arguments: argEdits.map((arg) => ({
+          key: arg.key,
+          default_value: arg.default_value,
+          description: arg.description,
+          kind: arg.kind,
+          options: arg.options,
+          tag: arg.tag,
+        })),
       });
       setAddOpen(false);
       resetAddForm();
@@ -340,35 +357,50 @@ export default function Scripts() {
     }
   };
 
-  /** 打开已添加资源的模块参数编辑对话框（名称/URL/类型/方言不可改，提示删除后重新添加）。 */
+  /** 打开已添加资源的编辑对话框：预填基础字段，并把声明（arguments）与已存值（argument_values）合并。 */
   const handleOpenEdit = (remote: RemoteResource) => {
     setEditRemote(remote);
+    setEditForm({
+      name: remote.name,
+      description: remote.description ?? "",
+      url: remote.url,
+      kind: remote.kind,
+      dialect: remote.dialect,
+      interval: String(remote.update_interval_secs),
+    });
+    const specs = remote.arguments ?? [];
     setEditArgs(
-      remote.argument_values.map(([key, value]) => ({
-        key,
-        value,
-      })),
+      specs.map((arg) => {
+        const found = (remote.argument_values ?? []).find(([key]) => key === arg.key);
+        return { ...arg, value: found?.[1] ?? "" };
+      }),
     );
     setError(null);
     setEditOpen(true);
   };
 
-  /** 保存模块参数：remove + add 原地更新 argument_values（无 update 命令，顺序会移到末尾）。 */
+  /** 保存编辑：按 name 全量更新（`update_remote`），参数值仅提交非空项。 */
   const handleEditSave = async () => {
     if (!editRemote) {
       return;
     }
+    const interval = Number(editForm.interval);
     setBusy(true);
     setError(null);
     try {
       const next: RemoteResource = {
         ...editRemote,
+        name: editForm.name.trim(),
+        description: editForm.description.trim() || null,
+        url: editForm.url.trim(),
+        kind: editForm.kind as RemoteResource["kind"],
+        dialect: editForm.dialect,
+        update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
         argument_values: editArgs
           .filter((arg) => arg.value.trim() !== "")
           .map((arg) => [arg.key, arg.value.trim()] as [string, string]),
       };
-      await removeRemote(next.name);
-      await addRemote(next);
+      await updateRemote(next);
       setEditOpen(false);
       setEditRemote(null);
       await refreshRemotes();
@@ -510,7 +542,7 @@ export default function Scripts() {
                                   isDisabled={busy}
                                   onPress={() => handleOpenEdit(remote)}
                                 >
-                                  参数
+                                  编辑
                                 </Button>
                                 <Button
                                   size="sm"
@@ -944,47 +976,181 @@ export default function Scripts() {
           <Modal.Dialog className="sm:max-w-[480px]">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <Modal.Heading>编辑模块参数</Modal.Heading>
+              <Modal.Heading>编辑远程资源</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <Label>资源</Label>
-                <span className="truncate text-sm font-medium">{editRemote?.name ?? "-"}</span>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-edit-name">名称</Label>
+                <Input
+                  id="remote-edit-name"
+                  aria-label="资源名"
+                  value={editForm.name}
+                  onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
+                  fullWidth
+                />
               </div>
-              {editArgs.length === 0 ? (
-                <p className="text-sm text-muted">
-                  该资源未声明模块参数（<code className="font-mono">#!arguments=</code>）。
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {editArgs.map((arg) => (
-                    <div key={arg.key} className="flex flex-col gap-1">
-                      <Label htmlFor={`edit-arg-${arg.key}`}>{arg.key}</Label>
-                      <Input
-                        id={`edit-arg-${arg.key}`}
-                        aria-label={`参数 ${arg.key}`}
-                        value={arg.value}
-                        onChange={(event) =>
-                          setEditArgs((prev) =>
-                            prev.map((item) => (item.key === arg.key ? { ...item, value: event.target.value } : item)),
-                          )
-                        }
-                        placeholder="填写参数值（留空使用默认值）"
-                        fullWidth
-                      />
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-edit-desc">描述</Label>
+                <Input
+                  id="remote-edit-desc"
+                  aria-label="资源描述"
+                  value={editForm.description}
+                  onChange={(event) => setEditForm({ ...editForm, description: event.target.value })}
+                  placeholder="资源描述（可选）"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-edit-url">URL</Label>
+                <Input
+                  id="remote-edit-url"
+                  aria-label="资源 URL"
+                  value={editForm.url}
+                  onChange={(event) => setEditForm({ ...editForm, url: event.target.value })}
+                  fullWidth
+                />
+              </div>
+              <Select
+                className="w-full"
+                placeholder="选择类型"
+                value={editForm.kind}
+                onChange={(value) => setEditForm({ ...editForm, kind: String(value ?? "Script") })}
+              >
+                <Label>类型</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="Script" textValue="脚本">
+                      脚本（纯 JS）
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="Snippet" textValue="片段">
+                      片段（QX / Surge / Loon 配置）
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-full"
+                placeholder="选择方言"
+                value={editForm.dialect}
+                onChange={(value) => setEditForm({ ...editForm, dialect: String(value ?? "Surge") })}
+              >
+                <Label>方言</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {REMOTE_DIALECT_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-edit-interval">更新间隔（秒）</Label>
+                <Input
+                  id="remote-edit-interval"
+                  aria-label="更新间隔（秒）"
+                  type="number"
+                  min="60"
+                  value={editForm.interval}
+                  onChange={(event) => setEditForm({ ...editForm, interval: event.target.value })}
+                  fullWidth
+                />
+              </div>
+              {editArgs.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <Label>模块参数</Label>
+                  {groupArgsByTag(editArgs).map((group) => (
+                    <div key={group.tag ?? "__untagged"} className="flex flex-col gap-2">
+                      {group.tag && (
+                        <span className="border-b border-border/40 pb-1 text-xs font-medium text-muted">
+                          {group.tag}
+                        </span>
+                      )}
+                      {group.args.map((arg) => (
+                        <div key={arg.key} className="flex flex-col gap-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="font-mono text-xs font-medium">{arg.key}</span>
+                            {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
+                          </div>
+                          {arg.kind === "Select" ? (
+                            <Select
+                              aria-label={`参数 ${arg.key}`}
+                              placeholder={arg.default_value ? `默认：${arg.default_value}` : "选择参数值（可选）"}
+                              value={arg.value}
+                              onChange={(value) =>
+                                setEditArgs((prev) =>
+                                  prev.map((item) =>
+                                    item.key === arg.key ? { ...item, value: String(value ?? "") } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            >
+                              <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                              </Select.Trigger>
+                              <Select.Popover>
+                                <ListBox>
+                                  {arg.options.length > 0 ? (
+                                    arg.options.map((option) => (
+                                      <ListBox.Item key={option} id={option} textValue={option}>
+                                        {option}
+                                        <ListBox.ItemIndicator />
+                                      </ListBox.Item>
+                                    ))
+                                  ) : (
+                                    <ListBox.Item id="__empty" textValue="无可选选项">
+                                      无可选选项
+                                    </ListBox.Item>
+                                  )}
+                                </ListBox>
+                              </Select.Popover>
+                            </Select>
+                          ) : (
+                            <Input
+                              aria-label={`参数 ${arg.key}`}
+                              value={arg.value}
+                              onChange={(event) =>
+                                setEditArgs((prev) =>
+                                  prev.map((item) =>
+                                    item.key === arg.key ? { ...item, value: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              placeholder={arg.default_value ? `默认：${arg.default_value}` : "填写参数值（可选）"}
+                              fullWidth
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
               )}
-              <p className="text-xs text-muted">
-                仅支持编辑模块参数值；名称 / URL / 类型 / 方言如需修改，请「删除后重新添加」。
-              </p>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="secondary" onPress={() => setEditOpen(false)}>
                 取消
               </Button>
-              <Button variant="primary" isPending={busy} onPress={() => void handleEditSave()}>
+              <Button
+                variant="primary"
+                isPending={busy}
+                isDisabled={editForm.name.trim().length === 0 || editForm.url.trim().length === 0}
+                onPress={() => void handleEditSave()}
+              >
                 保存
               </Button>
             </Modal.Footer>
