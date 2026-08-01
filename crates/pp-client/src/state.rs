@@ -11,7 +11,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use pp_common::PanelResult;
+use pp_common::{CoreType, PanelResult};
 use pp_mitm::{MemoryRecorder, RewriteEngine, RunningProxy, ScriptHookEngine};
 use pp_script::{MemoryPersistentStore, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript};
 use tokio::task::JoinHandle;
@@ -92,10 +92,20 @@ impl ClientState {
     pub async fn start(&mut self) -> PanelResult<()> {
         tracing::info!(hub_url = %self.config.hub_url, "客户端启动：拉取订阅");
         let fetcher = subscription::SubscriptionFetcher::new();
-        let (sub_config, _info) = fetcher
-            .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
-            .await?;
-        let config_json = core_config::compose_singbox_config(&sub_config, self.config.mixed_port)?;
+        let config_json = match self.config.core_type {
+            CoreType::SingBox => {
+                let (sub_config, _info) = fetcher
+                    .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
+                    .await?;
+                core_config::compose_singbox_config(&sub_config, self.config.mixed_port)?
+            }
+            CoreType::Mihomo => {
+                let (yaml, _info) = fetcher
+                    .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
+                    .await?;
+                core_config::compose_mihomo_config(&yaml, self.config.mixed_port)?
+            }
+        };
         self.start_services(&config_json).await
     }
 
@@ -439,6 +449,28 @@ mod tests {
         state.stop().await;
         let status = state.status().await;
         assert!(status.mitm_addr.is_none());
+        assert!(!status.core_running);
+    }
+
+    /// core_type=Mihomo：走 clash 订阅拉取 + mihomo 配置合成，假核心启动成功。
+    #[tokio::test]
+    async fn start_with_mihomo_core_fetches_clash_and_starts() {
+        let yaml =
+            "port: 7890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let addr = spawn_server(StatusCode::OK, yaml).await;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(&dir, format!("http://{addr}"));
+        cfg.core_type = CoreType::Mihomo;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        let status = state.status().await;
+        assert!(status.core_running, "mihomo 核心应启动");
+
+        state.stop().await;
+        let status = state.status().await;
         assert!(!status.core_running);
     }
 }

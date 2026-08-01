@@ -84,6 +84,42 @@ impl SubscriptionFetcher {
 
         Ok((config, info))
     }
+
+    /// 拉取 clash/mihomo 订阅配置，返回 YAML 原文与可选的用户信息。
+    pub async fn fetch_clash_config(
+        &self,
+        hub_url: &str,
+        token: &str,
+    ) -> PanelResult<(String, Option<SubscriptionInfo>)> {
+        let url = format!(
+            "{}/sub/{}?format=clash",
+            hub_url.trim_end_matches('/'),
+            token
+        );
+        tracing::debug!(url = %url, "fetching subscription clash config");
+
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| PanelError::Client(format!("subscription request failed: {e}")))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(PanelError::Client(format!(
+                "subscription request returned HTTP {status}"
+            )));
+        }
+
+        let info = parse_subscription_userinfo(resp.headers());
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| PanelError::Client(format!("failed to read subscription body: {e}")))?;
+
+        Ok((text, info))
+    }
 }
 
 /// 解析 `subscription-userinfo` 响应头（`upload=..; download=..; total=..; expire=..`）。
@@ -118,6 +154,8 @@ mod tests {
         ],
         "route": { "final": "n1" }
     }"#;
+
+    const SUB_YAML: &str = "port: 7890\nproxies:\n  - name: n1\n    type: vless\n    server: example.com\nrules:\n  - MATCH,DIRECT\n";
 
     async fn spawn_server(app: axum::Router) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -168,6 +206,52 @@ mod tests {
         let fetcher = SubscriptionFetcher::new();
         let err = fetcher
             .fetch_singbox_config(&base, "missing")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PanelError::Client(_)));
+    }
+
+    #[tokio::test]
+    async fn fetch_clash_config_returns_yaml_text_and_info() {
+        let app = axum::Router::new().route(
+            "/sub/{token}",
+            axum::routing::get(|| async {
+                (
+                    [(
+                        "subscription-userinfo",
+                        "upload=100; download=200; total=1000; expire=1700000000",
+                    )],
+                    SUB_YAML,
+                )
+            }),
+        );
+        let base = spawn_server(app).await;
+
+        let fetcher = SubscriptionFetcher::new();
+        let (yaml, info) = fetcher.fetch_clash_config(&base, "tok").await.unwrap();
+
+        // YAML 原文原样返回。
+        assert_eq!(yaml, SUB_YAML);
+        assert!(yaml.contains("proxies:"));
+
+        let info = info.unwrap();
+        assert_eq!(info.upload, Some(100));
+        assert_eq!(info.download, Some(200));
+        assert_eq!(info.total, Some(1000));
+        assert_eq!(info.expire, Some(1700000000));
+    }
+
+    #[tokio::test]
+    async fn fetch_clash_config_returns_client_error_on_4xx() {
+        let app = axum::Router::new().route(
+            "/sub/{token}",
+            axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
+        );
+        let base = spawn_server(app).await;
+
+        let fetcher = SubscriptionFetcher::new();
+        let err = fetcher
+            .fetch_clash_config(&base, "missing")
             .await
             .unwrap_err();
         assert!(matches!(err, PanelError::Client(_)));
