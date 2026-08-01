@@ -6,6 +6,7 @@ members = [
     "crates/pp-proto",
     "crates/pp-config",
     "crates/pp-subscription",
+    "crates/pp-script",
     "crates/pp-core",
     "crates/pp-hub",
     "crates/pp-agent",
