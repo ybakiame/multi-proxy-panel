@@ -4,6 +4,9 @@ node_modules
 # Build output (frontend 产物下轮生成)
 dist
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Rust target
 target
 
