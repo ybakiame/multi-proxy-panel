@@ -16,6 +16,9 @@ pub struct ScriptRule {
     pub requires_body: bool,
     pub max_size: usize,
     pub source: String,
+    /// Surge/Loon 模块 `argument=` 模板（`{key}` 占位已由调用方替换后的字符串）；
+    /// `None` 表示脚本不声明模块参数（不注入 `$argument`）。
+    pub argument: Option<String>,
 }
 
 /// 脚本钩子引擎：持有脚本执行 worker（收敛 `!Send` 的 QuickJS 执行）与规则列表。
@@ -127,7 +130,14 @@ impl ScriptHookEngine {
     ) {
         match self
             .worker
-            .run_script(&rule.source, kind, arg, None, self.dialect, &rule.name)
+            .run_script(
+                &rule.source,
+                kind,
+                arg,
+                rule.argument.as_deref(),
+                self.dialect,
+                &rule.name,
+            )
             .await
         {
             Ok(ScriptOutput(out)) => apply_output(&out, status, headers, body),
@@ -224,6 +234,7 @@ mod tests {
                     $done({body: JSON.stringify(data)});
                 "#
                 .to_string(),
+                argument: None,
             }],
         );
 
@@ -267,6 +278,7 @@ mod tests {
                 requires_body: true,
                 max_size: 65536,
                 source: "while (true) {}".to_string(),
+                argument: None,
             }],
         );
 
@@ -291,6 +303,51 @@ mod tests {
         assert!(
             elapsed.as_millis() < 1000,
             "timeout did not bound execution: {elapsed:?}"
+        );
+    }
+
+    /// `$argument` 透传 e2e：ScriptRule.argument 被注入为全局 `$argument`，
+    /// 脚本将其回写到 `$done` 的 body（apply_output 只映射 status/headers/body）。
+    #[tokio::test(flavor = "current_thread")]
+    async fn script_rule_argument_injected_as_global() {
+        let engine = ScriptHookEngine::new(
+            test_host(),
+            pp_script::ScriptDialect::Surge,
+            pp_script::ScriptLimits::default(),
+            vec![ScriptRule {
+                name: "arg-hook".to_string(),
+                kind: ScriptKind::HttpResponse,
+                pattern: Regex::new(r"^https://api\.example\.com/").unwrap(),
+                requires_body: false,
+                max_size: 65536,
+                source: r#"
+                    if (typeof $argument === "undefined") {
+                        $done({body: "UNDEFINED"});
+                    } else {
+                        $done({body: $argument});
+                    }
+                "#
+                .to_string(),
+                argument: Some("api.example.com|abc".to_string()),
+            }],
+        );
+
+        let mut status = 200u16;
+        let mut headers = Vec::new();
+        let mut body = None;
+        engine
+            .run_response_hooks(
+                "https://api.example.com/v1/data",
+                &mut status,
+                &mut headers,
+                &mut body,
+            )
+            .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            body.as_deref(),
+            Some("api.example.com|abc"),
+            "$argument 应被注入并回写到 body"
         );
     }
 }
