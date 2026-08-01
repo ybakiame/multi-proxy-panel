@@ -370,6 +370,22 @@ fn binary_name_on_disk(core_type: CoreType) -> String {
     }
 }
 
+/// 按文件名推断核心类型：文件名（忽略大小写）含 `sing-box` / `singbox` →
+/// [`CoreType::SingBox`]，含 `mihomo` / `clash` → [`CoreType::Mihomo`]；
+/// 无法识别时返回 `None`（命令层据此提示用户手动选择）。
+///
+/// 供命令层（`set_active_core` 未在清单中命中路径时的回退）与测试复用。
+pub fn infer_core_type(path: &Path) -> Option<CoreType> {
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if name.contains("sing-box") || name.contains("singbox") {
+        Some(CoreType::SingBox)
+    } else if name.contains("mihomo") || name.contains("clash") {
+        Some(CoreType::Mihomo)
+    } else {
+        None
+    }
+}
+
 /// 当前平台资产提示：`("os-arch", is_windows)`。
 fn target_spec() -> PanelResult<(&'static str, bool)> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -823,6 +839,33 @@ mod tests {
         // 空路径 → None。
         cfg.core_binary = PathBuf::new();
         assert!(inv.active_core(&cfg).is_none());
+    }
+
+    // ---------- ⑥ infer_core_type：文件名推断 ----------
+
+    #[test]
+    fn infers_core_type_from_file_name() {
+        assert_eq!(
+            infer_core_type(Path::new("/usr/local/bin/sing-box")),
+            Some(CoreType::SingBox)
+        );
+        assert_eq!(
+            infer_core_type(Path::new("C:\\cores\\sing-box.exe")),
+            Some(CoreType::SingBox)
+        );
+        assert_eq!(
+            infer_core_type(Path::new("/usr/local/bin/singbox")),
+            Some(CoreType::SingBox)
+        );
+        assert_eq!(
+            infer_core_type(Path::new("/usr/local/bin/mihomo")),
+            Some(CoreType::Mihomo)
+        );
+        assert_eq!(
+            infer_core_type(Path::new("C:\\cores\\clash.exe")),
+            Some(CoreType::Mihomo)
+        );
+        assert_eq!(infer_core_type(Path::new("/usr/bin/unknown")), None);
     }
 
     // ---------- 辅助：版本解析 ----------
