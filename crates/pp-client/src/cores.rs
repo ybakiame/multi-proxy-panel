@@ -155,8 +155,8 @@ impl ClientCoreInventory {
 
     /// 下载指定版本核心并落盘到 `cores_dir/<type>/<version>/`。
     ///
-    /// 已完成同版本下载时直接复用；下载后解压、chmod 755 并以 `--version`
-    /// 校验输出包含目标版本。
+    /// 已完成同版本下载时直接复用；下载后解压、chmod 755 并校验版本探测输出
+    /// （`version` / `--version` / `-v` 依次尝试）包含目标版本。
     pub async fn download(&self, core_type: CoreType, version: &str) -> PanelResult<LocalCore> {
         let version = version.strip_prefix('v').unwrap_or(version).to_string();
         let tag = github_tag(&version);
@@ -215,7 +215,7 @@ impl ClientCoreInventory {
         let path = result;
         set_executable(&path)?;
 
-        // `--version` 校验输出包含目标版本；失败时清理目录避免残留半成品。
+        // 版本探测校验输出包含目标版本；失败时清理目录避免残留半成品。
         if let Err(e) = verify_version(&path, core_type, &version) {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(e);
@@ -312,7 +312,7 @@ impl ClientCoreInventory {
     }
 
     /// PATH 查找系统已装核心（`sing-box` / `mihomo`，Windows 追加 `.exe`），
-    /// 以 `--version` 解析版本号；解析失败记为 `unknown`。
+    /// 依次尝试 `version` / `--version` / `-v` 探测并解析版本号；解析失败记为 `unknown`。
     pub fn detect_system_cores(&self) -> Vec<LocalCore> {
         let Some(path_value) = std::env::var_os("PATH") else {
             return Vec::new();
@@ -427,24 +427,31 @@ fn ext_ok(core_type: CoreType, is_windows: bool, name: &str) -> bool {
     }
 }
 
-/// 运行 `--version` 并拼接 stdout / stderr。
+/// 依次尝试 `version` 子命令 / `--version` / `-v`，取第一个退出码为 0 的输出
+/// （拼接 stdout / stderr）。
+///
+/// sing-box 1.14+ 移除了 `--version` flag，改用 `version` 子命令；mihomo 传统上
+/// 支持 `-v`。统一按 `version` → `--version` → `-v` 顺序探测，兼容新旧核心。
 fn binary_output(binary: &Path) -> String {
-    Command::new(binary)
-        .arg("--version")
-        .output()
-        .map(|o| {
-            format!(
+    for arg in ["version", "--version", "-v"] {
+        if let Ok(output) = Command::new(binary).arg(arg).output() {
+            let text = format!(
                 "{}{}",
-                String::from_utf8_lossy(&o.stdout),
-                String::from_utf8_lossy(&o.stderr)
-            )
-        })
-        .unwrap_or_default()
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if output.status.success() {
+                return text;
+            }
+        }
+    }
+    String::new()
 }
 
-/// 从 `--version` 输出解析版本号。
+/// 从版本探测输出解析版本号。
 ///
-/// sing-box: `sing-box version 1.13.15`
+/// sing-box: `sing-box version 1.13.15`；`version` 子命令输出可能含多行
+/// （首行 `sing-box version 1.14.0-beta.4` + 环境信息），取含 "version" 的首行。
 /// mihomo:   `Mihomo Meta v1.19.29 linux/amd64 go1.23.4`
 fn parse_version_from_output(core_type: CoreType, output: &str) -> Option<String> {
     let pattern = match core_type {
@@ -452,12 +459,19 @@ fn parse_version_from_output(core_type: CoreType, output: &str) -> Option<String
         CoreType::Mihomo => r"(?i)mihomo[^\n]*?\bv?([0-9][0-9A-Za-z.\-]*)",
     };
     let re = regex::Regex::new(pattern).ok()?;
+    // 子命令输出可能含多行：取含 "version" 的首行优先匹配（sing-box 1.14+），
+    // 其余格式（如 mihomo 单行）回退到全文匹配。
+    if let Some(line) = output.lines().find(|l| l.contains("version")) {
+        if let Some(m) = re.captures(line).and_then(|c| c.get(1)) {
+            return Some(m.as_str().to_string());
+        }
+    }
     re.captures(output)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
 }
 
-/// 校验 `--version` 输出包含目标版本（允许 `v` 前缀，或解析出的版本号相等）。
+/// 校验版本探测输出包含目标版本（允许 `v` 前缀，或解析出的版本号相等）。
 fn verify_version(binary: &Path, core_type: CoreType, version: &str) -> PanelResult<()> {
     let text = binary_output(binary);
     let parsed = parse_version_from_output(core_type, &text).unwrap_or_default();
@@ -467,7 +481,7 @@ fn verify_version(binary: &Path, core_type: CoreType, version: &str) -> PanelRes
         return Ok(());
     }
     Err(PanelError::Core(format!(
-        "核心 {core_type} 版本校验失败：请求 {version}，--version 输出：{text}"
+        "核心 {core_type} 版本校验失败：请求 {version}，版本探测输出：{text}"
     )))
 }
 
@@ -809,7 +823,62 @@ mod tests {
         assert_eq!(found.unwrap().source, CoreSource::System);
     }
 
-    // ---------- ⑤ active_core：按 config.core_binary 匹配 ----------
+    // ---------- ⑤ 版本探测：`version` / `--version` / `-v` 三形态 ----------
+    //
+    // 三种假二进制分别只支持 `version` 子命令（sing-box 1.14+，含多行输出）、
+    // `--version` flag（旧 sing-box）、`-v`（mihomo），断言探测与解析均成功。
+
+    #[test]
+    fn version_probe_supports_subcommand_and_flags() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // sing-box 1.14+：仅支持 `version` 子命令，`--version` 报错退出非零；
+        // 子命令输出含多行（版本行 + 环境信息）。
+        let subcmd = dir.path().join("sing-box-subcmd");
+        write_executable(
+            &subcmd,
+            b"#!/bin/sh\n\
+              [ \"$1\" = \"version\" ] || { echo 'Error: unknown flag: --version' >&2; exit 1; }\n\
+              echo 'sing-box version 1.14.0-beta.4'\n\
+              echo\n\
+              echo 'Environment:'\n\
+              echo '  go version go1.24.3'\n",
+        );
+
+        // 旧 sing-box：仅支持 `--version` flag。
+        let flag = dir.path().join("sing-box-flag");
+        write_executable(&flag, b"#!/bin/sh\necho 'sing-box version 1.13.15'\n");
+
+        // mihomo：仅支持 `-v`。
+        let mihomo = dir.path().join("mihomo-v");
+        write_executable(
+            &mihomo,
+            b"#!/bin/sh\n\
+              [ \"$1\" = \"-v\" ] || exit 1\n\
+              echo 'Mihomo Meta v1.19.29 linux/amd64 go1.23.4'\n",
+        );
+
+        // download 后校验路径：三种形态均探测成功。
+        verify_version(&subcmd, CoreType::SingBox, "1.14.0-beta.4").unwrap();
+        verify_version(&flag, CoreType::SingBox, "1.13.15").unwrap();
+        verify_version(&mihomo, CoreType::Mihomo, "1.19.29").unwrap();
+
+        // detect_system_cores 路径：输出解析正确。
+        assert_eq!(
+            parse_version_from_output(CoreType::SingBox, &binary_output(&subcmd)),
+            Some("1.14.0-beta.4".to_string())
+        );
+        assert_eq!(
+            parse_version_from_output(CoreType::SingBox, &binary_output(&flag)),
+            Some("1.13.15".to_string())
+        );
+        assert_eq!(
+            parse_version_from_output(CoreType::Mihomo, &binary_output(&mihomo)),
+            Some("1.19.29".to_string())
+        );
+    }
+
+    // ---------- ⑥ active_core：按 config.core_binary 匹配 ----------
 
     #[test]
     fn active_core_matches_config_binary() {
@@ -841,7 +910,7 @@ mod tests {
         assert!(inv.active_core(&cfg).is_none());
     }
 
-    // ---------- ⑥ infer_core_type：文件名推断 ----------
+    // ---------- ⑦ infer_core_type：文件名推断 ----------
 
     #[test]
     fn infers_core_type_from_file_name() {
@@ -875,6 +944,13 @@ mod tests {
         assert_eq!(
             parse_version_from_output(CoreType::SingBox, "sing-box version 1.13.15"),
             Some("1.13.15".to_string())
+        );
+        assert_eq!(
+            parse_version_from_output(
+                CoreType::SingBox,
+                "sing-box version 1.14.0-beta.4\n\nEnvironment:\n  go version go1.24.3"
+            ),
+            Some("1.14.0-beta.4".to_string())
         );
         assert_eq!(
             parse_version_from_output(
