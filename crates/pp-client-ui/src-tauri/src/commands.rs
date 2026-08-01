@@ -502,6 +502,10 @@ pub struct ProfileView {
     pub yaml_bytes: u64,
     /// JS 复写字节数（列表展示用）。
     pub js_bytes: u64,
+    /// 远程 YAML 复写 URL（`null` = 未配置）。
+    pub yaml_url: Option<String>,
+    /// 远程 JS 复写 URL（`null` = 未配置）。
+    pub js_url: Option<String>,
 }
 
 impl ProfileView {
@@ -513,6 +517,8 @@ impl ProfileView {
             enabled: p.enabled,
             yaml_bytes: p.yaml_override.len() as u64,
             js_bytes: p.js_override.len() as u64,
+            yaml_url: p.yaml_url.clone(),
+            js_url: p.js_url.clone(),
         }
     }
 }
@@ -528,6 +534,10 @@ pub struct ProfileDetailView {
     pub yaml_override: String,
     /// JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。
     pub js_override: String,
+    /// 远程 YAML 复写 URL（`null` = 未配置）。
+    pub yaml_url: Option<String>,
+    /// 远程 JS 复写 URL（`null` = 未配置）。
+    pub js_url: Option<String>,
 }
 
 impl ProfileDetailView {
@@ -539,6 +549,8 @@ impl ProfileDetailView {
             enabled: p.enabled,
             yaml_override: p.yaml_override.clone(),
             js_override: p.js_override.clone(),
+            yaml_url: p.yaml_url.clone(),
+            js_url: p.js_url.clone(),
         }
     }
 }
@@ -597,6 +609,12 @@ pub struct UpdateProfileInput {
     pub name: String,
     pub yaml_override: String,
     pub js_override: String,
+    /// 远程 YAML 复写 URL（可选；http/https，空串 = 未配置）。
+    #[serde(default)]
+    pub yaml_url: Option<String>,
+    /// 远程 JS 复写 URL（可选；http/https，空串 = 未配置）。
+    #[serde(default)]
+    pub js_url: Option<String>,
 }
 
 /// 校验 YAML 复写：非空时必须是可解析的 YAML mapping（与 `apply_yaml_override` 一致）。
@@ -628,12 +646,31 @@ fn validate_js_override(js: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 更新复写模板的可编辑字段（name / yaml_override / js_override）；校验失败不落盘。
+/// 校验远程复写 URL：`Some` 且非空时必须是 http:// 或 https:// 开头。
+fn validate_remote_url(url: &Option<String>) -> Result<(), String> {
+    if let Some(url) = url {
+        let url = url.trim();
+        if !(url.is_empty() || url.starts_with("http://") || url.starts_with("https://")) {
+            return Err("远程复写 URL 必须是 http:// 或 https:// 开头".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// 空白串规范化为 `None`（空串 = 未配置）。
+fn normalize_optional_url(url: Option<String>) -> Option<String> {
+    url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty())
+}
+
+/// 更新复写模板的可编辑字段（name / yaml_override / js_override / yaml_url /
+/// js_url）；校验失败不落盘。
 #[tauri::command]
 pub fn update_profile(state: State<'_, AppState>, input: UpdateProfileInput) -> Result<(), String> {
     let id = parse_profile_id(&input.id)?;
     validate_yaml_override(&input.yaml_override)?;
     validate_js_override(&input.js_override)?;
+    validate_remote_url(&input.yaml_url)?;
+    validate_remote_url(&input.js_url)?;
     let store = ProfileStoreV2::new(state.data_dir.clone());
     let mut profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
     let target = profiles
@@ -643,6 +680,8 @@ pub fn update_profile(state: State<'_, AppState>, input: UpdateProfileInput) -> 
     target.name = input.name;
     target.yaml_override = input.yaml_override;
     target.js_override = input.js_override;
+    target.yaml_url = normalize_optional_url(input.yaml_url);
+    target.js_url = normalize_optional_url(input.js_url);
     store
         .save(&profiles)
         .map_err(|e| format!("保存复写模板失败: {e}"))

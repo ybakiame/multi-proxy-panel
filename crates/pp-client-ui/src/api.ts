@@ -102,6 +102,10 @@ export interface ProfileView {
   yaml_bytes: number;
   /** JS 复写字节数（列表展示用）。 */
   js_bytes: number;
+  /** 远程 YAML 复写 URL（null = 未配置）。 */
+  yaml_url: string | null;
+  /** 远程 JS 复写 URL（null = 未配置）。 */
+  js_url: string | null;
 }
 
 /** 复写模板详情视图（含复写内容，与 Rust 侧 `ProfileDetailView` 对齐）。 */
@@ -114,6 +118,10 @@ export interface ProfileDetailView {
   yaml_override: string;
   /** JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。 */
   js_override: string;
+  /** 远程 YAML 复写 URL（null = 未配置）。 */
+  yaml_url: string | null;
+  /** 远程 JS 复写 URL（null = 未配置）。 */
+  js_url: string | null;
 }
 
 /** 新建复写模板入参。 */
@@ -122,12 +130,16 @@ export interface CreateProfileInput {
   core_type: CoreType;
 }
 
-/** 更新复写模板入参（YAML/JS 校验失败时被命令层拒绝）。 */
+/** 更新复写模板入参（YAML/JS 复写与远程 URL 校验失败时被命令层拒绝）。 */
 export interface UpdateProfileInput {
   id: string;
   name: string;
   yaml_override: string;
   js_override: string;
+  /** 远程 YAML 复写 URL（空串 = 未配置）。 */
+  yaml_url: string;
+  /** 远程 JS 复写 URL（空串 = 未配置）。 */
+  js_url: string;
 }
 
 export function getConfig(): Promise<ClientConfig> {
