@@ -48,6 +48,12 @@ pub struct Subscription {
     /// `#[serde(default)]` 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
     #[serde(default)]
     pub error: Option<String>,
+    /// 拉取时使用的请求 User-Agent；`None` / 空串使用默认 `clash.meta`。
+    ///
+    /// 部分订阅源按 UA 返回不同格式，可自定义复写（`#[serde(default)]` 保证旧版
+    /// `subscriptions.json`（无此字段）可正常反序列化）。
+    #[serde(default)]
+    pub user_agent: Option<String>,
 }
 
 /// 订阅存储：读写 `data_dir/subscriptions.json`（load / save / add / remove / set_enabled）。
@@ -96,7 +102,13 @@ impl SubscriptionStore {
     }
 
     /// 追加一条订阅并落盘。
-    pub fn add(&self, name: &str, url: &str, enabled: bool) -> PanelResult<Subscription> {
+    pub fn add(
+        &self,
+        name: &str,
+        url: &str,
+        enabled: bool,
+        user_agent: Option<&str>,
+    ) -> PanelResult<Subscription> {
         let mut subs = self.load()?;
         let sub = Subscription {
             id: Uuid::new_v4(),
@@ -106,6 +118,7 @@ impl SubscriptionStore {
             userinfo: None,
             node_count: 0,
             error: None,
+            user_agent: user_agent.map(str::to_string),
         };
         subs.push(sub.clone());
         self.save(&subs)?;
@@ -292,15 +305,27 @@ impl SubscriptionFetcher {
     }
 }
 
-/// 通用订阅拉取（模块级入口）：GET（no_proxy、30s 超时、UA "clash.meta"）→ 嗅探格式。
-pub async fn fetch_subscription(url: &str) -> PanelResult<FetchResult> {
+/// 通用订阅拉取（模块级入口）：GET（no_proxy、30s 超时）→ 嗅探格式。
+///
+/// `ua` 为 `None` / 空串时使用默认 UA `clash.meta`；部分订阅源按 UA 返回不同
+/// 格式，可传入自定义 UA 复写。
+pub async fn fetch_subscription_with_ua(url: &str, ua: Option<&str>) -> PanelResult<FetchResult> {
+    let ua = ua
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("clash.meta");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .no_proxy()
-        .user_agent("clash.meta")
+        .user_agent(ua)
         .build()
         .map_err(|e| PanelError::Client(format!("failed to build http client: {e}")))?;
     SubscriptionFetcher::with_client(client).fetch(url).await
+}
+
+/// 通用订阅拉取（模块级入口）：GET（no_proxy、30s 超时、默认 UA "clash.meta"）→ 嗅探格式。
+pub async fn fetch_subscription(url: &str) -> PanelResult<FetchResult> {
+    fetch_subscription_with_ua(url, None).await
 }
 
 /// 解析 `subscription-userinfo` 响应头（`upload=..; download=..; total=..; expire=..`）。
@@ -686,6 +711,55 @@ mod tests {
         assert!(matches!(err, PanelError::Client(_)));
     }
 
+    // ---------- ③.1 UA 复写：自定义 UA 与默认 clash.meta ----------
+
+    #[tokio::test]
+    async fn fetch_subscription_sends_custom_or_default_user_agent() {
+        let body = b64(SHARE_LINKS);
+        let uas = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let app = {
+            let uas = std::sync::Arc::clone(&uas);
+            axum::Router::new().route(
+                "/sub",
+                axum::routing::get(move |headers: axum::http::HeaderMap| {
+                    let uas = std::sync::Arc::clone(&uas);
+                    async move {
+                        uas.lock().unwrap().push(
+                            headers
+                                .get("user-agent")
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or_default()
+                                .to_string(),
+                        );
+                        body.clone()
+                    }
+                }),
+            )
+        };
+        let base = spawn_server(app).await;
+
+        // 自定义 UA 透传。
+        let result = fetch_subscription_with_ua(&format!("{base}/sub"), Some("clash-verge/0.6.5"))
+            .await
+            .unwrap();
+        assert_eq!(result.format, SubFormat::ShareLinks);
+        assert_eq!(result.singbox_nodes.len(), 2);
+
+        // 缺省（None）与空串均回退默认 clash.meta。
+        let result = fetch_subscription(&format!("{base}/sub")).await.unwrap();
+        assert_eq!(result.format, SubFormat::ShareLinks);
+        let result = fetch_subscription_with_ua(&format!("{base}/sub"), Some("  "))
+            .await
+            .unwrap();
+        assert_eq!(result.format, SubFormat::ShareLinks);
+
+        let got = uas.lock().unwrap();
+        assert_eq!(
+            got.as_slice(),
+            ["clash-verge/0.6.5", "clash.meta", "clash.meta"]
+        );
+    }
+
     // ---------- ④ SubscriptionStore CRUD ----------
 
     #[test]
@@ -698,9 +772,16 @@ mod tests {
         assert!(!store.file().exists());
 
         // add。
-        let sub1 = store.add("sub-a", "https://example.com/sub", true).unwrap();
+        let sub1 = store
+            .add("sub-a", "https://example.com/sub", true, None)
+            .unwrap();
         let sub2 = store
-            .add("sub-b", "https://example.org/sub", false)
+            .add(
+                "sub-b",
+                "https://example.org/sub",
+                false,
+                Some("clash-verge"),
+            )
             .unwrap();
         let mut all = store.load().unwrap();
         assert_eq!(all.len(), 2);
@@ -729,5 +810,28 @@ mod tests {
         let store = SubscriptionStore::new(dir.path().to_path_buf());
         std::fs::write(store.file(), "{ not json").unwrap();
         assert!(store.load().unwrap().is_empty());
+    }
+
+    /// UA 持久化 + 旧版 subscriptions.json（无 user_agent 字段）兼容。
+    #[test]
+    fn subscription_store_persists_user_agent_and_tolerates_legacy() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+
+        let sub = store
+            .add("sub", "https://example.com/sub", true, Some("sing-box"))
+            .unwrap();
+        assert_eq!(sub.user_agent.as_deref(), Some("sing-box"));
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded[0].user_agent.as_deref(), Some("sing-box"));
+
+        // 旧版文件无 user_agent 字段 → 反序列化为 None。
+        std::fs::write(
+            store.file(),
+            r#"[{"id":"00000000-0000-0000-0000-000000000001","name":"old","url":"https://x.com/sub","enabled":true,"node_count":0}]"#,
+        )
+        .unwrap();
+        let legacy = store.load().unwrap();
+        assert_eq!(legacy[0].user_agent, None);
     }
 }

@@ -132,7 +132,9 @@ impl ClientState {
         // 嗅探格式并转成双核心节点。subscriptions.json 为空且旧 hub_url/sub_token
         // 非空时回退旧版 Hub 订阅路径（deprecated）。
         let sub_content = if let Some(sub) = sub_store.load()?.into_iter().find(|s| s.enabled) {
-            let fetch = subscription::fetch_subscription(&sub.url).await?;
+            let fetch =
+                subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+                    .await?;
             match self.config.core_type {
                 CoreType::SingBox => profile::SubContent::SingBox(serde_json::json!({
                     "outbounds": fetch.singbox_nodes,
@@ -693,7 +695,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // subscriptions.json 指向本地 server。
         let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
-        store.add("local", &format!("{base}/sub"), true).unwrap();
+        store
+            .add("local", &format!("{base}/sub"), true, None)
+            .unwrap();
 
         let mut cfg = ClientConfig::new(
             dir.path().to_path_buf(),
