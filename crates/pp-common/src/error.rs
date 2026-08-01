@@ -33,6 +33,9 @@ pub enum PanelError {
     #[error("script error: {0}")]
     Script(String),
 
+    #[error("mitm error: {0}")]
+    Mitm(String),
+
     #[error("traffic error: {0}")]
     Traffic(String),
 

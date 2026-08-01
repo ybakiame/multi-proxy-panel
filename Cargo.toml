@@ -11,6 +11,7 @@ members = [
     "crates/pp-hub",
     "crates/pp-agent",
     "crates/pp-cli",
+    "crates/pp-mitm",
     # "crates/pp-web",  # now a standalone React/Vite app, see crates/pp-web/README.md
 ]
 
@@ -74,6 +75,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 thiserror = "2.0"
 anyhow = "1.0"
+regex = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 sysinfo = "0.34"
 notify = { version = "8.0", default-features = false, features = ["macos_fsevent"] }
@@ -98,6 +100,12 @@ base64 = "0.22"
 url = "2.5"
 qrcode = "0.14"
 
+# HTTP body utilities (used by pp-mitm)
+http-body-util = "0.1"
+async-trait = "0.1"
+futures = "0.3"
+bytes = "1"
+
 # Internal crates
 pp-common = { path = "crates/pp-common" }
 pp-db = { path = "crates/pp-db" }
@@ -105,6 +113,8 @@ pp-proto = { path = "crates/pp-proto" }
 pp-config = { path = "crates/pp-config" }
 pp-subscription = { path = "crates/pp-subscription" }
 pp-core = { path = "crates/pp-core" }
+pp-script = { path = "crates/pp-script" }
+pp-mitm = { path = "crates/pp-mitm" }
 
 [profile]
 
