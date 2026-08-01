@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use pp_client::{ClientConfig, ClientState};
 use pp_common::CoreType;
+use pp_mitm::TrafficRecorder;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -95,12 +96,8 @@ impl ClientStatusView {
 }
 
 /// 一条流量记录的对外视图。
-///
-/// 当前 `list_traffic` 暂返回空列表，`from_record` 转换逻辑预留，
-/// 待 `pp-client` 暴露 recorder 后接入。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct TrafficRecordView {
     pub id: String,
     pub method: String,
@@ -114,7 +111,6 @@ pub struct TrafficRecordView {
     pub duration_ms: u64,
 }
 
-#[allow(dead_code)]
 impl TrafficRecordView {
     /// 从内部流量记录构造视图。
     fn from_record(rec: &pp_mitm::TrafficRecord) -> Self {
@@ -204,12 +200,17 @@ pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView
 
 /// 查询 MITM 流量记录。
 ///
-/// TODO: `pp_client::mitm::build_mitm_proxy` 目前在内部创建 `MemoryRecorder`
-/// 且不对外暴露，命令层拿不到 recorder 实例，故先返回空列表。后续若
-/// `build_mitm_proxy` 接受外部 recorder 参数（或在 `ClientState` 上暴露
-/// recorder），此处改为通过 `recorder.list()` 取数并映射为视图。
+/// 有运行中的 `ClientState` 时通过 `ClientState::recorder()` 取回
+/// `MemoryRecorder` 并按时间序映射为视图；未启动时返回空列表。
 #[tauri::command]
 pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecordView>, String> {
-    let _ = &state;
-    Ok(Vec::new())
+    let lock = state.client.lock().await;
+    let Some(client) = lock.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let records = client.recorder().list();
+    Ok(records
+        .iter()
+        .map(TrafficRecordView::from_record)
+        .collect())
 }
