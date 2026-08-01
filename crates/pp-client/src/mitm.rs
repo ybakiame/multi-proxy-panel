@@ -16,12 +16,24 @@ use pp_mitm::{
 
 use crate::config::ClientConfig;
 
+/// MITM 构建的可选注入项（远程订阅：重写规则 / 主机名 / 脚本钩子）。
+#[derive(Default)]
+pub struct MitmBuildOptions {
+    /// 额外主机名白名单，与 `client_config.mitm.hostnames` 合并去重。
+    pub extra_hostnames: Vec<String>,
+    /// 重写规则引擎（为空时使用空引擎）。
+    pub rewrite: RewriteEngine,
+    /// 脚本钩子引擎。
+    pub hooks: Option<ScriptHookEngine>,
+}
+
 /// 基于客户端配置构建 MITM 代理（不启动）。
 ///
-/// `recorder` 由调用方注入并持有，供外部通过 `TrafficRecorder::list()` 取回抓包记录。
+/// `recorder` 由调用方注入并持有，供外部通过 `TrafficRecorder::list()` 取回抓包记录；
+/// `options` 提供远程订阅合并的额外 hostname / 重写规则 / 脚本钩子。
 pub fn build_mitm_proxy(
     client_config: &ClientConfig,
-    hooks: Option<ScriptHookEngine>,
+    options: MitmBuildOptions,
     recorder: Arc<dyn TrafficRecorder>,
 ) -> PanelResult<MitmProxy> {
     let ca = FileCaStore::new(client_config.mitm.ca_dir.clone());
@@ -31,9 +43,13 @@ pub fn build_mitm_proxy(
         addr: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), client_config.mixed_port),
     };
 
-    let hostnames = client_config
-        .mitm
-        .hostnames
+    let mut hostname_sources = client_config.mitm.hostnames.clone();
+    for extra in options.extra_hostnames {
+        if !hostname_sources.contains(&extra) {
+            hostname_sources.push(extra);
+        }
+    }
+    let hostnames = hostname_sources
         .iter()
         .map(|h| HostnameMatcher::from_pattern(h))
         .collect();
@@ -45,12 +61,10 @@ pub fn build_mitm_proxy(
         ..MitmConfig::default()
     };
 
-    let rewrite = RewriteEngine::default();
-
     Ok(MitmProxy::new(
         config,
-        rewrite,
-        hooks,
+        options.rewrite,
+        options.hooks,
         recorder,
         ca_material,
     ))
@@ -76,7 +90,7 @@ mod tests {
             PathBuf::from("/bin/sleep"),
         );
         let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(2048));
-        let _proxy = build_mitm_proxy(&cfg, None, recorder).unwrap();
+        let _proxy = build_mitm_proxy(&cfg, MitmBuildOptions::default(), recorder).unwrap();
 
         // CA 已在 ca_dir 生成。
         assert!(cfg.mitm.ca_dir.join("ca.crt").exists());

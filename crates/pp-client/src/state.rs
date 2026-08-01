@@ -9,13 +9,18 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use pp_common::PanelResult;
-use pp_mitm::{MemoryRecorder, RunningProxy};
+use pp_mitm::{MemoryRecorder, RewriteEngine, RunningProxy, ScriptHookEngine};
+use pp_script::{MemoryPersistentStore, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript};
+use tokio::task::JoinHandle;
 
 use crate::config::ClientConfig;
 use crate::core_config;
-use crate::mitm::build_mitm_proxy;
+use crate::http_exec::ReqwestHttpExecutor;
+use crate::mitm::{MitmBuildOptions, build_mitm_proxy};
+use crate::remote::{RemoteManager, TracingNotifier};
 use crate::runner::CoreRunner;
 use crate::subscription;
 use crate::sysproxy::{PlatformSystemProxy, SystemProxy};
@@ -31,6 +36,12 @@ pub struct ClientStatus {
     pub system_proxy: bool,
 }
 
+/// 定时任务调度器运行句柄。
+struct SchedulerHandle {
+    scheduler: Arc<ScriptScheduler>,
+    handle: JoinHandle<()>,
+}
+
 /// 客户端运行状态编排器。
 pub struct ClientState {
     /// 客户端配置。
@@ -40,6 +51,8 @@ pub struct ClientState {
     sysproxy: Arc<dyn SystemProxy>,
     /// 抓包记录器（内存环形缓冲，容量 2048；随 MITM 代理启动注入）。
     recorder: Arc<MemoryRecorder>,
+    /// 远程订阅 task 脚本调度器（MITM 就绪后启动，stop 时停止）。
+    scheduler: Option<SchedulerHandle>,
 }
 
 impl ClientState {
@@ -56,12 +69,18 @@ impl ClientState {
             mitm: None,
             sysproxy,
             recorder: Arc::new(MemoryRecorder::new(2048)),
+            scheduler: None,
         }
     }
 
     /// 抓包记录器（内存环形缓冲，容量 2048）。
     pub fn recorder(&self) -> Arc<MemoryRecorder> {
         Arc::clone(&self.recorder)
+    }
+
+    /// 定时任务调度器（远程订阅 task 脚本）；未启用 MITM 或没有任务时为 `None`。
+    pub fn scheduler(&self) -> Option<&ScriptScheduler> {
+        self.scheduler.as_ref().map(|h| h.scheduler.as_ref())
     }
 
     /// 启动：订阅 → 合成配置 → 核心 → MITM → 系统代理，失败回滚。
@@ -91,7 +110,35 @@ impl ClientState {
 
         if self.config.mitm_enabled {
             tracing::info!("启动 MITM 代理");
-            let proxy = match build_mitm_proxy(&self.config, None, self.recorder.clone()) {
+            // 读取远程订阅缓存：重写规则 / 脚本钩子 / 主机名 / 定时任务。
+            let remote = RemoteManager::new(self.config.data_dir.clone());
+            let merged = match remote.load_cached() {
+                Ok(m) => m,
+                Err(e) => {
+                    self.stop_core().await;
+                    return Err(e);
+                }
+            };
+            let rewrite = RewriteEngine {
+                rules: merged.rewrites,
+            };
+            let host = Arc::new(ScriptHost::new(
+                Arc::new(ReqwestHttpExecutor::new()),
+                Arc::new(MemoryPersistentStore::new()),
+                Arc::new(TracingNotifier::new()),
+            ));
+            let hooks = ScriptHookEngine::new(
+                Arc::clone(&host),
+                self.config.mitm.script_dialect,
+                ScriptLimits::default(),
+                merged.scripts,
+            );
+            let options = MitmBuildOptions {
+                extra_hostnames: merged.hostnames,
+                rewrite,
+                hooks: Some(hooks),
+            };
+            let proxy = match build_mitm_proxy(&self.config, options, self.recorder.clone()) {
                 Ok(p) => p,
                 Err(e) => {
                     self.stop_core().await;
@@ -104,6 +151,12 @@ impl ClientState {
                     self.stop_core().await;
                     return Err(e);
                 }
+            }
+            // 定时任务调度器（MITM 就绪后启动；失败回滚 MITM 与核心）。
+            if let Err(e) = self.start_scheduler(host, merged.task_scripts).await {
+                self.stop_mitm().await;
+                self.stop_core().await;
+                return Err(e);
             }
         }
 
@@ -126,6 +179,7 @@ impl ClientState {
     pub async fn stop(&mut self) {
         let _ = self.sysproxy.disable().await;
         self.stop_mitm().await;
+        self.stop_scheduler().await;
         self.stop_core().await;
     }
 
@@ -153,6 +207,42 @@ impl ClientState {
             m.shutdown();
         }
     }
+
+    /// 启动远程订阅 task 脚本调度器；cron 表达式非法的任务跳过并记警告。
+    async fn start_scheduler(
+        &mut self,
+        host: Arc<ScriptHost>,
+        tasks: Vec<TaskScript>,
+    ) -> PanelResult<()> {
+        let mut scheduler = ScriptScheduler::new(host, ScriptLimits::default());
+        let mut registered = 0usize;
+        for task in tasks {
+            if !task.enabled {
+                continue;
+            }
+            match scheduler.add_task(task) {
+                Ok(()) => registered += 1,
+                Err(e) => {
+                    tracing::warn!(error = %e, "skip scheduled task with invalid cron expression")
+                }
+            }
+        }
+        if registered == 0 {
+            return Ok(());
+        }
+        let scheduler = Arc::new(scheduler);
+        let handle = Arc::clone(&scheduler).start().await?;
+        self.scheduler = Some(SchedulerHandle { scheduler, handle });
+        Ok(())
+    }
+
+    /// 停止调度器：发送停止信号并等待后台循环退出。
+    async fn stop_scheduler(&mut self) {
+        if let Some(handle) = self.scheduler.take() {
+            handle.scheduler.stop().await;
+            let _ = tokio::time::timeout(Duration::from_secs(5), handle.handle).await;
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -167,6 +257,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::config::ClientConfig;
+    use crate::remote::{RemoteKind, RemoteResource};
     use crate::sysproxy::MockSystemProxy;
 
     /// 启动一个本地 axum 服务，对所有路径返回 `(status, body)`（测试用，无外部请求）。
@@ -254,6 +345,93 @@ mod tests {
 
         // MITM 构建失败：系统代理不启用，且核心已被回滚停止。
         assert_eq!(mock.enable_count(), 0);
+        let status = state.status().await;
+        assert!(status.mitm_addr.is_none());
+        assert!(!status.core_running);
+    }
+
+    /// 完整集成 server（禁外部网络）：
+    /// `/sub/{token}` 订阅配置、`/snippet` 远程 QX 片段（引用同 server 的脚本 URL）。
+    async fn spawn_integration_server() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base = format!("http://{addr}");
+        let sub_body = r#"{
+            "log": {"level": "info"},
+            "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 1}],
+            "outbounds": [{"type": "direct"}]
+        }"#;
+        let snippet = format!(
+            "[rewrite_local]\n\
+             ^https?://example\\.com/api/(.*) url-and-header https://cdn.example.com/api/$1\n\
+             ^https?://example\\.com/rsp script-response-body {base}/hook.js\n\
+             \n\
+             [task_local]\n\
+             0 9 * * * {base}/task.js, tag=每日签到\n\
+             \n\
+             [mitm]\n\
+             hostname = *.example.com, api.example2.com\n"
+        );
+        let app = axum::Router::new()
+            .route(
+                "/sub/{token}",
+                axum::routing::get(move || async move { sub_body }),
+            )
+            .route(
+                "/snippet",
+                axum::routing::get(move || async move { snippet }),
+            )
+            .route(
+                "/hook.js",
+                axum::routing::get(|| async { "const hook = 1;" }),
+            )
+            .route(
+                "/task.js",
+                axum::routing::get(|| async { "const task = 2; $done({});" }),
+            );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        base
+    }
+
+    /// 远程 snippet 缓存 → MITM（rewrite/hooks/hostnames 注入）+ cron 调度器（task 脚本）。
+    #[tokio::test]
+    async fn start_with_remote_snippet_runs_mitm_and_scheduler() {
+        let base = spawn_integration_server().await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 预置 remotes.json（指向本地 snippet server）并先拉取一次写缓存。
+        let remote = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "rules".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: pp_script::ScriptDialect::QuantumultX,
+            ..RemoteResource::default()
+        }];
+        remote.save(&remotes).unwrap();
+        let report = remote.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1, "snippet fetch should succeed");
+
+        let mut cfg = test_config(&dir, base);
+        cfg.mitm_enabled = true;
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        // MITM 已运行，且调度器持有远程 snippet 的 task 脚本。
+        let status = state.status().await;
+        assert!(status.mitm_addr.is_some(), "MITM 应已运行");
+        let tasks = state
+            .scheduler()
+            .expect("scheduler should run")
+            .list_tasks();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "每日签到");
+
+        // stop 正常：逆序关闭系统代理 → MITM → 调度器 → 核心。
+        state.stop().await;
         let status = state.status().await;
         assert!(status.mitm_addr.is_none());
         assert!(!status.core_running);
