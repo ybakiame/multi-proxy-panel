@@ -7,9 +7,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::{
-    build_core_config, compose_mihomo_config, compose_singbox_config, fetch_subscription_with_ua,
-    ClientConfig, ClientState, Profile, ProfileStoreV2, RemoteManager, RemoteResource, SubContent,
-    Subscription, SubscriptionFetcher, SubscriptionStore,
+    build_core_config_v2, compose_mihomo_config, compose_singbox_config, fetch_subscription_with_ua,
+    resolve_remote_overrides, ClientConfig, ClientState, EffectiveOverrides, Profile,
+    ProfileStoreV2, RemoteManager, RemoteResource, SubContent, Subscription, SubscriptionFetcher,
+    SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
@@ -711,26 +712,38 @@ pub fn set_profile_enabled(
         .map_err(|e| format!("保存模板状态失败: {e}"))
 }
 
-/// 生成生效配置预览：拉取订阅 → 内置模板 → 启用模板的 YAML/JS 复写 → 核心合成（不含 MITM 链路）。
+/// 生成生效配置预览：拉取订阅 → 内置模板 → 启用模板的远程 + 本地复写叠加 → 核心合成（不含 MITM 链路）。
 ///
 /// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
 /// 需要已保存的客户端配置（`data_dir/client.json`，含 hub_url / sub_token / core_type）。
-/// 复写取自 `ProfileStoreV2::active_for`（当前核心启用模板）；无启用模板时预览裸模板。
+/// 复写取 `ProfileStoreV2::active_profile_for`（当前核心启用模板）：远程复写经
+/// `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录 `data_dir/profile_cache`），
+/// 与本地复写一起由 `build_core_config_v2` 合成（与启动实际配置一致）；无启用模板时预览裸模板。
 #[tauri::command]
 pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
     preview_config_async(state.data_dir.clone()).await
 }
 
-/// 预览的具体实现（`build_core_config` 的 JS 复写经 pp-script `ScriptWorker`
+/// 预览的具体实现（`build_core_config_v2` 的 JS 复写经 pp-script `ScriptWorker`
 /// 驱动，future 为 `Send`，可直接在 Tauri 命令中 await）。
 async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, String> {
     let cfg = ClientConfig::load(&data_dir)
         .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
+    // 远程复写缓存目录（与启动路径一致：`data_dir/profile_cache`）。
+    let cache_dir = data_dir.join("profile_cache");
     let store = ProfileStoreV2::new(data_dir);
-    let overrides = store
-        .active_for(cfg.core_type)
+    // 取启用模板（含远程复写 URL）→ 解析远程复写（拉取/缓存回退/跳过）→
+    // 远程为基底、本地覆盖的 v2 构建流程，与启动实际配置保持一致。
+    let (effective, warnings) = match store
+        .active_profile_for(cfg.core_type)
         .map_err(|e| format!("读取复写模板失败: {e}"))?
-        .unwrap_or_default();
+    {
+        Some(active) => resolve_remote_overrides(&cache_dir, &active).await,
+        None => (EffectiveOverrides::default(), Vec::new()),
+    };
+    for warning in &warnings {
+        tracing::warn!(warning, "profile remote override");
+    }
 
     let fetcher = SubscriptionFetcher::new();
     let sub_content = match cfg.core_type {
@@ -750,7 +763,7 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
         }
     };
 
-    let profile_cfg = build_core_config(cfg.core_type, &sub_content, &overrides)
+    let profile_cfg = build_core_config_v2(cfg.core_type, &sub_content, &effective)
         .await
         .map_err(|e| format!("生成配置失败: {e}"))?;
 
