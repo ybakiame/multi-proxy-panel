@@ -6,6 +6,7 @@ pub mod engine;
 pub mod engine_quickjs;
 pub mod error;
 pub mod host;
+pub mod scheduler;
 pub mod types;
 
 pub use dialect::*;
@@ -13,4 +14,5 @@ pub use engine::*;
 pub use engine_quickjs::*;
 pub use error::*;
 pub use host::*;
+pub use scheduler::*;
 pub use types::*;
