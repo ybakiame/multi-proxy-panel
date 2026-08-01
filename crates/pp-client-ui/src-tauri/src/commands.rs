@@ -7,9 +7,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::{
-    build_core_config_v2, compose_mihomo_config, compose_singbox_config, fetch_subscription_with_ua,
-    resolve_remote_overrides, ClientConfig, ClientState, EffectiveOverrides, Profile,
-    ProfileStoreV2, RemoteManager, RemoteResource, SubContent, Subscription, SubscriptionFetcher,
+    build_core_config_v2, compose_mihomo_config, compose_singbox_config, detect_resource_from_url,
+    fetch_subscription_with_ua, parse_config_meta, resolve_remote_overrides, ClientConfig,
+    ClientState, ConfigMeta, EffectiveOverrides, Profile, ProfileStoreV2, RemoteKind,
+    RemoteManager, RemoteResource, SubContent, Subscription, SubscriptionFetcher,
     SubscriptionStore,
 };
 use pp_common::CoreType;
@@ -416,6 +417,89 @@ pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(
     manager
         .save(&remotes)
         .map_err(|e| format!("保存远程资源失败: {e}"))
+}
+
+/// 远程资源类型的字符串表示（与 `RemoteResourceView.kind` 的 serde 表示一致）。
+fn remote_kind_str(kind: RemoteKind) -> &'static str {
+    match kind {
+        RemoteKind::Script => "Script",
+        RemoteKind::Snippet => "Snippet",
+    }
+}
+
+/// 脚本方言的字符串表示（与 `RemoteResourceView.dialect` 的 serde 表示一致）。
+fn script_dialect_str(dialect: ScriptDialect) -> &'static str {
+    match dialect {
+        ScriptDialect::QuantumultX => "QuantumultX",
+        ScriptDialect::Surge => "Surge",
+        ScriptDialect::Loon => "Loon",
+    }
+}
+
+/// `detect_remote` 的嗅探结果：后缀判定的类型/方言 + Snippet 拉取解析出的配置头元数据。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DetectRemoteView {
+    /// 嗅探出的资源类型（`Script` / `Snippet`；无法识别时为 `None`）。
+    pub kind: Option<String>,
+    /// 嗅探出的脚本方言（`Surge` / `QuantumultX` / `Loon`；无法识别时为 `None`）。
+    pub dialect: Option<String>,
+    /// 配置头元数据（仅 Snippet 且 URL 可访问时解析；拉取失败或非 Snippet 时为 `None`）。
+    pub meta: Option<ConfigMetaView>,
+}
+
+/// 拉取单个 URL 的文本内容（无系统代理，15 秒超时）用于元数据嗅探；任何失败返回 `None`。
+async fn fetch_detect_text(url: &str) -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .no_proxy()
+        .build()
+        .ok()?;
+    let resp = client.get(url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.text().await.ok()
+}
+
+/// 嗅探远端资源 URL：按后缀判定类型/方言；Snippet 且 URL 可访问时拉取内容解析配置头元数据。
+///
+/// 拉取失败不报错：后缀判定结果（`kind` / `dialect`）照常返回，`meta` 置 `None`，
+/// 前端仅用返回字段预填添加表单。
+#[tauri::command]
+pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
+    let url = url.trim();
+    let (kind, dialect) = match detect_resource_from_url(url) {
+        Some((kind, dialect)) => (
+            Some(remote_kind_str(kind).to_string()),
+            Some(script_dialect_str(dialect).to_string()),
+        ),
+        None => (None, None),
+    };
+
+    // 仅 Snippet 且 URL 可访问时拉取内容解析元数据；失败静默（meta 置 None）。
+    let meta = if kind.as_deref() == Some("Snippet")
+        && (url.starts_with("http://") || url.starts_with("https://"))
+    {
+        fetch_detect_text(url)
+            .await
+            .map(|text| {
+                let parsed = parse_config_meta(&text);
+                if parsed != ConfigMeta::default() {
+                    Some(ConfigMetaView::from_meta(&parsed))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(None)
+    } else {
+        None
+    };
+
+    Ok(DetectRemoteView {
+        kind,
+        dialect,
+        meta,
+    })
 }
 
 /// 拉取全部启用的远程资源（无系统代理，30 秒超时）。

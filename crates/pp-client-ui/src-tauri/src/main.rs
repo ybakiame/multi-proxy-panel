@@ -33,6 +33,7 @@ fn main() {
             commands::list_traffic,
             commands::list_remotes,
             commands::add_remote,
+            commands::detect_remote,
             commands::remove_remote,
             commands::fetch_remotes,
             commands::list_tasks,
