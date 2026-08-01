@@ -10,12 +10,15 @@
 //!   驱动，宿主以 [`DenyHttpExecutor`] 拒绝一切网络、以内存存储承担持久化
 //!   （无落盘），即"无网络 / 无存储权限"。
 //!
-//! 总装入口 [`build_core_config`]：提取节点 → 本地模板 → YAML 复写 → JS 复写。
+//! 总装入口 [`build_core_config_v2`]（远程 + 本地叠加；旧签名 [`build_core_config`]
+//! 兼容保留）：提取节点 → 本地模板 → 远程 YAML → 本地 YAML → 远程 JS → 本地 JS。
+//! 远程复写 URL 经 [`resolve_remote_overrides`] 拉取并缓存回退。
 //! inbounds 与 MITM 链不在本层，仍由 [`crate::state`] 通过
 //! [`crate::core_config`] 的 `compose_*` 注入。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use pp_common::{CoreType, PanelError, PanelResult};
@@ -50,6 +53,24 @@ pub struct ProfileOverrides {
     pub js_override: String,
 }
 
+/// 远程 + 本地叠加后的有效复写（远程为基底、本地覆盖）。
+///
+/// 由 [`resolve_remote_overrides`] 产出：`remote_*` 为远程 URL 拉取/缓存回退的
+/// 内容，`local_*` 为 Profile 本地复写。由 [`build_core_config_v2`] 消费：
+/// YAML 阶段先应用远程再应用本地（深合并天然满足本地覆盖）；JS 阶段远程 `main`
+/// 先执行、本地 `main` 后执行（链式，本地可见远程结果）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EffectiveOverrides {
+    /// 远程 YAML 复写内容（空串 = 无）。
+    pub remote_yaml: String,
+    /// 本地 YAML 复写内容（空串 = 无）。
+    pub local_yaml: String,
+    /// 远程 JS 复写源码（空串 = 无）。
+    pub remote_js: String,
+    /// 本地 JS 复写源码（空串 = 无）。
+    pub local_js: String,
+}
+
 /// 一个 Profile 模板：同一核心类型（[`CoreType`]）可维护多个，仅一条 `enabled`（排他）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
@@ -63,6 +84,12 @@ pub struct Profile {
     pub yaml_override: String,
     /// JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。
     pub js_override: String,
+    /// 远程 YAML 复写 URL（http/https；启动时拉取，失败回退缓存；`None` = 未配置）。
+    #[serde(default)]
+    pub yaml_url: Option<String>,
+    /// 远程 JS 复写 URL（http/https；启动时拉取，失败回退缓存；`None` = 未配置）。
+    #[serde(default)]
+    pub js_url: Option<String>,
     /// 是否启用；同一核心类型下最多一条为 `true`。
     pub enabled: bool,
 }
@@ -194,6 +221,8 @@ impl ProfileStoreV2 {
                 core_type: CoreType::SingBox,
                 yaml_override: overrides.yaml_override,
                 js_override: overrides.js_override,
+                yaml_url: None,
+                js_url: None,
                 enabled: true,
             }];
             self.save(&profiles)?;
@@ -231,6 +260,8 @@ impl ProfileStoreV2 {
             core_type,
             yaml_override: String::new(),
             js_override: String::new(),
+            yaml_url: None,
+            js_url: None,
             enabled: !profiles.iter().any(|p| p.core_type == core_type),
         };
         profiles.push(profile.clone());
@@ -238,9 +269,9 @@ impl ProfileStoreV2 {
         Ok(profile)
     }
 
-    /// 按 id 全量更新模板的可编辑字段（name / yaml_override / js_override）；
-    /// `core_type` 与 `enabled` 保持存储值（启用状态经 [`Self::set_enabled`] 切换，
-    /// 避免破坏排他不变式）。模板不存在时报错。
+    /// 按 id 全量更新模板的可编辑字段（name / yaml_override / js_override /
+    /// yaml_url / js_url）；`core_type` 与 `enabled` 保持存储值（启用状态经
+    /// [`Self::set_enabled`] 切换，避免破坏排他不变式）。模板不存在时报错。
     pub fn update(&self, profile: &Profile) -> PanelResult<()> {
         let mut profiles = self.load()?;
         let target = profiles
@@ -250,6 +281,8 @@ impl ProfileStoreV2 {
         target.name = profile.name.clone();
         target.yaml_override = profile.yaml_override.clone();
         target.js_override = profile.js_override.clone();
+        target.yaml_url = profile.yaml_url.clone();
+        target.js_url = profile.js_url.clone();
         self.save(&profiles)
     }
 
@@ -281,12 +314,18 @@ impl ProfileStoreV2 {
         self.save(&profiles)
     }
 
-    /// 指定核心类型当前启用模板的复写（无启用模板时返回 `None`）。
-    pub fn active_for(&self, core_type: CoreType) -> PanelResult<Option<ProfileOverrides>> {
+    /// 指定核心类型当前启用模板（无启用模板时返回 `None`）。
+    pub fn active_profile_for(&self, core_type: CoreType) -> PanelResult<Option<Profile>> {
         Ok(self
             .load()?
             .into_iter()
-            .find(|p| p.core_type == core_type && p.enabled)
+            .find(|p| p.core_type == core_type && p.enabled))
+    }
+
+    /// 指定核心类型当前启用模板的复写（无启用模板时返回 `None`）。
+    pub fn active_for(&self, core_type: CoreType) -> PanelResult<Option<ProfileOverrides>> {
+        Ok(self
+            .active_profile_for(core_type)?
             .map(|p| ProfileOverrides {
                 yaml_override: p.yaml_override,
                 js_override: p.js_override,
@@ -554,6 +593,129 @@ pub async fn apply_js_override(config: Value, js: &str) -> PanelResult<Value> {
     Ok(out.0)
 }
 
+/// 解析 Profile 的远程复写 URL：启动时拉取（no_proxy、30 秒超时、默认 UA
+/// `clash.meta`），成功写缓存 `profile_cache/<profile_id>.{yaml,js}`；失败回退
+/// 缓存；缓存也没有 → 记 warning 跳过该远程复写（不阻塞启动）。
+///
+/// 返回叠加后的有效复写（远程为基底、本地覆盖）与警告列表；`ProfileOverrides`
+/// 不在此层产出，YAML/JS 的「远程 + 本地」合并交由 [`build_core_config_v2`]。
+pub async fn resolve_remote_overrides(
+    store_cache_dir: &Path,
+    profile: &Profile,
+) -> (EffectiveOverrides, Vec<String>) {
+    let mut warnings = Vec::new();
+    let key = profile.id.to_string();
+    let remote_yaml = match profile.yaml_url.as_deref() {
+        Some(url) if !url.trim().is_empty() => {
+            fetch_remote_override(store_cache_dir, &key, url, "yaml", &mut warnings).await
+        }
+        _ => String::new(),
+    };
+    let remote_js = match profile.js_url.as_deref() {
+        Some(url) if !url.trim().is_empty() => {
+            fetch_remote_override(store_cache_dir, &key, url, "js", &mut warnings).await
+        }
+        _ => String::new(),
+    };
+    (
+        EffectiveOverrides {
+            remote_yaml,
+            local_yaml: profile.yaml_override.clone(),
+            remote_js,
+            local_js: profile.js_override.clone(),
+        },
+        warnings,
+    )
+}
+
+/// 拉取单个远程复写：成功写缓存；失败回退缓存；均失败记 warning 返回空串。
+async fn fetch_remote_override(
+    cache_dir: &Path,
+    key: &str,
+    url: &str,
+    ext: &str,
+    warnings: &mut Vec<String>,
+) -> String {
+    match fetch_remote_text(url).await {
+        Ok(text) => {
+            if let Err(e) = write_override_cache(cache_dir, key, ext, &text) {
+                warnings.push(format!("profile remote {ext} cache write failed: {e}"));
+            }
+            text
+        }
+        Err(e) => match read_override_cache(cache_dir, key, ext) {
+            Ok(Some(text)) => {
+                warnings.push(format!(
+                    "profile remote {ext} fetch failed, fall back to cached: {e}"
+                ));
+                text
+            }
+            Ok(None) => {
+                warnings.push(format!(
+                    "profile remote {ext} fetch failed and no cached copy, skipped: {e}"
+                ));
+                String::new()
+            }
+            Err(read_err) => {
+                warnings.push(format!(
+                    "profile remote {ext} fetch failed and cached copy unreadable, \
+                     skipped: {e}; cache: {read_err}"
+                ));
+                String::new()
+            }
+        },
+    }
+}
+
+/// GET 拉取远程复写文本：no_proxy、30 秒超时、默认 UA `clash.meta`；非 2xx 视为失败。
+async fn fetch_remote_text(url: &str) -> PanelResult<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .no_proxy()
+        .user_agent("clash.meta")
+        .build()
+        .map_err(|e| PanelError::Client(format!("failed to build http client: {e}")))?;
+    let resp =
+        client.get(url).send().await.map_err(|e| {
+            PanelError::Client(format!("remote override fetch failed ({url}): {e}"))
+        })?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(PanelError::Client(format!(
+            "remote override fetch returned HTTP {status} ({url})"
+        )));
+    }
+    resp.text().await.map_err(|e| {
+        PanelError::Client(format!("failed to read remote override body ({url}): {e}"))
+    })
+}
+
+/// 远程复写缓存路径：`<cache_dir>/<key>.<ext>`（key 为 profile id）。
+fn override_cache_path(cache_dir: &Path, key: &str, ext: &str) -> PathBuf {
+    cache_dir.join(format!("{key}.{ext}"))
+}
+
+/// 写远程复写缓存（成功静默；失败返回 Err 由调用方记 warning）。
+fn write_override_cache(cache_dir: &Path, key: &str, ext: &str, content: &str) -> PanelResult<()> {
+    std::fs::create_dir_all(cache_dir)?;
+    std::fs::write(override_cache_path(cache_dir, key, ext), content)?;
+    Ok(())
+}
+
+/// 读远程复写缓存：缺失返回 `None`。
+fn read_override_cache(cache_dir: &Path, key: &str, ext: &str) -> PanelResult<Option<String>> {
+    let path = override_cache_path(cache_dir, key, ext);
+    if !path.exists() {
+        return Ok(None);
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) => Err(PanelError::Client(format!(
+            "read profile override cache failed: {e}"
+        ))),
+    }
+}
+
 /// 把字符串转成安全的 JS 字符串字面量（用于内嵌配置 JSON）。
 ///
 /// `serde_json` 输出已转义控制字符；此处再处理 JSON 自身带出的引号 / 反斜杠，以及
@@ -575,13 +737,49 @@ fn js_string_literal(s: &str) -> String {
     out
 }
 
-/// 总装：提取节点 → 本地模板 → YAML 复写 → JS 复写 → 返回核心可用的配置。
+/// 组合远程 + 本地两段 JS 复写为链式源码：远程 `main` 先执行、本地 `main` 后执行
+/// （本地可见远程结果）。两段代码各自定义 `main` 会重名，用 IIFE 各自捕获后构建
+/// 一个顶层链式 `main`（与 [`apply_js_override`] 包装器末尾的 `main(__cfg)` 调用
+/// 对齐）。返回空串当且仅当两段均空（调用方跳过 JS 阶段）。
+fn compose_js_chain(remote_js: &str, local_js: &str) -> String {
+    let remote = remote_js.trim();
+    let local = local_js.trim();
+    if remote.is_empty() && local.is_empty() {
+        return String::new();
+    }
+    let mut src = String::new();
+    if !remote.is_empty() {
+        src.push_str("let __r_main = (function() {\n");
+        src.push_str(remote_js);
+        src.push_str("\nreturn main;\n})();\n");
+    }
+    if !local.is_empty() {
+        src.push_str("let __l_main = (function() {\n");
+        src.push_str(local_js);
+        src.push_str("\nreturn main;\n})();\n");
+    }
+    src.push_str("function main(__cfg) {\n");
+    match (remote.is_empty(), local.is_empty()) {
+        (false, false) => src.push_str("  return __l_main(__r_main(__cfg));\n"),
+        (false, true) => src.push_str("  return __r_main(__cfg);\n"),
+        (true, false) => src.push_str("  return __l_main(__cfg);\n"),
+        (true, true) => {}
+    }
+    src.push_str("}\n");
+    src
+}
+
+/// 总装（v2，支持远程复写叠加）：提取节点 → 本地模板 → 远程 YAML → 本地 YAML →
+/// 远程 JS → 本地 JS → 返回核心可用的配置。
 ///
-/// inbounds 与 MITM 链不在此层处理，由 `state` 调用 `compose_*` 注入。
-pub async fn build_core_config(
+/// 叠加语义：远程为基底、本地覆盖——YAML 阶段先应用远程再应用本地（两次深合并
+/// 天然满足本地覆盖）；JS 阶段远程 `main` 先执行、本地 `main` 后执行（链式，
+/// 本地可见远程结果）。inbounds 与 MITM 链不在此层处理，由 `state` 调用
+/// `compose_*` 注入。
+pub async fn build_core_config_v2(
     core_type: CoreType,
     sub_content: &SubContent,
-    overrides: &ProfileOverrides,
+    effective: &EffectiveOverrides,
 ) -> PanelResult<Value> {
     let config = match (core_type, sub_content) {
         (CoreType::SingBox, SubContent::SingBox(sub)) => {
@@ -596,22 +794,49 @@ pub async fn build_core_config(
             ));
         }
     };
-    let merged = if overrides.yaml_override.trim().is_empty() {
-        config
-    } else {
-        apply_yaml_override(config, &overrides.yaml_override)?
-    };
-    if overrides.js_override.trim().is_empty() {
+    // YAML 阶段：远程为基底、本地叠加（两次应用天然满足本地覆盖）。
+    let merged = apply_yaml_override(config, &effective.remote_yaml)?;
+    let merged = apply_yaml_override(merged, &effective.local_yaml)?;
+    // JS 阶段：远程 main 先执行、本地 main 后执行（IIFE 隔离重名，链式调用）。
+    let js = compose_js_chain(&effective.remote_js, &effective.local_js);
+    if js.is_empty() {
         Ok(merged)
     } else {
-        apply_js_override(merged, &overrides.js_override).await
+        apply_js_override(merged, &js).await
     }
+}
+
+/// 总装（旧签名兼容）：提取节点 → 本地模板 → YAML 复写 → JS 复写 → 返回核心可用配置。
+///
+/// 仅本地复写（无远程 URL）；远程复写叠加场景请使用 [`build_core_config_v2`]。
+/// inbounds 与 MITM 链不在此层处理，由 `state` 调用 `compose_*` 注入。
+pub async fn build_core_config(
+    core_type: CoreType,
+    sub_content: &SubContent,
+    overrides: &ProfileOverrides,
+) -> PanelResult<Value> {
+    build_core_config_v2(
+        core_type,
+        sub_content,
+        &EffectiveOverrides {
+            remote_yaml: String::new(),
+            local_yaml: overrides.yaml_override.clone(),
+            remote_js: String::new(),
+            local_js: overrides.js_override.clone(),
+        },
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core_config::{MitmChain, compose_mihomo_config, compose_singbox_config};
+
+    use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use axum::http::StatusCode;
 
     fn sample_singbox_sub() -> Value {
         json!({
@@ -1338,6 +1563,8 @@ new-key:
         p.name = "A-renamed".to_string();
         p.yaml_override = "route:\n  final: direct\n".to_string();
         p.js_override = "function main(c) { return c; }".to_string();
+        p.yaml_url = Some("https://example.com/r.yaml".to_string());
+        p.js_url = Some("https://example.com/r.js".to_string());
         p.enabled = false; // 传入无效，应保持存储值。
         store.update(&p).unwrap();
 
@@ -1346,6 +1573,14 @@ new-key:
         assert_eq!(loaded[0].name, "A-renamed");
         assert_eq!(loaded[0].yaml_override, "route:\n  final: direct\n");
         assert_eq!(loaded[0].js_override, "function main(c) { return c; }");
+        assert_eq!(
+            loaded[0].yaml_url.as_deref(),
+            Some("https://example.com/r.yaml")
+        );
+        assert_eq!(
+            loaded[0].js_url.as_deref(),
+            Some("https://example.com/r.js")
+        );
         assert!(loaded[0].enabled, "update 不改启用状态");
         assert_eq!(loaded[0].core_type, CoreType::SingBox);
 
@@ -1386,5 +1621,212 @@ new-key:
         let active = store.active_for(CoreType::SingBox).unwrap().unwrap();
         assert_eq!(active.yaml_override, "route:\n  final: direct\n");
         assert_eq!(active.js_override, "function main(c) { return c; }");
+    }
+
+    // ---------- ⑩ 远程复写 URL：resolve_remote_overrides + 叠加 ----------
+
+    /// 便捷构造 Profile（默认无远程 URL、空本地复写）。
+    fn remote_test_profile(yaml_url: Option<String>, js_url: Option<String>) -> Profile {
+        Profile {
+            id: Uuid::new_v4(),
+            name: "远程".to_string(),
+            core_type: CoreType::SingBox,
+            yaml_override: String::new(),
+            js_override: String::new(),
+            yaml_url,
+            js_url,
+            enabled: true,
+        }
+    }
+
+    /// 启动本地服务：首个请求返回 `first_body`，此后一律 500（验证缓存回退）。
+    async fn spawn_toggle_server(first_body: &'static str) -> SocketAddr {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let app_hits = Arc::clone(&hits);
+        let app = axum::Router::new().fallback(move |_req: axum::extract::Request| {
+            let app_hits = Arc::clone(&app_hits);
+            async move {
+                if app_hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    (StatusCode::OK, first_body)
+                } else {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "oops")
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        addr
+    }
+
+    /// 启动本地服务：所有请求返回 `body`。
+    async fn spawn_ok_server(body: &'static str) -> SocketAddr {
+        let app = axum::Router::new().fallback(move || async move { (StatusCode::OK, body) });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        addr
+    }
+
+    /// 启动本地服务：所有请求一律 500（验证「失败且无缓存」路径）。
+    async fn spawn_500_server() -> SocketAddr {
+        let app = axum::Router::new()
+            .fallback(move || async move { (StatusCode::INTERNAL_SERVER_ERROR, "oops") });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        addr
+    }
+
+    /// ① 远程 YAML + 本地 YAML 叠加：远程 a=1、b=1；本地 b=2 → 最终 a=1、b=2。
+    #[tokio::test(flavor = "current_thread")]
+    async fn v2_yaml_remote_then_local_overlay() {
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let effective = EffectiveOverrides {
+            remote_yaml: "a: 1\nb: 1\n".to_string(),
+            local_yaml: "b: 2\n".to_string(),
+            ..EffectiveOverrides::default()
+        };
+        let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+            .await
+            .unwrap();
+        assert_eq!(cfg["a"], 1, "远程新增键应保留");
+        assert_eq!(cfg["b"], 2, "本地应覆盖远程的 b");
+    }
+
+    /// ② 远程 JS + 本地 JS 链式：远程 main 改 x=1，本地 main 改 y=x+1 → 本地可见远程结果。
+    #[tokio::test(flavor = "current_thread")]
+    async fn v2_js_remote_then_local_chain() {
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let effective = EffectiveOverrides {
+            remote_js: "function main(c) { c.x = 1; return c; }".to_string(),
+            local_js: "function main(c) { c.y = c.x + 1; return c; }".to_string(),
+            ..EffectiveOverrides::default()
+        };
+        let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+            .await
+            .unwrap();
+        assert_eq!(cfg["x"], 1, "远程 main 应生效");
+        assert_eq!(cfg["y"], 2, "本地 main 应看到远程结果（y = x + 1）");
+    }
+
+    /// ③ 拉取失败回退缓存：先成功一次写缓存（yaml/js），再 500 → 用缓存内容。
+    #[tokio::test(flavor = "current_thread")]
+    async fn resolve_remote_overrides_fetches_writes_cache_and_falls_back() {
+        let yaml_body = "route:\n  final: direct\n";
+        let js_body = "function main(c) { c.log.level = \"error\"; return c; }";
+        let toggle_addr = spawn_toggle_server(yaml_body).await;
+        let ok_addr = spawn_ok_server(js_body).await;
+        let dir = tempfile::tempdir().unwrap();
+        let profile = remote_test_profile(
+            Some(format!("http://{toggle_addr}/yaml")),
+            Some(format!("http://{ok_addr}/js")),
+        );
+        let cache = dir.path();
+
+        // 第一次：yaml/js 均拉取成功并写缓存，无警告。
+        let (effective, warnings) = resolve_remote_overrides(cache, &profile).await;
+        assert!(warnings.is_empty(), "warnings: {warnings:?}");
+        assert_eq!(effective.remote_yaml, yaml_body);
+        assert_eq!(effective.remote_js, js_body);
+        let yaml_cache = cache.join(format!("{}.yaml", profile.id));
+        let js_cache = cache.join(format!("{}.js", profile.id));
+        assert_eq!(std::fs::read_to_string(&yaml_cache).unwrap(), yaml_body);
+        assert_eq!(std::fs::read_to_string(&js_cache).unwrap(), js_body);
+
+        // 第二次：yaml 拉取失败（500）回退缓存；js 仍成功。
+        let (effective, warnings) = resolve_remote_overrides(cache, &profile).await;
+        assert_eq!(effective.remote_yaml, yaml_body, "yaml 应回退到缓存");
+        assert_eq!(effective.remote_js, js_body, "js 仍成功拉取");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("yaml") && w.contains("fall back to cached")),
+            "warnings: {warnings:?}"
+        );
+
+        // 叠加全链路：远程 YAML 基底 + 本地覆盖 + 远程 JS。
+        let effective = EffectiveOverrides {
+            local_yaml: "route:\n  final: block\n".to_string(),
+            ..effective
+        };
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+            .await
+            .unwrap();
+        assert_eq!(cfg["route"]["final"], "block", "本地 YAML 应覆盖远程");
+        assert_eq!(cfg["log"]["level"], "error", "远程 JS 应生效");
+    }
+
+    /// ④ 拉取失败且无缓存 → warning 跳过该远程复写（remote 为空串），不报错。
+    #[tokio::test(flavor = "current_thread")]
+    async fn resolve_remote_overrides_fetch_failure_without_cache_warns_and_skips() {
+        let addr = spawn_500_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let profile = remote_test_profile(Some(format!("http://{addr}/yaml")), None);
+
+        let (effective, warnings) = resolve_remote_overrides(dir.path(), &profile).await;
+        assert_eq!(effective.remote_yaml, "", "无缓存应跳过远程复写");
+        assert_eq!(effective.local_yaml, "");
+        assert!(
+            warnings.iter().any(|w| w.contains("no cached copy")),
+            "warnings: {warnings:?}"
+        );
+        assert!(!dir.path().join(format!("{}.yaml", profile.id)).exists());
+    }
+
+    /// ⑤ 纯本地（无 URL）回归：resolve 产出本地复写，v2 与旧签名 build_core_config 一致。
+    #[tokio::test(flavor = "current_thread")]
+    async fn resolve_remote_overrides_pure_local_regression() {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = Profile {
+            yaml_override: "route:\n  final: direct\n".to_string(),
+            js_override: "function main(c) { c.log.level = \"error\"; return c; }".to_string(),
+            ..remote_test_profile(None, None)
+        };
+
+        let (effective, warnings) = resolve_remote_overrides(dir.path(), &profile).await;
+        assert!(warnings.is_empty(), "warnings: {warnings:?}");
+        assert_eq!(effective.remote_yaml, "");
+        assert_eq!(effective.remote_js, "");
+        assert_eq!(effective.local_yaml, profile.yaml_override);
+        assert_eq!(effective.local_js, profile.js_override);
+
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let legacy = build_core_config(
+            CoreType::SingBox,
+            &sub,
+            &ProfileOverrides {
+                yaml_override: profile.yaml_override.clone(),
+                js_override: profile.js_override.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        let v2 = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+            .await
+            .unwrap();
+        assert_eq!(legacy, v2, "v2 纯本地应与旧签名行为一致");
+        assert_eq!(v2["route"]["final"], "direct");
+        assert_eq!(v2["log"]["level"], "error");
+    }
+
+    /// 编译期断言：`build_core_config_v2` / `resolve_remote_overrides` 的 future 为 `Send`。
+    #[test]
+    fn remote_overrides_futures_are_send() {
+        fn assert_send<T: Send>(_: &T) {}
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let effective = EffectiveOverrides::default();
+        let fut = build_core_config_v2(CoreType::SingBox, &sub, &effective);
+        assert_send(&fut);
+        let profile = remote_test_profile(None, None);
+        let fut = resolve_remote_overrides(Path::new("/tmp"), &profile);
+        assert_send(&fut);
     }
 }

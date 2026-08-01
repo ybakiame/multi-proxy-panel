@@ -113,14 +113,15 @@ impl ClientState {
         self.scheduler.as_ref().map(|h| Arc::clone(&h.scheduler))
     }
 
-    /// 启动：订阅 → Profile（模板 + 双复写）→ MITM → 合成配置（MITM 链路）→ 核心 →
-    /// 系统代理，失败回滚。
+    /// 启动：订阅 → Profile（模板 + 本地复写 + 远程复写 URL 拉取/缓存回退）→ MITM →
+    /// 合成配置（MITM 链路）→ 核心 → 系统代理，失败回滚。
     ///
     /// 启动顺序：先拉取订阅并经 Profile 层生成基础配置（订阅只取节点 → 本地模板 →
-    /// YAML/JS 双复写），MITM 启用时再启动 MITM（拿到监听地址），合成配置时注入
-    /// [`MitmChain`]（路由规则 + 回流入口），随后启动核心，最后启用系统代理
-    /// （始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。Profile
-    /// 构建失败时尚未启动任何组件，无需回滚。
+    /// 远程 YAML → 本地 YAML → 远程 JS → 本地 JS 叠加复写，远程 URL 拉取失败回退
+    /// 缓存、无缓存则跳过并记 warning），MITM 启用时再启动 MITM（拿到监听地址），
+    /// 合成配置时注入 [`MitmChain`]（路由规则 + 回流入口），随后启动核心，最后启用
+    /// 系统代理（始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。
+    /// Profile 构建失败时尚未启动任何组件，无需回滚。
     pub async fn start(&mut self) -> PanelResult<()> {
         tracing::info!("客户端启动：解析订阅");
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
@@ -172,9 +173,23 @@ impl ClientState {
             ));
         };
         let store = profile::ProfileStoreV2::new(self.config.data_dir.clone());
-        let overrides = store.active_for(self.config.core_type)?.unwrap_or_default();
+        // 取启用模板（不止复写，含远程复写 URL）→ 解析远程复写（拉取/缓存回退/
+        // 跳过）→ 远程为基底、本地叠加的 v2 构建流程。
+        let (effective, warnings) = match store.active_profile_for(self.config.core_type)? {
+            Some(active) => {
+                profile::resolve_remote_overrides(
+                    &self.config.data_dir.join("profile_cache"),
+                    &active,
+                )
+                .await
+            }
+            None => (profile::EffectiveOverrides::default(), Vec::new()),
+        };
+        for warning in &warnings {
+            tracing::warn!(warning, "profile remote override");
+        }
         let profile_cfg =
-            profile::build_core_config(self.config.core_type, &sub_content, &overrides).await?;
+            profile::build_core_config_v2(self.config.core_type, &sub_content, &effective).await?;
 
         // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
         let chain = self.start_mitm_chain().await?;
@@ -842,6 +857,8 @@ mod tests {
                 yaml_override: String::new(),
                 js_override: r#"function main(c) { c.dns.strategy = "ipv4_only"; return c; }"#
                     .to_string(),
+                yaml_url: None,
+                js_url: None,
                 enabled: true,
             }])
             .unwrap();
@@ -927,6 +944,8 @@ mod tests {
                 core_type: pp_common::CoreType::SingBox,
                 yaml_override: String::new(),
                 js_override: "function main(c) { return c;".to_string(),
+                yaml_url: None,
+                js_url: None,
                 enabled: true,
             }])
             .unwrap();
