@@ -55,7 +55,7 @@ impl ImportedConfig {
 pub struct ConfigMeta {
     /// `#!name`：配置名。
     pub name: Option<String>,
-    /// `#!desc`：配置描述。
+    /// `#!desc`（别名 `#!description`）：配置描述；两者并存时 `#!desc` 优先不覆盖。
     pub desc: Option<String>,
     /// `#!author`：作者。
     pub author: Option<String>,
@@ -104,6 +104,12 @@ pub fn parse_config_meta(content: &str) -> ConfigMeta {
         match key.trim().to_ascii_lowercase().as_str() {
             "name" => meta.name = Some(value.to_string()),
             "desc" => meta.desc = Some(value.to_string()),
+            "description" => {
+                // `#!description=` 是 `#!desc=` 的别名；`#!desc=` 已填充（或先出现）时保持 `desc` 优先。
+                if meta.desc.is_none() {
+                    meta.desc = Some(value.to_string());
+                }
+            }
             "author" => meta.author = Some(value.to_string()),
             "icon" => meta.icon = Some(value.to_string()),
             "date" => meta.date = Some(value.to_string()),
@@ -1216,6 +1222,49 @@ rule = type=http-response,pattern=^https://api-cs\.intsig\.net/,script-path=http
         let meta2 = parse_config_meta(content2);
         assert_eq!(meta2.name.as_deref(), Some("A"));
         assert!(meta2.desc.is_none());
+    }
+
+    /// `#!description=` 是 `#!desc=` 的别名：单键即可解析为 `desc`。
+    #[test]
+    fn parse_config_meta_accepts_description_alias() {
+        let content = "#!name=Demo\n#!description=使用说明\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.desc.as_deref(), Some("使用说明"));
+
+        // 经 parse_import 同步回填一致（嗅探/导入/缓存共用 parse_config_meta）。
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(cfg.meta.desc.as_deref(), Some("使用说明"));
+    }
+
+    /// `#!desc=` 与 `#!description=` 并存时 `#!desc=` 优先，别名不覆盖。
+    #[test]
+    fn parse_config_meta_description_alias_does_not_override_desc() {
+        // desc 在前、description 在后：别名不覆盖。
+        let content = "#!name=Demo\n#!desc=短描述\n#!description=全拼描述\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.desc.as_deref(), Some("短描述"));
+
+        // description 在前、desc 在后：规范键仍生效（desc 优先）。
+        let content2 = "#!name=Demo\n#!description=全拼描述\n#!desc=短描述\n";
+        let meta2 = parse_config_meta(content2);
+        assert_eq!(meta2.desc.as_deref(), Some("短描述"));
+    }
+
+    /// BaiDuTieBa 样例回归：`#!desc=` 值含分号与中文，别名改动不干扰规范键解析。
+    #[test]
+    fn parse_config_meta_baidu_tieba_desc_semicolon_chinese() {
+        let content = "#!name=百度贴吧\n#!desc=开屏广告;推荐和吧内帖子列表的直播及广告\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(
+            meta.desc.as_deref(),
+            Some("开屏广告;推荐和吧内帖子列表的直播及广告")
+        );
+
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(
+            cfg.meta.desc.as_deref(),
+            Some("开屏广告;推荐和吧内帖子列表的直播及广告")
+        );
     }
 
     /// ① `#!arguments=` / `#!arguments-desc=` 解析：键/默认值/描述合并进 ArgSpec。
