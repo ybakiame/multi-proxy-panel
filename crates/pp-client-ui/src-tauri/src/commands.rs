@@ -57,7 +57,11 @@ impl pp_script::Notifier for TauriNotifier {
 /// 注意：所有 `*View` 结构体按字段名原样（snake_case）序列化，与前端
 /// `src/api.ts` 的 TS 类型逐字段对齐；曾一度使用 `rename_all = "camelCase"`
 /// 导致前端读取 `mitm_hostnames` 等字段全部为 `undefined` 而崩溃。
+///
+/// `#[serde(default)]`：前端回传 payload 缺失任一字段（如旧版前端未发送开关
+/// 布尔值）时按默认值补齐，避免整次保存因反序列化失败而中断。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ClientConfigView {
     /// 数据目录（展示用；持久化路径由应用状态决定）。
     pub data_dir: String,
@@ -72,6 +76,23 @@ pub struct ClientConfigView {
     /// MITM 脚本方言：`Surge` / `QuantumultX` / `Loon`。
     pub mitm_script_dialect: String,
     pub system_proxy_enabled: bool,
+}
+
+impl Default for ClientConfigView {
+    fn default() -> Self {
+        Self {
+            data_dir: String::new(),
+            hub_url: String::new(),
+            sub_token: String::new(),
+            core_type: "singbox".to_string(),
+            core_binary: String::new(),
+            mixed_port: 17890,
+            mitm_enabled: true,
+            mitm_hostnames: Vec::new(),
+            mitm_script_dialect: "Surge".to_string(),
+            system_proxy_enabled: false,
+        }
+    }
 }
 
 impl ClientConfigView {
@@ -187,17 +208,51 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<ClientConfigView, 
     Ok(ClientConfigView::from_config(&cfg))
 }
 
-/// 保存配置（校验 hub_url / sub_token 非空）。
+/// 保存配置的返回视图（携带非阻塞提示）。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SaveConfigView {
+    /// 非阻塞提示（未配置 hub_url/sub_token、core_type 联动后缺少本地核心等）。
+    pub warning: Option<String>,
+}
+
+/// 保存配置实现（命令层可测试的纯逻辑）。
+///
+/// 不再因 hub_url / sub_token 为空而拒绝保存：旧实现会在新装/未填订阅信息时
+/// 直接报错，导致 MITM 开关、系统代理开关、混合端口等基本设置「无法保存」；
+/// 缺失项降级为 `warning` 提示。
+fn save_config_impl(
+    data_dir: &std::path::Path,
+    cfg: ClientConfigView,
+) -> Result<SaveConfigView, String> {
+    let config = cfg.into_config(data_dir)?;
+    let mut warnings: Vec<String> = Vec::new();
+
+    // hub_url / sub_token 非空校验放宽为提示（不阻塞基本设置保存）。
+    if config.hub_url.trim().is_empty() {
+        warnings.push("hub_url 为空：保存后无法拉取订阅，请在设置页填写".to_string());
+    }
+    if config.sub_token.trim().is_empty() {
+        warnings.push("sub_token 为空：保存后无法拉取订阅，请在设置页填写".to_string());
+    }
+
+    config.save().map_err(|e| format!("保存配置失败: {e}"))?;
+    Ok(SaveConfigView {
+        warning: if warnings.is_empty() {
+            None
+        } else {
+            Some(warnings.join("；"))
+        },
+    })
+}
+
+/// 保存配置（`hub_url` / `sub_token` 为空时以 warning 提示而非拒绝，保证
+/// 基本设置随时可保存）。
 #[tauri::command]
-pub async fn save_config(state: State<'_, AppState>, cfg: ClientConfigView) -> Result<(), String> {
-    if cfg.hub_url.trim().is_empty() {
-        return Err("hub_url 不能为空".to_string());
-    }
-    if cfg.sub_token.trim().is_empty() {
-        return Err("sub_token 不能为空".to_string());
-    }
-    let config = cfg.into_config(&state.data_dir)?;
-    config.save().map_err(|e| format!("保存配置失败: {e}"))
+pub async fn save_config(
+    state: State<'_, AppState>,
+    cfg: ClientConfigView,
+) -> Result<SaveConfigView, String> {
+    save_config_impl(&state.data_dir, cfg)
 }
 
 /// 启动代理（无运行状态时先基于已保存配置新建）。
@@ -1258,4 +1313,153 @@ pub async fn set_subscription_enabled(
     store
         .set_enabled(id, enabled)
         .map_err(|e| format!("保存订阅失败: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 简易临时目录（测试用，避免新增 tempfile dev-dependency）：
+    /// 进程 id + 原子计数器生成唯一路径，Drop 时递归清理。
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "pp-client-ui-test-{}-{}",
+                std::process::id(),
+                n
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// 全局 PATH 锁：环境变量是进程级状态，并行测试间互斥，避免相互串台。
+    static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 在受控 PATH 下执行闭包（互斥串行化；避免宿主环境 PATH 中的真实核心干扰
+    /// 系统探测回退）。
+    fn with_empty_path<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var_os("PATH");
+        // Rust 2024 下 std::env 的 set_var 标记为 unsafe（并发修改环境变量是未定义
+        // 行为），PATH_LOCK 保证测试进程内串行访问。
+        unsafe {
+            std::env::set_var("PATH", "/nonexistent-pp-test-bin");
+        }
+        let result = f();
+        match old {
+            Some(v) => unsafe { std::env::set_var("PATH", v) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+        result
+    }
+
+    fn full_view(data_dir: &std::path::Path) -> ClientConfigView {
+        ClientConfigView {
+            hub_url: "http://127.0.0.1:50052".to_string(),
+            sub_token: "tok".to_string(),
+            core_type: "singbox".to_string(),
+            core_binary: data_dir
+                .join("cores/sing-box/1.13.15/sing-box")
+                .to_string_lossy()
+                .into_owned(),
+            ..ClientConfigView::default()
+        }
+    }
+
+    // ---------- 项 1 回归：命令层序列化往返 ----------
+
+    #[test]
+    fn save_config_roundtrip_preserves_basic_settings() {
+        let dir = TestDir::new();
+        let mut view = full_view(dir.path());
+        view.mixed_port = 20000;
+        view.mitm_enabled = false;
+        view.system_proxy_enabled = true;
+
+        let result = with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
+        assert!(
+            result.warning.is_none(),
+            "完整 payload 不应有 warning: {:?}",
+            result.warning
+        );
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.mixed_port, 20000);
+        assert!(!saved.mitm_enabled);
+        assert!(saved.system_proxy_enabled);
+
+        // load → from_config 往返保真（前端下次保存时的 payload 基础）。
+        let view2 = ClientConfigView::from_config(&saved);
+        assert_eq!(view2.mixed_port, 20000);
+        assert!(!view2.mitm_enabled);
+        assert!(view2.system_proxy_enabled);
+    }
+
+    #[test]
+    fn save_config_partial_payload_defaults_and_saves() {
+        let dir = TestDir::new();
+        // 旧前端 / 部分 payload：缺失 system_proxy_enabled 等布尔字段，且 hub_url /
+        // sub_token 为空 —— 旧实现在这里会因缺字段反序列化失败、或校验拒绝而无法保存。
+        let json = serde_json::json!({
+            "data_dir": "/tmp/pp",
+            "hub_url": "",
+            "sub_token": "",
+            "core_type": "singbox",
+            "core_binary": "",
+            "mixed_port": 12345,
+            "mitm_enabled": false,
+            "mitm_hostnames": [],
+            "mitm_script_dialect": "Surge",
+        });
+        let view: ClientConfigView = serde_json::from_value(json).unwrap();
+        let result = with_empty_path(|| save_config_impl(dir.path(), view).unwrap());
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.mixed_port, 12345);
+        assert!(!saved.mitm_enabled);
+        assert!(!saved.system_proxy_enabled, "缺失布尔字段按默认值补齐");
+
+        let warning = result.warning.expect("缺 hub_url/sub_token 应返回 warning");
+        assert!(
+            warning.contains("hub_url") && warning.contains("sub_token"),
+            "{warning}"
+        );
+    }
+
+    #[test]
+    fn save_config_empty_hub_and_token_saves_with_warning_not_error() {
+        let dir = TestDir::new();
+        let view = full_view(dir.path());
+
+        // 先保存一次（含 hub_url/sub_token），随后用户清空两者保存基本设置改动。
+        with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
+        let mut cleared = view;
+        cleared.hub_url = String::new();
+        cleared.sub_token = String::new();
+        cleared.mixed_port = 30000;
+        let result = with_empty_path(|| save_config_impl(dir.path(), cleared).unwrap());
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.mixed_port, 30000, "基本设置应保存成功");
+        let warning = result.warning.expect("应提示订阅信息缺失");
+        assert!(
+            warning.contains("hub_url") && warning.contains("sub_token"),
+            "{warning}"
+        );
+    }
 }
