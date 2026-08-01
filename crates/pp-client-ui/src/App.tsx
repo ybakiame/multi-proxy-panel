@@ -5,6 +5,7 @@ import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Mitm from "./pages/Mitm";
 import Nodes from "./pages/Nodes";
+import Override from "./pages/Override";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="/nodes" element={<Nodes />} />
               <Route path="/mitm" element={<Mitm />} />
               <Route path="/scripts" element={<Scripts />} />
+              <Route path="/override" element={<Override />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

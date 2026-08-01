@@ -1,5 +1,6 @@
 import type { ComponentType, SVGProps } from "react";
 import {
+  AdjustmentsHorizontalIcon,
   BeakerIcon,
   Cog6ToothIcon,
   GlobeAltIcon,
@@ -21,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/nodes", label: "节点", icon: ServerStackIcon },
   { to: "/mitm", label: "MITM", icon: BeakerIcon },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon },
+  { to: "/override", label: "复写", icon: AdjustmentsHorizontalIcon },
   { to: "/settings", label: "设置", icon: Cog6ToothIcon },
 ];
 
