@@ -13,6 +13,7 @@ pp-core = { workspace = true }
 pp-mitm = { workspace = true }
 pp-script = { workspace = true }
 async-trait = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

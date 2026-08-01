@@ -1,0 +1,910 @@
+//! 三方配置片段导入（QX / Surge / Loon → pp-mitm / pp-script 规则）。
+//!
+//! 这是「远程订阅（2.3b）」与「配置导入（2.4）」的共同地基：把 Quantumult X /
+//! Surge / Loon 的 rewrite / script / task / mitm 配置片段解析为
+//! pp-mitm 的 [`RewriteRule`] / 脚本钩子规则与 pp-script 的 [`TaskScript`]。
+//!
+//! 设计取舍：
+//! - 只覆盖常用子集，未知行跳过并记入 [`ImportedConfig::warnings`]（注释/空行静默跳过）；
+//! - 脚本一律视为远端 http(s) URL：`source` 留空，URL 记入
+//!   [`ImportedConfig::script_urls`] / [`ImportedConfig::task_scripts`]，由调用方拉取后回填；
+//! - pp-mitm 字段与生态语法结构性不符时用现有字段近似并记 warning（不改 pp-mitm）。
+
+use std::collections::HashMap;
+
+use pp_common::PanelResult;
+use pp_mitm::{Phase, RewriteKind, RewriteRule, ScriptRule as HookScriptRule};
+use pp_script::{ScriptDialect, ScriptKind, TaskScript};
+use regex::Regex;
+
+/// 一次导入解析的结果。
+#[derive(Default)]
+pub struct ImportedConfig {
+    /// URL / Header / Body 重写与 Reject / Mock 规则。
+    pub rewrites: Vec<RewriteRule>,
+    /// 脚本钩子规则；`source` 为空，对应脚本 URL 见 [`ImportedConfig::script_urls`]。
+    pub scripts: Vec<HookScriptRule>,
+    /// 脚本钩子远端地址 `(脚本名, URL)`，与 `scripts` 按顺序一一对应。
+    pub script_urls: Vec<(String, String)>,
+    /// 定时任务（`TaskScript.source` 为空）与其脚本 URL。
+    pub task_scripts: Vec<(TaskScript, String)>,
+    /// MITM hostname 白名单。
+    pub hostnames: Vec<String>,
+    /// 未识别行 / 无法表达的映射偏差。
+    pub warnings: Vec<String>,
+}
+
+impl ImportedConfig {
+    /// 记录一条 warning：`tracing::warn` 的同时写入 `warnings` 列表。
+    fn warn(&mut self, section: &str, line: &str, msg: &str) {
+        let text = format!("[{section}] {msg}: {line}");
+        tracing::warn!(section, "{text}");
+        self.warnings.push(text);
+    }
+}
+
+/// 解析 QX / Surge / Loon 配置片段。
+///
+/// `dialect` 由调用方指定来源软件，决定 [`TaskScript::dialect`] 等方言标记；
+/// 各软件同构语法（如 Surge / Loon 的 `[Script]`）共用同一解析路径。
+pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<ImportedConfig> {
+    let mut cfg = ImportedConfig::default();
+    let mut section = String::new();
+    let mut hook_index = 0usize;
+
+    for raw in content.lines() {
+        let line = raw.trim();
+        if is_comment_or_blank(line) {
+            continue;
+        }
+        if let Some(name) = section_name(line) {
+            section = name;
+            continue;
+        }
+        match section.as_str() {
+            "rewrite_local" | "rewrite_remote" => parse_qx_rewrite(&mut cfg, &mut hook_index, line),
+            "task_local" => parse_qx_task(&mut cfg, dialect, line),
+            "mitm" => parse_mitm_hostnames(&mut cfg, line),
+            "script" => parse_surge_script(&mut cfg, dialect, line),
+            "url rewrite" => parse_surge_url_rewrite(&mut cfg, line),
+            "header rewrite" => parse_surge_header_rewrite(&mut cfg, line),
+            "map local" => parse_surge_map_local(&mut cfg, line),
+            // 其他 section（如 QX `[task_remote]` / Surge `[General]`）整段跳过。
+            _ => {}
+        }
+    }
+
+    Ok(cfg)
+}
+
+/// 注释（`#` / `;` 开头）或空白行。
+fn is_comment_or_blank(line: &str) -> bool {
+    line.is_empty() || line.starts_with('#') || line.starts_with(';')
+}
+
+/// 解析 `[section]` 头，归一化为小写 + 单词间单空格（`[URL Rewrite]` → `"url rewrite"`）。
+fn section_name(line: &str) -> Option<String> {
+    let t = line.trim();
+    if t.len() >= 2 && t.starts_with('[') && t.ends_with(']') {
+        let inner = &t[1..t.len() - 1];
+        let normalized = inner
+            .to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        Some(normalized)
+    } else {
+        None
+    }
+}
+
+/// 编译正则；失败时记 warning 并返回 `None`（不 panic）。
+fn compile_pattern(
+    src: &str,
+    cfg: &mut ImportedConfig,
+    section: &str,
+    line: &str,
+) -> Option<Regex> {
+    match Regex::new(src) {
+        Ok(re) => Some(re),
+        Err(e) => {
+            cfg.warn(section, line, &format!("invalid regex: {e}"));
+            None
+        }
+    }
+}
+
+/// 判断是否为远端 http(s) 脚本 URL；其余（本地路径等）不支持。
+fn is_remote_url(s: &str) -> bool {
+    s.starts_with("http://") || s.starts_with("https://")
+}
+
+/// 从脚本 URL 派生任务名：取路径末段文件名（去掉 `.js` 后缀），失败时回退整个 URL。
+fn derive_name_from_url(url: &str) -> String {
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        if let Some(seg) = parsed.path_segments().and_then(|mut it| it.next_back()) {
+            if !seg.is_empty() {
+                let stem = seg.strip_suffix(".js").unwrap_or(seg);
+                return stem.to_string();
+            }
+        }
+    }
+    url.to_string()
+}
+
+/// 去掉首尾双引号（`"* * * * *"` → `* * * * *`）。
+fn strip_quotes(s: &str) -> &str {
+    let t = s.trim();
+    let t = t.strip_prefix('"').unwrap_or(t);
+    t.strip_suffix('"').unwrap_or(t)
+}
+
+/// 解析 `key=value` 值（`true` / `1` / `yes` 视为真，默认假）。
+fn parse_bool(v: Option<&String>) -> bool {
+    matches!(
+        v.map(|s| s.trim().to_ascii_lowercase()).as_deref(),
+        Some("true") | Some("1") | Some("yes")
+    )
+}
+
+fn parse_usize(v: Option<&String>) -> Option<usize> {
+    v.and_then(|s| s.trim().parse().ok())
+}
+
+/// 解析逗号分隔的 `key=value` 参数列表；key 归一化为小写，value 去引号。
+fn parse_kv_params(input: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for pair in input.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let Some((k, v)) = pair.split_once('=') else {
+            continue;
+        };
+        map.insert(k.trim().to_lowercase(), strip_quotes(v.trim()).to_string());
+    }
+    map
+}
+
+/// 按空白分词，但保留双引号内嵌空白的整体（如 `data="hello world"`）。
+fn split_tokens_keep_quoted(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for c in line.chars() {
+        match c {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(c);
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+/// QX `[rewrite_local]` / `[rewrite_remote]` 行解析。
+///
+/// | 输入 | 内部规则 | 偏差 |
+/// |------|----------|------|
+/// | `pattern url-and-header target` | `UrlRewrite` | header 部分丢弃 |
+/// | `pattern url-307/url-302 target` | `UrlRewrite` | 重定向状态码丢失（记录偏差） |
+/// | `pattern script-response-body path` | `ScriptRule{HttpResponse}` | body 上限固定 131072 |
+/// | `pattern script-request-body path` | `ScriptRule{HttpRequest}` | 同上 |
+/// | `pattern script-echo-response path` | `ScriptRule{HttpResponse, no body}` | 同上 |
+/// | `pattern reject/reject-200/reject-dict` | `Reject` | 拒绝状态码/内容丢失 |
+/// | `pattern url-response-body regex repl` | `BodyRewrite{Response}` | body 正则丢失（记录偏差） |
+/// | `pattern url-request-header regex repl` | `BodyRewrite{Request}` | 语义近似（记录偏差） |
+///
+/// `[rewrite_remote]` 中的远端引用行（`url, tag=...`）无法内联解析，记入 warnings。
+fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 2 {
+        cfg.warn("rewrite", line, "unrecognized line");
+        return;
+    }
+    let (pattern_src, action) = (tokens[0], tokens[1]);
+    let Some(pattern) = compile_pattern(pattern_src, cfg, "rewrite", line) else {
+        return;
+    };
+    match action {
+        "url-and-header" | "url-307" | "url-302" => {
+            let Some(target) = tokens.get(2) else {
+                cfg.warn("rewrite", line, "missing rewrite target");
+                return;
+            };
+            if action != "url-and-header" {
+                cfg.warn(
+                    "rewrite",
+                    line,
+                    &format!(
+                        "{action} redirect status cannot be expressed, approximated as UrlRewrite"
+                    ),
+                );
+            }
+            cfg.rewrites.push(RewriteRule {
+                pattern,
+                kind: RewriteKind::UrlRewrite {
+                    target: (*target).to_string(),
+                },
+            });
+        }
+        "script-response-body" | "script-request-body" | "script-echo-response" => {
+            let Some(path) = tokens.get(2) else {
+                cfg.warn("rewrite", line, "missing script path");
+                return;
+            };
+            let (kind, requires_body) = match action {
+                "script-request-body" => (ScriptKind::HttpRequest, true),
+                "script-echo-response" => (ScriptKind::HttpResponse, false),
+                _ => (ScriptKind::HttpResponse, true),
+            };
+            let name = format!("hook-{hook_index}");
+            *hook_index += 1;
+            if is_remote_url(path) {
+                cfg.script_urls.push((name.clone(), (*path).to_string()));
+            } else {
+                cfg.warn("rewrite", line, "local script path not supported, skipped");
+            }
+            cfg.scripts.push(HookScriptRule {
+                name,
+                kind,
+                pattern,
+                requires_body,
+                max_size: 131072,
+                source: String::new(),
+            });
+        }
+        "reject" | "reject-200" | "reject-dict" => {
+            cfg.rewrites.push(RewriteRule {
+                pattern,
+                kind: RewriteKind::Reject,
+            });
+        }
+        "url-response-body" | "url-request-header" => {
+            let Some(regex_target) = tokens.get(2) else {
+                cfg.warn("rewrite", line, "missing body regex");
+                return;
+            };
+            let Some(replacement) = tokens.get(3) else {
+                cfg.warn("rewrite", line, "missing replacement");
+                return;
+            };
+            let phase = if action == "url-response-body" {
+                Phase::Response
+            } else {
+                Phase::Request
+            };
+            cfg.warn(
+                "rewrite",
+                line,
+                &format!(
+                    "{action} body regex '{regex_target}' cannot be expressed (pp-mitm couples URL gate \
+                     and body replace into one pattern); URL pattern kept as gate"
+                ),
+            );
+            cfg.rewrites.push(RewriteRule {
+                pattern,
+                kind: RewriteKind::BodyRewrite {
+                    phase,
+                    replacement: (*replacement).to_string(),
+                },
+            });
+        }
+        other => cfg.warn("rewrite", line, &format!("unrecognized action '{other}'")),
+    }
+}
+
+/// QX `[task_local]` 行解析：`<5段cron> <script-url>[, tag=..., img-url=...]`。
+///
+/// pp-script 的 cron crate 需要 6 段，解析时前缀补 `"0 "`；`name` 取 `tag`，
+/// 缺失时从 URL 派生。
+fn parse_qx_task(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 6 {
+        cfg.warn(
+            "task",
+            line,
+            "unrecognized line (expected cron + script url)",
+        );
+        return;
+    }
+    let cron_5 = tokens[..5].join(" ");
+    let rest = tokens[5..].join(" ");
+    let (url, params) = rest.split_once(',').unwrap_or((rest.as_str(), ""));
+    let url = url.trim();
+    if !is_remote_url(url) {
+        cfg.warn(
+            "task",
+            line,
+            "script url missing or not a remote http(s) url",
+        );
+        return;
+    }
+    let mut tag: Option<String> = None;
+    for pair in params.split(',') {
+        if let Some((k, v)) = pair.trim().split_once('=') {
+            if k.trim().eq_ignore_ascii_case("tag") {
+                tag = Some(strip_quotes(v.trim()).to_string());
+            }
+        }
+    }
+    let name = tag
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| derive_name_from_url(url));
+    let cron_expr = format!("0 {cron_5}");
+    cfg.task_scripts.push((
+        TaskScript {
+            name,
+            cron_expr,
+            source: String::new(),
+            dialect,
+            enabled: true,
+        },
+        url.to_string(),
+    ));
+}
+
+/// `[mitm]` / `[MITM]` hostname 行解析：`hostname = a, b, -exclude`。
+///
+/// `-` / `!` 前缀为排除项，pp-mitm 仅支持白名单，记 warning 后跳过；
+/// Surge 的 `%APPEND%` 前缀直接剥离。
+fn parse_mitm_hostnames(cfg: &mut ImportedConfig, line: &str) {
+    let Some(eq) = line.find('=') else {
+        cfg.warn(
+            "mitm",
+            line,
+            "unrecognized line (expected 'hostname = ...')",
+        );
+        return;
+    };
+    for entry in line[eq + 1..].split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let entry = entry
+            .strip_prefix("%APPEND%")
+            .map(str::trim)
+            .unwrap_or(entry);
+        if entry.starts_with('-') || entry.starts_with('!') {
+            cfg.warn(
+                "mitm",
+                line,
+                &format!("exclude pattern '{entry}' not supported, skipped"),
+            );
+            continue;
+        }
+        cfg.hostnames.push(entry.to_string());
+    }
+}
+
+/// Surge / Loon `[Script]` 行解析：`name = type=...,pattern=...,script-path=...`。
+///
+/// | type | 内部规则 | 说明 |
+/// |------|----------|------|
+/// | `http-response` | `ScriptRule{HttpResponse}` | 默认 `requires-body=false`、`max-size=131072` |
+/// | `http-request` | `ScriptRule{HttpRequest}` | 同上 |
+/// | `cron` | `TaskScript` | `cronexp` 5 段前缀补 `"0 "` 变 6 段 |
+///
+/// Loon 与 Surge 的参数名差异（`http-types` / `require-body`）按别名兼容。
+fn parse_surge_script(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &str) {
+    let Some(eq) = line.find('=') else {
+        cfg.warn(
+            "script",
+            line,
+            "unrecognized line (expected 'name = type=...')",
+        );
+        return;
+    };
+    let name = line[..eq].trim();
+    if name.is_empty() {
+        cfg.warn("script", line, "empty script name");
+        return;
+    }
+    let params = parse_kv_params(&line[eq + 1..]);
+    let Some(type_val) = params
+        .get("type")
+        .or_else(|| params.get("http-types"))
+        .map(String::as_str)
+    else {
+        cfg.warn("script", line, "missing 'type' parameter");
+        return;
+    };
+    match type_val {
+        "http-response" | "http-request" => {
+            let Some(pattern_src) = params.get("pattern") else {
+                cfg.warn("script", line, "missing 'pattern' parameter");
+                return;
+            };
+            let Some(script_path) = params.get("script-path") else {
+                cfg.warn("script", line, "missing 'script-path' parameter");
+                return;
+            };
+            let Some(pattern) = compile_pattern(pattern_src, cfg, "script", line) else {
+                return;
+            };
+            if !is_remote_url(script_path) {
+                cfg.warn("script", line, "local script path not supported, skipped");
+                return;
+            }
+            let kind = if type_val == "http-request" {
+                ScriptKind::HttpRequest
+            } else {
+                ScriptKind::HttpResponse
+            };
+            let requires_body = parse_bool(
+                params
+                    .get("requires-body")
+                    .or_else(|| params.get("require-body")),
+            );
+            let max_size = parse_usize(params.get("max-size")).unwrap_or(131072);
+            cfg.script_urls
+                .push((name.to_string(), script_path.clone()));
+            cfg.scripts.push(HookScriptRule {
+                name: name.to_string(),
+                kind,
+                pattern,
+                requires_body,
+                max_size,
+                source: String::new(),
+            });
+        }
+        "cron" => {
+            let Some(cron5) = params.get("cronexp") else {
+                cfg.warn("script", line, "missing 'cronexp' parameter");
+                return;
+            };
+            let Some(script_path) = params.get("script-path") else {
+                cfg.warn("script", line, "missing 'script-path' parameter");
+                return;
+            };
+            if !is_remote_url(script_path) {
+                cfg.warn("script", line, "local script path not supported, skipped");
+                return;
+            }
+            let cron_expr = format!("0 {}", cron5.trim());
+            cfg.task_scripts.push((
+                TaskScript {
+                    name: name.to_string(),
+                    cron_expr,
+                    source: String::new(),
+                    dialect,
+                    enabled: true,
+                },
+                script_path.clone(),
+            ));
+        }
+        other => cfg.warn(
+            "script",
+            line,
+            &format!("unrecognized script type '{other}'"),
+        ),
+    }
+}
+
+/// Surge / Loon `[URL Rewrite]` 行解析：`pattern target [header-arg]` → `UrlRewrite`。
+///
+/// 第三段 request-header 参数无法表达，记偏差。
+fn parse_surge_url_rewrite(cfg: &mut ImportedConfig, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 2 {
+        cfg.warn(
+            "url rewrite",
+            line,
+            "unrecognized line (expected 'pattern target')",
+        );
+        return;
+    }
+    let Some(pattern) = compile_pattern(tokens[0], cfg, "url rewrite", line) else {
+        return;
+    };
+    if tokens.len() > 2 {
+        cfg.warn(
+            "url rewrite",
+            line,
+            "request-header argument cannot be expressed, only URL rewritten",
+        );
+    }
+    cfg.rewrites.push(RewriteRule {
+        pattern,
+        kind: RewriteKind::UrlRewrite {
+            target: tokens[1].to_string(),
+        },
+    });
+}
+
+/// Surge / Loon `[Header Rewrite]` 行解析：
+/// `pattern header-replace Name Value` / `pattern header-del Name` → `HeaderRewrite{Request}`。
+fn parse_surge_header_rewrite(cfg: &mut ImportedConfig, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 3 {
+        cfg.warn("header rewrite", line, "unrecognized line");
+        return;
+    }
+    let Some(pattern) = compile_pattern(tokens[0], cfg, "header rewrite", line) else {
+        return;
+    };
+    match tokens[1] {
+        "header-replace" => {
+            if tokens.len() < 4 {
+                cfg.warn("header rewrite", line, "missing header name/value");
+                return;
+            }
+            let name = tokens[2].to_string();
+            let value = Some(tokens[3..].join(" "));
+            cfg.rewrites.push(RewriteRule {
+                pattern,
+                kind: RewriteKind::HeaderRewrite {
+                    phase: Phase::Request,
+                    name,
+                    value,
+                },
+            });
+        }
+        "header-del" => {
+            let name = tokens[2].to_string();
+            cfg.rewrites.push(RewriteRule {
+                pattern,
+                kind: RewriteKind::HeaderRewrite {
+                    phase: Phase::Request,
+                    name,
+                    value: None,
+                },
+            });
+        }
+        other => cfg.warn(
+            "header rewrite",
+            line,
+            &format!("unrecognized header action '{other}'"),
+        ),
+    }
+}
+
+/// Surge / Loon `[Map Local]` 行解析：`pattern data="..." data-type=text status-code=200` → `Mock`。
+///
+/// pp-mitm `Mock` 无 headers 字段，`data-type` / `mime-type` 无法表达，记偏差。
+fn parse_surge_map_local(cfg: &mut ImportedConfig, line: &str) {
+    let tokens = split_tokens_keep_quoted(line);
+    if tokens.len() < 2 {
+        cfg.warn("map local", line, "unrecognized line");
+        return;
+    }
+    let Some(pattern) = compile_pattern(&tokens[0], cfg, "map local", line) else {
+        return;
+    };
+    let mut data: Option<String> = None;
+    let mut status = 200u16;
+    for pair in &tokens[1..] {
+        let Some(eq) = pair.find('=') else {
+            cfg.warn("map local", line, &format!("unrecognized token '{pair}'"));
+            continue;
+        };
+        let (key, value) = (pair[..eq].trim(), pair[eq + 1..].trim());
+        match key {
+            "data" => data = Some(strip_quotes(value).to_string()),
+            "status-code" => {
+                if let Ok(code) = value.parse::<u16>() {
+                    status = code;
+                } else {
+                    cfg.warn("map local", line, &format!("invalid status-code '{value}'"));
+                }
+            }
+            "data-type" | "mime-type" => {
+                cfg.warn(
+                    "map local",
+                    line,
+                    &format!("{key} cannot be expressed (Mock has no headers), ignored"),
+                );
+            }
+            other => cfg.warn(
+                "map local",
+                line,
+                &format!("unrecognized parameter '{other}'"),
+            ),
+        }
+    }
+    let Some(body) = data else {
+        cfg.warn("map local", line, "missing 'data' parameter");
+        return;
+    };
+    cfg.rewrites.push(RewriteRule {
+        pattern,
+        kind: RewriteKind::Mock { status, body },
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pp_mitm::RewriteKind;
+
+    #[test]
+    fn qx_rewrite_local_all_rule_types() {
+        let content = r#"
+# 注释
+[rewrite_local]
+^https?://example\.com/api/(.*) url-and-header https://cdn.example.com/api/$1
+^https?://example\.com/redir url-307 https://target.example.com/
+^https?://example\.com/old url-302 https://new.example.com/$1
+^https?://example\.com/rsp script-response-body https://example.com/rsp.js
+^https?://example\.com/req script-request-body https://example.com/req.js
+^https?://example\.com/echo script-echo-response https://example.com/echo.js
+^https?://example\.com/block reject
+^https?://example\.com/block2 reject-200
+^https?://example\.com/block3 reject-dict
+^https?://example\.com/page url-response-body secret REDACTED
+^https?://example\.com/hdr url-request-header token MASKED
+"#;
+        let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
+
+        // 8 条 rewrite：UrlRewrite x3、Reject x3、BodyRewrite x2
+        assert_eq!(cfg.rewrites.len(), 8);
+        assert!(matches!(
+            cfg.rewrites[0].kind,
+            RewriteKind::UrlRewrite { .. }
+        ));
+        assert!(matches!(
+            cfg.rewrites[1].kind,
+            RewriteKind::UrlRewrite { .. }
+        ));
+        assert!(matches!(
+            cfg.rewrites[2].kind,
+            RewriteKind::UrlRewrite { .. }
+        ));
+        assert!(matches!(cfg.rewrites[3].kind, RewriteKind::Reject));
+        assert!(matches!(cfg.rewrites[4].kind, RewriteKind::Reject));
+        assert!(matches!(cfg.rewrites[5].kind, RewriteKind::Reject));
+        assert!(matches!(
+            cfg.rewrites[6].kind,
+            RewriteKind::BodyRewrite {
+                phase: Phase::Response,
+                ..
+            }
+        ));
+        assert!(matches!(
+            cfg.rewrites[7].kind,
+            RewriteKind::BodyRewrite {
+                phase: Phase::Request,
+                ..
+            }
+        ));
+        match &cfg.rewrites[0].kind {
+            RewriteKind::UrlRewrite { target } => {
+                assert_eq!(target, "https://cdn.example.com/api/$1")
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        match &cfg.rewrites[7].kind {
+            RewriteKind::BodyRewrite { replacement, .. } => assert_eq!(replacement, "MASKED"),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+
+        // 3 条脚本钩子
+        assert_eq!(cfg.scripts.len(), 3);
+        assert_eq!(cfg.script_urls.len(), 3);
+        assert_eq!(cfg.scripts[0].kind, ScriptKind::HttpResponse);
+        assert!(cfg.scripts[0].requires_body);
+        assert_eq!(cfg.scripts[0].max_size, 131072);
+        assert!(cfg.scripts[0].source.is_empty());
+        assert_eq!(cfg.script_urls[0].0, "hook-0");
+        assert_eq!(cfg.script_urls[0].1, "https://example.com/rsp.js");
+        assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
+        assert!(cfg.scripts[1].requires_body);
+        assert_eq!(cfg.script_urls[1].1, "https://example.com/req.js");
+        assert_eq!(cfg.scripts[2].kind, ScriptKind::HttpResponse);
+        assert!(!cfg.scripts[2].requires_body);
+        assert_eq!(cfg.script_urls[2].1, "https://example.com/echo.js");
+
+        // 302/307 与 BodyRewrite 偏差有记录
+        assert!(!cfg.warnings.is_empty());
+        assert!(cfg.warnings.iter().any(|w| w.contains("url-307")));
+    }
+
+    #[test]
+    fn qx_task_local_and_mitm_hostnames() {
+        let content = r#"
+[task_local]
+0 9 * * * https://example.com/sign.js, tag=每日签到, img-url=https://example.com/icon.png
+30 12 * * * https://example.com/clean.js
+
+[mitm]
+hostname = *.example.com, api.example2.com, -exclude.example.com
+"#;
+        let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
+
+        assert_eq!(cfg.task_scripts.len(), 2);
+        let (task, url) = &cfg.task_scripts[0];
+        assert_eq!(task.name, "每日签到");
+        assert_eq!(task.cron_expr, "0 0 9 * * *");
+        assert!(task.source.is_empty());
+        assert!(task.enabled);
+        assert_eq!(task.dialect, ScriptDialect::QuantumultX);
+        assert_eq!(url, "https://example.com/sign.js");
+
+        let (task2, url2) = &cfg.task_scripts[1];
+        assert_eq!(task2.name, "clean"); // 无 tag 时从 URL 派生
+        assert_eq!(task2.cron_expr, "0 30 12 * * *");
+        assert_eq!(url2, "https://example.com/clean.js");
+
+        // `-` 前缀排除项记 warning，不进白名单
+        assert_eq!(
+            cfg.hostnames,
+            vec!["*.example.com".to_string(), "api.example2.com".to_string()]
+        );
+        assert!(
+            cfg.warnings
+                .iter()
+                .any(|w| w.contains("exclude.example.com"))
+        );
+    }
+
+    #[test]
+    fn surge_script_url_rewrite_header_rewrite_map_local_mitm() {
+        let content = r#"
+[Script]
+json = type=http-response,pattern=^https://api\.example\.com/,script-path=https://example.com/json.js,requires-body=true,max-size=131072,timeout=10
+req = type=http-request,pattern=^https://example\.com/,script-path=https://example.com/req.js
+task = type=cron,cronexp="* * * * *",script-path=https://example.com/task.js
+
+[URL Rewrite]
+^https://old\.example\.com/ https://new.example.com/$1
+^https://old2\.example\.com/ https://new2.example.com/ request-header
+
+[Header Rewrite]
+^https://example\.com/ header-replace X-Foo bar baz
+^https://example\.com/ header-del X-Bar
+
+[Map Local]
+^https://example\.com/offline data="<h1>offline</h1>" data-type=text status-code=200
+
+[MITM]
+hostname = %APPEND% *.example.com, -exclude.example.com
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        // [Script] 脚本钩子
+        assert_eq!(cfg.scripts.len(), 2);
+        assert_eq!(cfg.script_urls.len(), 2);
+        assert_eq!(cfg.scripts[0].name, "json");
+        assert_eq!(cfg.scripts[0].kind, ScriptKind::HttpResponse);
+        assert!(cfg.scripts[0].requires_body);
+        assert_eq!(cfg.scripts[0].max_size, 131072);
+        assert_eq!(
+            cfg.scripts[0].pattern.as_str(),
+            "^https://api\\.example\\.com/"
+        );
+        assert!(cfg.scripts[0].source.is_empty());
+        assert_eq!(
+            cfg.script_urls[0],
+            (
+                "json".to_string(),
+                "https://example.com/json.js".to_string()
+            )
+        );
+        assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
+        assert!(!cfg.scripts[1].requires_body);
+        assert_eq!(cfg.scripts[1].max_size, 131072); // 未指定 max-size 时的默认值
+
+        // [Script] cron → TaskScript（5 段补成 6 段）
+        assert_eq!(cfg.task_scripts.len(), 1);
+        let (task, url) = &cfg.task_scripts[0];
+        assert_eq!(task.name, "task");
+        assert_eq!(task.cron_expr, "0 * * * * *");
+        assert_eq!(task.dialect, ScriptDialect::Surge);
+        assert!(task.enabled);
+        assert!(task.source.is_empty());
+        assert_eq!(url, "https://example.com/task.js");
+
+        // [URL Rewrite] 2 条
+        match &cfg.rewrites[0].kind {
+            RewriteKind::UrlRewrite { target } => {
+                assert_eq!(target, "https://new.example.com/$1")
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        assert!(matches!(
+            cfg.rewrites[1].kind,
+            RewriteKind::UrlRewrite { .. }
+        ));
+
+        // [Header Rewrite] 2 条
+        match &cfg.rewrites[2].kind {
+            RewriteKind::HeaderRewrite {
+                phase: Phase::Request,
+                name,
+                value,
+            } => {
+                assert_eq!(name, "X-Foo");
+                assert_eq!(value.as_deref(), Some("bar baz"));
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        match &cfg.rewrites[3].kind {
+            RewriteKind::HeaderRewrite {
+                phase: Phase::Request,
+                name,
+                value,
+            } => {
+                assert_eq!(name, "X-Bar");
+                assert_eq!(value, &None);
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+
+        // [Map Local] → Mock
+        match &cfg.rewrites[4].kind {
+            RewriteKind::Mock { status, body } => {
+                assert_eq!(*status, 200);
+                assert_eq!(body, "<h1>offline</h1>");
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+
+        // [MITM]：%APPEND% 剥离，- 排除记 warning
+        assert_eq!(cfg.hostnames, vec!["*.example.com".to_string()]);
+        assert!(
+            cfg.warnings
+                .iter()
+                .any(|w| w.contains("exclude.example.com"))
+        );
+        assert!(cfg.warnings.iter().any(|w| w.contains("request-header")));
+    }
+
+    #[test]
+    fn skips_unknown_comment_blank_lines_with_warnings() {
+        let content = r#"
+[rewrite_local]
+# 注释
+; 也是注释
+
+^https?://example\.com/ok url-and-header https://ok.example.com/
+totally unknown line
+also unknown
+[task_local]
+garbage
+[mitm]
+hostname = *.example.com
+"#;
+        let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
+
+        assert_eq!(cfg.rewrites.len(), 1);
+        assert_eq!(cfg.hostnames, vec!["*.example.com".to_string()]);
+        assert_eq!(cfg.task_scripts.len(), 0);
+        // 未知行与无法解析的任务行计入 warnings；注释/空行静默跳过
+        assert_eq!(cfg.warnings.len(), 3);
+    }
+
+    #[test]
+    fn invalid_regex_skipped_with_warning() {
+        let content = r#"
+[rewrite_local]
+( url-and-header https://broken.example.com/
+^https?://ok\.example\.com/ url-and-header https://ok2.example.com/
+
+[Script]
+bad = type=http-response,pattern=(,script-path=https://example.com/bad.js
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        // 非法正则在 rewrite 与 script 中各记 1 条 warning，不 panic
+        assert_eq!(cfg.rewrites.len(), 1);
+        assert_eq!(cfg.scripts.len(), 0);
+        assert_eq!(
+            cfg.warnings
+                .iter()
+                .filter(|w| w.contains("invalid regex"))
+                .count(),
+            2
+        );
+    }
+}
