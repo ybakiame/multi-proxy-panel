@@ -118,11 +118,13 @@ pub fn mihomo_to_singbox(p: &Value) -> Option<Value> {
             o.insert(String::from("type"), json!("trojan"));
             o.insert(String::from("password"), p.get("password")?.clone());
             tls_from_mihomo(p, &mut o);
+            ensure_tls_defaults(&mut o);
         }
         "hysteria2" | "hy2" => {
             o.insert(String::from("type"), json!("hysteria2"));
             o.insert(String::from("password"), p.get("password")?.clone());
             tls_from_mihomo(p, &mut o);
+            ensure_tls_defaults(&mut o);
         }
         "tuic" => {
             o.insert(String::from("type"), json!("tuic"));
@@ -134,11 +136,13 @@ pub fn mihomo_to_singbox(p: &Value) -> Option<Value> {
                 }
             }
             tls_from_mihomo(p, &mut o);
+            ensure_tls_defaults(&mut o);
         }
         "anytls" => {
             o.insert(String::from("type"), json!("anytls"));
             o.insert(String::from("password"), p.get("password")?.clone());
             tls_from_mihomo(p, &mut o);
+            ensure_tls_defaults(&mut o);
         }
         _ => return None,
     }
@@ -256,7 +260,13 @@ fn tls_from_mihomo(p: &Value, o: &mut Map<String, Value>) {
     let enabled = p.get("tls").and_then(Value::as_bool).unwrap_or(false);
     let mut tls = Map::new();
     tls.insert(String::from("enabled"), json!(enabled));
-    if let Some(sn) = p.get("servername").and_then(Value::as_str) {
+    // `servername` 与 `sni` 均为 Clash Meta 中常见的 TLS 主机名字段（vless/vmess 用
+    // servername，trojan/hy2/tuic/anytls 常用 sni），两者皆取。
+    let sn = p
+        .get("servername")
+        .or_else(|| p.get("sni"))
+        .and_then(Value::as_str);
+    if let Some(sn) = sn {
         if !sn.is_empty() {
             tls.insert(String::from("server_name"), json!(sn));
         }
@@ -289,6 +299,33 @@ fn tls_from_mihomo(p: &Value, o: &mut Map<String, Value>) {
     }
     if enabled || tls.len() > 1 {
         o.insert(String::from("tls"), Value::Object(tls));
+    }
+}
+
+/// 为 TLS 型协议（trojan / hysteria2 / tuic / anytls）的 sing-box outbound 无条件
+/// 补全 `tls: {enabled: true, server_name: ...}`：已有 server_name 保留，缺失时回退
+/// host；insecure 等已有字段保留。避免 mihomo 侧未标 `tls: true` 时生成的 outbound
+/// 缺 TLS 块导致 sing-box `initialize outbound: TLS required` FATAL。
+fn ensure_tls_defaults(o: &mut Map<String, Value>) {
+    let host = o
+        .get("server")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let tls = match o.get_mut("tls") {
+        Some(t) if t.is_object() => t
+            .as_object_mut()
+            .expect("checked is_object in ensure_tls_defaults"),
+        _ => {
+            o.insert(String::from("tls"), json!({}));
+            o.get_mut("tls")
+                .and_then(Value::as_object_mut)
+                .expect("just inserted tls object")
+        }
+    };
+    tls.insert(String::from("enabled"), json!(true));
+    if !tls.contains_key("server_name") && !host.is_empty() {
+        tls.insert(String::from("server_name"), json!(host));
     }
 }
 
@@ -478,5 +515,35 @@ mod tests {
     fn mihomo_to_singbox_unsupported_type_is_skipped() {
         let p = json!({ "name": "x", "type": "direct", "server": "s.com", "port": 1 });
         assert!(mihomo_to_singbox(&p).is_none());
+    }
+
+    /// clash→sing-box 路径同样补 TLS 默认值：mihomo 侧未标 `tls: true` 的
+    /// trojan/hy2/tuic/anytls 仍无条件产出 `tls: {enabled: true, server_name: host}`。
+    #[test]
+    fn mihomo_to_singbox_tls_protocols_get_tls_defaults_without_tls_flag() {
+        for proxy in [
+            json!({ "name": "tj1", "type": "trojan", "server": "s.com", "port": 443, "password": "pw" }),
+            json!({ "name": "hy1", "type": "hysteria2", "server": "s.com", "port": 443, "password": "pw", "sni": "hy.s.com" }),
+            json!({ "name": "tc1", "type": "tuic", "server": "s.com", "port": 443, "uuid": "12345678-1234-1234-1234-123456789012", "password": "pw" }),
+            json!({ "name": "at1", "type": "anytls", "server": "s.com", "port": 443, "password": "pw" }),
+        ] {
+            let o = mihomo_to_singbox(&proxy).unwrap();
+            assert_eq!(o["tls"]["enabled"], true, "proxy: {proxy}");
+            let expected_sn = proxy.get("sni").and_then(Value::as_str).unwrap_or("s.com");
+            assert_eq!(o["tls"]["server_name"], expected_sn, "proxy: {proxy}");
+        }
+    }
+
+    /// mihomo 侧 skip-cert-verify 映射的 insecure 在补全 TLS 默认值时保留。
+    #[test]
+    fn mihomo_to_singbox_keeps_insecure_while_adding_tls_defaults() {
+        let p = json!({
+            "name": "tj1", "type": "trojan", "server": "s.com", "port": 443,
+            "password": "pw", "skip-cert-verify": true
+        });
+        let o = mihomo_to_singbox(&p).unwrap();
+        assert_eq!(o["tls"]["enabled"], true);
+        assert_eq!(o["tls"]["server_name"], "s.com");
+        assert_eq!(o["tls"]["insecure"], true);
     }
 }

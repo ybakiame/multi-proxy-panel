@@ -297,18 +297,17 @@ fn parse_trojan(rest: &str) -> Option<Value> {
             .get("allowInsecure")
             .or_else(|| params.get("insecure")),
     );
+    // 无条件带 TLS：无 sni 时 server_name 回退 host（否则 sing-box 报 TLS required）。
+    let server_name = sni.cloned().unwrap_or_else(|| server.clone());
 
     let mut o = json!({
         "type": "trojan",
         "server": server,
         "server_port": port,
         "password": password,
-        "tls": { "enabled": true },
+        "tls": { "enabled": true, "server_name": server_name },
     });
     o["tag"] = json!(fallback_name(&name, &server, port));
-    if let Some(s) = sni {
-        o["tls"]["server_name"] = json!(s);
-    }
     if allow_insecure {
         o["tls"]["insecure"] = json!(true);
     }
@@ -325,18 +324,17 @@ fn parse_hysteria2(rest: &str) -> Option<Value> {
     let params = parse_query(query);
     let sni = params.get("sni").filter(|s| !s.is_empty());
     let insecure = truthy(params.get("insecure"));
+    // 无条件带 TLS：无 sni 时 server_name 回退 host。
+    let server_name = sni.cloned().unwrap_or_else(|| server.clone());
 
     let mut o = json!({
         "type": "hysteria2",
         "server": server,
         "server_port": port,
         "password": password,
-        "tls": { "enabled": true },
+        "tls": { "enabled": true, "server_name": server_name },
     });
     o["tag"] = json!(fallback_name(&name, &server, port));
-    if let Some(s) = sni {
-        o["tls"]["server_name"] = json!(s);
-    }
     if insecure {
         o["tls"]["insecure"] = json!(true);
     }
@@ -354,6 +352,8 @@ fn parse_tuic(rest: &str) -> Option<Value> {
     let params = parse_query(query);
     let sni = params.get("sni").filter(|s| !s.is_empty());
     let cc = params.get("congestion_control").filter(|s| !s.is_empty());
+    // 无条件带 TLS：无 sni 时 server_name 回退 host。
+    let server_name = sni.cloned().unwrap_or_else(|| server.clone());
 
     let mut o = json!({
         "type": "tuic",
@@ -361,12 +361,9 @@ fn parse_tuic(rest: &str) -> Option<Value> {
         "server_port": port,
         "uuid": uuid,
         "password": password,
-        "tls": { "enabled": true },
+        "tls": { "enabled": true, "server_name": server_name },
     });
     o["tag"] = json!(fallback_name(&name, &server, port));
-    if let Some(s) = sni {
-        o["tls"]["server_name"] = json!(s);
-    }
     if let Some(c) = cc {
         o["congestion_control"] = json!(c);
     }
@@ -382,18 +379,17 @@ fn parse_anytls(rest: &str) -> Option<Value> {
     let (server, port) = parse_host_port(hostport)?;
     let params = parse_query(query);
     let sni = params.get("sni").filter(|s| !s.is_empty());
+    // 无条件带 TLS：无 sni 时 server_name 回退 host。
+    let server_name = sni.cloned().unwrap_or_else(|| server.clone());
 
     let mut o = json!({
         "type": "anytls",
         "server": server,
         "server_port": port,
         "password": password,
-        "tls": { "enabled": true },
+        "tls": { "enabled": true, "server_name": server_name },
     });
     o["tag"] = json!(fallback_name(&name, &server, port));
-    if let Some(s) = sni {
-        o["tls"]["server_name"] = json!(s);
-    }
     Some(o)
 }
 
@@ -750,6 +746,127 @@ mod tests {
         assert_eq!(o["server_port"], 443);
         assert_eq!(o["password"], "anypass");
         assert_eq!(o["tls"]["server_name"], "example.com");
+    }
+
+    // ---------- 项 2：TLS 默认值（无 sni 时 server_name 回退 host） ----------
+
+    #[test]
+    fn tls_defaults_fill_server_name_from_host_when_sni_absent() {
+        let links = vec![
+            "trojan://pw@example.com:443#t".to_string(),
+            "hysteria2://hpw@example.com:443#h".to_string(),
+            format!("tuic://{UUID}:tupw@example.com:443#u"),
+            "anytls://apw@example.com:443#a".to_string(),
+        ];
+        for link in &links {
+            let o = parse_one(link);
+            assert_eq!(o["tls"]["enabled"], true, "link: {link}");
+            assert_eq!(o["tls"]["server_name"], "example.com", "link: {link}");
+        }
+    }
+
+    #[test]
+    fn tls_defaults_prefer_sni_over_host_when_present() {
+        let o = parse_one("trojan://pw@example.com:443?sni=tls.example.com#t");
+        assert_eq!(o["tls"]["enabled"], true);
+        assert_eq!(o["tls"]["server_name"], "tls.example.com");
+    }
+
+    #[test]
+    fn tls_defaults_keep_insecure_flag_per_link() {
+        let o = parse_one("hysteria2://hpw@example.com:443?insecure=1#h");
+        assert_eq!(o["tls"]["enabled"], true);
+        assert_eq!(o["tls"]["server_name"], "example.com");
+        assert_eq!(o["tls"]["insecure"], true);
+
+        let o = parse_one("hysteria2://hpw@example.com:443#h");
+        assert!(o["tls"].get("insecure").is_none());
+    }
+
+    /// vless/vmess：仅 security=tls/reality 时带 tls 块，security=none 不带。
+    #[test]
+    fn vless_security_none_has_no_tls_block() {
+        let link = format!("vless://{UUID}@example.com:443?security=none#plain");
+        let o = parse_one(&link);
+        assert!(o.get("tls").is_none());
+    }
+
+    // ---------- 项 2：真实 sing-box 二进制 check ----------
+
+    /// 探测可用的 sing-box 二进制：环境变量 `PROXY_PANEL_SINGBOX_BIN` → 用户目录
+    /// `~/.proxy-panel-client/cores/sing-box/1.14.0-beta.4/sing-box` → workspace
+    /// `target/test-cores/sing-box`（cargo 测试 cwd 为 crate 根目录）。
+    fn find_singbox_binary() -> Option<std::path::PathBuf> {
+        if let Ok(p) = std::env::var("PROXY_PANEL_SINGBOX_BIN") {
+            let p = std::path::PathBuf::from(p);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let p = std::path::PathBuf::from(home)
+                .join(".proxy-panel-client/cores/sing-box/1.14.0-beta.4/sing-box");
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        for p in [
+            "../../target/test-cores/sing-box",
+            "target/test-cores/sing-box",
+        ] {
+            let p = std::path::PathBuf::from(p);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        None
+    }
+
+    /// 用真实 sing-box 二进制校验含 trojan/hy2/tuic/anytls（均无 sni 参数）节点的
+    /// 完整配置通过 `sing-box check`；无本地二进制时跳过（不失败）。
+    #[test]
+    fn singbox_check_accepts_tls_default_nodes_without_sni() {
+        let Some(bin) = find_singbox_binary() else {
+            eprintln!("no sing-box binary found, skipping real-core check");
+            return;
+        };
+        let links = format!(
+            "trojan://pw@example.com:443#t\n\
+             hysteria2://hpw@example.com:443#h\n\
+             tuic://{UUID}:tupw@example.com:443#u\n\
+             anytls://apw@example.com:443#a\n"
+        );
+        let result = parse_share_links(&links);
+        assert!(
+            result.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            result.warnings
+        );
+        let mut outbounds: Vec<Value> = result
+            .nodes
+            .iter()
+            .map(|n| n.outbound_singbox.clone())
+            .collect();
+        outbounds.push(json!({ "type": "direct", "tag": "direct" }));
+        let config = json!({
+            "log": { "level": "error" },
+            "inbounds": [{ "type": "mixed", "listen": "127.0.0.1", "listen_port": 17890 }],
+            "outbounds": outbounds,
+            "route": { "final": "direct" },
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("check.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let output = std::process::Command::new(&bin)
+            .args(["check", "-c", path.to_str().unwrap()])
+            .output()
+            .expect("failed to run sing-box");
+        assert!(
+            output.status.success(),
+            "sing-box check failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     // ---------- 双核心产出 ----------
