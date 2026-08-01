@@ -246,15 +246,14 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<ClientConfigView, 
 /// 保存配置的返回视图（携带非阻塞提示）。
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SaveConfigView {
-    /// 非阻塞提示（未配置 hub_url/sub_token、core_type 联动后缺少本地核心等）。
+    /// 非阻塞提示（core_type 联动后缺少本地核心等）。
     pub warning: Option<String>,
 }
 
 /// 保存配置实现（命令层可测试的纯逻辑）。
 ///
-/// - **基本设置可随时保存**：不再因 hub_url / sub_token 为空而拒绝保存（旧实现
-///   会在新装/未填订阅信息时直接报错，导致 MITM 开关、系统代理开关、混合端口等
-///   基本设置「无法保存」）；缺失项降级为 `warning` 提示；
+/// - **基本设置可随时保存**：订阅管理已独立（`hub_url` / `sub_token` 字段仅保留
+///   兼容，不再校验空值，也不产生缺失提示）；
 /// - **core_type 联动本地核心**：`core_type` 变更且当前 `core_binary` 不属于该
 ///   类型时自动填入该类型首选本地核心（版本最高已下载 → 系统探测）；
 ///   找不到时保留原路径并返回 `warning` 提示去核心管理下载。
@@ -282,14 +281,6 @@ fn save_config_impl(
         }
     }
 
-    // hub_url / sub_token 非空校验放宽为提示（不阻塞基本设置保存）。
-    if config.hub_url.trim().is_empty() {
-        warnings.push("hub_url 为空：保存后无法拉取订阅，请在设置页填写".to_string());
-    }
-    if config.sub_token.trim().is_empty() {
-        warnings.push("sub_token 为空：保存后无法拉取订阅，请在设置页填写".to_string());
-    }
-
     config.save().map_err(|e| format!("保存配置失败: {e}"))?;
     Ok(SaveConfigView {
         warning: if warnings.is_empty() {
@@ -300,8 +291,8 @@ fn save_config_impl(
     })
 }
 
-/// 保存配置（`hub_url` / `sub_token` 为空时以 warning 提示而非拒绝，保证
-/// 基本设置随时可保存；`core_type` 变更时联动本地核心二进制）。
+/// 保存配置（`hub_url` / `sub_token` 已退役，不再校验也不产生提示；`core_type`
+/// 变更时联动本地核心二进制）。
 #[tauri::command]
 pub async fn save_config(
     state: State<'_, AppState>,
@@ -1528,13 +1519,14 @@ mod tests {
         assert_eq!(view2.tun_stack, "system");
         assert!(view2.clash_api_enabled);
         assert_eq!(view2.clash_api_secret, "sekret");
+        assert_eq!(view2.clash_api_ui, "yacd");
     }
 
     #[test]
     fn save_config_partial_payload_defaults_and_saves() {
         let dir = TestDir::new();
         // 旧前端 / 部分 payload：缺失 system_proxy_enabled 等布尔字段，且 hub_url /
-        // sub_token 为空 —— 旧实现在这里会因缺字段反序列化失败、或校验拒绝而无法保存。
+        // sub_token 为空 —— 缺字段按默认值补齐，空 hub 字段不再产生 warning。
         let json = serde_json::json!({
             "data_dir": "/tmp/pp",
             "hub_url": "",
@@ -1547,22 +1539,27 @@ mod tests {
             "mitm_script_dialect": "Surge",
         });
         let view: ClientConfigView = serde_json::from_value(json).unwrap();
+        assert_eq!(view.clash_api_ui, "zashboard", "缺失字段按默认值补齐");
         let result = with_empty_path(|| save_config_impl(dir.path(), view).unwrap());
 
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.mixed_port, 12345);
         assert!(!saved.mitm_enabled);
         assert!(!saved.system_proxy_enabled, "缺失布尔字段按默认值补齐");
+        assert_eq!(saved.clash_api_ui, "zashboard");
 
-        let warning = result.warning.expect("缺 hub_url/sub_token 应返回 warning");
-        assert!(
-            warning.contains("hub_url") && warning.contains("sub_token"),
-            "{warning}"
-        );
+        // 空 hub_url/sub_token 已退役：不再产生订阅缺失提示（core_type 联动警告
+        // 属于另一独立路径，与本回归无关）。
+        if let Some(w) = &result.warning {
+            assert!(
+                !w.contains("hub_url") && !w.contains("sub_token"),
+                "空 hub_url/sub_token 不应再产生 warning: {w}"
+            );
+        }
     }
 
     #[test]
-    fn save_config_empty_hub_and_token_saves_with_warning_not_error() {
+    fn save_config_empty_hub_and_token_saves_without_warning() {
         let dir = TestDir::new();
         let view = full_view(dir.path());
 
@@ -1576,10 +1573,10 @@ mod tests {
 
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.mixed_port, 30000, "基本设置应保存成功");
-        let warning = result.warning.expect("应提示订阅信息缺失");
         assert!(
-            warning.contains("hub_url") && warning.contains("sub_token"),
-            "{warning}"
+            result.warning.is_none(),
+            "空 hub_url/sub_token 不应再提示: {:?}",
+            result.warning
         );
     }
 
