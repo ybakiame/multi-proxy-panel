@@ -68,8 +68,15 @@ impl ScriptHookEngine {
                 "headers": headers_to_object(headers),
             });
             inject_body(&mut arg, rule, body);
-            self.run_one(rule, ScriptKind::HttpRequest, Some(arg), None, headers, body)
-                .await;
+            self.run_one(
+                rule,
+                ScriptKind::HttpRequest,
+                Some(arg),
+                None,
+                headers,
+                body,
+            )
+            .await;
         }
     }
 
