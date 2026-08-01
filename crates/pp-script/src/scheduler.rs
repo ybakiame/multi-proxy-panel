@@ -11,10 +11,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::engine::ScriptEngine;
-use crate::engine_quickjs::QuickJsEngine;
 use crate::host::ScriptHost;
 use crate::types::{ScriptDialect, ScriptKind, ScriptLimits, ScriptOutput};
+use crate::worker::ScriptWorker;
 use pp_common::{PanelError, PanelResult};
 
 /// 一个待注册的定时脚本任务。
@@ -64,11 +63,10 @@ struct ScheduledTask {
 /// cron 脚本调度器。
 ///
 /// 任务注册时解析 cron 表达式并校验；到期判定基于“`(last_run, now]` 区间内是否有
-/// 匹配时刻”，无状态可注入 `now` 便于测试。单任务执行始终新建 `QuickJsEngine`
+/// 匹配时刻”，无状态可注入 `now` 便于测试。单任务执行统一走 [`ScriptWorker`]
 /// （`kind = Cron`），失败仅记录在结果/`last_error`，不影响其他任务。
 pub struct ScriptScheduler {
-    host: Arc<ScriptHost>,
-    limits: ScriptLimits,
+    worker: ScriptWorker,
     tasks: Mutex<Vec<ScheduledTask>>,
     shutdown: watch::Sender<bool>,
 }
@@ -76,9 +74,9 @@ pub struct ScriptScheduler {
 impl ScriptScheduler {
     pub fn new(host: Arc<ScriptHost>, limits: ScriptLimits) -> Self {
         let (shutdown, _rx) = watch::channel(false);
+        let worker = ScriptWorker::new(host, limits);
         Self {
-            host,
-            limits,
+            worker,
             tasks: Mutex::new(Vec::new()),
             shutdown,
         }
@@ -187,19 +185,17 @@ impl ScriptScheduler {
     }
 
     /// 内部启动：以指定轮询间隔驱动后台循环（测试可注入更短间隔）。
+    ///
+    /// 脚本执行由 [`ScriptWorker`] 在专有线程驱动（`Send` future），后台循环
+    /// 直接在调用方运行时 `tokio::spawn`，不再需要 `spawn_blocking` +
+    /// 独立 `current_thread` runtime 的绕行。
     pub(crate) async fn start_with_interval(
         self: Arc<Self>,
         tick: Duration,
     ) -> PanelResult<JoinHandle<()>> {
-        // rquickjs 的 AsyncRuntime 非 Send，脚本执行须在单线程驱动；后台循环放在
-        // 阻塞线程池上，并在该线程内运行一个独立 current_thread runtime（block_on）。
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| PanelError::Internal(format!("build scheduler runtime: {e}")))?;
         let mut shutdown_rx = self.shutdown.subscribe();
         let scheduler = Arc::clone(&self);
-        let handle = tokio::task::spawn_blocking(move || {
+        let handle = tokio::spawn(async move {
             loop {
                 // stop 已触发（含 start 之前 stop）：立即退出。
                 if *shutdown_rx.borrow() {
@@ -221,7 +217,6 @@ impl ScriptScheduler {
                         None => tick,
                     }
                 };
-                rt.block_on(async {
                 tokio::select! {
                     _ = shutdown_rx.changed() => (),
                     _ = tokio::time::sleep(sleep_for) => {
@@ -233,7 +228,6 @@ impl ScriptScheduler {
                         }
                     }
                 }
-            });
             }
         });
         Ok(handle)
@@ -257,20 +251,16 @@ impl ScriptScheduler {
         Vec::new()
     }
 
-    /// 单任务执行：新建引擎 + `kind = Cron`（超时/异常由引擎隔离）。
+    /// 单任务执行：经 [`ScriptWorker`] 串行执行（`kind = Cron`，超时/异常由引擎隔离）。
     async fn run_script_once(
         &self,
         name: &str,
         source: &str,
         dialect: ScriptDialect,
     ) -> PanelResult<ScriptOutput> {
-        let mut engine = QuickJsEngine::new(
-            Arc::clone(&self.host),
-            dialect,
-            self.limits,
-            name.to_string(),
-        )?;
-        engine.run_script(source, ScriptKind::Cron, None).await
+        self.worker
+            .run_script(source, ScriptKind::Cron, None, dialect, name)
+            .await
     }
 
     /// 记录执行结果（last_run / last_error）。
