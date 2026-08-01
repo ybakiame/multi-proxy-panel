@@ -3,6 +3,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use crate::upstream::UpstreamProxy;
+
 /// 主机名匹配器：精确匹配或按域名后缀匹配。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostnameMatcher {
@@ -50,6 +52,8 @@ pub struct MitmConfig {
     pub record_enabled: bool,
     /// 脚本钩子使用的脚本方言。
     pub script_dialect: pp_script::ScriptDialect,
+    /// 上游去向：直连或经父代理（HTTP CONNECT / SOCKS5）转发。
+    pub upstream: UpstreamProxy,
 }
 
 impl Default for MitmConfig {
@@ -61,6 +65,7 @@ impl Default for MitmConfig {
             max_body_size: 131_072,
             record_enabled: true,
             script_dialect: pp_script::ScriptDialect::Surge,
+            upstream: UpstreamProxy::Direct,
         }
     }
 }

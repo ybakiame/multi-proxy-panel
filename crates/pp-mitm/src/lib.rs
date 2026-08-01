@@ -12,6 +12,7 @@ pub mod proxy;
 pub mod recorder;
 pub mod rewrite;
 pub mod script_hook;
+pub mod upstream;
 
 pub use ca::*;
 pub use config::*;
@@ -19,3 +20,4 @@ pub use proxy::*;
 pub use recorder::*;
 pub use rewrite::*;
 pub use script_hook::*;
+pub use upstream::*;

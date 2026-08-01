@@ -25,8 +25,13 @@ hudsucker = { version = "0.25", features = ["rcgen-ca", "rustls-client", "http2"
 http = "1"
 http-body-util = { workspace = true }
 futures = { workspace = true }
+hyper = "1"
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+tower = { workspace = true }
+webpki-roots = "0.26"
 
 [dev-dependencies]
 tempfile = "3"
 reqwest = { workspace = true }
-tokio-rustls = { workspace = true }

@@ -25,6 +25,7 @@ use crate::config::MitmConfig;
 use crate::recorder::{TrafficRecord, TrafficRecorder};
 use crate::rewrite::{RewriteAction, RewriteEngine};
 use crate::script_hook::ScriptHookEngine;
+use crate::upstream::UpstreamConnector;
 
 /// hudsucker 拦截代理。
 pub struct MitmProxy {
@@ -74,6 +75,11 @@ impl MitmProxy {
             .map_err(|e| PanelError::Mitm(format!("parse ca cert: {e}")))?;
         let ca = RcgenAuthority::new(issuer, 1024, provider.clone());
 
+        // 按上游去向构造自定义 connector：直连（rustls + webpki roots）或
+        // 经 HTTP CONNECT / SOCKS5 父代理建隧道后 TLS 握手。
+        let connector = UpstreamConnector::new(self.config.upstream, provider)
+            .map_err(|e| PanelError::Mitm(format!("init upstream connector: {e}")))?;
+
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let handler = Handler {
             config: Arc::new(self.config),
@@ -86,7 +92,7 @@ impl MitmProxy {
         let proxy = Proxy::builder()
             .with_listener(listener)
             .with_ca(ca)
-            .with_rustls_connector(provider.clone())
+            .with_http_connector(connector)
             .with_http_handler(handler)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
@@ -417,7 +423,10 @@ mod tests {
     use crate::config::HostnameMatcher;
     use crate::recorder::MemoryRecorder;
     use crate::rewrite::{Phase, RewriteKind, RewriteRule};
+    use crate::upstream::UpstreamProxy;
     use regex::Regex;
+    use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -510,5 +519,134 @@ mod tests {
 
         running.shutdown();
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn e2e_http_chain_routes_through_http_parent_proxy() {
+        // 上游目标：本地 TCP HTTP server。
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_port = upstream.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = match upstream.accept().await {
+                    Ok(pair) => pair,
+                    Err(_) => break,
+                };
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let mut req = Vec::new();
+                    loop {
+                        match socket.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                req.extend_from_slice(&buf[..n]);
+                                if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let body = r#"{"via":"upstream"}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                    let _ = socket.shutdown().await;
+                });
+            }
+        });
+
+        // 极简 HTTP 父代理：收到 CONNECT 后连目标、回 200，再双向转发。
+        let parent = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let parent_port = parent.local_addr().unwrap().port();
+        let connect_count = Arc::new(AtomicUsize::new(0));
+        let count_for_server = Arc::clone(&connect_count);
+        let parent_task = tokio::spawn(async move {
+            loop {
+                let (mut client, _) = match parent.accept().await {
+                    Ok(pair) => pair,
+                    Err(_) => break,
+                };
+                let count = Arc::clone(&count_for_server);
+                tokio::spawn(async move {
+                    let mut buf = Vec::new();
+                    let mut chunk = [0u8; 1024];
+                    loop {
+                        match client.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => {
+                                buf.extend_from_slice(&chunk[..n]);
+                                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let request_line = String::from_utf8_lossy(&buf);
+                    let target = match request_line.split_whitespace().nth(1) {
+                        Some(t) if request_line.starts_with("CONNECT ") => t.to_string(),
+                        _ => return,
+                    };
+                    count.fetch_add(1, Ordering::SeqCst);
+                    let mut target_stream = match tokio::net::TcpStream::connect(&target).await {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let _ = client
+                        .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                        .await;
+                    let _ = tokio::io::copy_bidirectional(&mut client, &mut target_stream).await;
+                });
+            }
+        });
+
+        // MITM 代理：全量拦截 + upstream 指向父代理。
+        let dir = tempdir().unwrap();
+        let ca = FileCaStore::new(dir.path()).load_or_generate().unwrap();
+        let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(16));
+        let rewrite = RewriteEngine { rules: Vec::new() };
+        let config = MitmConfig {
+            listen_addr: "127.0.0.1:0".parse().unwrap(),
+            hostnames: Vec::<HostnameMatcher>::new(),
+            record_enabled: true,
+            upstream: UpstreamProxy::Http {
+                addr: SocketAddr::from(([127, 0, 0, 1], parent_port)),
+            },
+            ..MitmConfig::default()
+        };
+        let proxy = MitmProxy::new(config, rewrite, None, Arc::clone(&recorder), ca);
+        let running = proxy.start().await.unwrap();
+
+        // 经 MITM 代理发请求，断言响应正确、流量确实经过父代理且被记录。
+        let client = reqwest::Client::builder()
+            .proxy(reqwest::Proxy::http(format!("http://{}", running.addr)).unwrap())
+            .build()
+            .unwrap();
+        let resp = client
+            .get(format!("http://127.0.0.1:{server_port}/hello"))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        assert_eq!(resp.text().await.unwrap(), r#"{"via":"upstream"}"#);
+        assert_eq!(
+            connect_count.load(Ordering::SeqCst),
+            1,
+            "traffic must go through the parent proxy exactly once"
+        );
+
+        let records = recorder.list();
+        assert_eq!(records.len(), 1, "expected exactly one recorded exchange");
+        assert_eq!(records[0].response_status, 200);
+        assert!(
+            records[0].url.contains("/hello"),
+            "unexpected recorded url: {}",
+            records[0].url
+        );
+
+        running.shutdown();
+        server.abort();
+        parent_task.abort();
     }
 }
