@@ -7,7 +7,7 @@
 
 ## 项目简介
 
-ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架构设计。它支持多节点统一管理、多协议配置、自动订阅生成、实时流量统计与主机监控，并提供现代化的 Web 管理界面。
+ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架构设计。它支持多节点统一管理、多协议配置、自动订阅生成、实时流量统计与主机监控，并提供现代化的 Web 管理界面与跨平台桌面客户端。
 
 ### 核心特性
 
@@ -19,6 +19,9 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
+- **桌面客户端**: 基于 Tauri 的跨平台桌面应用，内置脚本引擎与 HTTPS MITM 抓包重写
+- **脚本引擎**: 兼容 Quantumult X / Surge / Loon 三方言 API 的 JS 脚本运行时（QuickJS）
+- **HTTPS 解密与重写**: URL / Header / Body 重写、Reject / Mock、请求响应脚本钩子、流量抓包
 - **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
 - **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
 
@@ -61,6 +64,28 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 │              │ sing-box / mihomo  │                                │
 │              └─────────────────────┘                                │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+桌面客户端（`pp-client-ui`，Tauri）运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      ProxyPanel Client (Desktop)                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ pp-script    │  │ pp-mitm      │  │ pp-core      │              │
+│  │ 脚本引擎     │  │ MITM 引擎    │  │ 核心子进程    │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+│         │                │                  │                       │
+│         └────────────────┼──────────────────┘                       │
+│                          ▼                                          │
+│              ┌─────────────────────────────┐                        │
+│              │    pp-client (ClientState)   │                        │
+│              │  订阅同步 / 配置合成 / 系统代理 │                        │
+│              └─────────────────────────────┘                        │
+└─────────────────────────────────────────────────────────────────────┘
+            │ 订阅 (HTTP)                           │ 本地代理流量
+            ▼                                        ▼
+   Hub /sub/{token} 公开订阅端点            远端代理节点 (sing-box / mihomo)
 ```
 
 ## 快速开始
@@ -137,6 +162,17 @@ cargo run --release --bin proxy-panel-agent \
   --token "your-agent-token"
 ```
 
+### 8. 构建桌面客户端（可选）
+
+桌面客户端为独立的 Tauri 项目（退出根 workspace），使用 Bun 作为包管理器：
+
+```bash
+cd crates/pp-client-ui
+bun install
+bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
+bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
+```
+
 ## 项目结构
 
 ```
@@ -152,6 +188,10 @@ proxy-panel/
 │   ├── pp-config/          # sing-box/mihomo 配置构建器
 │   ├── pp-core/            # 核心进程管理抽象
 │   ├── pp-subscription/    # 订阅链接生成器
+│   ├── pp-script/          # 客户端脚本引擎（QuickJS + QX/Surge/Loon 方言）
+│   ├── pp-mitm/            # HTTPS MITM 引擎（hudsucker 封装 + 重写/抓包）
+│   ├── pp-client/          # 桌面客户端核心库（订阅/配置合成/系统代理）
+│   ├── pp-client-ui/       # Tauri 桌面应用（独立 cargo 项目，React 前端）
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
 │   ├── pp-agent/           # 节点代理程序
 │   ├── pp-web/             # React Web 前端
@@ -176,6 +216,10 @@ proxy-panel/
 | `pp-config` | 配置抽象：将通用协议配置转译为 sing-box JSON 或 mihomo YAML | 库 |
 | `pp-core` | 核心进程管理：启动、停止、重载、流量采集 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
+| `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
+| `pp-mitm` | HTTPS MITM 引擎：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
+| `pp-client` | 桌面客户端核心库：订阅同步、核心配置合成（MITM 链路）、系统代理、生命周期编排 | 库 |
+| `pp-client-ui` | Tauri 2.11 桌面应用（React 19 + Vite 8 + HeroUI，5 页界面） | 桌面应用 |
 
 ## 支持的协议
 

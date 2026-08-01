@@ -9,21 +9,24 @@
 1. [整体架构](#整体架构)
 2. [组件详解](#组件详解)
 3. [数据流](#数据流)
-4. [数据库设计](#数据库设计)
-5. [通信协议](#通信协议)
-6. [安全模型](#安全模型)
-7. [扩展点](#扩展点)
+4. [客户端架构](#客户端架构)
+5. [数据库设计](#数据库设计)
+6. [通信协议](#通信协议)
+7. [安全模型](#安全模型)
+8. [扩展点](#扩展点)
+9. [性能考量](#性能考量)
 
 ---
 
 ## 整体架构
 
-ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，由三个主要部分组成：
+ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩展了桌面客户端（**Client**）端。系统由四个主要部分组成：用户层（Web 管理界面、订阅客户端、桌面客户端）、Hub、Agent 与 ProxyPanel Client。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         用户层                               │
 │    Web 浏览器 ────────── 订阅客户端 (Clash/V2RayNG/...)      │
+│    ProxyPanel 桌面客户端 (pp-client-ui / Tauri)              │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┴───────────────┐
@@ -32,9 +35,9 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，由三个主要部分
 │     ProxyPanel Hub      │      │   公开订阅端点           │
 │   (HTTP API + gRPC)     │      │   /sub/{token}          │
 └─────────────────────────┘      └─────────────────────────┘
-              │
-              │ gRPC 双向流 (长连接)
-              ▼
+              │                                 ▲
+              │ gRPC 双向流 (长连接)              │ 订阅 (HTTP)
+              ▼                                 │
 ┌─────────────────────────────────────────────────────────────┐
 │                    ProxyPanel Agent × N                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
@@ -42,6 +45,8 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，由三个主要部分
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+桌面客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心并叠加 MITM 与脚本引擎，代理流量直连远端节点。
 
 ### 设计原则
 
@@ -337,6 +342,86 @@ gRPC Stream → Hub
     ▼
 Hub 写入 host_metrics 表
 ```
+
+---
+
+## 客户端架构
+
+桌面客户端（**Client**）运行在用户设备上，是 ProxyPanel 的用户侧组件：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
+
+客户端由四个 crate 组成：
+
+| Crate | 职责 | 说明 |
+|-------|------|------|
+| `pp-script` | 脚本引擎层 | QuickJS 运行时 + QX/Surge/Loon 三方言 API 适配 + cron 调度 |
+| `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理 |
+| `pp-client` | 客户端核心库 | 订阅同步、核心配置合成、系统代理、生命周期编排 |
+| `pp-client-ui` | 桌面应用 | Tauri 2.11 + React 19 前端，5 页界面 |
+
+### pp-script — 脚本引擎层
+
+基于 QuickJS（`rquickjs` 0.12）的客户端代理脚本引擎：
+
+- **引擎无关抽象**: [`ScriptEngine`] trait 定义引擎边界，为未来第二个后端（Apple JavaScriptCore，feature-gated `engine-jsc`）预留；当前后端实现见 `engine_quickjs.rs`
+- **三方言 API 适配**（`dialect.rs`）: 同一 host 能力按方言注入不同全局名——QX（`$task` / `$prefs` / `$notify`）、Surge（`$httpClient` / `$persistentStore` / `$notification`）、Loon（以上全部 + `$loon` 标记，超集），统一包含 `$done` 与 `setTimeout` 注册表实现
+- **`ScriptWorker` actor**（`worker.rs`）: rquickjs 的 `AsyncRuntime` 内部含非 `Send` 结构，统一收敛为「专有 OS 线程 + 专用 `current_thread` tokio runtime」，任务经 mpsc 通道串行化执行，对外暴露 `Send` future
+- **`ScriptScheduler`**（`scheduler.rs`）: cron / event 脚本调度（QX/Surge/Loon 的 task/cron 签到类脚本），支持注册 / 移除、手动触发、到期批量执行；cron 表达式为 **6 段含秒**，**5 段自动补 0**
+- **`FilePersistentStore`**（`host.rs`）: 每个 scope 一个 JSON 文件，文件名 = scope **SHA-256 前 16 位 hex** + `.json`，write / erase 同步**原子落盘**（tempfile + rename），重启不丢
+
+### pp-mitm — HTTPS MITM 引擎
+
+本地 HTTPS 中间人代理，基于 hudsucker 0.25：
+
+- **CA 管理**: [`CaStore`] trait 抽象 CA 材料，[`FileCaStore`] 为基于本地目录的默认实现，首次调用用 **rcgen** 生成自签证书（`ca.crt` / `ca.key`，文件权限 **0600**）
+- **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）/ `should_intercept_tls`，白名单外流量整体透传
+- **`RewriteEngine`**（`rewrite.rs`）: URL / Header / Body / Reject / Mock 五类重写动作
+- **`ScriptHookEngine`**（`script_hook.rs`）: 将 http-request / http-response 类型脚本按 URL 规则挂载到流量路径，成功时回写输出，脚本**超时或抛异常时 no-op（透传原值）**并记录警告
+- **流量抓包**: [`TrafficRecorder`] trait + [`MemoryRecorder`] 环形缓冲实现（`recorder.rs`）
+- **上游代理链**（`upstream.rs`）: [`UpstreamProxy`]（Direct / HTTP CONNECT 父代理 / SOCKS5 父代理），经实现 [`tower::Service<Uri>`] 的自定义 connector 接入 hudsucker 的 `with_http_connector` 扩展点
+
+### pp-client — 桌面客户端核心库
+
+承载客户端全部业务逻辑，供 pp-client-ui 调用：
+
+- **配置**: `ClientConfig`（`client.json`）定义客户端配置，含 `mixed_port`（默认 17890）与 MITM 配置
+- **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅，解析 `subscription-userinfo` 响应头（upload / download / total / expire）
+- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地核心启动配置，构建 **MITM 链路**——sing-box 为双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则；mihomo 用显式 listeners 声明替代顶层 mixed-port，rules 前插 `AND((IN-NAME,main-in),(DOMAIN-SUFFIX,<suffix>)),pp-mitm` / `AND((IN-NAME,main-in),(DOMAIN,<exact>)),pp-mitm` 规则
+- **MITM 编排**（`mitm.rs`）: MITM 上游指向本机核心回流 mixed 入站端口（默认 `mixed_port + 1`），解密后的流量回流核心继续正常路由
+- **核心进程**（`runner.rs`）: `CoreRunner` 封装 pp-core 的 `CoreManagerFactory`，管理 sing-box / mihomo 子进程
+- **系统代理**（`sysproxy.rs`）: `SystemProxy` trait + 平台实现——macOS `networksetup`、Windows `reg add`（Internet Settings）、Linux `gsettings`（GNOME），命令构造为纯函数便于单测断言，可注入 `MockSystemProxy`
+- **远程订阅**（`remote.rs`）: `RemoteManager` 定时拉取远程脚本 / 重写片段，写本地缓存（`data_dir/remote_cache/<name>.json`），运行期 `load_cached` 合并
+- **导入**（`import.rs`）: 把 QX / Surge / Loon 的 rewrite / script / task / mitm 片段经 `parse_import` 解析为 pp-mitm 规则与 pp-script 任务，未知行跳过并记 warning
+- **生命周期编排**（`state.rs`）: `ClientState` 编排启动链（订阅 → MITM → 合成配置 → 核心 → 系统代理），任一步失败**逆序回滚**，notifier / sysproxy 可注入
+
+### pp-client-ui — 桌面应用
+
+- **技术栈**: Tauri 2.11（独立 cargo 项目，**退出根 workspace**）+ React 19 / Vite 8 / TypeScript 7 / Tailwind CSS 4 / HeroUI 3.2，Bun 作为包管理器
+- **页面**: 仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
+- **通知**: `tauri-plugin-notification` 桌面通知
+
+### 客户端流量链路
+
+桌面客户端的流量链路（核心主入口 → MITM → 核心回流）是理解 MITM 挂载方式的关键：
+
+```
+App → 系统代理 → 核心主 mixed inbound (mixed_port)
+   ├─ MITM 白名单域名 → route 规则（inbound=main-in）→ http outbound → pp-mitm（CA 解密+脚本钩子+rewrite+抓包）
+   │     → UpstreamProxy::Http → 核心 mitm-return inbound (mixed_port+1) → 正常路由 → 远端节点
+   └─ 其余流量（含 wss）→ 正常路由 → 远端节点
+```
+
+1. App 的请求经系统代理指向核心主 mixed 入站（`main-in`，监听 `mixed_port`）
+2. 命中 MITM 白名单的域名：由 route 白名单规则（sing-box `inbound = [main-in]` / mihomo `AND((IN-NAME,main-in),…)`）匹配，经 http outbound 转发到 `pp-mitm`
+3. pp-mitm 完成 CA 解密、脚本钩子、重写与抓包后，经 `UpstreamProxy::Http` 转发到核心回流入站（`mitm-return`，监听 `mixed_port + 1`），回到核心后走正常路由链到远端节点
+4. 其余流量（含 wss）不经过 MITM，直接正常路由到远端节点
+
+### 关键设计决策
+
+- **ScriptWorker !Send 执行模型**: rquickjs 的 `AsyncRuntime` 非 `Send`，若直接跨线程使用会反复创建运行时；收敛为「单一专有线程 + mpsc 串行化」后对外暴露 `Send` future，脚本超时 / 异常由引擎隔离
+- **MITM 挂核心后 + 防回环**: MITM 不作为系统代理入口，而是核心链路中的一环（http outbound）；主 / 回流双 mixed inbound + 白名单路由规则保证只解密白名单域名，且 MITM 上游指向核心自己的回流入站而非系统代理，避免解密流量再次进入主入口形成无限循环
+- **上游代理链**: MITM 解密后的流量经 `UpstreamProxy`（HTTP CONNECT / SOCKS5）返回核心回流，使解密流量与正常流量共享同一路由与节点选择，保证出口一致性
+- **三方言 API 兼容策略**: 按 `ScriptDialect` 注入不同的全局名集合（QX / Surge / Loon），Loon 为超集；同一份 host 能力共享，仅全局名不同，脚本生态无需改写即可迁移
+- **QuickJS vs JSC 双引擎规划**: `ScriptEngine` trait 将引擎与方言 API 解耦，QuickJS（rquickjs 0.12）为当前默认后端，Apple JSC 通过 `engine-jsc` feature 接入，构造签名保持一致
 
 ---
 
