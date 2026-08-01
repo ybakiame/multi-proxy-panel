@@ -50,6 +50,11 @@ fn main() {
             commands::remove_subscription,
             commands::set_subscription_enabled,
             commands::refresh_subscription,
+            commands::list_cores,
+            commands::list_remote_core_versions,
+            commands::download_core,
+            commands::set_active_core,
+            commands::detect_system_cores,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

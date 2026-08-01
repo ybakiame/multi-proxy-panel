@@ -764,6 +764,140 @@ where
     .map_err(|e| format!("阻塞任务执行失败: {e}"))?
 }
 
+// ---------- 核心版本管理 ----------
+
+/// 本地核心的对外视图（与前端 `LocalCoreView` TS 类型对齐）。
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalCoreView {
+    /// 核心类型：`singbox` / `mihomo`。
+    pub core_type: String,
+    pub version: String,
+    pub path: String,
+    /// 来源：`downloaded`（已下载）/ `system`（系统探测）。
+    pub source: String,
+    /// 是否为当前启用的核心（`core_binary` 匹配）。
+    pub active: bool,
+}
+
+impl LocalCoreView {
+    fn from_core(core: &pp_client::LocalCore, active_binary: &std::path::Path) -> Self {
+        Self {
+            core_type: core_type_str(core.core_type),
+            version: core.version.clone(),
+            path: core.path.to_string_lossy().into_owned(),
+            source: match core.source {
+                pp_client::CoreSource::Downloaded => "downloaded",
+                pp_client::CoreSource::System => "system",
+            }
+            .to_string(),
+            active: core.path == active_binary,
+        }
+    }
+}
+
+/// 合并已下载与系统探测列表（按路径去重，系统探测优先展示）。
+fn merge_cores(
+    mut installed: Vec<pp_client::LocalCore>,
+    system: Vec<pp_client::LocalCore>,
+) -> Vec<pp_client::LocalCore> {
+    for s in system {
+        if !installed.iter().any(|c| c.path == s.path) {
+            installed.push(s);
+        }
+    }
+    installed
+}
+
+/// 当前配置中的 active 核心二进制路径（配置未保存时为空）。
+fn active_binary(data_dir: &std::path::Path) -> std::path::PathBuf {
+    pp_client::ClientConfig::load(data_dir)
+        .map(|c| c.core_binary)
+        .unwrap_or_default()
+}
+
+/// 列出本地可用核心（已下载 + 系统探测，含 active 标记）。
+#[tauri::command]
+pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
+    let active = active_binary(&state.data_dir);
+    Ok(cores
+        .iter()
+        .map(|c| LocalCoreView::from_core(c, &active))
+        .collect())
+}
+
+/// 列出远端最近 10 个发布版本（GitHub releases，去 `v` 前缀）。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_remote_core_versions(
+    state: State<'_, AppState>,
+    core_type: String,
+) -> Result<Vec<String>, String> {
+    let ct = core_type_from_str(&core_type)?;
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    inv.list_remote_versions(ct)
+        .await
+        .map_err(|e| format!("拉取远端版本失败: {e}"))
+}
+
+/// 下载指定版本核心并返回其视图。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn download_core(
+    state: State<'_, AppState>,
+    core_type: String,
+    version: String,
+) -> Result<LocalCoreView, String> {
+    let ct = core_type_from_str(&core_type)?;
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let core = inv
+        .download(ct, &version)
+        .await
+        .map_err(|e| format!("下载核心失败: {e}"))?;
+    let active = active_binary(&state.data_dir);
+    Ok(LocalCoreView::from_core(&core, &active))
+}
+
+/// 将指定路径设为核心二进制：校验存在且可执行后写回 `client.json` 的 `core_binary`。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let bin = PathBuf::from(&path);
+    if !bin.is_file() {
+        return Err(format!("核心二进制不存在: {path}"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let meta = std::fs::metadata(&bin).map_err(|e| format!("读取核心信息失败: {e}"))?;
+        if meta.permissions().mode() & 0o111 == 0 {
+            return Err(format!("核心二进制不可执行: {path}"));
+        }
+    }
+    let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
+        Ok(cfg) => cfg,
+        Err(_) => pp_client::ClientConfig::new(
+            state.data_dir.clone(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        ),
+    };
+    config.core_binary = bin;
+    config.save().map_err(|e| format!("保存配置失败: {e}"))
+}
+
+/// 手动刷新系统核心探测。
+#[tauri::command]
+pub async fn detect_system_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let active = active_binary(&state.data_dir);
+    Ok(inv
+        .detect_system_cores()
+        .iter()
+        .map(|c| LocalCoreView::from_core(c, &active))
+        .collect())
+}
+
 // ---------- 订阅管理 ----------
 
 /// 订阅用户信息的对外视图（与 `pp_client::SubscriptionInfo` 字段对齐）。
