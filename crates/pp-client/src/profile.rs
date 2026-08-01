@@ -586,6 +586,7 @@ pub async fn apply_js_override(config: Value, js: &str) -> PanelResult<Value> {
             &source,
             ScriptKind::Generic,
             None,
+            None,
             ScriptDialect::Surge,
             "profile-js",
         )

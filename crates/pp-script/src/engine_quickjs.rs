@@ -43,6 +43,7 @@ impl ScriptEngine for QuickJsEngine {
         source: &str,
         kind: ScriptKind,
         arg: Option<serde_json::Value>,
+        argument: Option<&str>,
     ) -> PanelResult<ScriptOutput> {
         let timeout_ms = self.limits.timeout_ms;
         let timeout = Duration::from_millis(timeout_ms);
@@ -79,6 +80,15 @@ impl ScriptEngine for QuickJsEngine {
                 // 按脚本类型注入 $request / $response。
                 api::inject_script_arg(&js_ctx, kind, arg.as_ref())
                     .map_err(|e| PanelError::Script(format!("inject arg: {e}")))?;
+                // 模块 argument：非空时注入全局 $argument（JS 字符串）。
+                if let Some(argument) = argument {
+                    let s = rquickjs::String::from_str(js_ctx.clone(), argument)
+                        .map_err(|e| PanelError::Script(format!("init argument: {e}")))?;
+                    js_ctx
+                        .globals()
+                        .set("$argument", s)
+                        .map_err(|e| PanelError::Script(format!("inject argument: {e}")))?;
+                }
 
                 // eval 脚本：可能同步调用 $done，也可能在 Promise resolve 后调用。
                 let eval_val = match js_ctx.eval::<rquickjs::Value, _>(source) {
@@ -248,7 +258,7 @@ mod tests {
             })();
         "#;
         let out = engine
-            .run_script(source, ScriptKind::Generic, None)
+            .run_script(source, ScriptKind::Generic, None, None)
             .await
             .unwrap();
         let v = out.0;
@@ -288,7 +298,7 @@ mod tests {
             $done({body: JSON.stringify(data)});
         "#;
         let out = engine
-            .run_script(source, ScriptKind::HttpResponse, Some(arg))
+            .run_script(source, ScriptKind::HttpResponse, Some(arg), None)
             .await
             .unwrap();
         let body = out.0["body"].as_str().unwrap();
@@ -320,7 +330,7 @@ mod tests {
             });
         "#;
         let out = engine
-            .run_script(source, ScriptKind::Generic, None)
+            .run_script(source, ScriptKind::Generic, None, None)
             .await
             .unwrap();
         assert_eq!(out.0["status"], 200);
@@ -347,7 +357,7 @@ mod tests {
 
         let source = "while(true) {}";
         let err = engine
-            .run_script(source, ScriptKind::Generic, None)
+            .run_script(source, ScriptKind::Generic, None, None)
             .await
             .unwrap_err();
         assert!(
@@ -369,7 +379,7 @@ mod tests {
 
         let source = r#"throw new Error("boom");"#;
         let err = engine
-            .run_script(source, ScriptKind::Generic, None)
+            .run_script(source, ScriptKind::Generic, None, None)
             .await
             .unwrap_err();
         let PanelError::Script(msg) = &err else {
@@ -393,9 +403,48 @@ mod tests {
         .unwrap();
         // 简单同步脚本，不产生顶层 Promise
         let out = engine
-            .run_script("$done({x: 1});", ScriptKind::Generic, None)
+            .run_script("$done({x: 1});", ScriptKind::Generic, None, None)
             .await;
         assert!(out.is_ok(), "err: {:?}", out.err());
+    }
+
+    /// `$argument` 注入 e2e：argument 为 `Some` 时脚本内可读全局 `$argument` 字符串。
+    #[tokio::test(flavor = "current_thread")]
+    async fn argument_injected_as_global_string() {
+        let (host, _http, _notifier, _store) = test_host();
+        let mut engine = QuickJsEngine::new(
+            host,
+            ScriptDialect::Surge,
+            ScriptLimits::default(),
+            "arg-test".to_string(),
+        )
+        .unwrap();
+
+        let source = r#"
+            if (typeof $argument === "undefined") {
+                $done({err: 1});
+            } else {
+                $done({arg: $argument});
+            }
+        "#;
+        let out = engine
+            .run_script(
+                source,
+                ScriptKind::Generic,
+                None,
+                Some("api.example.com|abc"),
+            )
+            .await
+            .expect("script with $argument should succeed");
+        assert_eq!(out.0["err"], serde_json::Value::Null);
+        assert_eq!(out.0["arg"], "api.example.com|abc");
+
+        // argument 为 None 时 $argument 保持 undefined（typeof 判定返回 err:1）。
+        let out2 = engine
+            .run_script(source, ScriptKind::Generic, None, None)
+            .await
+            .expect("script without $argument should succeed");
+        assert_eq!(out2.0["err"], 1);
     }
 
     #[tokio::test(flavor = "current_thread")]

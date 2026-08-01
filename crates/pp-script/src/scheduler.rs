@@ -259,7 +259,7 @@ impl ScriptScheduler {
         dialect: ScriptDialect,
     ) -> PanelResult<ScriptOutput> {
         self.worker
-            .run_script(source, ScriptKind::Cron, None, dialect, name)
+            .run_script(source, ScriptKind::Cron, None, None, dialect, name)
             .await
     }
 

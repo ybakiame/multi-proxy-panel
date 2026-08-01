@@ -24,6 +24,8 @@ struct Job {
     source: String,
     kind: ScriptKind,
     arg: Option<serde_json::Value>,
+    /// Surge/Loon 模块 `argument=` 模板替换后的字符串（`None` 表示无模块参数）。
+    argument: Option<String>,
     dialect: ScriptDialect,
     script_name: String,
     respond: oneshot::Sender<PanelResult<ScriptOutput>>,
@@ -74,6 +76,7 @@ impl ScriptWorker {
                                             source,
                                             kind,
                                             arg,
+                                            argument,
                                             dialect,
                                             script_name,
                                             respond,
@@ -87,6 +90,7 @@ impl ScriptWorker {
                                             &source,
                                             kind,
                                             arg,
+                                            argument.as_deref(),
                                             dialect,
                                             &script_name,
                                         )
@@ -128,6 +132,7 @@ impl ScriptWorker {
         source: &str,
         kind: ScriptKind,
         arg: Option<serde_json::Value>,
+        argument: Option<&str>,
         dialect: ScriptDialect,
         script_name: &str,
     ) -> PanelResult<ScriptOutput> {
@@ -136,6 +141,7 @@ impl ScriptWorker {
             source: source.to_string(),
             kind,
             arg,
+            argument: argument.map(str::to_string),
             dialect,
             script_name: script_name.to_string(),
             respond,
@@ -164,18 +170,20 @@ impl ScriptWorker {
 }
 
 /// 在 worker 线程内执行单个 job：新建引擎 + `run_script`。
+#[allow(clippy::too_many_arguments)]
 async fn execute(
     host: &Arc<ScriptHost>,
     limits: ScriptLimits,
     source: &str,
     kind: ScriptKind,
     arg: Option<serde_json::Value>,
+    argument: Option<&str>,
     dialect: ScriptDialect,
     script_name: &str,
 ) -> PanelResult<ScriptOutput> {
     let mut engine =
         QuickJsEngine::new(Arc::clone(host), dialect, limits, script_name.to_string())?;
-    engine.run_script(source, kind, arg).await
+    engine.run_script(source, kind, arg, argument).await
 }
 
 #[cfg(test)]
@@ -206,6 +214,7 @@ mod tests {
                         &source,
                         ScriptKind::Generic,
                         None,
+                        None,
                         ScriptDialect::QuantumultX,
                         "concurrent",
                     )
@@ -228,6 +237,7 @@ mod tests {
                 "throw new Error('boom');",
                 ScriptKind::Generic,
                 None,
+                None,
                 ScriptDialect::QuantumultX,
                 "err1",
             )
@@ -242,6 +252,7 @@ mod tests {
             .run_script(
                 "$done({ok: true});",
                 ScriptKind::Generic,
+                None,
                 None,
                 ScriptDialect::QuantumultX,
                 "ok2",
@@ -261,6 +272,7 @@ mod tests {
             worker.run_script(
                 "$done();",
                 ScriptKind::Generic,
+                None,
                 None,
                 ScriptDialect::QuantumultX,
                 "after",

@@ -127,7 +127,7 @@ impl ScriptHookEngine {
     ) {
         match self
             .worker
-            .run_script(&rule.source, kind, arg, self.dialect, &rule.name)
+            .run_script(&rule.source, kind, arg, None, self.dialect, &rule.name)
             .await
         {
             Ok(ScriptOutput(out)) => apply_output(&out, status, headers, body),
