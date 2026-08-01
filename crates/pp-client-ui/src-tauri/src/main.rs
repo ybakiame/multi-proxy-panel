@@ -6,6 +6,16 @@ mod commands;
 mod state;
 
 fn main() {
+    // WebKitGTK 在 WSLg / 部分 Linux GPU 环境下启用 DMA-BUF 渲染会导致
+    // WebView 黑屏（Tauri on Linux 的社区标准 workaround）。必须在 WebView
+    // 初始化前注入；若用户已显式设置该变量则保留用户值。
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
