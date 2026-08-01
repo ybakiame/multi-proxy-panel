@@ -71,17 +71,38 @@ pub struct ConfigMeta {
     pub arguments: Vec<ArgSpec>,
 }
 
+/// Loon `[Argument]` 段声明的参数控件类型（`#!arguments=` 声明缺省为输入框）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArgKind {
+    /// 自由文本输入（`input`）。
+    #[default]
+    Input,
+    /// 下拉选择（`select`）。
+    Select,
+}
+
 /// Surge/Loon 模块 `#!arguments=` 声明的单个参数。
 ///
 /// `argument="{key}"` 模板占位在运行时按「用户值 → 默认值 → 保留原样」替换。
+/// Loon `[Argument]` 段（`Key = input/select,"default","opt2",...,tag=...,desc=...`）
+/// 额外提供 [`ArgSpec::kind`]（控件类型）与 [`ArgSpec::options`]（select 选项）。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArgSpec {
     /// 参数键（模板占位 `{key}` 使用，`#!arguments= key:default`）。
     pub key: String,
     /// 默认值（用户未配置该键时替换进 argument 模板；可为空串）。
     pub default_value: String,
-    /// 参数描述（`#!arguments-desc=` 提供；可选）。
+    /// 参数描述（`#!arguments-desc=` / Loon `desc=` 提供；可选）。
     pub description: Option<String>,
+    /// 控件类型（Loon `[Argument]` 段提供；`#!arguments=` 声明缺省为 `Input`）。
+    #[serde(default)]
+    pub kind: ArgKind,
+    /// `select` 控件的可选项（首个引号值即 [`ArgSpec::default_value`]，其余为选项）。
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// 参数分组标签（Loon `[Argument]` 段 `tag=` 提供；可选）。
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 /// 解析文件头连续 `#!key=value` 元数据行；遇到首个非 `#!` 行（含空行）即停止。
@@ -146,6 +167,7 @@ fn parse_arguments_decl(value: &str) -> Vec<ArgSpec> {
             key: key.to_string(),
             default_value: strip_quotes(default_value.trim()).to_string(),
             description: None,
+            ..ArgSpec::default()
         });
     }
     args
@@ -165,6 +187,7 @@ fn merge_argument_descriptions(args: &mut Vec<ArgSpec>, value: &str) {
                 key,
                 default_value: String::new(),
                 description: Some(desc),
+                ..ArgSpec::default()
             });
         }
     }
@@ -280,7 +303,17 @@ pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<Import
             "rewrite_local" | "rewrite_remote" => parse_qx_rewrite(&mut cfg, &mut hook_index, line),
             "task_local" => parse_qx_task(&mut cfg, dialect, line),
             "mitm" => parse_mitm_hostnames(&mut cfg, line),
-            "script" => parse_surge_script(&mut cfg, dialect, line),
+            "script" => {
+                // Loon `[Script]` 行以 `http-request|http-response` 起头（Surge 为
+                // `name = type=...`）；按首 token 判型，避免方言差异串线。
+                let first = line.split_whitespace().next().unwrap_or_default();
+                if matches!(first, "http-request" | "http-response") {
+                    parse_loon_script(&mut cfg, line);
+                } else {
+                    parse_surge_script(&mut cfg, dialect, line);
+                }
+            }
+            "argument" => parse_loon_argument(&mut cfg, line),
             "url rewrite" => parse_surge_url_rewrite(&mut cfg, line),
             "header rewrite" => parse_surge_header_rewrite(&mut cfg, line),
             "map local" => parse_surge_map_local(&mut cfg, line),
@@ -771,6 +804,172 @@ fn parse_surge_script(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &s
             line,
             &format!("unrecognized script type '{other}'"),
         ),
+    }
+}
+
+/// Loon `[Script]` 行解析：`http-request|http-response ^pattern param=value,...`。
+///
+/// Loon 与 Surge 语法差异：类型为行首 token、无 `name =` 前缀，脚本名取 `tag=`，
+/// `argument=` 参数原文保留（可含 `[{key},...]` 模板），`engine` / `binary-body-mode`
+/// 等参数忽略。
+fn parse_loon_script(cfg: &mut ImportedConfig, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 2 {
+        cfg.warn(
+            "script",
+            line,
+            "unrecognized line (expected '<type> ^pattern params...')",
+        );
+        return;
+    }
+    let kind = match tokens[0] {
+        "http-request" => ScriptKind::HttpRequest,
+        "http-response" => ScriptKind::HttpResponse,
+        other => {
+            cfg.warn(
+                "script",
+                line,
+                &format!("unrecognized script type '{other}'"),
+            );
+            return;
+        }
+    };
+    let pattern_src = tokens[1];
+    let params = parse_kv_params(&tokens[2..].join(" "));
+    let Some(pattern) = compile_pattern(pattern_src, cfg, "script", line) else {
+        return;
+    };
+    let Some(script_path) = params.get("script-path") else {
+        cfg.warn("script", line, "missing 'script-path' parameter");
+        return;
+    };
+    if !is_remote_url(script_path) {
+        cfg.warn("script", line, "local script path not supported, skipped");
+        return;
+    }
+    let name = params
+        .get("tag")
+        .map(|t| strip_quotes(t).to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| derive_name_from_url(script_path));
+    let requires_body = parse_bool(
+        params
+            .get("requires-body")
+            .or_else(|| params.get("require-body")),
+    );
+    // `argument=` 参数原文保留（模板占位运行时替换）；缺省 max_size 与 Surge 一致。
+    let argument = params.get("argument").cloned();
+    cfg.script_urls.push((name.clone(), script_path.clone()));
+    cfg.scripts.push(HookScriptRule {
+        name,
+        kind,
+        pattern,
+        requires_body,
+        max_size: 131072,
+        source: String::new(),
+        argument,
+    });
+}
+
+/// Loon `[Argument]` 段行解析：`Key = input/select,"default","opt2",...,tag=...,desc=...`。
+///
+/// `input` 后紧跟单个引号默认值；`select` 后首个引号值为默认值、其余为可选项；
+/// `tag=` 独立字段、`desc=` 进 description。结果按 key 合并进
+/// [`ConfigMeta::arguments`]（`#!arguments=` 已有声明时补齐字段）。
+fn parse_loon_argument(cfg: &mut ImportedConfig, line: &str) {
+    let Some(eq) = line.find('=') else {
+        cfg.warn(
+            "argument",
+            line,
+            "unrecognized line (expected 'Key = kind,...')",
+        );
+        return;
+    };
+    let key = line[..eq].trim();
+    if key.is_empty() {
+        cfg.warn("argument", line, "empty argument key");
+        return;
+    }
+    let segments = split_kv_segments(line[eq + 1..].trim());
+    let Some(kind_src) = segments.first() else {
+        cfg.warn("argument", line, "missing argument kind");
+        return;
+    };
+    let kind = match kind_src.trim().to_ascii_lowercase().as_str() {
+        "input" => ArgKind::Input,
+        "select" => ArgKind::Select,
+        other => {
+            cfg.warn(
+                "argument",
+                line,
+                &format!("unrecognized argument kind '{other}'"),
+            );
+            return;
+        }
+    };
+    // 其余段：引号值（default / options）与 tag= / desc= 参数。
+    let mut values: Vec<String> = Vec::new();
+    let mut tag: Option<String> = None;
+    let mut desc: Option<String> = None;
+    for seg in &segments[1..] {
+        let seg = seg.trim();
+        if seg.is_empty() {
+            continue;
+        }
+        // 引号值先于 key=value 判定，避免值内 `=`（如 `"a=b"`）误判为参数。
+        if seg.starts_with('"') {
+            values.push(strip_quotes(seg).to_string());
+            continue;
+        }
+        if let Some((k, v)) = seg.split_once('=') {
+            match k.trim().to_ascii_lowercase().as_str() {
+                "tag" => tag = Some(strip_quotes(v.trim()).to_string()),
+                "desc" => desc = Some(strip_quotes(v.trim()).to_string()),
+                _ => {} // 其他 key=value（如 enable）忽略
+            }
+        }
+    }
+    let (default_value, options) = match kind {
+        ArgKind::Select => {
+            let mut it = values.into_iter();
+            (it.next().unwrap_or_default(), it.collect())
+        }
+        ArgKind::Input => (values.into_iter().next().unwrap_or_default(), Vec::new()),
+    };
+    merge_argument_spec(
+        &mut cfg.meta,
+        ArgSpec {
+            key: key.to_string(),
+            default_value,
+            description: desc,
+            kind,
+            options,
+            tag,
+        },
+    );
+}
+
+/// 把 Loon `[Argument]` 段解析出的参数声明按 key 合并进 [`ConfigMeta`]。
+///
+/// `#!arguments=`（或 `#!arguments-desc=`）已声明同名 key 时补齐新字段；
+/// 未声明则整条追加。
+fn merge_argument_spec(meta: &mut ConfigMeta, spec: ArgSpec) {
+    if let Some(existing) = meta.arguments.iter_mut().find(|a| a.key == spec.key) {
+        existing.kind = spec.kind;
+        if !spec.default_value.is_empty() {
+            existing.default_value = spec.default_value;
+        }
+        if spec.description.is_some() {
+            existing.description = spec.description;
+        }
+        if !spec.options.is_empty() {
+            existing.options = spec.options;
+        }
+        if spec.tag.is_some() {
+            existing.tag = spec.tag;
+        }
+    } else {
+        meta.arguments.push(spec);
     }
 }
 
@@ -1538,6 +1737,145 @@ default = type=http-response,pattern=^https://d\.com/,script-path=https://exampl
         // 无引号裸值原样解析（回归旧语法）。
         let plain = meta.arguments.iter().find(|a| a.key == "plain").unwrap();
         assert_eq!(plain.default_value, "value");
+    }
+
+    /// ③ Loon `[Argument]` 段解析：kind（input/select）+ options + tag + desc。
+    #[test]
+    fn loon_argument_section_parses_kind_options_tag_desc() {
+        let content = r#"#!name=参数模块
+[Argument]
+Types = input,"Translate,External",tag=[歌词] 启用类型（多选）,desc=请选择要添加的歌词选项。
+Languages[0] = select,"AUTO","ZH","ZH-HANS","EN",tag=[翻译器] 主语言,desc=仅当源语言识别不准确时更改。
+"#;
+        let cfg = parse_import(content, ScriptDialect::Loon).unwrap();
+        assert_eq!(cfg.meta.arguments.len(), 2);
+        let types = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Types")
+            .unwrap();
+        assert_eq!(types.kind, ArgKind::Input);
+        assert_eq!(types.default_value, "Translate,External");
+        assert!(types.options.is_empty());
+        assert_eq!(types.tag.as_deref(), Some("[歌词] 启用类型（多选）"));
+        assert_eq!(
+            types.description.as_deref(),
+            Some("请选择要添加的歌词选项。")
+        );
+        let lang = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Languages[0]")
+            .unwrap();
+        assert_eq!(lang.kind, ArgKind::Select);
+        assert_eq!(lang.default_value, "AUTO");
+        assert_eq!(lang.options, vec!["ZH", "ZH-HANS", "EN"]);
+        assert_eq!(lang.tag.as_deref(), Some("[翻译器] 主语言"));
+        assert_eq!(
+            lang.description.as_deref(),
+            Some("仅当源语言识别不准确时更改。")
+        );
+    }
+
+    /// ④ Loon `[Script]` 行格式：`http-request|http-response ^pattern params...`。
+    #[test]
+    fn loon_script_lines_parse_type_pattern_tag_argument() {
+        let content = r#"#!name=DualSubs
+[Script]
+http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, script-path=https://example.com/r.js, tag=🍿️ DualSubs.Spotify.Tracks, argument=[{Types},{Languages[0]},{Vendor}]
+http-request ^https?:\/\/spclient\.wg\.spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*) requires-body=1, binary-body-mode=1, script-path=https://example.com/q.js, tag=req, argument=[{Types}]
+"#;
+        let cfg = parse_import(content, ScriptDialect::Loon).unwrap();
+        assert_eq!(cfg.scripts.len(), 2);
+        assert_eq!(cfg.scripts[0].name, "🍿️ DualSubs.Spotify.Tracks");
+        assert_eq!(cfg.scripts[0].kind, ScriptKind::HttpResponse);
+        assert_eq!(
+            cfg.scripts[0].pattern.as_str(),
+            r"^https?:\/\/api\.spotify\.com\/v1\/tracks\?"
+        );
+        assert!(cfg.scripts[0].requires_body);
+        // `argument=` 原文保留（含 `[{key},...]` 模板；逗号/花括号不误切）。
+        assert_eq!(
+            cfg.scripts[0].argument.as_deref(),
+            Some("[{Types},{Languages[0]},{Vendor}]")
+        );
+        assert_eq!(cfg.script_urls[0].1, "https://example.com/r.js");
+        // 第二个脚本：http-request + tag 命名 + binary-body-mode 忽略。
+        assert_eq!(cfg.scripts[1].name, "req");
+        assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
+        assert!(cfg.scripts[1].requires_body);
+        assert_eq!(cfg.scripts[1].argument.as_deref(), Some("[{Types}]"));
+        assert_eq!(cfg.script_urls[1].1, "https://example.com/q.js");
+        assert!(cfg.warnings.is_empty(), "warnings: {:?}", cfg.warnings);
+    }
+
+    /// ①②③④ DualSubs.Spotify Loon `.plugin` 真实样例整段断言。
+    #[test]
+    fn dualsubs_spotify_loon_plugin_sample_fixture() {
+        let content = r#"#!name = 🍿️ DualSubs: 🎵 Spotify
+#!desc = Spotify 增强及双语歌词
+[Argument]
+Types = input,"Translate,External",tag=[歌词] 启用类型（多选）,desc=请选择要添加的歌词选项。
+Languages[0] = select,"AUTO","ZH","ZH-HANS","EN",tag=[翻译器] 主语言,desc=仅当源语言识别不准确时更改。
+[Script]
+http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, script-path=https://example.com/r.js, tag=🍿️ DualSubs.Spotify.Tracks, argument=[{Types},{Languages[0]},{Vendor}]
+http-request ^https?:\/\/spclient\.wg\.spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*) requires-body=1, binary-body-mode=1, script-path=https://example.com/q.js, tag=req, argument=[{Types}]
+[MITM]
+hostname = api.spotify.com, spclient.wg.spotify.com, *-spclient.spotify.com
+"#;
+        let cfg = parse_import(content, ScriptDialect::Loon).unwrap();
+
+        // ① 头空格 trim。
+        assert_eq!(cfg.meta.name.as_deref(), Some("🍿️ DualSubs: 🎵 Spotify"));
+        assert_eq!(cfg.meta.desc.as_deref(), Some("Spotify 增强及双语歌词"));
+
+        // ③ [Argument]：input/select + options + tag + desc。
+        assert_eq!(cfg.meta.arguments.len(), 2);
+        let types = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Types")
+            .unwrap();
+        assert_eq!(types.kind, ArgKind::Input);
+        assert_eq!(types.default_value, "Translate,External");
+        assert_eq!(types.tag.as_deref(), Some("[歌词] 启用类型（多选）"));
+        let lang = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Languages[0]")
+            .unwrap();
+        assert_eq!(lang.kind, ArgKind::Select);
+        assert_eq!(lang.default_value, "AUTO");
+        assert_eq!(lang.options, vec!["ZH", "ZH-HANS", "EN"]);
+
+        // ④ [Script]：两条 Loon 行。
+        assert_eq!(cfg.scripts.len(), 2);
+        assert_eq!(cfg.scripts[0].name, "🍿️ DualSubs.Spotify.Tracks");
+        assert_eq!(cfg.scripts[0].kind, ScriptKind::HttpResponse);
+        assert!(cfg.scripts[0].requires_body);
+        assert_eq!(
+            cfg.scripts[0].argument.as_deref(),
+            Some("[{Types},{Languages[0]},{Vendor}]")
+        );
+        assert_eq!(cfg.script_urls[0].1, "https://example.com/r.js");
+        assert_eq!(cfg.scripts[1].name, "req");
+        assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
+        assert_eq!(cfg.script_urls[1].1, "https://example.com/q.js");
+
+        // [MITM] hostname 白名单。
+        assert_eq!(
+            cfg.hostnames,
+            vec![
+                "api.spotify.com".to_string(),
+                "spclient.wg.spotify.com".to_string(),
+                "*-spclient.spotify.com".to_string()
+            ]
+        );
+        assert!(cfg.warnings.is_empty(), "warnings: {:?}", cfg.warnings);
     }
 
     /// ①② Surge `.sgmodule` 样例：`#!arguments` 引号感知切分 + Surge `[Script]` 行

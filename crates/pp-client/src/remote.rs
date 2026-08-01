@@ -1324,11 +1324,13 @@ mod tests {
                     key: "server".into(),
                     default_value: "api.example.com".into(),
                     description: None,
+                    ..ArgSpec::default()
                 },
                 ArgSpec {
                     key: "token".into(),
                     default_value: "default-token".into(),
                     description: None,
+                    ..ArgSpec::default()
                 },
             ],
             ..ConfigMeta::default()
@@ -1394,6 +1396,112 @@ mod tests {
                 &HashMap::from([("server".to_string(), "api.example.com".to_string())]),
             ),
             "api.example.com|abc"
+        );
+    }
+
+    /// ⑤ `resolve_argument_template` 支持任意 key（含 `[0]` 下标）与 Loon `[{key},...]`
+    /// 模板：整个 argument 串按 `{key}` 替换、外围 `[]` 保留；Surge 三花括号同样替换。
+    #[test]
+    fn resolve_argument_template_supports_arbitrary_keys_and_bracket_forms() {
+        let user_values = HashMap::from([
+            ("Types".to_string(), "Translate,External".to_string()),
+            ("Languages[0]".to_string(), "AUTO".to_string()),
+        ]);
+        let defaults = HashMap::new();
+
+        // Loon `[{key}]` 形式：`{Types}` / `{Languages[0]}` 逐个替换，外围方括号保留；
+        // 未声明的 `{Vendor}` 保留原样。
+        assert_eq!(
+            resolve_argument_template("[{Types},{Languages[0]},{Vendor}]", &user_values, &defaults,),
+            "[Translate,External,AUTO,{Vendor}]"
+        );
+
+        // Surge 三花括号占位含数组下标 key：整段替换、内层引号保留。
+        assert_eq!(
+            resolve_argument_template(
+                "Types=\"{{{Types}}}\"&Languages[0]=\"{{{Languages[0]}}}\"&Vendor=\"{{{Vendor}}}\"",
+                &user_values,
+                &defaults,
+            ),
+            "Types=\"Translate,External\"&Languages[0]=\"AUTO\"&Vendor=\"{{{Vendor}}}\""
+        );
+
+        // 默认值兜底：无用户值时用 `#!arguments` 默认值。
+        let with_defaults = HashMap::from([
+            ("Types".to_string(), "External".to_string()),
+            ("Languages[0]".to_string(), "ZH".to_string()),
+        ]);
+        assert_eq!(
+            resolve_argument_template("[{Types},{Languages[0]}]", &HashMap::new(), &with_defaults),
+            "[External,ZH]"
+        );
+    }
+
+    /// ⑤ DualSubs.Spotify 全链路断言：Loon `.plugin` 的 `[Argument]` + `[Script]`
+    /// 经 parse_import → apply_argument_templates 后，`[{Types},{Languages[0]},{Vendor}]`
+    /// 中已声明 key 被替换、未声明的 `{Vendor}` 保留。
+    #[test]
+    fn dualsubs_spotify_loon_plugin_argument_template_resolution() {
+        let content = r#"#!name = 🍿️ DualSubs: 🎵 Spotify
+[Argument]
+Types = input,"Translate,External",tag=[歌词] 启用类型（多选）,desc=请选择要添加的歌词选项。
+Languages[0] = select,"AUTO","ZH","ZH-HANS","EN",tag=[翻译器] 主语言,desc=仅当源语言识别不准确时更改。
+[Script]
+http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, script-path=https://example.com/r.js, tag=🍿️ DualSubs.Spotify.Tracks, argument=[{Types},{Languages[0]},{Vendor}]
+"#;
+        let imported = parse_import(content, ScriptDialect::Loon).unwrap();
+
+        // 由 [Argument] 构造 defaults（Types / Languages[0]）。
+        let metas = [imported.meta.clone()];
+        let mut defaults = HashMap::new();
+        for arg in &metas[0].arguments {
+            defaults.insert(arg.key.clone(), arg.default_value.clone());
+        }
+
+        // 无用户值：Types 与 Languages[0] 用默认值替换，{Vendor} 保留。
+        let resolved = resolve_argument_template(
+            imported.scripts[0].argument.as_deref().unwrap(),
+            &HashMap::new(),
+            &defaults,
+        );
+        assert_eq!(resolved, "[Translate,External,AUTO,{Vendor}]");
+
+        // 用户配置值覆盖默认值。
+        let user = HashMap::from([
+            ("Types".to_string(), "Translate".to_string()),
+            ("Languages[0]".to_string(), "ZH".to_string()),
+            ("Vendor".to_string(), "Google".to_string()),
+        ]);
+        let resolved2 = resolve_argument_template(
+            imported.scripts[0].argument.as_deref().unwrap(),
+            &user,
+            &defaults,
+        );
+        assert_eq!(resolved2, "[Translate,ZH,Google]");
+    }
+
+    /// ⑤ Surge `.sgmodule` 的 `{{{key}}}` 占位替换（含 `Languages[0]` 下标 key）。
+    #[test]
+    fn dualsubs_spotify_surge_sgmodule_argument_template_resolution() {
+        let content = r#"#!name = 🍿️ DualSubs: 🎵 Spotify
+#!arguments = Types:"Translate,External",Languages[0]:"AUTO",Vendor:"Google"
+[Script]
+🍿️ DualSubs.Spotify.Tracks = type=http-response, pattern=^https?:\/\/api\.spotify\.com\/v1\/tracks\?, requires-body=1, engine=webview, script-path=https://example.com/r.js, argument=Types="{{{Types}}}"&Languages[0]="{{{Languages[0]}}}"&Vendor="{{{Vendor}}}"
+"#;
+        let imported = parse_import(content, ScriptDialect::Surge).unwrap();
+        let mut defaults = HashMap::new();
+        for arg in &imported.meta.arguments {
+            defaults.insert(arg.key.clone(), arg.default_value.clone());
+        }
+
+        let resolved = resolve_argument_template(
+            imported.scripts[0].argument.as_deref().unwrap(),
+            &HashMap::new(),
+            &defaults,
+        );
+        assert_eq!(
+            resolved,
+            "Types=\"Translate,External\"&Languages[0]=\"AUTO\"&Vendor=\"Google\""
         );
     }
 
