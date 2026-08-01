@@ -12,7 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use pp_common::{CoreType, PanelResult};
+use pp_common::{CoreType, PanelError, PanelResult};
 use pp_mitm::{MemoryRecorder, RewriteEngine, RunningProxy, ScriptHookEngine};
 use pp_script::{
     FilePersistentStore, Notifier, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript,
@@ -122,24 +122,52 @@ impl ClientState {
     /// （始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。Profile
     /// 构建失败时尚未启动任何组件，无需回滚。
     pub async fn start(&mut self) -> PanelResult<()> {
-        tracing::info!(hub_url = %self.config.hub_url, "客户端启动：拉取订阅");
-        let fetcher = subscription::SubscriptionFetcher::new();
+        tracing::info!("客户端启动：解析订阅");
+        let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
 
         // 订阅 → Profile 层：订阅内容只用于提取节点，本地模板生成分组/路由，
         // YAML 与 JS 双复写（来自 data_dir/profile.json）。
-        let sub_content = match self.config.core_type {
-            CoreType::SingBox => {
-                let (sub_config, _info) = fetcher
-                    .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
-                    .await?;
-                profile::SubContent::SingBox(sub_config)
+        //
+        // 新路径：SubscriptionStore 取第一个 enabled 订阅，经 fetch_subscription
+        // 嗅探格式并转成双核心节点。subscriptions.json 为空且旧 hub_url/sub_token
+        // 非空时回退旧版 Hub 订阅路径（deprecated）。
+        let sub_content = if let Some(sub) = sub_store.load()?.into_iter().find(|s| s.enabled) {
+            let fetch = subscription::fetch_subscription(&sub.url).await?;
+            match self.config.core_type {
+                CoreType::SingBox => profile::SubContent::SingBox(serde_json::json!({
+                    "outbounds": fetch.singbox_nodes,
+                })),
+                CoreType::Mihomo => {
+                    let yaml = serde_yaml::to_string(&serde_json::json!({
+                        "proxies": fetch.mihomo_nodes,
+                    }))?;
+                    profile::SubContent::Mihomo(yaml)
+                }
             }
-            CoreType::Mihomo => {
-                let (yaml, _info) = fetcher
-                    .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
-                    .await?;
-                profile::SubContent::Mihomo(yaml)
+        } else if !self.config.hub_url.is_empty() && !self.config.sub_token.is_empty() {
+            tracing::warn!(
+                hub_url = %self.config.hub_url,
+                "未配置通用订阅，回退到旧版 Hub 订阅路径（deprecated）"
+            );
+            let fetcher = subscription::SubscriptionFetcher::new();
+            match self.config.core_type {
+                CoreType::SingBox => {
+                    let (sub_config, _info) = fetcher
+                        .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
+                        .await?;
+                    profile::SubContent::SingBox(sub_config)
+                }
+                CoreType::Mihomo => {
+                    let (yaml, _info) = fetcher
+                        .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
+                        .await?;
+                    profile::SubContent::Mihomo(yaml)
+                }
             }
+        } else {
+            return Err(PanelError::Client(
+                "no enabled subscription and no legacy hub subscription configured".to_string(),
+            ));
         };
         let store = profile::ProfileStore::new(self.config.data_dir.clone());
         let overrides = store.load()?;
@@ -363,6 +391,7 @@ mod tests {
     use std::sync::Arc;
 
     use axum::http::StatusCode;
+    use base64::Engine as _;
     use pp_common::CoreType;
     use tempfile::TempDir;
 
@@ -636,7 +665,57 @@ mod tests {
         assert!(!status.core_running);
     }
 
-    /// MITM 链路（方案 D）：MITM 先于核心启动，系统代理指向核心 mixed 主入口。
+    /// 通用订阅集成：subscriptions.json 指向本地 server（base64 分享链接）→ start 成功。
+    #[tokio::test]
+    async fn start_with_subscription_store_fetches_and_starts() {
+        // 本地 server 返回 base64 编码的 vless 分享链接（禁外部网络）。
+        let link = "vless://12345678-1234-1234-1234-123456789012@example.com:443?security=tls&sni=example.com#n1";
+        let body = base64::engine::general_purpose::STANDARD.encode(link);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base = format!("http://{addr}");
+        tokio::spawn(async move {
+            let app = axum::Router::new().route(
+                "/sub",
+                axum::routing::get(move || async move {
+                    (
+                        [(
+                            "subscription-userinfo",
+                            "upload=1; download=2; total=100; expire=3",
+                        )],
+                        body,
+                    )
+                }),
+            );
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        // subscriptions.json 指向本地 server。
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        store.add("local", &format!("{base}/sub"), true).unwrap();
+
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.mitm_enabled = false;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        let status = state.status().await;
+        assert!(status.core_running, "通用订阅路径核心应启动");
+
+        state.stop().await;
+        let status = state.status().await;
+        assert!(!status.core_running);
+    }
+
     #[tokio::test]
     async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_port() {
         let base = spawn_integration_server().await;
