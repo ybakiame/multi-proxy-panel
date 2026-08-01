@@ -40,6 +40,39 @@ const IMPORT_DIALECT_OPTIONS = [
   { id: "loon", label: "Loon" },
 ] as const;
 
+/** 将 `detect_remote` 返回的类型字符串归一为选项值（大小写防御）。 */
+function normalizeKind(kind: string | null): string | null {
+  if (!kind) {
+    return null;
+  }
+  const lower = kind.trim().toLowerCase();
+  if (lower === "script") {
+    return "Script";
+  }
+  if (lower === "snippet") {
+    return "Snippet";
+  }
+  return kind.trim();
+}
+
+/** 从 URL 派生资源名：取路径末段文件名并去掉常见后缀（与后端 `derive_name_from_url` 一致）。 */
+function deriveNameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last) {
+      const stem = last.replace(/\.(js|conf|sgmodule|plugin|loon)$/i, "");
+      if (stem.trim() !== "") {
+        return stem;
+      }
+    }
+  } catch {
+    // URL 无法解析时回退为原串
+  }
+  return url;
+}
+
 /** RFC3339 时间戳转为本地可读时间；空值显示占位符。 */
 function formatTime(iso: string | null): string {
   if (!iso) {
@@ -123,30 +156,31 @@ export default function Scripts() {
     setDetectInfo(null);
     try {
       const result: DetectRemoteView = await detectRemote(url);
-      if (result.kind) {
-        setNewKind(result.kind);
+      const kind = normalizeKind(result.kind);
+      if (kind) {
+        setNewKind(kind);
       }
       if (result.dialect) {
         setNewDialect(result.dialect);
       }
+      // 名称仅在用户未填写时填充：优先 meta.name，其次从 URL 派生（脚本类无 meta 时也能预填）。
+      setNewName((prev) => (prev.trim() !== "" ? prev : result.meta?.name?.trim() || deriveNameFromUrl(url)));
+      // 描述仅在用户未填写时填充。
+      setNewDescription((prev) => (prev.trim() !== "" ? prev : (result.meta?.desc?.trim() ?? "")));
       if (result.meta) {
-        if (result.meta.name) {
-          setNewName(result.meta.name);
-        }
-        if (result.meta.desc) {
-          setNewDescription(result.meta.desc);
-        }
         setNewIcon(result.meta.icon ?? null);
         setNewIconFailed(false);
       }
       if (result.meta?.name) {
         setDetectInfo(`已识别：${result.meta.name}`);
       } else if (result.kind || result.dialect) {
-        setDetectInfo(`已识别类型：${result.kind === "Script" ? "脚本" : "片段"} / ${result.dialect}`);
+        setDetectInfo(`已识别类型：${kind === "Script" ? "脚本" : "片段"} / ${result.dialect}`);
       } else {
         setDetectInfo("未识别出类型与元数据，可手动填写");
       }
     } catch (err) {
+      // 失败时清除去重标记，允许再次嗅探。
+      lastDetectedUrlRef.current = "";
       setDetectInfo(null);
       setError(toErrorMessage(err));
     } finally {
@@ -181,6 +215,8 @@ export default function Scripts() {
         description: newDescription.trim() || null,
         update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
         enabled: true,
+        icon: newIcon,
+        argument_values: [],
       });
       setAddOpen(false);
       resetAddForm();

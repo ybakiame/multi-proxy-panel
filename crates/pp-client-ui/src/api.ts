@@ -61,6 +61,10 @@ export interface RemoteResource {
   /** 更新间隔（秒）。 */
   update_interval_secs: number;
   enabled: boolean;
+  /** 用户为模块参数配置的值 `[key, value]`（对应 `#!arguments=` 声明的键；旧清单缺省为空）。 */
+  argument_values: [string, string][];
+  /** 资源图标 URL（可选；嗅探结果预填）。 */
+  icon: string | null;
 }
 
 /** `fetch_remotes` 的拉取报告。 */
