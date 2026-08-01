@@ -94,6 +94,16 @@ export interface ConfigMetaView {
   open_url: string | null;
 }
 
+/** `detect_remote` 的嗅探结果（kind/dialect 按后缀判定，meta 为 Snippet 拉取解析的配置头）。 */
+export interface DetectRemoteView {
+  /** 嗅探出的资源类型（`Script` / `Snippet`；无法识别时为 null）。 */
+  kind: string | null;
+  /** 嗅探出的脚本方言（`Surge` / `QuantumultX` / `Loon`；无法识别时为 null）。 */
+  dialect: string | null;
+  /** 配置头元数据（仅 Snippet 且 URL 可访问时返回；拉取失败或非 Snippet 时为 null）。 */
+  meta: ConfigMetaView | null;
+}
+
 /** `import_config` 的导入摘要。 */
 export interface ImportSummary {
   rewrites: number;
@@ -187,6 +197,11 @@ export function listRemotes(): Promise<RemoteResource[]> {
 
 export function addRemote(remote: RemoteResource): Promise<void> {
   return invoke<void>("add_remote", { remote });
+}
+
+/** 嗅探远端资源 URL：按后缀判定类型/方言，Snippet 可访问时解析配置头元数据。 */
+export function detectRemote(url: string): Promise<DetectRemoteView> {
+  return invoke<DetectRemoteView>("detect_remote", { url });
 }
 
 export function removeRemote(name: string): Promise<void> {

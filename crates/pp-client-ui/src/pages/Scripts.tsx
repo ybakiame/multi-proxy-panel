@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -15,6 +15,7 @@ import {
 } from "@heroui/react";
 import {
   addRemote,
+  detectRemote,
   fetchRemotes,
   importConfig,
   listRemotes,
@@ -23,9 +24,17 @@ import {
   runTask,
   toErrorMessage,
 } from "../api";
-import type { FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
+import type { DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
 
-const DIALECT_OPTIONS = [
+/** 远程资源添加表单的方言选项（与 `RemoteResourceView.dialect` 的 serde 表示一致）。 */
+const REMOTE_DIALECT_OPTIONS = [
+  { id: "QuantumultX", label: "QuantumultX" },
+  { id: "Surge", label: "Surge" },
+  { id: "Loon", label: "Loon" },
+] as const;
+
+/** 配置导入的方言选项（与 `import_config` 命令的小写方言值一致）。 */
+const IMPORT_DIALECT_OPTIONS = [
   { id: "quantumultx", label: "QuantumultX" },
   { id: "surge", label: "Surge" },
   { id: "loon", label: "Loon" },
@@ -64,9 +73,16 @@ export default function Scripts() {
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newKind, setNewKind] = useState<string>("Script");
-  const [newDialect, setNewDialect] = useState<string>("surge");
+  const [newDialect, setNewDialect] = useState<string>("Surge");
   const [newInterval, setNewInterval] = useState<string>("86400");
+  const [detecting, setDetecting] = useState(false);
+  const [detectInfo, setDetectInfo] = useState<string | null>(null);
+  const [newIcon, setNewIcon] = useState<string | null>(null);
+  const [newIconFailed, setNewIconFailed] = useState(false);
+  // 已嗅探过的 URL：避免失焦与「嗅探」按钮同时触发时重复拉取。
+  const lastDetectedUrlRef = useRef("");
 
   // 配置导入
   const [importText, setImportText] = useState("");
@@ -95,6 +111,63 @@ export default function Scripts() {
     void refreshTasks();
   }, [refreshRemotes, refreshTasks]);
 
+  /** 嗅探远端资源：按后缀判定类型/方言，Snippet 可访问时解析元数据并预填表单。 */
+  const handleDetect = useCallback(async () => {
+    const url = newUrl.trim();
+    if (!url || url === lastDetectedUrlRef.current) {
+      return;
+    }
+    lastDetectedUrlRef.current = url;
+    setDetecting(true);
+    setError(null);
+    setDetectInfo(null);
+    try {
+      const result: DetectRemoteView = await detectRemote(url);
+      if (result.kind) {
+        setNewKind(result.kind);
+      }
+      if (result.dialect) {
+        setNewDialect(result.dialect);
+      }
+      if (result.meta) {
+        if (result.meta.name) {
+          setNewName(result.meta.name);
+        }
+        if (result.meta.desc) {
+          setNewDescription(result.meta.desc);
+        }
+        setNewIcon(result.meta.icon ?? null);
+        setNewIconFailed(false);
+      }
+      if (result.meta?.name) {
+        setDetectInfo(`已识别：${result.meta.name}`);
+      } else if (result.kind || result.dialect) {
+        setDetectInfo(`已识别类型：${result.kind === "Script" ? "脚本" : "片段"} / ${result.dialect}`);
+      } else {
+        setDetectInfo("未识别出类型与元数据，可手动填写");
+      }
+    } catch (err) {
+      setDetectInfo(null);
+      setError(toErrorMessage(err));
+    } finally {
+      setDetecting(false);
+    }
+  }, [newUrl]);
+
+  /** 重置添加资源表单（新增/嗅探成功添加后调用）。 */
+  const resetAddForm = useCallback(() => {
+    setNewName("");
+    setNewUrl("");
+    setNewDescription("");
+    setNewKind("Script");
+    setNewDialect("Surge");
+    setNewInterval("86400");
+    setNewIcon(null);
+    setNewIconFailed(false);
+    setDetectInfo(null);
+    lastDetectedUrlRef.current = "";
+  }, []);
+
   const handleAdd = async () => {
     const interval = Number(newInterval);
     setBusy(true);
@@ -105,12 +178,12 @@ export default function Scripts() {
         url: newUrl.trim(),
         kind: newKind as RemoteResource["kind"],
         dialect: newDialect,
+        description: newDescription.trim() || null,
         update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
         enabled: true,
       });
       setAddOpen(false);
-      setNewName("");
-      setNewUrl("");
+      resetAddForm();
       await refreshRemotes();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -231,6 +304,7 @@ export default function Scripts() {
                     <Table.Content aria-label="远程资源" className="min-w-[720px]">
                       <Table.Header>
                         <Table.Column isRowHeader>名称</Table.Column>
+                        <Table.Column>描述</Table.Column>
                         <Table.Column>类型</Table.Column>
                         <Table.Column>URL</Table.Column>
                         <Table.Column>更新间隔</Table.Column>
@@ -241,6 +315,7 @@ export default function Scripts() {
                         {remotes.map((remote) => (
                           <Table.Row key={remote.name}>
                             <Table.Cell>{remote.name}</Table.Cell>
+                            <Table.Cell className="max-w-[200px] truncate">{remote.description ?? "-"}</Table.Cell>
                             <Table.Cell>{remote.kind === "Script" ? "脚本" : "片段"}</Table.Cell>
                             <Table.Cell className="max-w-[240px] truncate font-mono text-xs">{remote.url}</Table.Cell>
                             <Table.Cell>{formatInterval(remote.update_interval_secs)}</Table.Cell>
@@ -286,7 +361,14 @@ export default function Scripts() {
                 >
                   立即更新
                 </Button>
-                <Button variant="primary" isDisabled={busy} onPress={() => setAddOpen(true)}>
+                <Button
+                  variant="primary"
+                  isDisabled={busy}
+                  onPress={() => {
+                    resetAddForm();
+                    setAddOpen(true);
+                  }}
+                >
                   添加资源
                 </Button>
               </div>
@@ -407,7 +489,7 @@ export default function Scripts() {
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {DIALECT_OPTIONS.map((option) => (
+                    {IMPORT_DIALECT_OPTIONS.map((option) => (
                       <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
                         {option.label}
                         <ListBox.ItemIndicator />
@@ -449,6 +531,12 @@ export default function Scripts() {
                   {importResult.hostnames}
                   {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
                 </Alert.Description>
+                {importResult.meta?.name && (
+                  <div className="mt-2 text-sm">
+                    识别为：{importResult.meta.name}
+                    {importResult.meta.desc ? ` — ${importResult.meta.desc}` : ""}
+                  </div>
+                )}
                 {importResult.warnings.length > 0 && (
                   <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
                     {importResult.warnings.map((w) => (
@@ -492,15 +580,49 @@ export default function Scripts() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="remote-url">URL</Label>
+                <Label htmlFor="remote-desc">描述</Label>
                 <Input
-                  id="remote-url"
-                  aria-label="资源 URL"
-                  value={newUrl}
-                  onChange={(event) => setNewUrl(event.target.value)}
-                  placeholder="https://example.com/rules.conf"
+                  id="remote-desc"
+                  aria-label="资源描述"
+                  value={newDescription}
+                  onChange={(event) => setNewDescription(event.target.value)}
+                  placeholder="资源描述（可选）"
                   fullWidth
                 />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-url">URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="remote-url"
+                    aria-label="资源 URL"
+                    value={newUrl}
+                    onChange={(event) => setNewUrl(event.target.value)}
+                    onBlur={() => void handleDetect()}
+                    placeholder="https://example.com/rules.conf"
+                    fullWidth
+                  />
+                  <Button
+                    variant="secondary"
+                    isPending={detecting}
+                    isDisabled={newUrl.trim().length === 0}
+                    onPress={() => void handleDetect()}
+                  >
+                    嗅探
+                  </Button>
+                </div>
+                {detectInfo && <span className="text-xs text-muted">{detectInfo}</span>}
+                {newIcon && !newIconFailed && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <img
+                      src={newIcon}
+                      alt="资源图标"
+                      className="h-8 w-8 rounded object-contain"
+                      onError={() => setNewIconFailed(true)}
+                    />
+                    <span className="text-xs text-muted">已检测到图标</span>
+                  </div>
+                )}
               </div>
               <Select
                 className="w-full"
@@ -530,7 +652,7 @@ export default function Scripts() {
                 className="w-full"
                 placeholder="选择方言"
                 value={newDialect}
-                onChange={(value) => setNewDialect(String(value ?? "surge"))}
+                onChange={(value) => setNewDialect(String(value ?? "Surge"))}
               >
                 <Label>方言</Label>
                 <Select.Trigger>
@@ -539,7 +661,7 @@ export default function Scripts() {
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {DIALECT_OPTIONS.map((option) => (
+                    {REMOTE_DIALECT_OPTIONS.map((option) => (
                       <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
                         {option.label}
                         <ListBox.ItemIndicator />
