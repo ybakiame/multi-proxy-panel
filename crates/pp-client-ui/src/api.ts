@@ -45,6 +45,50 @@ export interface TrafficRecord {
   duration_ms: number;
 }
 
+/** 远程订阅资源（与 Rust 侧 `RemoteResourceView` 对齐）。 */
+export type RemoteKind = "Script" | "Snippet";
+
+export interface RemoteResource {
+  name: string;
+  url: string;
+  /** `Script`（纯 JS 脚本） / `Snippet`（配置片段）。 */
+  kind: RemoteKind;
+  /** 脚本方言：`Surge` / `QuantumultX` / `Loon`。 */
+  dialect: string;
+  /** 更新间隔（秒）。 */
+  update_interval_secs: number;
+  enabled: boolean;
+}
+
+/** `fetch_remotes` 的拉取报告。 */
+export interface FetchReport {
+  fetched: number;
+  scripts: number;
+  rewrites: number;
+  tasks: number;
+  warnings: string[];
+}
+
+/** 定时任务视图（与 `TaskScriptView` 对齐，字段为 snake_case 原始序列化）。 */
+export interface TaskScriptView {
+  name: string;
+  cron_expr: string;
+  dialect: string;
+  enabled: boolean;
+  next_run: string | null;
+  last_run: string | null;
+  last_error: string | null;
+}
+
+/** `import_config` 的导入摘要。 */
+export interface ImportSummary {
+  rewrites: number;
+  scripts: number;
+  tasks: number;
+  hostnames: number;
+  warnings: string[];
+}
+
 export function getConfig(): Promise<ClientConfig> {
   return invoke<ClientConfig>("get_config");
 }
@@ -67,6 +111,34 @@ export function proxyStatus(): Promise<ClientStatus> {
 
 export function listTraffic(): Promise<TrafficRecord[]> {
   return invoke<TrafficRecord[]>("list_traffic");
+}
+
+export function listRemotes(): Promise<RemoteResource[]> {
+  return invoke<RemoteResource[]>("list_remotes");
+}
+
+export function addRemote(remote: RemoteResource): Promise<void> {
+  return invoke<void>("add_remote", { remote });
+}
+
+export function removeRemote(name: string): Promise<void> {
+  return invoke<void>("remove_remote", { name });
+}
+
+export function fetchRemotes(): Promise<FetchReport> {
+  return invoke<FetchReport>("fetch_remotes");
+}
+
+export function listTasks(): Promise<TaskScriptView[]> {
+  return invoke<TaskScriptView[]>("list_tasks");
+}
+
+export function runTask(name: string): Promise<string> {
+  return invoke<string>("run_task", { name });
+}
+
+export function importConfig(content: string, dialect: string): Promise<ImportSummary> {
+  return invoke<ImportSummary>("import_config", { content, dialect });
 }
 
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */

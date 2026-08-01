@@ -1,31 +1,582 @@
-import { Alert, Card } from "@heroui/react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  Button,
+  Card,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  Switch,
+  Table,
+  Tabs,
+  TextArea,
+} from "@heroui/react";
+import {
+  addRemote,
+  fetchRemotes,
+  importConfig,
+  listRemotes,
+  listTasks,
+  removeRemote,
+  runTask,
+  toErrorMessage,
+} from "../api";
+import type { FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
+
+const DIALECT_OPTIONS = [
+  { id: "quantumultx", label: "QuantumultX" },
+  { id: "surge", label: "Surge" },
+  { id: "loon", label: "Loon" },
+] as const;
+
+/** RFC3339 时间戳转为本地可读时间；空值显示占位符。 */
+function formatTime(iso: string | null): string {
+  if (!iso) {
+    return "-";
+  }
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+}
+
+/** 更新间隔（秒）转可读文本。 */
+function formatInterval(secs: number): string {
+  if (secs % 86400 === 0) {
+    return `${secs / 86400} 天`;
+  }
+  if (secs % 3600 === 0) {
+    return `${secs / 3600} 小时`;
+  }
+  return `${secs} 秒`;
+}
 
 export default function Scripts() {
+  const [remotes, setRemotes] = useState<RemoteResource[]>([]);
+  const [tasks, setTasks] = useState<TaskScriptView[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchResult, setFetchResult] = useState<FetchReport | null>(null);
+  const [runResult, setRunResult] = useState<{ name: string; output: string } | null>(null);
+  const [importResult, setImportResult] = useState<ImportSummary | null>(null);
+
+  // 添加资源对话框
+  const [addOpen, setAddOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [newKind, setNewKind] = useState<string>("Script");
+  const [newDialect, setNewDialect] = useState<string>("surge");
+  const [newInterval, setNewInterval] = useState<string>("86400");
+
+  // 配置导入
+  const [importText, setImportText] = useState("");
+  const [importDialect, setImportDialect] = useState<string>("quantumultx");
+
+  const refreshRemotes = useCallback(async () => {
+    try {
+      setRemotes(await listRemotes());
+      setError(null);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }, []);
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      setTasks(await listTasks());
+      setError(null);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRemotes();
+    void refreshTasks();
+  }, [refreshRemotes, refreshTasks]);
+
+  const handleAdd = async () => {
+    const interval = Number(newInterval);
+    setBusy(true);
+    setError(null);
+    try {
+      await addRemote({
+        name: newName.trim(),
+        url: newUrl.trim(),
+        kind: newKind as RemoteResource["kind"],
+        dialect: newDialect,
+        update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
+        enabled: true,
+      });
+      setAddOpen(false);
+      setNewName("");
+      setNewUrl("");
+      await refreshRemotes();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (name: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await removeRemote(name);
+      await refreshRemotes();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggle = async (remote: RemoteResource) => {
+    const next = { ...remote, enabled: !remote.enabled };
+    setBusy(true);
+    setError(null);
+    try {
+      await removeRemote(remote.name);
+      await addRemote(next);
+      await refreshRemotes();
+    } catch (err) {
+      setError(toErrorMessage(err));
+      await refreshRemotes();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleFetch = async () => {
+    setBusy(true);
+    setError(null);
+    setFetchResult(null);
+    try {
+      setFetchResult(await fetchRemotes());
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRunTask = async (name: string) => {
+    setBusy(true);
+    setError(null);
+    setRunResult(null);
+    try {
+      const output = await runTask(name);
+      setRunResult({ name, output });
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImport = async () => {
+    setBusy(true);
+    setError(null);
+    setImportResult(null);
+    try {
+      setImportResult(await importConfig(importText, importDialect));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">脚本</h1>
-        <p className="text-sm text-muted">MITM 抓包脚本的管理与调度（Phase 2）</p>
+        <p className="text-sm text-muted">远程脚本 / 配置片段订阅、定时任务调度与三方配置导入</p>
       </div>
 
-      <Card className="max-w-xl">
-        <Card.Header>
-          <Card.Title>脚本管理</Card.Title>
-          <Card.Description>按方言生成 Surge / QuantumultX / Loon 抓包脚本</Card.Description>
-        </Card.Header>
-        <Card.Content>
-          <Alert status="accent">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>占位页</Alert.Title>
-              <Alert.Description>
-                Phase 2 将基于配置中的 `mitm_script_dialect`（Surge / QuantumultX / Loon）
-                生成并调度抓包脚本，本页暂不提供具体功能。
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
-        </Card.Content>
-      </Card>
+      <Tabs>
+        <Tabs.ListContainer>
+          <Tabs.List aria-label="脚本管理">
+            <Tabs.Tab id="remotes">
+              远程资源
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab id="tasks">
+              定时任务
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab id="import">
+              配置导入
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          </Tabs.List>
+        </Tabs.ListContainer>
+
+        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="remotes">
+          <Card>
+            <Card.Header>
+              <Card.Title>远程资源</Card.Title>
+              <Card.Description>脚本 / 配置片段订阅，按间隔拉取并落盘缓存</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              {remotes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <span className="text-sm text-muted">暂无远程资源</span>
+                  <span className="text-xs text-muted/80">点击「添加资源」创建第一条订阅</span>
+                </div>
+              ) : (
+                <Table>
+                  <Table.ScrollContainer>
+                    <Table.Content aria-label="远程资源" className="min-w-[720px]">
+                      <Table.Header>
+                        <Table.Column isRowHeader>名称</Table.Column>
+                        <Table.Column>类型</Table.Column>
+                        <Table.Column>URL</Table.Column>
+                        <Table.Column>更新间隔</Table.Column>
+                        <Table.Column>启用</Table.Column>
+                        <Table.Column>操作</Table.Column>
+                      </Table.Header>
+                      <Table.Body>
+                        {remotes.map((remote) => (
+                          <Table.Row key={remote.name}>
+                            <Table.Cell>{remote.name}</Table.Cell>
+                            <Table.Cell>{remote.kind === "Script" ? "脚本" : "片段"}</Table.Cell>
+                            <Table.Cell className="max-w-[240px] truncate font-mono text-xs">{remote.url}</Table.Cell>
+                            <Table.Cell>{formatInterval(remote.update_interval_secs)}</Table.Cell>
+                            <Table.Cell>
+                              <Switch
+                                aria-label={`启用 ${remote.name}`}
+                                isSelected={remote.enabled}
+                                onChange={() => void handleToggle(remote)}
+                              >
+                                <Switch.Content>
+                                  <Switch.Control>
+                                    <Switch.Thumb />
+                                  </Switch.Control>
+                                  <span className="sr-only">{remote.enabled ? "启用" : "停用"}</span>
+                                </Switch.Content>
+                              </Switch>
+                            </Table.Cell>
+                            <Table.Cell>
+                              <Button
+                                size="sm"
+                                variant="tertiary"
+                                isDisabled={busy}
+                                onPress={() => void handleRemove(remote.name)}
+                              >
+                                删除
+                              </Button>
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table.Content>
+                  </Table.ScrollContainer>
+                </Table>
+              )}
+            </Card.Content>
+            <Card.Footer>
+              <div className="flex w-full items-center justify-between gap-3">
+                <Button
+                  variant="secondary"
+                  isPending={busy}
+                  isDisabled={remotes.length === 0}
+                  onPress={() => void handleFetch()}
+                >
+                  立即更新
+                </Button>
+                <Button variant="primary" isDisabled={busy} onPress={() => setAddOpen(true)}>
+                  添加资源
+                </Button>
+              </div>
+            </Card.Footer>
+          </Card>
+
+          {fetchResult && (
+            <Alert status={fetchResult.warnings.length > 0 ? "warning" : "success"}>
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>更新完成</Alert.Title>
+                <Alert.Description>
+                  成功拉取 {fetchResult.fetched} 个资源：脚本 {fetchResult.scripts}、重写 {fetchResult.rewrites}、任务{" "}
+                  {fetchResult.tasks}
+                  {fetchResult.warnings.length > 0 && `，警告 ${fetchResult.warnings.length} 条`}
+                </Alert.Description>
+                {fetchResult.warnings.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                    {fetchResult.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </Alert.Content>
+            </Alert>
+          )}
+        </Tabs.Panel>
+
+        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="tasks">
+          <Card>
+            <Card.Header>
+              <Card.Title>定时任务</Card.Title>
+              <Card.Description>远程订阅中的 cron 任务脚本，需代理运行中且 MITM 已启用</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              {tasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <span className="text-sm text-muted">暂无定时任务</span>
+                  <span className="text-xs text-muted/80">远程资源中的 [task_local] / cron 脚本会在此列出</span>
+                </div>
+              ) : (
+                <Table>
+                  <Table.ScrollContainer>
+                    <Table.Content aria-label="定时任务" className="min-w-[720px]">
+                      <Table.Header>
+                        <Table.Column isRowHeader>名称</Table.Column>
+                        <Table.Column>cron</Table.Column>
+                        <Table.Column>下次执行</Table.Column>
+                        <Table.Column>上次执行</Table.Column>
+                        <Table.Column>上次错误</Table.Column>
+                        <Table.Column>操作</Table.Column>
+                      </Table.Header>
+                      <Table.Body>
+                        {tasks.map((task) => (
+                          <Table.Row key={task.name}>
+                            <Table.Cell>{task.name}</Table.Cell>
+                            <Table.Cell className="font-mono text-xs">{task.cron_expr}</Table.Cell>
+                            <Table.Cell>{formatTime(task.next_run)}</Table.Cell>
+                            <Table.Cell>{formatTime(task.last_run)}</Table.Cell>
+                            <Table.Cell className="max-w-[200px] truncate">{task.last_error ?? "-"}</Table.Cell>
+                            <Table.Cell>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                isDisabled={busy}
+                                onPress={() => void handleRunTask(task.name)}
+                              >
+                                运行
+                              </Button>
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table.Content>
+                  </Table.ScrollContainer>
+                </Table>
+              )}
+            </Card.Content>
+            <Card.Footer>
+              <Button variant="secondary" isDisabled={busy} onPress={() => void refreshTasks()}>
+                刷新
+              </Button>
+            </Card.Footer>
+          </Card>
+
+          {runResult && (
+            <Alert status="success">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>任务「{runResult.name}」已运行</Alert.Title>
+                <Alert.Description className="break-all font-mono text-xs">
+                  {runResult.output || "$done()"}
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
+        </Tabs.Panel>
+
+        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="import">
+          <Card>
+            <Card.Header>
+              <Card.Title>导入配置</Card.Title>
+              <Card.Description>
+                粘贴 QX / Surge / Loon 的 rewrite / script / mitm 片段，合并进本地缓存
+              </Card.Description>
+            </Card.Header>
+            <Card.Content className="flex flex-col gap-4">
+              <Select
+                className="w-full sm:max-w-[240px]"
+                placeholder="选择方言"
+                value={importDialect}
+                onChange={(value) => setImportDialect(String(value ?? ""))}
+              >
+                <Label>方言</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {DIALECT_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <TextArea
+                aria-label="配置片段"
+                value={importText}
+                onChange={(event) => setImportText(event.target.value)}
+                placeholder={
+                  "[rewrite_local]\n^https?://example\\.com/api/ url-and-header https://cdn.example.com/$1\n\n[mitm]\nhostname = *.example.com"
+                }
+                rows={12}
+                fullWidth
+              />
+            </Card.Content>
+            <Card.Footer>
+              <Button
+                variant="primary"
+                isPending={busy}
+                isDisabled={importText.trim().length === 0}
+                onPress={() => void handleImport()}
+              >
+                导入
+              </Button>
+            </Card.Footer>
+          </Card>
+
+          {importResult && (
+            <Alert status={importResult.warnings.length > 0 ? "warning" : "success"}>
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>导入完成</Alert.Title>
+                <Alert.Description>
+                  重写 {importResult.rewrites}、脚本 {importResult.scripts}、任务 {importResult.tasks}、主机名{" "}
+                  {importResult.hostnames}
+                  {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
+                </Alert.Description>
+                {importResult.warnings.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                    {importResult.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </Alert.Content>
+            </Alert>
+          )}
+        </Tabs.Panel>
+      </Tabs>
+
+      {error && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>操作失败</Alert.Title>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      <Modal.Backdrop isOpen={addOpen} onOpenChange={setAddOpen}>
+        <Modal.Container>
+          <Modal.Dialog className="sm:max-w-[480px]">
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>添加远程资源</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-name">名称</Label>
+                <Input
+                  id="remote-name"
+                  aria-label="资源名"
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  placeholder="my-rules"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-url">URL</Label>
+                <Input
+                  id="remote-url"
+                  aria-label="资源 URL"
+                  value={newUrl}
+                  onChange={(event) => setNewUrl(event.target.value)}
+                  placeholder="https://example.com/rules.conf"
+                  fullWidth
+                />
+              </div>
+              <Select
+                className="w-full"
+                placeholder="选择类型"
+                value={newKind}
+                onChange={(value) => setNewKind(String(value ?? "Script"))}
+              >
+                <Label>类型</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="Script" textValue="脚本">
+                      脚本（纯 JS）
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="Snippet" textValue="片段">
+                      片段（QX / Surge / Loon 配置）
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-full"
+                placeholder="选择方言"
+                value={newDialect}
+                onChange={(value) => setNewDialect(String(value ?? "surge"))}
+              >
+                <Label>方言</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {DIALECT_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="remote-interval">更新间隔（秒）</Label>
+                <Input
+                  id="remote-interval"
+                  aria-label="更新间隔（秒）"
+                  type="number"
+                  min="60"
+                  value={newInterval}
+                  onChange={(event) => setNewInterval(event.target.value)}
+                  fullWidth
+                />
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="secondary" onPress={() => setAddOpen(false)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                isPending={busy}
+                isDisabled={newName.trim().length === 0 || newUrl.trim().length === 0}
+                onPress={() => void handleAdd()}
+              >
+                添加
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }
