@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use pp_client::{
     build_core_config, compose_mihomo_config, compose_singbox_config, fetch_subscription,
-    ClientConfig, ClientState, ProfileOverrides, ProfileStore, RemoteManager, RemoteResource,
-    SubContent, Subscription, SubscriptionFetcher, SubscriptionStore,
+    ClientConfig, ClientState, Profile, ProfileStoreV2, RemoteManager, RemoteResource, SubContent,
+    Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
@@ -481,30 +481,133 @@ pub async fn import_config(
     })
 }
 
-/// Profile 复写配置的对外视图（与前端 `ProfileOverrides` TS 类型逐字段对齐）。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProfileOverridesView {
+/// 核心类型序列化为前端小写约定（`singbox` / `mihomo`）。
+fn core_type_str(core_type: CoreType) -> String {
+    serde_json::to_value(core_type)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// 解析前端小写核心类型字符串（`singbox` / `mihomo`）。
+fn core_type_from_str(s: &str) -> Result<CoreType, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_string()))
+        .map_err(|_| format!("无效的核心类型 '{s}'（可选: singbox / mihomo）"))
+}
+
+/// 解析模板 ID 字符串为 `Uuid`。
+fn parse_profile_id(id: &str) -> Result<Uuid, String> {
+    Uuid::parse_str(id).map_err(|e| format!("无效的模板 ID: {e}"))
+}
+
+/// 复写模板列表视图（与前端 `ProfileView` TS 类型对齐）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileView {
+    pub id: String,
+    pub name: String,
+    /// 核心类型：`singbox` / `mihomo`（与 `pp_common::CoreType` 的 serde 表示一致）。
+    pub core_type: String,
+    /// 是否启用（同核心类型下最多一条为 `true`，排他由存储层保证）。
+    pub enabled: bool,
+    /// YAML 复写字节数（列表展示用）。
+    pub yaml_bytes: u64,
+    /// JS 复写字节数（列表展示用）。
+    pub js_bytes: u64,
+}
+
+impl ProfileView {
+    fn from_profile(p: &Profile) -> Self {
+        Self {
+            id: p.id.to_string(),
+            name: p.name.clone(),
+            core_type: core_type_str(p.core_type),
+            enabled: p.enabled,
+            yaml_bytes: p.yaml_override.len() as u64,
+            js_bytes: p.js_override.len() as u64,
+        }
+    }
+}
+
+/// 复写模板详情视图（含完整复写内容，与前端 `ProfileDetailView` TS 类型对齐）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileDetailView {
+    pub id: String,
+    pub name: String,
+    pub core_type: String,
+    pub enabled: bool,
     /// YAML 深合并复写（空串 = 未启用）。
     pub yaml_override: String,
     /// JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。
     pub js_override: String,
 }
 
-impl ProfileOverridesView {
-    fn from_overrides(ov: &ProfileOverrides) -> Self {
+impl ProfileDetailView {
+    fn from_profile(p: &Profile) -> Self {
         Self {
-            yaml_override: ov.yaml_override.clone(),
-            js_override: ov.js_override.clone(),
+            id: p.id.to_string(),
+            name: p.name.clone(),
+            core_type: core_type_str(p.core_type),
+            enabled: p.enabled,
+            yaml_override: p.yaml_override.clone(),
+            js_override: p.js_override.clone(),
         }
     }
 }
 
-/// 读取 Profile 复写配置；`data_dir/profile.json` 不存在或损坏时返回空串默认。
+/// 列出全部复写模板（`data_dir/profiles.json`）。
 #[tauri::command]
-pub fn get_profile_overrides(state: State<'_, AppState>) -> Result<ProfileOverridesView, String> {
-    let store = ProfileStore::new(state.data_dir.clone());
-    let overrides = store.load().map_err(|e| format!("读取复写配置失败: {e}"))?;
-    Ok(ProfileOverridesView::from_overrides(&overrides))
+pub fn list_profiles(state: State<'_, AppState>) -> Result<Vec<ProfileView>, String> {
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    let profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
+    Ok(profiles.iter().map(ProfileView::from_profile).collect())
+}
+
+/// 新建复写模板的入参。
+#[derive(Debug, Deserialize)]
+pub struct CreateProfileInput {
+    pub name: String,
+    /// 核心类型：`singbox` / `mihomo`。
+    pub core_type: String,
+}
+
+/// 新建复写模板；重名时报错（错误信息由存储层上抛）。
+#[tauri::command]
+pub fn create_profile(
+    state: State<'_, AppState>,
+    input: CreateProfileInput,
+) -> Result<ProfileView, String> {
+    let name = input.name.trim().to_string();
+    if name.is_empty() {
+        return Err("模板名称不能为空".to_string());
+    }
+    let core_type = core_type_from_str(&input.core_type)?;
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    let profile = store
+        .add(&name, core_type)
+        .map_err(|e| format!("创建模板失败: {e}"))?;
+    Ok(ProfileView::from_profile(&profile))
+}
+
+/// 读取单个复写模板详情（含 YAML / JS 复写内容）；模板不存在时报错。
+#[tauri::command]
+pub fn get_profile(state: State<'_, AppState>, id: String) -> Result<ProfileDetailView, String> {
+    let id = parse_profile_id(&id)?;
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    let profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
+    let profile = profiles
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "模板不存在".to_string())?;
+    Ok(ProfileDetailView::from_profile(profile))
+}
+
+/// 更新复写模板的入参（`core_type` / `enabled` 保持存储值，启用经 `set_profile_enabled` 切换）。
+#[derive(Debug, Deserialize)]
+pub struct UpdateProfileInput {
+    pub id: String,
+    pub name: String,
+    pub yaml_override: String,
+    pub js_override: String,
 }
 
 /// 校验 YAML 复写：非空时必须是可解析的 YAML mapping（与 `apply_yaml_override` 一致）。
@@ -536,28 +639,55 @@ fn validate_js_override(js: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 保存 Profile 复写配置到 `data_dir/profile.json`（校验失败不落盘）。
+/// 更新复写模板的可编辑字段（name / yaml_override / js_override）；校验失败不落盘。
 #[tauri::command]
-pub fn save_profile_overrides(
-    state: State<'_, AppState>,
-    ov: ProfileOverridesView,
-) -> Result<(), String> {
-    validate_yaml_override(&ov.yaml_override)?;
-    validate_js_override(&ov.js_override)?;
-    let store = ProfileStore::new(state.data_dir.clone());
-    let overrides = ProfileOverrides {
-        yaml_override: ov.yaml_override,
-        js_override: ov.js_override,
-    };
+pub fn update_profile(state: State<'_, AppState>, input: UpdateProfileInput) -> Result<(), String> {
+    let id = parse_profile_id(&input.id)?;
+    validate_yaml_override(&input.yaml_override)?;
+    validate_js_override(&input.js_override)?;
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    let mut profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
+    let target = profiles
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "模板不存在".to_string())?;
+    target.name = input.name;
+    target.yaml_override = input.yaml_override;
+    target.js_override = input.js_override;
     store
-        .save(&overrides)
-        .map_err(|e| format!("保存复写配置失败: {e}"))
+        .save(&profiles)
+        .map_err(|e| format!("保存复写模板失败: {e}"))
 }
 
-/// 生成生效配置预览：拉取订阅 → 内置模板 → YAML/JS 复写 → 核心合成（不含 MITM 链路）。
+/// 删除复写模板；不存在时报错。
+#[tauri::command]
+pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let id = parse_profile_id(&id)?;
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    store
+        .remove(id)
+        .map_err(|e| format!("删除复写模板失败: {e}"))
+}
+
+/// 切换复写模板启用状态；启用时同核心类型其他模板自动禁用（排他语义由存储层保证）。
+#[tauri::command]
+pub fn set_profile_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let id = parse_profile_id(&id)?;
+    let store = ProfileStoreV2::new(state.data_dir.clone());
+    store
+        .set_enabled(id, enabled)
+        .map_err(|e| format!("保存模板状态失败: {e}"))
+}
+
+/// 生成生效配置预览：拉取订阅 → 内置模板 → 启用模板的 YAML/JS 复写 → 核心合成（不含 MITM 链路）。
 ///
 /// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
 /// 需要已保存的客户端配置（`data_dir/client.json`，含 hub_url / sub_token / core_type）。
+/// 复写取自 `ProfileStoreV2::active_for`（当前核心启用模板）；无启用模板时预览裸模板。
 #[tauri::command]
 pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
     let data_dir = state.data_dir.clone();
@@ -568,8 +698,11 @@ pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, S
 async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, String> {
     let cfg = ClientConfig::load(&data_dir)
         .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
-    let store = ProfileStore::new(data_dir);
-    let overrides = store.load().map_err(|e| format!("读取复写配置失败: {e}"))?;
+    let store = ProfileStoreV2::new(data_dir);
+    let overrides = store
+        .active_for(cfg.core_type)
+        .map_err(|e| format!("读取复写模板失败: {e}"))?
+        .unwrap_or_default();
 
     let fetcher = SubscriptionFetcher::new();
     let sub_content = match cfg.core_type {
