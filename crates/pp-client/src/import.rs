@@ -67,6 +67,21 @@ pub struct ConfigMeta {
     pub category: Option<String>,
     /// `#!openUrl`：关联链接（如 App Store）。
     pub open_url: Option<String>,
+    /// `#!arguments=` / `#!arguments-desc=` 声明的模块参数（键/默认值/描述）。
+    pub arguments: Vec<ArgSpec>,
+}
+
+/// Surge/Loon 模块 `#!arguments=` 声明的单个参数。
+///
+/// `argument="{key}"` 模板占位在运行时按「用户值 → 默认值 → 保留原样」替换。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArgSpec {
+    /// 参数键（模板占位 `{key}` 使用，`#!arguments= key:default`）。
+    pub key: String,
+    /// 默认值（用户未配置该键时替换进 argument 模板；可为空串）。
+    pub default_value: String,
+    /// 参数描述（`#!arguments-desc=` 提供；可选）。
+    pub description: Option<String>,
 }
 
 /// 解析文件头连续 `#!key=value` 元数据行；遇到首个非 `#!` 行（含空行）即停止。
@@ -94,10 +109,88 @@ pub fn parse_config_meta(content: &str) -> ConfigMeta {
             "date" => meta.date = Some(value.to_string()),
             "category" => meta.category = Some(value.to_string()),
             "openurl" => meta.open_url = Some(value.to_string()),
+            "arguments" => meta.arguments = parse_arguments_decl(value),
+            "arguments-desc" => merge_argument_descriptions(&mut meta.arguments, value),
             _ => {} // 未知键忽略
         }
     }
     meta
+}
+
+/// 解析 `#!arguments= key:default, key2:default2` 声明：逗号分隔，值可含空格（trim）。
+///
+/// 无 `:` 的段（如 `#!arguments= foo`）静默跳过（无默认值无从声明）。
+fn parse_arguments_decl(value: &str) -> Vec<ArgSpec> {
+    let mut args = Vec::new();
+    for pair in value.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let Some((key, default_value)) = pair.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        args.push(ArgSpec {
+            key: key.to_string(),
+            default_value: default_value.trim().to_string(),
+            description: None,
+        });
+    }
+    args
+}
+
+/// 解析 `#!arguments-desc= {key:"描述", ...}` 并按 key 合并进参数声明列表。
+///
+/// 先试严格 JSON 对象；失败则按 `key:"value"` / `key:'value'` 语法宽松提取。
+/// 描述中出现的、声明中缺失的键以空默认值补入 [`ArgSpec`]。
+fn merge_argument_descriptions(args: &mut Vec<ArgSpec>, value: &str) {
+    let pairs = parse_desc_pairs(value);
+    for (key, desc) in pairs {
+        if let Some(spec) = args.iter_mut().find(|a| a.key == key) {
+            spec.description = Some(desc);
+        } else {
+            args.push(ArgSpec {
+                key,
+                default_value: String::new(),
+                description: Some(desc),
+            });
+        }
+    }
+}
+
+/// 提取 `#!arguments-desc=` 的 `(key, desc)` 键值对（严格 JSON → 宽松语法回退）。
+fn parse_desc_pairs(value: &str) -> Vec<(String, String)> {
+    // 1. 严格 JSON 对象：`{"key": "desc", ...}`。
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(value) {
+        if let Some(obj) = json.as_object() {
+            return obj
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect();
+        }
+    }
+    // 2. 宽松语法：`key:"描述"` / `key:'描述'`（键未加引号、值含空格/中文均可）。
+    let mut out = Vec::new();
+    let Ok(re) = Regex::new(r#"([A-Za-z0-9_.\-]+)\s*:\s*("([^"]*)"|'([^']*)')"#) else {
+        return out;
+    };
+    for caps in re.captures_iter(value) {
+        let key = caps[1].trim().to_string();
+        if key.is_empty() {
+            continue;
+        }
+        let desc = caps
+            .get(2)
+            .map(|m| m.as_str())
+            .map(|quoted| quoted[1..quoted.len().saturating_sub(1)].to_string())
+            .unwrap_or_default();
+        out.push((key, desc));
+    }
+    out
 }
 
 /// 解析 QX / Surge / Loon 配置片段。
@@ -320,6 +413,12 @@ fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str
             } else {
                 cfg.warn("rewrite", line, "local script path not supported, skipped");
             }
+            // QX script 行同样支持 `argument={key}` 附加参数（如 rewrite_remote 的
+            // `..., argument=xxx` 风格；rewrite_local 亦可尾随空格分隔的 argument=）。
+            let argument = args
+                .get(1..)
+                .map(|rest| parse_kv_params(&rest.join(" ")))
+                .and_then(|params| params.get("argument").cloned());
             cfg.scripts.push(HookScriptRule {
                 name,
                 kind,
@@ -327,6 +426,7 @@ fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str
                 requires_body,
                 max_size: 131072,
                 source: String::new(),
+                argument,
             });
         }
         "reject" | "reject-200" | "reject-dict" => {
@@ -513,6 +613,8 @@ fn parse_surge_script(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &s
                     .or_else(|| params.get("require-body")),
             );
             let max_size = parse_usize(params.get("max-size")).unwrap_or(131072);
+            // Surge/Loon 脚本行参数 `argument={key}|...`（模板占位运行时替换）。
+            let argument = params.get("argument").cloned();
             cfg.script_urls
                 .push((name.to_string(), script_path.clone()));
             cfg.scripts.push(HookScriptRule {
@@ -522,6 +624,7 @@ fn parse_surge_script(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &s
                 requires_body,
                 max_size,
                 source: String::new(),
+                argument,
             });
         }
         "cron" => {
@@ -1044,5 +1147,78 @@ rule = type=http-response,pattern=^https://api-cs\.intsig\.net/,script-path=http
         let meta2 = parse_config_meta(content2);
         assert_eq!(meta2.name.as_deref(), Some("A"));
         assert!(meta2.desc.is_none());
+    }
+
+    /// ① `#!arguments=` / `#!arguments-desc=` 解析：键/默认值/描述合并进 ArgSpec。
+    #[test]
+    fn config_meta_parses_arguments_decl_and_strict_desc() {
+        let content = r#"#!name=Demo
+#!arguments= server:api.example.com, token:default-token
+#!arguments-desc= {"server":"API 服务器", "token":"鉴权令牌"}
+"#;
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.arguments.len(), 2);
+        let server = meta.arguments.iter().find(|a| a.key == "server").unwrap();
+        assert_eq!(server.default_value, "api.example.com");
+        assert_eq!(server.description.as_deref(), Some("API 服务器"));
+        let token = meta.arguments.iter().find(|a| a.key == "token").unwrap();
+        assert_eq!(token.default_value, "default-token");
+        assert_eq!(token.description.as_deref(), Some("鉴权令牌"));
+        // 默认值含空格：值整体保留
+        let content2 = "#!arguments= server:api.example.com, greeting:hello world\n";
+        let meta2 = parse_config_meta(content2);
+        assert_eq!(
+            meta2
+                .arguments
+                .iter()
+                .find(|a| a.key == "greeting")
+                .unwrap()
+                .default_value,
+            "hello world"
+        );
+    }
+
+    /// ① 非严格 JSON 的 desc 语法（键未加引号）走宽松提取；声明缺失的键补空默认值。
+    #[test]
+    fn config_meta_parses_arguments_desc_loosely() {
+        let content = "#!arguments= server:api.example.com\n#!arguments-desc= {server:\"API 服务器\", token: '鉴权 令牌'}\n";
+        let meta = parse_config_meta(content);
+        let server = meta.arguments.iter().find(|a| a.key == "server").unwrap();
+        assert_eq!(server.default_value, "api.example.com");
+        assert_eq!(server.description.as_deref(), Some("API 服务器"));
+        // 仅出现在 desc 中的键：默认值空串补 ArgSpec。
+        let token = meta.arguments.iter().find(|a| a.key == "token").unwrap();
+        assert_eq!(token.default_value, "");
+        assert_eq!(token.description.as_deref(), Some("鉴权 令牌"));
+    }
+
+    /// ② `[Script]` 行 `argument=` 参数提取进 ScriptRule.argument。
+    #[test]
+    fn surge_script_line_extracts_argument_into_script_rule() {
+        let content = r#"#!name=Demo
+#!arguments= server:api.example.com, token:default-token
+[Script]
+xxx = type=http-response, pattern=^https://api\.example\.com/, script-path=https://example.com/json.js, argument={server}|{token}
+plain = type=http-request, pattern=^https://example\.com/, script-path=https://example.com/req.js
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(cfg.scripts.len(), 2);
+        assert_eq!(cfg.scripts[0].argument.as_deref(), Some("{server}|{token}"));
+        // 未声明 argument 的脚本保持 None。
+        assert_eq!(cfg.scripts[1].argument, None);
+        // meta 同步解析出 arguments。
+        assert_eq!(cfg.meta.arguments.len(), 2);
+    }
+
+    /// ② QX rewrite 脚本行同样提取 `argument=`。
+    #[test]
+    fn qx_rewrite_script_line_extracts_argument() {
+        let content = r#"
+[rewrite_local]
+^https?://api\.example\.com/(.*) script-response-body https://example.com/rsp.js argument={server}
+"#;
+        let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
+        assert_eq!(cfg.scripts.len(), 1);
+        assert_eq!(cfg.scripts[0].argument.as_deref(), Some("{server}"));
     }
 }

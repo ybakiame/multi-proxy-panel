@@ -12,6 +12,7 @@
 //! [`MergedRemoteConfig`]，供 MITM（rewrite / 脚本钩子 / hostname）与
 //! 定时调度器（task 脚本）使用。
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use pp_common::{PanelError, PanelResult};
@@ -132,6 +133,27 @@ pub struct MergedRemoteConfig {
     pub task_scripts: Vec<TaskScript>,
     /// MITM 主机名白名单（已去重）。
     pub hostnames: Vec<String>,
+    /// 各远程资源携带的配置头元数据（含 `#!arguments` 参数声明与默认值）。
+    pub metas: Vec<ConfigMeta>,
+}
+
+/// 把 Surge/Loon 模块 `argument=` 模板中的 `{key}` 占位替换为具体值。
+///
+/// 优先级：用户配置值（`user_values`，key→值）→ 参数声明默认值（`defaults`，
+/// key→默认值）→ 无则保留原占位符。返回值即注入 JS `$argument` 的字符串。
+pub fn resolve_argument_template(
+    template: &str,
+    user_values: &HashMap<String, String>,
+    defaults: &HashMap<String, String>,
+) -> String {
+    let mut out = template.to_string();
+    for (key, value) in user_values {
+        out = out.replace(&format!("{{{key}}}"), value);
+    }
+    for (key, value) in defaults {
+        out = out.replace(&format!("{{{key}}}"), value);
+    }
+    out
 }
 
 /// 远程资源管理器：负责 remotes 清单读写、定时拉取与缓存读取。
@@ -263,6 +285,7 @@ impl RemoteManager {
             merged.rewrites.extend(part.rewrites);
             merged.scripts.extend(part.scripts);
             merged.task_scripts.extend(part.task_scripts);
+            merged.metas.extend(part.metas);
             for hostname in part.hostnames {
                 if !merged.hostnames.contains(&hostname) {
                     merged.hostnames.push(hostname);
@@ -329,6 +352,10 @@ impl RemoteManager {
             }
         }
         summary.hostnames = imported.hostnames.len();
+        // 配置头元数据（含 `#!arguments` 声明）随缓存持久化，供运行时替换 argument 模板。
+        if imported.meta != ConfigMeta::default() {
+            cached.meta = Some(imported.meta.clone());
+        }
 
         std::fs::create_dir_all(&cache_dir)?;
         let text = serde_json::to_string_pretty(&cached)?;
@@ -478,6 +505,9 @@ struct CachedRemoteConfig {
     scripts: Vec<CachedScriptRule>,
     task_scripts: Vec<TaskScript>,
     hostnames: Vec<String>,
+    /// 配置头元数据（`#!icon` / `#!arguments` 等；旧缓存缺省为 `None`）。
+    #[serde(default)]
+    meta: Option<ConfigMeta>,
 }
 
 impl CachedRemoteConfig {
@@ -491,6 +521,11 @@ impl CachedRemoteConfig {
                 .map(|(task, _)| task.clone())
                 .collect(),
             hostnames: cfg.hostnames.clone(),
+            meta: if cfg.meta != ConfigMeta::default() {
+                Some(cfg.meta.clone())
+            } else {
+                None
+            },
         }
     }
 
@@ -510,6 +545,9 @@ impl CachedRemoteConfig {
         }
         merged.task_scripts = self.task_scripts;
         merged.hostnames = self.hostnames;
+        if let Some(meta) = self.meta {
+            merged.metas.push(meta);
+        }
         merged
     }
 }
@@ -641,6 +679,9 @@ struct CachedScriptRule {
     requires_body: bool,
     max_size: usize,
     source: String,
+    /// 模块 `argument=` 模板（替换前原文；旧缓存缺省为 `None`）。
+    #[serde(default)]
+    argument: Option<String>,
 }
 
 impl From<&ScriptRule> for CachedScriptRule {
@@ -652,6 +693,7 @@ impl From<&ScriptRule> for CachedScriptRule {
             requires_body: rule.requires_body,
             max_size: rule.max_size,
             source: rule.source.clone(),
+            argument: rule.argument.clone(),
         }
     }
 }
@@ -666,6 +708,7 @@ impl CachedScriptRule {
             requires_body: self.requires_body,
             max_size: self.max_size,
             source: self.source,
+            argument: self.argument,
         })
     }
 }
@@ -884,6 +927,7 @@ mod tests {
                 requires_body: true,
                 max_size: 131072,
                 source: String::new(),
+                argument: None,
             }],
             script_urls: vec![(
                 "hook-0".to_string(),
@@ -1167,5 +1211,76 @@ mod tests {
             merged.hostnames,
             vec!["*.camscanner.com".to_string(), "*.intsig.net".to_string()]
         );
+    }
+
+    /// ④ `resolve_argument_template`：用户值优先 → 默认值 → 保留原样。
+    #[test]
+    fn resolve_argument_template_substitutes_user_values_then_defaults() {
+        let user_values = HashMap::from([("token".to_string(), "abc".to_string())]);
+        let defaults = HashMap::from([("server".to_string(), "api.example.com".to_string())]);
+        assert_eq!(
+            resolve_argument_template("{server}|{token}", &user_values, &defaults),
+            "api.example.com|abc"
+        );
+        // 未声明的占位保留原样。
+        assert_eq!(
+            resolve_argument_template("{server}|{missing}", &user_values, &defaults),
+            "api.example.com|{missing}"
+        );
+        // 无用户值、无默认值时原样保留。
+        assert_eq!(
+            resolve_argument_template("{server}", &HashMap::new(), &HashMap::new()),
+            "{server}"
+        );
+    }
+
+    /// `#!arguments` 声明与 `argument=` 模板经 fetch → cache → load 往返不丢失，
+    /// meta 透出到 `MergedRemoteConfig.metas`。
+    #[tokio::test]
+    async fn snippet_arguments_and_meta_roundtrip_through_cache() {
+        let base = spawn_remote_server(|base| {
+            format!(
+                "#!name=参数模块\n\
+                 #!icon=https://example.com/icon.png\n\
+                 #!arguments= server:api.example.com, token:default-token\n\
+                 #!arguments-desc= {{server:\"API 服务器\", token:\"鉴权令牌\"}}\n\
+                 \n\
+                 [Script]\n\
+                 xxx = type=http-response, pattern=^https://api\\.example\\.com/, script-path={base}/hook.js, argument={{server}}|{{token}}\n"
+            )
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "args".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            ..RemoteResource::default()
+        }];
+
+        let report = manager.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1);
+        assert!(
+            report.warnings.is_empty(),
+            "warnings: {:?}",
+            report.warnings
+        );
+
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.scripts.len(), 1);
+        assert_eq!(
+            merged.scripts[0].argument.as_deref(),
+            Some("{server}|{token}")
+        );
+        assert_eq!(merged.metas.len(), 1);
+        let meta = &merged.metas[0];
+        assert_eq!(meta.name.as_deref(), Some("参数模块"));
+        assert_eq!(meta.icon.as_deref(), Some("https://example.com/icon.png"));
+        assert_eq!(meta.arguments.len(), 2);
+        let server = meta.arguments.iter().find(|a| a.key == "server").unwrap();
+        assert_eq!(server.default_value, "api.example.com");
+        assert_eq!(server.description.as_deref(), Some("API 服务器"));
     }
 }
