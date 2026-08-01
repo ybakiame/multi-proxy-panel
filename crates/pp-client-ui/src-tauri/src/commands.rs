@@ -250,10 +250,7 @@ pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecor
         return Ok(Vec::new());
     };
     let records = client.recorder().list();
-    Ok(records
-        .iter()
-        .map(TrafficRecordView::from_record)
-        .collect())
+    Ok(records.iter().map(TrafficRecordView::from_record).collect())
 }
 
 /// 一条远程订阅资源的对外视图。
@@ -327,8 +324,13 @@ pub struct ImportSummaryView {
 #[tauri::command]
 pub async fn list_remotes(state: State<'_, AppState>) -> Result<Vec<RemoteResourceView>, String> {
     let manager = RemoteManager::new(state.data_dir.clone());
-    let remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
-    Ok(remotes.iter().map(RemoteResourceView::from_remote).collect())
+    let remotes = manager
+        .load()
+        .map_err(|e| format!("读取远程资源失败: {e}"))?;
+    Ok(remotes
+        .iter()
+        .map(RemoteResourceView::from_remote)
+        .collect())
 }
 
 /// 新增一条远程资源；重名时报错。
@@ -345,7 +347,9 @@ pub async fn add_remote(
     }
     let remote = remote.into_remote()?;
     let manager = RemoteManager::new(state.data_dir.clone());
-    let mut remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    let mut remotes = manager
+        .load()
+        .map_err(|e| format!("读取远程资源失败: {e}"))?;
     if remotes.iter().any(|r| r.name == remote.name) {
         return Err(format!("远程资源 '{}' 已存在", remote.name));
     }
@@ -359,7 +363,9 @@ pub async fn add_remote(
 #[tauri::command]
 pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(), String> {
     let manager = RemoteManager::new(state.data_dir.clone());
-    let mut remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    let mut remotes = manager
+        .load()
+        .map_err(|e| format!("读取远程资源失败: {e}"))?;
     let before = remotes.len();
     remotes.retain(|r| r.name != name);
     if remotes.len() == before {
@@ -374,7 +380,9 @@ pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(
 #[tauri::command]
 pub async fn fetch_remotes(state: State<'_, AppState>) -> Result<FetchReportView, String> {
     let manager = RemoteManager::new(state.data_dir.clone());
-    let remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    let remotes = manager
+        .load()
+        .map_err(|e| format!("读取远程资源失败: {e}"))?;
     let report = manager.fetch_all(&remotes).await;
     Ok(FetchReportView {
         fetched: report.fetched,
