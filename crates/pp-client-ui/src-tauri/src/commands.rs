@@ -73,7 +73,7 @@ pub struct ClientConfigView {
     pub mixed_port: u16,
     pub mitm_enabled: bool,
     pub mitm_hostnames: Vec<String>,
-    /// MITM 脚本方言：`Surge` / `QuantumultX` / `Loon`。
+    /// MITM 脚本方言：`Surge` / `Loon`。
     pub mitm_script_dialect: String,
     pub system_proxy_enabled: bool,
     /// 是否启用 TUN 虚拟网卡（需 root/管理员权限）。
@@ -395,7 +395,7 @@ pub struct RemoteResourceView {
     pub url: String,
     /// 资源类型：`Script` / `Snippet`。
     pub kind: String,
-    /// 脚本方言：`Surge` / `QuantumultX` / `Loon`。
+    /// 脚本方言：`Surge` / `Loon`。
     pub dialect: String,
     /// 资源描述（可选；`None` = 未配置）。
     pub description: Option<String>,
@@ -661,9 +661,12 @@ fn remote_kind_str(kind: RemoteKind) -> &'static str {
 }
 
 /// 脚本方言的字符串表示（与 `RemoteResourceView.dialect` 的 serde 表示一致）。
+///
+/// QX 已并入 Loon 生态（Loon 方言同时注入 QX 与 Surge 两套 API），detect
+/// 嗅探出的 QuantumultX 统一映射为 `Loon`，前端不再暴露 QX 选项。
 fn script_dialect_str(dialect: ScriptDialect) -> &'static str {
     match dialect {
-        ScriptDialect::QuantumultX => "QuantumultX",
+        ScriptDialect::QuantumultX => "Loon",
         ScriptDialect::Surge => "Surge",
         ScriptDialect::Loon => "Loon",
     }
@@ -674,7 +677,7 @@ fn script_dialect_str(dialect: ScriptDialect) -> &'static str {
 pub struct DetectRemoteView {
     /// 嗅探出的资源类型（`Script` / `Snippet`；无法识别时为 `None`）。
     pub kind: Option<String>,
-    /// 嗅探出的脚本方言（`Surge` / `QuantumultX` / `Loon`；无法识别时为 `None`）。
+    /// 嗅探出的脚本方言（`Surge` / `Loon`；无法识别时为 `None`）。
     pub dialect: Option<String>,
     /// 配置头元数据（仅 Snippet 且 URL 可访问时解析；拉取失败或非 Snippet 时为 `None`）。
     pub meta: Option<ConfigMetaView>,
@@ -789,7 +792,7 @@ pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String
     Ok(output.0.to_string())
 }
 
-/// 导入 QX / Surge / Loon 配置片段：解析 → 拉取脚本源码回填 → 合并写入本地导入缓存
+/// 导入 Surge / Loon 配置片段：解析 → 拉取脚本源码回填 → 合并写入本地导入缓存
 /// `remote_cache/imported.json`。单个脚本拉取失败记 warning 跳过，不阻塞其他规则合入。
 #[tauri::command]
 pub async fn import_config(
@@ -798,13 +801,12 @@ pub async fn import_config(
     dialect: String,
 ) -> Result<ImportSummaryView, String> {
     let script_dialect = match dialect.as_str() {
-        "quantumultx" => ScriptDialect::QuantumultX,
+        // QX 已并入 Loon 生态（Loon 方言同时注入 QX 与 Surge 两套 API）；
+        // 保留 quantumultx 输入兼容旧前端，语义归入 Loon。
         "surge" => ScriptDialect::Surge,
-        "loon" => ScriptDialect::Loon,
+        "loon" | "quantumultx" => ScriptDialect::Loon,
         other => {
-            return Err(format!(
-                "未知方言 '{other}'（可选: quantumultx / surge / loon）"
-            ));
+            return Err(format!("未知方言 '{other}'（可选: surge / loon）"));
         }
     };
     let manager = RemoteManager::new(state.data_dir.clone());
