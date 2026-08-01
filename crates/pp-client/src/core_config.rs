@@ -34,6 +34,20 @@ pub struct PanelFeatures {
     pub clash_api_port: u16,
     /// Clash 面板 API 密钥（空串 = 不鉴权，输出时省略该字段）。
     pub clash_api_secret: String,
+    /// Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（未知值回退 `zashboard`）。
+    pub clash_api_ui: String,
+}
+
+/// Clash 面板 UI 下载地址映射（公开约定，见 Task R 项 1）。
+///
+/// 未知值回退为默认面板 `zashboard`。
+pub fn clash_api_ui_download_url(ui: &str) -> &'static str {
+    match ui {
+        "yacd" => "https://github.com/haishanh/yacd/archive/gh-pages.zip",
+        "zashboard" => "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+        "metacubexd" => "https://github.com/MetaCubeX/metacubexd/archive/gh-pages.zip",
+        _ => "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+    }
 }
 
 /// 按核心类型把设置页的 TUN / Clash 面板配置强制注入已合成的核心配置。
@@ -57,8 +71,8 @@ pub fn apply_panel_features(
 ///   "172.19.0.1/30", mtu: 9000, auto_route, stack}`（模板/复写已含 tun 入站时
 ///   整体替换为设置值，`tun-in` 只能有一个）；
 /// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
-///   "127.0.0.1:port"}`，`secret` 非空时追加（模板已含 `experimental.clash_api`
-///   时整体替换）。
+///   "127.0.0.1:port", external_ui: "ui", external_ui_download_url: <按选择>}`，
+///   `secret` 非空时追加（模板已含 `experimental.clash_api` 时整体替换）。
 pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatures) {
     if features.tun_enabled {
         let Some(obj) = composed.as_object_mut() else {
@@ -91,6 +105,12 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             "external_controller".to_string(),
             Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
         );
+        // 面板 UI：固定挂载目录 `ui` + 按选择回填下载地址（未知值回退 zashboard）。
+        clash_api.insert("external_ui".to_string(), Value::String("ui".to_string()));
+        clash_api.insert(
+            "external_ui_download_url".to_string(),
+            Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
+        );
         if !features.clash_api_secret.is_empty() {
             clash_api.insert(
                 "secret".to_string(),
@@ -111,8 +131,9 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
 ///
 /// - `tun_enabled` → `tun = {enable: true, stack, auto-route, auto-detect-interface:
 ///   true, dns-hijack: ["any:53"]}`（模板已含 `tun` 键时整体替换）；
-/// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，`secret` 非空时
-///   写 `secret` 键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
+/// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，
+///   `external-ui: ui` + `external-ui-url: <按选择>`，`secret` 非空时写 `secret`
+///   键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
 pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeatures) {
     let Some(obj) = composed.as_object_mut() else {
         return;
@@ -135,6 +156,11 @@ pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeature
         obj.insert(
             "external-controller".to_string(),
             Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
+        );
+        obj.insert("external-ui".to_string(), Value::String("ui".to_string()));
+        obj.insert(
+            "external-ui-url".to_string(),
+            Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
         );
         if features.clash_api_secret.is_empty() {
             obj.remove("secret");
@@ -688,6 +714,7 @@ rules:
             clash_api_enabled: true,
             clash_api_port: 9090,
             clash_api_secret: "sekret".to_string(),
+            clash_api_ui: "zashboard".to_string(),
         }
     }
 
@@ -843,6 +870,114 @@ rules:
         assert!(cfg.get("tun").is_none());
         assert!(cfg.get("external-controller").is_none());
         assert!(cfg.get("secret").is_none());
+        assert!(cfg.get("external-ui").is_none());
+        assert!(cfg.get("external-ui-url").is_none());
+    }
+
+    // ---------- Clash 面板 UI 选择（yacd / zashboard / metacubexd） ----------
+
+    fn features_with_ui(ui: &str) -> PanelFeatures {
+        PanelFeatures {
+            clash_api_ui: ui.to_string(),
+            ..singbox_features()
+        }
+    }
+
+    /// 三种 UI 选择的 sing-box 注入断言。
+    #[test]
+    fn apply_singbox_panel_features_injects_external_ui_download_url() {
+        let cases = [
+            (
+                "yacd",
+                "https://github.com/haishanh/yacd/archive/gh-pages.zip",
+            ),
+            (
+                "zashboard",
+                "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+            ),
+            (
+                "metacubexd",
+                "https://github.com/MetaCubeX/metacubexd/archive/gh-pages.zip",
+            ),
+        ];
+        for (ui, url) in cases {
+            let sub = json!({
+                "outbounds": [{ "type": "direct", "tag": "direct" }]
+            });
+            let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+            apply_panel_features(&mut cfg, CoreType::SingBox, &features_with_ui(ui));
+
+            assert_eq!(
+                cfg["experimental"]["clash_api"]["external_ui"], "ui",
+                "UI 选择 {ui}"
+            );
+            assert_eq!(
+                cfg["experimental"]["clash_api"]["external_ui_download_url"], url,
+                "UI 选择 {ui}"
+            );
+        }
+    }
+
+    /// 三种 UI 选择的 mihomo 注入断言。
+    #[test]
+    fn apply_mihomo_panel_features_injects_external_ui_download_url() {
+        let cases = [
+            (
+                "yacd",
+                "https://github.com/haishanh/yacd/archive/gh-pages.zip",
+            ),
+            (
+                "zashboard",
+                "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+            ),
+            (
+                "metacubexd",
+                "https://github.com/MetaCubeX/metacubexd/archive/gh-pages.zip",
+            ),
+        ];
+        for (ui, url) in cases {
+            let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+            let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+            apply_panel_features(&mut cfg, CoreType::Mihomo, &features_with_ui(ui));
+
+            assert_eq!(cfg["external-ui"], "ui", "UI 选择 {ui}");
+            assert_eq!(cfg["external-ui-url"], url, "UI 选择 {ui}");
+        }
+    }
+
+    /// 未知值 / 空串回退 zashboard（映射函数 + 两核心注入路径）。
+    #[test]
+    fn clash_api_ui_unknown_falls_back_to_zashboard() {
+        assert_eq!(
+            clash_api_ui_download_url("unknown-ui"),
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
+        assert_eq!(
+            clash_api_ui_download_url(""),
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
+        assert_eq!(
+            clash_api_ui_download_url("zashboard"),
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
+
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut sb = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut sb, CoreType::SingBox, &features_with_ui("bogus"));
+        assert_eq!(
+            sb["experimental"]["clash_api"]["external_ui_download_url"],
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
+
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut mh = compose_mihomo_config(yaml, 17890, None).unwrap();
+        apply_panel_features(&mut mh, CoreType::Mihomo, &features_with_ui("bogus"));
+        assert_eq!(
+            mh["external-ui-url"],
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
     }
 
     // ---------- 真实核心 check（target/test-cores 存在时验证 tun + clash_api 通过） ----------
@@ -881,7 +1016,9 @@ rules:
             "route": { "final": "direct" }
         });
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
-        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+        // 用非默认 UI（metacubexd）验证 external_ui / external_ui_download_url 注入
+        // 后真实 sing-box check 仍通过。
+        apply_panel_features(&mut cfg, CoreType::SingBox, &features_with_ui("metacubexd"));
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
@@ -905,7 +1042,9 @@ rules:
         };
         let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
         let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-        apply_panel_features(&mut cfg, CoreType::Mihomo, &singbox_features());
+        // 用非默认 UI（metacubexd）验证 external-ui / external-ui-url 注入后真实
+        // mihomo check 仍通过。
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &features_with_ui("metacubexd"));
 
         let dir = tempfile::tempdir().unwrap();
         // 预置 geoip.metadb（存在时）避免 `mihomo -t` 联网下载 geo 数据。

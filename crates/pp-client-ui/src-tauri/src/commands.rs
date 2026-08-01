@@ -88,6 +88,8 @@ pub struct ClientConfigView {
     pub clash_api_port: u16,
     /// Clash 面板 API 密钥（空串 = 不鉴权）。
     pub clash_api_secret: String,
+    /// Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（默认 `zashboard`）。
+    pub clash_api_ui: String,
 }
 
 impl Default for ClientConfigView {
@@ -109,6 +111,7 @@ impl Default for ClientConfigView {
             clash_api_enabled: false,
             clash_api_port: 9090,
             clash_api_secret: String::new(),
+            clash_api_ui: "zashboard".to_string(),
         }
     }
 }
@@ -139,6 +142,7 @@ impl ClientConfigView {
             clash_api_enabled: cfg.clash_api_enabled,
             clash_api_port: cfg.clash_api_port,
             clash_api_secret: cfg.clash_api_secret.clone(),
+            clash_api_ui: cfg.clash_api_ui.clone(),
         }
     }
 
@@ -164,6 +168,7 @@ impl ClientConfigView {
             "clash_api_enabled": self.clash_api_enabled,
             "clash_api_port": self.clash_api_port,
             "clash_api_secret": self.clash_api_secret,
+            "clash_api_ui": self.clash_api_ui,
         });
         serde_json::from_value::<ClientConfig>(value).map_err(|e| e.to_string())
     }
@@ -1024,6 +1029,7 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
         clash_api_enabled: cfg.clash_api_enabled,
         clash_api_port: cfg.clash_api_port,
         clash_api_secret: cfg.clash_api_secret.clone(),
+        clash_api_ui: cfg.clash_api_ui.clone(),
     };
     let mut value = match cfg.core_type {
         CoreType::SingBox => compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
@@ -1473,6 +1479,7 @@ mod tests {
         view.clash_api_enabled = true;
         view.clash_api_port = 9091;
         view.clash_api_secret = "sekret".to_string();
+        view.clash_api_ui = "yacd".to_string();
 
         let result = with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
         assert!(
@@ -1491,6 +1498,7 @@ mod tests {
         assert!(saved.clash_api_enabled);
         assert_eq!(saved.clash_api_port, 9091);
         assert_eq!(saved.clash_api_secret, "sekret");
+        assert_eq!(saved.clash_api_ui, "yacd");
 
         // load → from_config 往返保真（前端下次保存时的 payload 基础）。
         let view2 = ClientConfigView::from_config(&saved);

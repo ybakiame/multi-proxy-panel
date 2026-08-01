@@ -63,6 +63,10 @@ pub struct ClientConfig {
     pub clash_api_port: u16,
     /// Clash 面板 API 密钥（空串 = 不鉴权，合成配置时省略该字段）。
     pub clash_api_secret: String,
+    /// Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（默认 `zashboard`）。
+    ///
+    /// 未知值在配置合成（`core_config::apply_panel_features*`）时回退为 `zashboard`。
+    pub clash_api_ui: String,
 }
 
 impl Default for ClientConfig {
@@ -83,6 +87,7 @@ impl Default for ClientConfig {
             clash_api_enabled: false,
             clash_api_port: 9090,
             clash_api_secret: String::new(),
+            clash_api_ui: "zashboard".to_string(),
         }
     }
 }
@@ -153,6 +158,7 @@ mod tests {
         assert!(!cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
+        assert_eq!(cfg.clash_api_ui, "zashboard");
     }
 
     #[test]
@@ -182,6 +188,7 @@ mod tests {
         cfg.clash_api_enabled = true;
         cfg.clash_api_port = 9091;
         cfg.clash_api_secret = "sekret".to_string();
+        cfg.clash_api_ui = "metacubexd".to_string();
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ClientConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);
@@ -208,6 +215,7 @@ mod tests {
         assert!(!cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
+        assert_eq!(cfg.clash_api_ui, "zashboard");
     }
 
     #[test]

@@ -202,6 +202,7 @@ impl ClientState {
             clash_api_enabled: self.config.clash_api_enabled,
             clash_api_port: self.config.clash_api_port,
             clash_api_secret: self.config.clash_api_secret.clone(),
+            clash_api_ui: self.config.clash_api_ui.clone(),
         };
         let config_json = match self.config.core_type {
             CoreType::SingBox => {
