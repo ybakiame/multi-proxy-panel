@@ -41,6 +41,11 @@ fn main() {
             commands::get_profile_overrides,
             commands::save_profile_overrides,
             commands::preview_core_config,
+            commands::list_subscriptions,
+            commands::add_subscription,
+            commands::remove_subscription,
+            commands::set_subscription_enabled,
+            commands::refresh_subscription,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -7,14 +7,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::{
-    build_core_config, compose_mihomo_config, compose_singbox_config, ClientConfig, ClientState,
-    ProfileOverrides, ProfileStore, RemoteManager, RemoteResource, SubContent, SubscriptionFetcher,
+    build_core_config, compose_mihomo_config, compose_singbox_config, fetch_subscription,
+    ClientConfig, ClientState, ProfileOverrides, ProfileStore, RemoteManager, RemoteResource,
+    SubContent, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
 use pp_script::{ScriptDialect, TaskScriptView};
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use uuid::Uuid;
 
 use crate::state::AppState;
 
@@ -627,4 +629,185 @@ where
     })
     .await
     .map_err(|e| format!("阻塞任务执行失败: {e}"))?
+}
+
+// ---------- 订阅管理 ----------
+
+/// 订阅用户信息的对外视图（与 `pp_client::SubscriptionInfo` 字段对齐）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SubscriptionUserInfoView {
+    /// 已用上行字节数。
+    pub upload: Option<u64>,
+    /// 已用下行字节数。
+    pub download: Option<u64>,
+    /// 总流量字节数。
+    pub total: Option<u64>,
+    /// 到期时间戳（秒）。
+    pub expire: Option<u64>,
+}
+
+impl SubscriptionUserInfoView {
+    fn from_info(info: &pp_client::SubscriptionInfo) -> Self {
+        Self {
+            upload: info.upload,
+            download: info.download,
+            total: info.total,
+            expire: info.expire,
+        }
+    }
+}
+
+/// 一条订阅的对外视图。
+#[derive(Debug, Clone, Serialize)]
+pub struct SubscriptionView {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub enabled: bool,
+    pub userinfo: Option<SubscriptionUserInfoView>,
+    /// 最近一次 fetch 成功的节点数（sing-box 侧可用节点数）。
+    pub node_count: u64,
+    /// 最近一次 fetch 的错误信息（失败时记录；不阻塞已有数据展示）。
+    pub error: Option<String>,
+}
+
+impl SubscriptionView {
+    fn from_sub(sub: &Subscription) -> Self {
+        Self {
+            id: sub.id.to_string(),
+            name: sub.name.clone(),
+            url: sub.url.clone(),
+            enabled: sub.enabled,
+            userinfo: sub
+                .userinfo
+                .as_ref()
+                .map(SubscriptionUserInfoView::from_info),
+            node_count: sub.node_count,
+            error: sub.error.clone(),
+        }
+    }
+}
+
+/// 添加订阅的入参。
+#[derive(Debug, Deserialize)]
+pub struct AddSubscriptionInput {
+    pub name: String,
+    pub url: String,
+}
+
+/// 校验订阅 URL 必须为 http/https。
+fn validate_subscription_url(url: &str) -> Result<(), String> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Ok(())
+    } else {
+        Err("订阅 URL 必须以 http:// 或 https:// 开头".to_string())
+    }
+}
+
+/// 解析订阅 ID 字符串为 `Uuid`。
+fn parse_subscription_id(id: &str) -> Result<Uuid, String> {
+    Uuid::parse_str(id).map_err(|e| format!("无效的订阅 ID: {e}"))
+}
+
+/// 把一次 fetch 结果合并进订阅（成功更新 userinfo / 节点数并清空 error；
+/// 失败仅记录 error，保留旧数据）。
+async fn apply_fetch(sub: &mut Subscription, url: &str) {
+    match fetch_subscription(url).await {
+        Ok(result) => {
+            sub.userinfo = result.userinfo;
+            sub.node_count = result.singbox_nodes.len() as u64;
+            sub.error = None;
+        }
+        Err(e) => {
+            sub.error = Some(format!("拉取失败: {e}"));
+        }
+    }
+}
+
+/// 将更新后的订阅按 id 写回存储。
+fn update_subscription(store: &SubscriptionStore, sub: &Subscription) -> Result<(), String> {
+    let mut subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+    if let Some(existing) = subs.iter_mut().find(|s| s.id == sub.id) {
+        *existing = sub.clone();
+    }
+    store.save(&subs).map_err(|e| format!("保存订阅失败: {e}"))
+}
+
+/// 列出全部订阅（含最近一次 fetch 的节点数与错误信息）。
+#[tauri::command]
+pub async fn list_subscriptions(
+    state: State<'_, AppState>,
+) -> Result<Vec<SubscriptionView>, String> {
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    let subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+    Ok(subs.iter().map(SubscriptionView::from_sub).collect())
+}
+
+/// 添加订阅：校验 URL → 落盘（默认启用）→ 立即 fetch 一次拿 userinfo + 节点数。
+///
+/// fetch 失败不阻塞添加，错误记入返回视图的 `error` 字段。
+#[tauri::command]
+pub async fn add_subscription(
+    state: State<'_, AppState>,
+    input: AddSubscriptionInput,
+) -> Result<SubscriptionView, String> {
+    let name = input.name.trim().to_string();
+    if name.is_empty() {
+        return Err("名称不能为空".to_string());
+    }
+    let url = input.url.trim().to_string();
+    validate_subscription_url(&url)?;
+
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    let mut sub = store
+        .add(&name, &url, true)
+        .map_err(|e| format!("保存订阅失败: {e}"))?;
+    apply_fetch(&mut sub, &url).await;
+    update_subscription(&store, &sub)?;
+    Ok(SubscriptionView::from_sub(&sub))
+}
+
+/// 刷新订阅：重新 fetch 更新 userinfo / 节点数。
+///
+/// 失败时保留旧数据并返回（视图 `error` 字段携带错误信息）。
+#[tauri::command]
+pub async fn refresh_subscription(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<SubscriptionView, String> {
+    let id = parse_subscription_id(&id)?;
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    let mut subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+    let idx = subs
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or_else(|| "订阅不存在".to_string())?;
+    let url = subs[idx].url.clone();
+    apply_fetch(&mut subs[idx], &url).await;
+    store
+        .save(&subs)
+        .map_err(|e| format!("保存订阅失败: {e}"))?;
+    Ok(SubscriptionView::from_sub(&subs[idx]))
+}
+
+/// 删除订阅；不存在时静默返回。
+#[tauri::command]
+pub async fn remove_subscription(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let id = parse_subscription_id(&id)?;
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    store.remove(id).map_err(|e| format!("删除订阅失败: {e}"))
+}
+
+/// 切换订阅启用状态（取第一个启用的订阅生效，重启代理应用后应用）。
+#[tauri::command]
+pub async fn set_subscription_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let id = parse_subscription_id(&id)?;
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    store
+        .set_enabled(id, enabled)
+        .map_err(|e| format!("保存订阅失败: {e}"))
 }

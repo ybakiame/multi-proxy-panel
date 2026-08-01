@@ -38,6 +38,16 @@ pub struct Subscription {
     pub url: String,
     pub enabled: bool,
     pub userinfo: Option<SubscriptionInfo>,
+    /// 最近一次 fetch 成功的节点数（sing-box 侧可用节点数）；`0` = 尚未成功拉取。
+    ///
+    /// `#[serde(default)]` 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
+    #[serde(default)]
+    pub node_count: u64,
+    /// 最近一次 fetch 的错误信息（失败时记录，不阻塞已有数据展示）。
+    ///
+    /// `#[serde(default)]` 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// 订阅存储：读写 `data_dir/subscriptions.json`（load / save / add / remove / set_enabled）。
@@ -94,6 +104,8 @@ impl SubscriptionStore {
             url: url.to_string(),
             enabled,
             userinfo: None,
+            node_count: 0,
+            error: None,
         };
         subs.push(sub.clone());
         self.save(&subs)?;
