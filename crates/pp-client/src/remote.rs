@@ -21,7 +21,7 @@ use pp_script::{Notifier, ScriptDialect, ScriptKind, TaskScript};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::import::{ConfigMeta, ImportedConfig, parse_import};
+use crate::import::{ArgSpec, ConfigMeta, ImportedConfig, parse_import};
 
 /// 一条远程订阅资源。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +47,10 @@ pub struct RemoteResource {
     /// 资源图标 URL（可选；新建资源时可由嗅探结果预填；旧清单缺省为 `None`）。
     #[serde(default)]
     pub icon: Option<String>,
+    /// 模块参数声明（`#!arguments=` / Loon `[Argument]` 段；添加时由前端从 detect
+    /// meta 传入，fetch 到 meta 但清单无声明时回填；旧清单缺省为空）。
+    #[serde(default)]
+    pub arguments: Vec<ArgSpec>,
 }
 
 impl Default for RemoteResource {
@@ -61,6 +65,19 @@ impl Default for RemoteResource {
             description: None,
             argument_values: Vec::new(),
             icon: None,
+            arguments: Vec::new(),
+        }
+    }
+}
+
+/// 按 [`RemoteResource::arguments`] 声明的默认值预填 `argument_values`（添加/更新资源
+/// 时调用）；用户已配置的键（`argument_values` 中已存在）不覆盖。
+pub fn prefill_argument_values(remote: &mut RemoteResource) {
+    for spec in &remote.arguments {
+        if !remote.argument_values.iter().any(|(k, _)| k == &spec.key) {
+            remote
+                .argument_values
+                .push((spec.key.clone(), spec.default_value.clone()));
         }
     }
 }
@@ -313,6 +330,13 @@ impl RemoteManager {
                                 .push(format!("remote '{}': write cache failed: {e}", remote.name));
                             continue;
                         }
+                        // 资源未声明参数但远端 meta 有声明时回填（fetch 为辅助路径）。
+                        if let Err(e) = self.backfill_arguments(&remote.name, &imported.meta) {
+                            report.warnings.push(format!(
+                                "remote '{}': backfill arguments failed: {e}",
+                                remote.name
+                            ));
+                        }
                         report.fetched += 1;
                     }
                     Err(e) => report
@@ -521,6 +545,33 @@ impl RemoteManager {
             }
         }
         imported.task_scripts = kept_tasks;
+    }
+
+    /// fetch 回填资源参数声明（辅助路径）：清单中资源 `arguments` 为空而远端 meta
+    /// 声明了参数时，以 meta 为准补全 `arguments` 并按默认值预填 `argument_values`
+    /// （`argument_values` 中已存在的用户值不覆盖）。
+    fn backfill_arguments(&self, name: &str, meta: &ConfigMeta) -> PanelResult<()> {
+        if meta.arguments.is_empty() {
+            return Ok(());
+        }
+        let mut remotes = self.load()?;
+        let Some(remote) = remotes.iter_mut().find(|r| r.name == name) else {
+            // 资源已被删除，跳过回填。
+            return Ok(());
+        };
+        if !remote.arguments.is_empty() {
+            // 已有参数声明（添加时传入），不覆盖。
+            return Ok(());
+        }
+        for spec in &meta.arguments {
+            if !remote.argument_values.iter().any(|(k, _)| k == &spec.key) {
+                remote
+                    .argument_values
+                    .push((spec.key.clone(), spec.default_value.clone()));
+            }
+        }
+        remote.arguments = meta.arguments.clone();
+        self.save(&remotes)
     }
 
     /// 拉取 Snippet 片段：解析 → 逐个回填脚本钩子/任务源码（失败记 warning 跳过）。
@@ -1558,6 +1609,107 @@ http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, scrip
         assert_eq!(loaded[0].icon, None);
     }
 
+    /// ⑤ prefill_argument_values：按参数声明默认值预填，已存在的用户值不覆盖；
+    /// save → load 往返保留 `arguments` / `argument_values`。
+    #[test]
+    fn prefill_argument_values_fills_defaults_and_roundtrips() {
+        let mut remote = RemoteResource {
+            name: "mod".into(),
+            url: "http://example.com/mod.sgmodule".into(),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            arguments: vec![
+                ArgSpec {
+                    key: "server".into(),
+                    default_value: "api.example.com".into(),
+                    ..ArgSpec::default()
+                },
+                ArgSpec {
+                    key: "token".into(),
+                    default_value: "default-token".into(),
+                    ..ArgSpec::default()
+                },
+            ],
+            argument_values: vec![("token".to_string(), "user-token".to_string())],
+            ..RemoteResource::default()
+        };
+        prefill_argument_values(&mut remote);
+        // server 由默认值预填；token 已有用户值不覆盖。
+        assert_eq!(
+            remote.argument_values,
+            vec![
+                ("token".to_string(), "user-token".to_string()),
+                ("server".to_string(), "api.example.com".to_string()),
+            ]
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        manager.save(&[remote.clone()]).unwrap();
+        let loaded = manager.load().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].arguments, remote.arguments);
+        assert_eq!(loaded[0].argument_values, remote.argument_values);
+
+        // 旧清单（无 arguments 字段）反序列化回退为空列表。
+        std::fs::write(
+            manager.remotes_file(),
+            r#"[{"name":"old","url":"http://example.com/x.js","kind":"Script","dialect":"Surge","update_interval_secs":86400,"enabled":true}]"#,
+        )
+        .unwrap();
+        let legacy = manager.load().unwrap();
+        assert!(legacy[0].arguments.is_empty());
+    }
+
+    /// ⑤ fetch 回填（辅助路径）：资源未声明参数而远端 meta 有声明时，fetch 后
+    /// 清单回填 `arguments` 并按默认值预填 `argument_values`。
+    #[tokio::test]
+    async fn fetch_backfills_arguments_and_defaults_when_resource_declares_none() {
+        let base = spawn_remote_server(|base| {
+            format!(
+                "#!name=参数模块\n\
+                 #!arguments= server:api.example.com, token:default-token\n\
+                 \n\
+                 [Script]\n\
+                 xxx = type=http-response, pattern=^https://api\\.example\\.com/, script-path={base}/hook.js, argument={{server}}|{{token}}\n"
+            )
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "args".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            ..RemoteResource::default()
+        }];
+        manager.save(&remotes).unwrap();
+
+        let report = manager.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1);
+        assert!(
+            report.warnings.is_empty(),
+            "warnings: {:?}",
+            report.warnings
+        );
+
+        let loaded = manager.load().unwrap();
+        assert_eq!(loaded[0].arguments.len(), 2);
+        assert!(
+            loaded[0]
+                .argument_values
+                .iter()
+                .any(|(k, v)| k == "server" && v == "api.example.com")
+        );
+        assert!(
+            loaded[0]
+                .argument_values
+                .iter()
+                .any(|(k, v)| k == "token" && v == "default-token")
+        );
+    }
+
     /// `#!arguments` 声明与 `argument=` 模板经 fetch → cache → load 往返不丢失，
     /// meta 透出到 `MergedRemoteConfig.metas`。
     #[tokio::test]
@@ -1721,6 +1873,11 @@ http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, scrip
             description: Some("desc".into()),
             argument_values: vec![("k".to_string(), "v".to_string())],
             icon: Some("http://i.example.com/x.png".into()),
+            arguments: vec![ArgSpec {
+                key: "k".into(),
+                default_value: "v".into(),
+                ..ArgSpec::default()
+            }],
         };
         manager.update_resource("rules", updated).unwrap();
 
@@ -1735,6 +1892,8 @@ http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, scrip
         assert_eq!(r.description.as_deref(), Some("desc"));
         assert_eq!(r.argument_values, vec![("k".to_string(), "v".to_string())]);
         assert_eq!(r.icon.as_deref(), Some("http://i.example.com/x.png"));
+        assert_eq!(r.arguments.len(), 1);
+        assert_eq!(r.arguments[0].key, "k");
         // 旧缓存文件保留。
         assert!(cache_dir.join("rules.json").exists());
     }

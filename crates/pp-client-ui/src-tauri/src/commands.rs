@@ -385,6 +385,9 @@ pub struct RemoteResourceView {
     pub argument_values: Vec<(String, String)>,
     /// 资源图标 URL（可选；嗅探结果预填）。
     pub icon: Option<String>,
+    /// 模块参数声明（`#!arguments=` / Loon `[Argument]` 段；旧前端回传缺省为空）。
+    #[serde(default)]
+    pub arguments: Vec<ArgSpecView>,
 }
 
 impl RemoteResourceView {
@@ -405,10 +408,16 @@ impl RemoteResourceView {
             enabled: remote.enabled,
             argument_values: remote.argument_values.clone(),
             icon: remote.icon.clone(),
+            arguments: remote.arguments.iter().map(ArgSpecView::from_arg).collect(),
         }
     }
 
     fn into_remote(self) -> Result<RemoteResource, String> {
+        let arguments: Vec<pp_client::ArgSpec> = self
+            .arguments
+            .into_iter()
+            .map(ArgSpecView::into_arg)
+            .collect();
         let value = serde_json::json!({
             "name": self.name,
             "url": self.url,
@@ -419,6 +428,7 @@ impl RemoteResourceView {
             "enabled": self.enabled,
             "argument_values": self.argument_values,
             "icon": self.icon,
+            "arguments": arguments,
         });
         serde_json::from_value::<RemoteResource>(value).map_err(|e| e.to_string())
     }
@@ -446,6 +456,38 @@ pub struct ArgSpecView {
     pub options: Vec<String>,
     /// 参数分组标签（无分组时为 null）。
     pub tag: Option<String>,
+}
+
+impl ArgSpecView {
+    /// 从内部 [`pp_client::ArgSpec`] 构造视图。
+    fn from_arg(arg: &pp_client::ArgSpec) -> Self {
+        Self {
+            key: arg.key.clone(),
+            default_value: arg.default_value.clone(),
+            description: arg.description.clone(),
+            kind: match arg.kind {
+                pp_client::ArgKind::Select => "Select".to_string(),
+                pp_client::ArgKind::Input => "Input".to_string(),
+            },
+            options: arg.options.clone(),
+            tag: arg.tag.clone(),
+        }
+    }
+
+    /// 转为内部 [`pp_client::ArgSpec`]（未知控件类型按 `Input` 处理）。
+    fn into_arg(self) -> pp_client::ArgSpec {
+        pp_client::ArgSpec {
+            key: self.key,
+            default_value: self.default_value,
+            description: self.description,
+            kind: match self.kind.as_str() {
+                "Select" => pp_client::ArgKind::Select,
+                _ => pp_client::ArgKind::Input,
+            },
+            options: self.options,
+            tag: self.tag,
+        }
+    }
 }
 
 /// 配置头 `#!key=value` 元数据的对外视图。
@@ -517,6 +559,10 @@ pub async fn list_remotes(state: State<'_, AppState>) -> Result<Vec<RemoteResour
 }
 
 /// 新增一条远程资源；重名时报错。
+///
+/// 添加时若携带参数声明（`arguments`，由前端从 detect meta 传入），后端按声明默认值
+/// 预填 `argument_values`；URL 在落盘前经 [`pp_client::normalize_resource_url`] 归一化
+/// （GitHub blob/raw → raw.githubusercontent.com）。
 #[tauri::command]
 pub async fn add_remote(
     state: State<'_, AppState>,
@@ -528,7 +574,9 @@ pub async fn add_remote(
     if remote.url.trim().is_empty() {
         return Err("URL 不能为空".to_string());
     }
-    let remote = remote.into_remote()?;
+    let mut remote = remote.into_remote()?;
+    remote.url = pp_client::normalize_resource_url(&remote.url);
+    pp_client::prefill_argument_values(&mut remote);
     let manager = RemoteManager::new(state.data_dir.clone());
     let mut remotes = manager
         .load()
@@ -576,6 +624,7 @@ pub async fn update_remote(
     }
     let mut remote = resource.into_remote()?;
     remote.url = pp_client::normalize_resource_url(&remote.url);
+    pp_client::prefill_argument_values(&mut remote);
     let name = remote.name.clone();
     let manager = RemoteManager::new(state.data_dir.clone());
     manager
