@@ -978,4 +978,15 @@ mod tests {
 
         state.stop().await;
     }
+
+    /// 编译期断言：`ClientState::start` 的 future 为 `Send`（`apply_js_override`
+    /// 经 [`ScriptWorker`] 驱动后不再含 rquickjs 非 `Send` 结构，可跨线程 await）。
+    #[test]
+    fn client_state_start_future_is_send() {
+        fn assert_send<T: Send>(_: &T) {}
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = ClientState::new(test_config(&dir, String::new()));
+        let fut = state.start();
+        assert_send(&fut);
+    }
 }

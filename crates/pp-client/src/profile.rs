@@ -6,8 +6,9 @@
 //! - YAML 复写（[`apply_yaml_override`]）按 RFC 7386 深合并：对象递归合并，数组与
 //!   标量整体替换。
 //! - JS 复写（[`apply_js_override`]）为同步纯函数模式 `function main(config){...; return config}`，
-//!   复用 pp-script QuickJS 引擎，宿主以 [`DenyHttpExecutor`] 拒绝一切网络、以内存
-//!   存储承担持久化（无落盘），即"无网络 / 无存储权限"。
+//!   经 pp-script [`ScriptWorker`]（专有线程 + current_thread 运行时，`Send` future）
+//!   驱动，宿主以 [`DenyHttpExecutor`] 拒绝一切网络、以内存存储承担持久化
+//!   （无落盘），即"无网络 / 无存储权限"。
 //!
 //! 总装入口 [`build_core_config`]：提取节点 → 本地模板 → YAML 复写 → JS 复写。
 //! inbounds 与 MITM 链不在本层，仍由 [`crate::state`] 通过
@@ -19,8 +20,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use pp_common::{CoreType, PanelError, PanelResult};
 use pp_script::{
-    HttpExecutor, HttpRequestSpec, HttpResponseData, MemoryPersistentStore, QuickJsEngine,
-    ScriptDialect, ScriptEngine, ScriptHost, ScriptKind, ScriptLimits,
+    HttpExecutor, HttpRequestSpec, HttpResponseData, MemoryPersistentStore, ScriptDialect,
+    ScriptHost, ScriptKind, ScriptLimits, ScriptWorker,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -517,6 +518,9 @@ impl HttpExecutor for DenyHttpExecutor {
 ///
 /// 宿主：Surge 方言 + [`DenyHttpExecutor`]（无网络）+ 内存存储（无落盘）+
 /// [`TracingNotifier`]。限制：2 秒超时、默认 32MB 内存上限。
+///
+/// 执行经 [`ScriptWorker`]（专有线程 + current_thread 运行时）驱动，返回 `Send`
+/// future；按用创建 worker（一次线程 spawn），job 完成后随 `tx` 释放线程自然退出。
 pub async fn apply_js_override(config: Value, js: &str) -> PanelResult<Value> {
     if js.trim().is_empty() {
         return Ok(config);
@@ -531,17 +535,21 @@ pub async fn apply_js_override(config: Value, js: &str) -> PanelResult<Value> {
         Arc::new(MemoryPersistentStore::new()),
         Arc::new(TracingNotifier::new()),
     ));
-    let mut engine = QuickJsEngine::new(
+    let worker = ScriptWorker::new(
         host,
-        ScriptDialect::Surge,
         ScriptLimits {
             timeout_ms: 2000,
             ..ScriptLimits::default()
         },
-        "profile-js".to_string(),
-    )?;
-    let out = engine
-        .run_script(&source, ScriptKind::Generic, None)
+    );
+    let out = worker
+        .run_script(
+            &source,
+            ScriptKind::Generic,
+            None,
+            ScriptDialect::Surge,
+            "profile-js",
+        )
         .await?;
     Ok(out.0)
 }
@@ -970,7 +978,20 @@ new-key:
         assert!(matches!(err, PanelError::Script(_)));
     }
 
-    // ---------- ⑥ 端到端 ----------
+    // ---------- ⑥ Send 编译期断言 ----------
+
+    /// 编译期断言：`build_core_config` 的 future 为 `Send`（`apply_js_override`
+    /// 经 [`ScriptWorker`] 驱动后不再含 rquickjs 非 `Send` 结构，可跨线程 await）。
+    #[test]
+    fn build_core_config_future_is_send() {
+        fn assert_send<T: Send>(_: &T) {}
+        let sub = SubContent::SingBox(sample_singbox_sub());
+        let overrides = ProfileOverrides::default();
+        let fut = build_core_config(CoreType::SingBox, &sub, &overrides);
+        assert_send(&fut);
+    }
+
+    // ---------- ⑦ 端到端 ----------
 
     #[tokio::test(flavor = "current_thread")]
     async fn build_core_config_singbox_end_to_end() {
@@ -1040,7 +1061,7 @@ new-key:
         assert!(matches!(err, PanelError::Client(_)));
     }
 
-    // ---------- ⑦ 回归：compose_* 注入（模板 route.rules 空数组前插 OK） ----------
+    // ---------- ⑧ 回归：compose_* 注入（模板 route.rules 空数组前插 OK） ----------
 
     #[tokio::test(flavor = "current_thread")]
     async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
