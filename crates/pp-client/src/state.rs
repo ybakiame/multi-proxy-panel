@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use pp_common::{CoreType, PanelResult};
 use pp_mitm::{MemoryRecorder, RewriteEngine, RunningProxy, ScriptHookEngine};
-use pp_script::{FilePersistentStore, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript};
+use pp_script::{
+    FilePersistentStore, Notifier, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript,
+};
 use tokio::task::JoinHandle;
 
 use crate::config::ClientConfig;
@@ -49,6 +51,8 @@ pub struct ClientState {
     core: Option<CoreRunner>,
     mitm: Option<RunningProxy>,
     sysproxy: Arc<dyn SystemProxy>,
+    /// 脚本通知器（`$notify` / `$notification`）；默认 [`TracingNotifier`]（仅日志）。
+    notifier: Arc<dyn Notifier>,
     /// 抓包记录器（内存环形缓冲，容量 2048；随 MITM 代理启动注入）。
     recorder: Arc<MemoryRecorder>,
     /// 远程订阅 task 脚本调度器（MITM 就绪后启动，stop 时停止）。
@@ -58,16 +62,35 @@ pub struct ClientState {
 impl ClientState {
     /// 使用平台系统代理实现创建状态机。
     pub fn new(config: ClientConfig) -> Self {
-        Self::with_system_proxy(config, Arc::new(PlatformSystemProxy::default()))
+        Self::with_dependencies(
+            config,
+            Arc::new(PlatformSystemProxy::default()),
+            Arc::new(TracingNotifier::new()),
+        )
     }
 
     /// 使用自定义系统代理实现创建状态机（测试注入用）。
     pub fn with_system_proxy(config: ClientConfig, sysproxy: Arc<dyn SystemProxy>) -> Self {
+        Self::with_dependencies(config, sysproxy, Arc::new(TracingNotifier::new()))
+    }
+
+    /// 使用自定义通知器创建状态机（OS 桌面通知接入用）。
+    pub fn with_notifier(config: ClientConfig, notifier: Arc<dyn Notifier>) -> Self {
+        Self::with_dependencies(config, Arc::new(PlatformSystemProxy::default()), notifier)
+    }
+
+    /// 组合依赖构造状态机。
+    fn with_dependencies(
+        config: ClientConfig,
+        sysproxy: Arc<dyn SystemProxy>,
+        notifier: Arc<dyn Notifier>,
+    ) -> Self {
         Self {
             config,
             core: None,
             mitm: None,
             sysproxy,
+            notifier,
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
         }
@@ -142,7 +165,7 @@ impl ClientState {
                 Arc::new(FilePersistentStore::new(
                     self.config.data_dir.join("script_store"),
                 )),
-                Arc::new(TracingNotifier::new()),
+                Arc::clone(&self.notifier),
             ));
             let hooks = ScriptHookEngine::new(
                 Arc::clone(&host),
@@ -277,6 +300,38 @@ mod tests {
     use crate::remote::{RemoteKind, RemoteResource};
     use crate::sysproxy::MockSystemProxy;
 
+    /// 记录通知的 Notifier（验证注入链路：ClientState → ScriptHost → `$notify`）。
+    #[derive(Debug, Default)]
+    struct RecordingNotifier {
+        calls: std::sync::Mutex<Vec<(String, String, String)>>,
+    }
+
+    impl RecordingNotifier {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn calls(&self) -> Vec<(String, String, String)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl Notifier for RecordingNotifier {
+        fn notify(
+            &self,
+            title: &str,
+            subtitle: &str,
+            body: &str,
+            _options: Option<serde_json::Value>,
+        ) {
+            self.calls.lock().unwrap().push((
+                title.to_string(),
+                subtitle.to_string(),
+                body.to_string(),
+            ));
+        }
+    }
+
     /// 启动一个本地 axum 服务，对所有路径返回 `(status, body)`（测试用，无外部请求）。
     async fn spawn_server(status: StatusCode, body: &'static str) -> SocketAddr {
         let app = axum::Router::new().fallback(move || async move { (status, body) });
@@ -404,7 +459,9 @@ mod tests {
             )
             .route(
                 "/task.js",
-                axum::routing::get(|| async { "const task = 2; $done({});" }),
+                axum::routing::get(|| async {
+                    "const task = 2; $notify(\"签到成功\", \"test\", \"hello\"); $done({code: 0});"
+                }),
             );
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -474,5 +531,41 @@ mod tests {
         state.stop().await;
         let status = state.status().await;
         assert!(!status.core_running);
+    }
+
+    /// 注入的自定义 Notifier 到达 ScriptHost：手动运行含 `$notify` 的任务时被记录。
+    #[tokio::test]
+    async fn injected_notifier_receives_task_notify() {
+        let base = spawn_integration_server().await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 预置 remotes.json 并拉取一次写缓存（task.js 含 $notify）。
+        let remote = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "rules".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: pp_script::ScriptDialect::QuantumultX,
+            ..RemoteResource::default()
+        }];
+        remote.save(&remotes).unwrap();
+        let report = remote.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1, "snippet fetch should succeed");
+
+        let mut cfg = test_config(&dir, base);
+        cfg.mitm_enabled = true;
+        let notifier = Arc::new(RecordingNotifier::new());
+        let mut state = ClientState::with_notifier(cfg, notifier.clone());
+        state.start().await.unwrap();
+
+        // 手动运行含 $notify 的任务，验证通知到达注入的 notifier。
+        let scheduler = state.scheduler_handle().expect("scheduler should run");
+        let out = scheduler.run_now("每日签到").await.unwrap();
+        assert_eq!(out.0["code"], 0);
+        let calls = notifier.calls();
+        assert_eq!(calls.len(), 1, "任务 $notify 应触发一次通知");
+        assert_eq!(calls[0].0, "签到成功");
+
+        state.stop().await;
     }
 }
