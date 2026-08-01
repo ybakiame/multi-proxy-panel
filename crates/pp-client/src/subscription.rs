@@ -151,6 +151,33 @@ impl SubscriptionStore {
         }
         self.save(&subs)
     }
+
+    /// 按 id 更新订阅的 name / url / user_agent 并落盘；订阅不存在时报错。
+    ///
+    /// URL 变更时清空上次 fetch 的缓存（`userinfo` / `node_count`），避免旧数据
+    /// 在新 URL 下误导展示；URL 未变则保留缓存。
+    pub fn update(
+        &self,
+        id: Uuid,
+        name: &str,
+        url: &str,
+        user_agent: Option<&str>,
+    ) -> PanelResult<()> {
+        let mut subs = self.load()?;
+        let target = subs
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| PanelError::Client(format!("订阅不存在（id: {id}）")))?;
+        let url_changed = target.url != url;
+        target.name = name.to_string();
+        target.url = url.to_string();
+        target.user_agent = user_agent.map(str::to_string);
+        if url_changed {
+            target.userinfo = None;
+            target.node_count = 0;
+        }
+        self.save(&subs)
+    }
 }
 
 /// 订阅内容格式（嗅探结果）。
@@ -836,5 +863,61 @@ mod tests {
         .unwrap();
         let legacy = store.load().unwrap();
         assert_eq!(legacy[0].user_agent, None);
+    }
+
+    /// ④.1 update：name / url / user_agent 更新落盘；URL 变更清空 userinfo 缓存，
+    /// URL 未变保留缓存。
+    #[test]
+    fn subscription_store_update_changes_fields_and_clears_userinfo_on_url_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("sub", "https://example.com/a", true, Some("ua"))
+            .unwrap();
+        // 模拟一次成功 fetch：写入 userinfo 与 node_count。
+        let mut subs = store.load().unwrap();
+        let s = subs.iter_mut().find(|s| s.id == sub.id).unwrap();
+        s.userinfo = Some(SubscriptionInfo {
+            upload: Some(1),
+            download: Some(2),
+            total: Some(100),
+            expire: None,
+        });
+        s.node_count = 5;
+        store.save(&subs).unwrap();
+
+        // URL 变更 → userinfo / node_count 清空，name / user_agent 更新。
+        store
+            .update(sub.id, "new-name", "https://example.com/b", Some("new-ua"))
+            .unwrap();
+        let subs = store.load().unwrap();
+        let s = subs.iter().find(|s| s.id == sub.id).unwrap();
+        assert_eq!(s.name, "new-name");
+        assert_eq!(s.url, "https://example.com/b");
+        assert_eq!(s.user_agent.as_deref(), Some("new-ua"));
+        assert_eq!(s.userinfo, None);
+        assert_eq!(s.node_count, 0);
+
+        // URL 未变 → 缓存保留（仅改名称）。
+        store
+            .update(sub.id, "renamed", "https://example.com/b", None)
+            .unwrap();
+        let subs = store.load().unwrap();
+        let s = subs.iter().find(|s| s.id == sub.id).unwrap();
+        assert_eq!(s.name, "renamed");
+        assert_eq!(s.user_agent, None);
+        assert_eq!(s.node_count, 0);
+    }
+
+    /// ④.2 update：不存在的 id 报错，不落盘。
+    #[test]
+    fn subscription_store_update_returns_error_for_missing_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let err = store
+            .update(Uuid::new_v4(), "x", "https://example.com", None)
+            .unwrap_err();
+        assert!(err.to_string().contains("不存在"));
+        assert!(store.load().unwrap().is_empty());
     }
 }

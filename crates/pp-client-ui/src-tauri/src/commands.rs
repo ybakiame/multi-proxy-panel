@@ -559,6 +559,30 @@ pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(
         .map_err(|e| format!("保存远程资源失败: {e}"))
 }
 
+/// 按 name 定位全量更新一条远程资源（替代「删除重加」）；不存在时报错。
+///
+/// 与 [`add_remote`] 一致：URL 归一化、携带参数声明时按默认值预填 `argument_values`；
+/// 既有缓存（`remote_cache/` / `scripts/`）保留。
+#[tauri::command]
+pub async fn update_remote(
+    state: State<'_, AppState>,
+    resource: RemoteResourceView,
+) -> Result<(), String> {
+    if resource.name.trim().is_empty() {
+        return Err("资源名不能为空".to_string());
+    }
+    if resource.url.trim().is_empty() {
+        return Err("URL 不能为空".to_string());
+    }
+    let mut remote = resource.into_remote()?;
+    remote.url = pp_client::normalize_resource_url(&remote.url);
+    let name = remote.name.clone();
+    let manager = RemoteManager::new(state.data_dir.clone());
+    manager
+        .update_resource(&name, remote)
+        .map_err(|e| format!("更新远程资源失败: {e}"))
+}
+
 /// 远程资源类型的字符串表示（与 `RemoteResourceView.kind` 的 serde 表示一致）。
 fn remote_kind_str(kind: RemoteKind) -> &'static str {
     match kind {
@@ -1318,7 +1342,7 @@ async fn apply_fetch(sub: &mut Subscription, url: &str) {
 }
 
 /// 将更新后的订阅按 id 写回存储。
-fn update_subscription(store: &SubscriptionStore, sub: &Subscription) -> Result<(), String> {
+fn write_subscription(store: &SubscriptionStore, sub: &Subscription) -> Result<(), String> {
     let mut subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
     if let Some(existing) = subs.iter_mut().find(|s| s.id == sub.id) {
         *existing = sub.clone();
@@ -1362,7 +1386,7 @@ pub async fn add_subscription(
         .add(&name, &url, true, ua)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
     apply_fetch(&mut sub, &url).await;
-    update_subscription(&store, &sub)?;
+    write_subscription(&store, &sub)?;
     Ok(SubscriptionView::from_sub(&sub))
 }
 
@@ -1409,6 +1433,43 @@ pub async fn set_subscription_enabled(
     store
         .set_enabled(id, enabled)
         .map_err(|e| format!("保存订阅失败: {e}"))
+}
+
+/// 更新订阅的 name / url / user_agent（替代「删除重加」）；订阅不存在时报错。
+///
+/// URL 变更时清空上次 fetch 的缓存（userinfo / 节点数）；URL 未变保留。URL 在落盘前
+/// 经 [`pp_client::normalize_resource_url`] 归一化（GitHub blob/raw → raw）。
+#[tauri::command]
+pub async fn update_subscription(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    url: String,
+    user_agent: Option<String>,
+) -> Result<SubscriptionView, String> {
+    let id = parse_subscription_id(&id)?;
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("名称不能为空".to_string());
+    }
+    let url = pp_client::normalize_resource_url(url.trim());
+    validate_subscription_url(&url)?;
+    // 空串 / 纯空白 UA 归一化为 None（使用默认 clash.meta）。
+    let ua = user_agent
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let store = SubscriptionStore::new(state.data_dir.clone());
+    store
+        .update(id, &name, &url, ua)
+        .map_err(|e| format!("更新订阅失败: {e}"))?;
+    let subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+    let sub = subs
+        .iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| "订阅不存在".to_string())?;
+    Ok(SubscriptionView::from_sub(sub))
 }
 
 #[cfg(test)]

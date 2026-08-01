@@ -257,6 +257,23 @@ impl RemoteManager {
         Ok(())
     }
 
+    /// 按 name 定位并全量更新一条远程资源（url / kind / dialect / update_interval_secs /
+    /// enabled / description / argument_values / icon / arguments），落盘后保留既有缓存
+    /// （`remote_cache/<name>.json` / `scripts/<name>.js` 不删除，下次 fetch 覆盖）。
+    /// 资源不存在时报错。
+    pub fn update_resource(&self, name: &str, updated: RemoteResource) -> PanelResult<()> {
+        let mut remotes = self.load()?;
+        let idx = remotes
+            .iter()
+            .position(|r| r.name == name)
+            .ok_or_else(|| PanelError::Client(format!("远程资源 '{name}' 不存在")))?;
+        // name 是定位键，保持原 name（不因更新而重命名）。
+        let mut entry = updated;
+        entry.name = name.to_string();
+        remotes[idx] = entry;
+        self.save(&remotes)
+    }
+
     /// 拉取全部启用的远程资源并落盘缓存。
     ///
     /// 单个资源失败仅记入 [`FetchReport::warnings`]，不影响其他资源。
@@ -1669,5 +1686,67 @@ http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, scrip
             resolved2[0].argument.as_deref(),
             Some("per_filter_video_thread=1")
         );
+    }
+
+    /// ④ update_resource：按 name 全量更新字段、保留旧缓存；不存在的 name 报错。
+    #[test]
+    fn update_resource_updates_fields_and_keeps_old_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let original = RemoteResource {
+            name: "rules".into(),
+            url: "http://a.example.com/r.conf".into(),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::QuantumultX,
+            ..RemoteResource::default()
+        };
+        manager.save(&[original]).unwrap();
+
+        // 更新前写入旧缓存文件，断言更新后仍保留。
+        let cache_dir = dir.path().join("remote_cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        std::fs::write(
+            cache_dir.join("rules.json"),
+            r#"{"rewrites":[],"scripts":[],"task_scripts":[],"hostnames":["*.example.com"]}"#,
+        )
+        .unwrap();
+
+        let updated = RemoteResource {
+            name: "rules".into(),
+            url: "http://b.example.com/r2.conf".into(),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            update_interval_secs: 3600,
+            enabled: false,
+            description: Some("desc".into()),
+            argument_values: vec![("k".to_string(), "v".to_string())],
+            icon: Some("http://i.example.com/x.png".into()),
+        };
+        manager.update_resource("rules", updated).unwrap();
+
+        let loaded = manager.load().unwrap();
+        assert_eq!(loaded.len(), 1);
+        let r = &loaded[0];
+        assert_eq!(r.name, "rules", "name 是定位键，更新后不变");
+        assert_eq!(r.url, "http://b.example.com/r2.conf");
+        assert_eq!(r.dialect, ScriptDialect::Surge);
+        assert_eq!(r.update_interval_secs, 3600);
+        assert!(!r.enabled);
+        assert_eq!(r.description.as_deref(), Some("desc"));
+        assert_eq!(r.argument_values, vec![("k".to_string(), "v".to_string())]);
+        assert_eq!(r.icon.as_deref(), Some("http://i.example.com/x.png"));
+        // 旧缓存文件保留。
+        assert!(cache_dir.join("rules.json").exists());
+    }
+
+    #[test]
+    fn update_resource_returns_error_for_missing_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let err = manager
+            .update_resource("missing", RemoteResource::default())
+            .unwrap_err();
+        assert!(err.to_string().contains("不存在"));
+        assert!(manager.load().unwrap().is_empty());
     }
 }
