@@ -275,6 +275,8 @@ pub struct RemoteResourceView {
     pub kind: String,
     /// 脚本方言：`Surge` / `QuantumultX` / `Loon`。
     pub dialect: String,
+    /// 资源描述（可选；`None` = 未配置）。
+    pub description: Option<String>,
     pub update_interval_secs: u64,
     pub enabled: bool,
 }
@@ -292,6 +294,7 @@ impl RemoteResourceView {
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_default(),
+            description: remote.description.clone(),
             update_interval_secs: remote.update_interval_secs,
             enabled: remote.enabled,
         }
@@ -303,6 +306,7 @@ impl RemoteResourceView {
             "url": self.url,
             "kind": self.kind,
             "dialect": self.dialect,
+            "description": self.description,
             "update_interval_secs": self.update_interval_secs,
             "enabled": self.enabled,
         });

@@ -56,6 +56,8 @@ export interface RemoteResource {
   kind: RemoteKind;
   /** 脚本方言：`Surge` / `QuantumultX` / `Loon`。 */
   dialect: string;
+  /** 资源描述（null = 未配置）。 */
+  description: string | null;
   /** 更新间隔（秒）。 */
   update_interval_secs: number;
   enabled: boolean;

@@ -38,6 +38,8 @@ pub struct RemoteResource {
     pub update_interval_secs: u64,
     /// 是否启用，默认启用。
     pub enabled: bool,
+    /// 资源描述（可选；新增字段，旧清单缺省为 `None`）。
+    pub description: Option<String>,
 }
 
 impl Default for RemoteResource {
@@ -49,6 +51,7 @@ impl Default for RemoteResource {
             dialect: ScriptDialect::Surge,
             update_interval_secs: 86400,
             enabled: true,
+            description: None,
         }
     }
 }
@@ -60,6 +63,30 @@ pub enum RemoteKind {
     Script,
     /// QX / Surge / Loon 配置片段，经 `parse_import` 解析后聚合缓存。
     Snippet,
+}
+
+/// 根据 URL 后缀嗅探远端资源类型与脚本方言。
+///
+/// - `.sgmodule` → `(Snippet, Surge)`
+/// - `.plugin` / `.loon` → `(Snippet, Loon)`
+/// - `.conf` → `(Snippet, QuantumultX)`
+/// - `.js` → `(Script, QuantumultX)`（QX 风格脚本最常见，默认 QX）
+/// - 其他 / 无后缀 → `None`
+///
+/// 后缀判定忽略 query / fragment（`?token=...` 等不影响后缀）。
+pub fn detect_resource_from_url(url: &str) -> Option<(RemoteKind, ScriptDialect)> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext.as_deref() {
+        Some("sgmodule") => Some((RemoteKind::Snippet, ScriptDialect::Surge)),
+        Some("plugin") | Some("loon") => Some((RemoteKind::Snippet, ScriptDialect::Loon)),
+        Some("conf") => Some((RemoteKind::Snippet, ScriptDialect::QuantumultX)),
+        Some("js") => Some((RemoteKind::Script, ScriptDialect::QuantumultX)),
+        _ => None,
+    }
 }
 
 /// 一次 `fetch_all` 的拉取报告。
@@ -842,6 +869,7 @@ mod tests {
             )],
             hostnames: vec!["*.example.com".to_string()],
             warnings: vec!["parse deviation".to_string()],
+            ..Default::default()
         };
 
         let summary = manager.merge_imported(&imported).unwrap();
@@ -883,6 +911,7 @@ mod tests {
             task_scripts: vec![],
             hostnames: vec!["a.example.com".to_string()],
             warnings: vec![],
+            ..Default::default()
         };
         manager.merge_imported(&first).unwrap();
 
@@ -898,6 +927,7 @@ mod tests {
             task_scripts: vec![],
             hostnames: vec!["a.example.com".to_string(), "b.example.com".to_string()],
             warnings: vec![],
+            ..Default::default()
         };
         let summary = manager.merge_imported(&second).unwrap();
         assert_eq!(summary.rewrites, 1);

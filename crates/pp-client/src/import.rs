@@ -16,6 +16,7 @@ use pp_common::PanelResult;
 use pp_mitm::{Phase, RewriteKind, RewriteRule, ScriptRule as HookScriptRule};
 use pp_script::{ScriptDialect, ScriptKind, TaskScript};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 /// 一次导入解析的结果。
 #[derive(Default)]
@@ -32,6 +33,8 @@ pub struct ImportedConfig {
     pub hostnames: Vec<String>,
     /// 未识别行 / 无法表达的映射偏差。
     pub warnings: Vec<String>,
+    /// 文件头 `#!key=value` 元数据（见 [`ConfigMeta`]）。
+    pub meta: ConfigMeta,
 }
 
 impl ImportedConfig {
@@ -43,12 +46,69 @@ impl ImportedConfig {
     }
 }
 
+/// 配置文件头 `#!key=value` 元数据（Surge `.sgmodule` / QX `.conf` / Loon 常见）。
+///
+/// 各字段均为 `Option`：头中缺失的键保持 `None`；`openUrl` 等 camelCase 键归一化为
+/// snake_case 字段。`#[serde(default)]` 保证缺失键在序列化往返中回退为 `None`。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConfigMeta {
+    /// `#!name`：配置名。
+    pub name: Option<String>,
+    /// `#!desc`：配置描述。
+    pub desc: Option<String>,
+    /// `#!author`：作者。
+    pub author: Option<String>,
+    /// `#!icon`：图标 URL。
+    pub icon: Option<String>,
+    /// `#!date`：发布日期。
+    pub date: Option<String>,
+    /// `#!category`：分类标签。
+    pub category: Option<String>,
+    /// `#!openUrl`：关联链接（如 App Store）。
+    pub open_url: Option<String>,
+}
+
+/// 解析文件头连续 `#!key=value` 元数据行；遇到首个非 `#!` 行（含空行）即停止。
+///
+/// 未知键与格式异常行静默忽略（元数据不影响规则解析）。
+pub fn parse_config_meta(content: &str) -> ConfigMeta {
+    let mut meta = ConfigMeta::default();
+    for raw in content.lines() {
+        let line = raw.trim();
+        if !line.starts_with("#!") {
+            break;
+        }
+        let Some((key, value)) = line[2..].trim().split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key.trim().to_ascii_lowercase().as_str() {
+            "name" => meta.name = Some(value.to_string()),
+            "desc" => meta.desc = Some(value.to_string()),
+            "author" => meta.author = Some(value.to_string()),
+            "icon" => meta.icon = Some(value.to_string()),
+            "date" => meta.date = Some(value.to_string()),
+            "category" => meta.category = Some(value.to_string()),
+            "openurl" => meta.open_url = Some(value.to_string()),
+            _ => {} // 未知键忽略
+        }
+    }
+    meta
+}
+
 /// 解析 QX / Surge / Loon 配置片段。
 ///
 /// `dialect` 由调用方指定来源软件，决定 [`TaskScript::dialect`] 等方言标记；
 /// 各软件同构语法（如 Surge / Loon 的 `[Script]`）共用同一解析路径。
 pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<ImportedConfig> {
-    let mut cfg = ImportedConfig::default();
+    let mut cfg = ImportedConfig {
+        meta: parse_config_meta(content),
+        ..ImportedConfig::default()
+    };
     let mut section = String::new();
     let mut hook_index = 0usize;
 
@@ -906,5 +966,78 @@ bad = type=http-response,pattern=(,script-path=https://example.com/bad.js
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn parse_config_meta_extracts_header_fields_and_stops_at_section() {
+        let content = r#"#!name=扫描全能王-解锁VIP
+#!desc=扫描全能王-手机扫描仪 解锁黄金会员
+#!date=2026-01-21
+#!category=🐹 BOBO Premium
+#!author=叮当猫chxm1023[https://github.com/chxm1023/Rewrite]
+#!icon=https://example.com/CamScanner.png
+#!openUrl=https://apps.apple.com/app/id388627783
+
+[Script]
+rule = type=http-response,pattern=^https://api-cs\.intsig\.net/,script-path=https://example.com/camscanner.js
+"#;
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.name.as_deref(), Some("扫描全能王-解锁VIP"));
+        assert_eq!(
+            meta.desc.as_deref(),
+            Some("扫描全能王-手机扫描仪 解锁黄金会员")
+        );
+        assert_eq!(meta.date.as_deref(), Some("2026-01-21"));
+        assert_eq!(meta.category.as_deref(), Some("🐹 BOBO Premium"));
+        assert_eq!(
+            meta.author.as_deref(),
+            Some("叮当猫chxm1023[https://github.com/chxm1023/Rewrite]")
+        );
+        assert_eq!(
+            meta.icon.as_deref(),
+            Some("https://example.com/CamScanner.png")
+        );
+        assert_eq!(
+            meta.open_url.as_deref(),
+            Some("https://apps.apple.com/app/id388627783")
+        );
+
+        // parse_import 同步回填 meta
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(cfg.meta.name.as_deref(), Some("扫描全能王-解锁VIP"));
+        assert_eq!(
+            cfg.meta.open_url.as_deref(),
+            Some("https://apps.apple.com/app/id388627783")
+        );
+    }
+
+    #[test]
+    fn parse_config_meta_returns_all_none_without_header() {
+        let content = r#"[rewrite_local]
+^https?://example\.com/ url-and-header https://target.example.com/
+"#;
+        let meta = parse_config_meta(content);
+        assert_eq!(meta, ConfigMeta::default());
+        assert!(meta.name.is_none());
+        assert!(meta.desc.is_none());
+        assert!(meta.author.is_none());
+        assert!(meta.icon.is_none());
+        assert!(meta.date.is_none());
+        assert!(meta.category.is_none());
+        assert!(meta.open_url.is_none());
+    }
+
+    #[test]
+    fn parse_config_meta_stops_at_first_non_bang_line() {
+        // `#` 注释（非 `#!`）立即中止头部解析
+        let content = "#!name=有效名称\n# 普通注释\n#!desc=不应被解析\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.name.as_deref(), Some("有效名称"));
+        assert!(meta.desc.is_none());
+        // 空行同样中止
+        let content2 = "#!name=A\n\n#!desc=B\n";
+        let meta2 = parse_config_meta(content2);
+        assert_eq!(meta2.name.as_deref(), Some("A"));
+        assert!(meta2.desc.is_none());
     }
 }
