@@ -22,6 +22,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 pp-client = { path = "../../pp-client" }
 pp-common = { path = "../../pp-common" }
 pp-mitm = { path = "../../pp-mitm" }
+pp-script = { path = "../../pp-script" }
 
 # 退出根 workspace，作为独立 cargo 项目构建（避免与根 workspace 冲突）。
 [workspace]

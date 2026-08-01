@@ -20,6 +20,13 @@ fn main() {
             commands::stop_proxy,
             commands::proxy_status,
             commands::list_traffic,
+            commands::list_remotes,
+            commands::add_remote,
+            commands::remove_remote,
+            commands::fetch_remotes,
+            commands::list_tasks,
+            commands::run_task,
+            commands::import_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

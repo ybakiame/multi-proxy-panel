@@ -5,9 +5,10 @@
 
 use std::path::PathBuf;
 
-use pp_client::{ClientConfig, ClientState};
+use pp_client::{ClientConfig, ClientState, RemoteManager, RemoteResource};
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
+use pp_script::{ScriptDialect, TaskScriptView};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -213,4 +214,208 @@ pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecor
         .iter()
         .map(TrafficRecordView::from_record)
         .collect())
+}
+
+/// 一条远程订阅资源的对外视图。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteResourceView {
+    pub name: String,
+    pub url: String,
+    /// 资源类型：`Script` / `Snippet`。
+    pub kind: String,
+    /// 脚本方言：`Surge` / `QuantumultX` / `Loon`。
+    pub dialect: String,
+    pub update_interval_secs: u64,
+    pub enabled: bool,
+}
+
+impl RemoteResourceView {
+    fn from_remote(remote: &RemoteResource) -> Self {
+        Self {
+            name: remote.name.clone(),
+            url: remote.url.clone(),
+            kind: serde_json::to_value(remote.kind)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            dialect: serde_json::to_value(remote.dialect)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            update_interval_secs: remote.update_interval_secs,
+            enabled: remote.enabled,
+        }
+    }
+
+    fn into_remote(self) -> Result<RemoteResource, String> {
+        let value = serde_json::json!({
+            "name": self.name,
+            "url": self.url,
+            "kind": self.kind,
+            "dialect": self.dialect,
+            "update_interval_secs": self.update_interval_secs,
+            "enabled": self.enabled,
+        });
+        serde_json::from_value::<RemoteResource>(value).map_err(|e| e.to_string())
+    }
+}
+
+/// 一次 `fetch_remotes` 拉取报告的对外视图。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchReportView {
+    pub fetched: usize,
+    pub scripts: usize,
+    pub rewrites: usize,
+    pub tasks: usize,
+    pub warnings: Vec<String>,
+}
+
+/// 一次配置导入摘要的对外视图。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummaryView {
+    pub rewrites: usize,
+    pub scripts: usize,
+    pub tasks: usize,
+    pub hostnames: usize,
+    pub warnings: Vec<String>,
+}
+
+/// 列出全部远程资源（`remotes.json` 清单）。
+#[tauri::command]
+pub async fn list_remotes(state: State<'_, AppState>) -> Result<Vec<RemoteResourceView>, String> {
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    Ok(remotes.iter().map(RemoteResourceView::from_remote).collect())
+}
+
+/// 新增一条远程资源；重名时报错。
+#[tauri::command]
+pub async fn add_remote(
+    state: State<'_, AppState>,
+    remote: RemoteResourceView,
+) -> Result<(), String> {
+    if remote.name.trim().is_empty() {
+        return Err("资源名不能为空".to_string());
+    }
+    if remote.url.trim().is_empty() {
+        return Err("URL 不能为空".to_string());
+    }
+    let remote = remote.into_remote()?;
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let mut remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    if remotes.iter().any(|r| r.name == remote.name) {
+        return Err(format!("远程资源 '{}' 已存在", remote.name));
+    }
+    remotes.push(remote);
+    manager
+        .save(&remotes)
+        .map_err(|e| format!("保存远程资源失败: {e}"))
+}
+
+/// 删除一条远程资源；不存在时报错。
+#[tauri::command]
+pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let mut remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    let before = remotes.len();
+    remotes.retain(|r| r.name != name);
+    if remotes.len() == before {
+        return Err(format!("远程资源 '{}' 不存在", name));
+    }
+    manager
+        .save(&remotes)
+        .map_err(|e| format!("保存远程资源失败: {e}"))
+}
+
+/// 拉取全部启用的远程资源（无系统代理，30 秒超时）。
+#[tauri::command]
+pub async fn fetch_remotes(state: State<'_, AppState>) -> Result<FetchReportView, String> {
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let remotes = manager.load().map_err(|e| format!("读取远程资源失败: {e}"))?;
+    let report = manager.fetch_all(&remotes).await;
+    Ok(FetchReportView {
+        fetched: report.fetched,
+        scripts: report.scripts,
+        rewrites: report.rewrites,
+        tasks: report.tasks,
+        warnings: report.warnings,
+    })
+}
+
+/// 列出定时任务；客户端未启动或调度器未就绪时返回空列表。
+#[tauri::command]
+pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView>, String> {
+    let lock = state.client.lock().await;
+    let Some(client) = lock.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let Some(scheduler) = client.scheduler() else {
+        return Ok(Vec::new());
+    };
+    Ok(scheduler.list_tasks())
+}
+
+/// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
+///
+/// QuickJS 运行时非 Send，脚本执行放到阻塞线程上的独立 current_thread runtime 驱动。
+#[tauri::command]
+pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let scheduler = {
+        let lock = state.client.lock().await;
+        let client = lock
+            .as_ref()
+            .ok_or_else(|| "客户端未启动，无法运行任务".to_string())?;
+        client
+            .scheduler_handle()
+            .ok_or_else(|| "任务调度器未就绪".to_string())?
+    };
+    let output = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("构建脚本运行时失败: {e}"))?;
+        let result = rt
+            .block_on(scheduler.run_now(&name))
+            .map_err(|e| format!("运行任务失败: {e}"))?;
+        Ok(result.0.to_string())
+    })
+    .await
+    .map_err(|e| format!("任务线程异常: {e}"))??;
+    Ok(output)
+}
+
+/// 导入 QX / Surge / Loon 配置片段：解析后合并写入本地导入缓存
+/// `remote_cache/imported.json`（脚本 / 任务 URL 不拉取，source 为空则跳过计 warning）。
+#[tauri::command]
+pub async fn import_config(
+    state: State<'_, AppState>,
+    content: String,
+    dialect: String,
+) -> Result<ImportSummaryView, String> {
+    let script_dialect = match dialect.as_str() {
+        "quantumultx" => ScriptDialect::QuantumultX,
+        "surge" => ScriptDialect::Surge,
+        "loon" => ScriptDialect::Loon,
+        other => {
+            return Err(format!(
+                "未知方言 '{other}'（可选: quantumultx / surge / loon）"
+            ));
+        }
+    };
+    let imported = pp_client::parse_import(&content, script_dialect)
+        .map_err(|e| format!("解析配置失败: {e}"))?;
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let summary = manager
+        .merge_imported(&imported)
+        .map_err(|e| format!("写入导入缓存失败: {e}"))?;
+    Ok(ImportSummaryView {
+        rewrites: summary.rewrites,
+        scripts: summary.scripts,
+        tasks: summary.tasks,
+        hostnames: summary.hostnames,
+        warnings: summary.warnings,
+    })
 }
