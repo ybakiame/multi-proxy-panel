@@ -419,6 +419,16 @@ export function detectSystemCores(): Promise<LocalCoreView[]> {
   return invoke<LocalCoreView[]>("detect_system_cores");
 }
 
+/** TUN 提权状态（基于当前 `core_binary`）：`authorized` / `needs_auth` / `unsupported:<reason>`。 */
+export function tunAuthStatus(): Promise<string> {
+  return invoke<string>("tun_auth_status");
+}
+
+/** 执行 TUN 提权（Linux pkexec setcap / macOS setuid / Windows 引导管理员重启），返回授权后的最新状态。 */
+export function authorizeTun(): Promise<string> {
+  return invoke<string>("authorize_tun");
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {

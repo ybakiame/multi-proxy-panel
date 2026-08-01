@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
 import {
+  authorizeTun,
   detectSystemCores,
   downloadCore,
   listCores,
@@ -8,6 +9,7 @@ import {
   listRemoteCoreVersions,
   setActiveCore,
   toErrorMessage,
+  tunAuthStatus,
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView } from "../api";
 import { useAppStore } from "../store";
@@ -77,6 +79,10 @@ export default function Settings() {
   const [tunEnabled, setTunEnabled] = useState(false);
   const [tunStack, setTunStack] = useState<string>("mixed");
   const [tunAutoRoute, setTunAutoRoute] = useState(true);
+  // TUN 提权状态（`authorized` / `needs_auth` / `unsupported:<reason>`；关闭开关时为空）。
+  const [tunAuth, setTunAuth] = useState<string | null>(null);
+  const [tunAuthError, setTunAuthError] = useState<string | null>(null);
+  const [tunAuthBusy, setTunAuthBusy] = useState(false);
   // Clash 面板
   const [clashApiEnabled, setClashApiEnabled] = useState(false);
   const [clashApiPort, setClashApiPort] = useState(9090);
@@ -254,6 +260,41 @@ export default function Settings() {
     }
   };
 
+  // ---------- TUN 提权 ----------
+
+  /** 查询当前核心的 TUN 提权状态（`authorized` / `needs_auth` / `unsupported:<reason>`）。 */
+  const refreshTunAuth = useCallback(async () => {
+    try {
+      setTunAuth(await tunAuthStatus());
+      setTunAuthError(null);
+    } catch (err) {
+      setTunAuthError(toErrorMessage(err));
+    }
+  }, []);
+
+  // 开关启用时查询提权状态；关闭时清空展示。
+  useEffect(() => {
+    if (!tunEnabled) {
+      setTunAuth(null);
+      setTunAuthError(null);
+      return;
+    }
+    void refreshTunAuth();
+  }, [tunEnabled, refreshTunAuth]);
+
+  /** 一键授权：成功后以返回的新状态刷新展示；失败展示后端错误（含 Linux 装 polkit / Windows 管理员重启指引）。 */
+  const handleAuthorizeTun = async () => {
+    setTunAuthBusy(true);
+    setTunAuthError(null);
+    try {
+      setTunAuth(await authorizeTun());
+    } catch (err) {
+      setTunAuthError(toErrorMessage(err));
+    } finally {
+      setTunAuthBusy(false);
+    }
+  };
+
   /** 版本 Select 选中即启用：按「类型 + 版本」在本地清单中定位核心并调用 set_active_core。 */
   const handleSelectCoreVersion = async (version: string) => {
     if (!version) {
@@ -271,6 +312,8 @@ export default function Settings() {
   // core_type 变更时的联动预览（实际回填由 save_config 完成后端按 preferred_binary 执行）。
   const coreTypeChanged = config ? normalizeCoreType(config.core_type) !== coreType : false;
   const linkedCore = coreTypeChanged ? preferredCoreFor(cores, normalizedCoreType) : null;
+  // `unsupported:<reason>` 状态中的不可用原因（仅展示用，无则保持 null）。
+  const tunAuthReason = tunAuth?.startsWith("unsupported:") ? tunAuth.slice("unsupported:".length) : null;
 
   useEffect(() => {
     void refreshDownloadedVersions(normalizedCoreType);
@@ -460,6 +503,62 @@ export default function Settings() {
               启用 TUN 模式
             </Switch.Content>
           </Switch>
+
+          {tunEnabled && (
+            <div className="flex flex-col gap-3">
+              {tunAuth === "authorized" && (
+                <div className="flex items-center gap-2">
+                  <Chip size="sm" variant="soft" color="success">
+                    已授权
+                  </Chip>
+                  <span className="text-xs text-muted">核心已具备 TUN 提权能力</span>
+                </div>
+              )}
+
+              {tunAuth === "needs_auth" && (
+                <Alert status="warning">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>TUN 需要系统授权</Alert.Title>
+                    <Alert.Description>
+                      当前核心未获得 TUN 提权，授权后才能接管全部流量（失败时按错误提示处理：Linux 安装 polkit、Windows
+                      以管理员身份重启应用）。
+                    </Alert.Description>
+                    <div className="mt-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isPending={tunAuthBusy}
+                        onPress={() => void handleAuthorizeTun()}
+                      >
+                        立即授权
+                      </Button>
+                    </div>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              {tunAuthReason && (
+                <Alert status="default">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>TUN 授权不可用</Alert.Title>
+                    <Alert.Description>{tunAuthReason}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              {tunAuthError && (
+                <Alert status="danger">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>授权失败</Alert.Title>
+                    <Alert.Description>{tunAuthError}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+            </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">

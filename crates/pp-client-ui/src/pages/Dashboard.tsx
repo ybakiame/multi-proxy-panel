@@ -35,6 +35,8 @@ export default function Dashboard() {
   };
 
   const running = status?.core_running ?? false;
+  // start_proxy 在 TUN 未授权时返回 `tun_auth_required` 错误，改为引导前往设置页授权。
+  const tunAuthRequired = error?.includes("tun_auth_required") ?? false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,12 +45,24 @@ export default function Dashboard() {
         <p className="text-sm text-muted">代理核心运行状态与启停控制</p>
       </div>
 
-      {error && (
+      {error && !tunAuthRequired && (
         <Alert status="danger">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>操作失败</Alert.Title>
             <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {tunAuthRequired && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>需要 TUN 授权</Alert.Title>
+            <Alert.Description>
+              代理启动失败：TUN 模式未获得系统授权。请前往「设置 → TUN 模式」点击「立即授权」后重新启动代理。
+            </Alert.Description>
           </Alert.Content>
         </Alert>
       )}
