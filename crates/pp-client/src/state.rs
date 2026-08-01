@@ -136,6 +136,7 @@ impl ClientState {
             let fetch =
                 subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                     .await?;
+            check_subscription_core_compat(fetch.format, self.config.core_type)?;
             match self.config.core_type {
                 CoreType::SingBox => profile::SubContent::SingBox(serde_json::json!({
                     "outbounds": fetch.singbox_nodes,
@@ -422,6 +423,39 @@ impl ClientState {
     }
 }
 
+/// 订阅格式 ↔ 核心类型绑定校验。
+///
+/// - [`SubFormat::SingBoxJson`] 仅支持 sing-box 核心（其节点为 sing-box JSON，跨格式
+///   转 mihomo 有信息丢失，且此路径在「订阅绑定格式」决策后已废弃）；
+/// - [`SubFormat::ClashYaml`] 仅支持 mihomo 核心（历史 bug：clash 订阅节点转 sing-box
+///   outbound 时丢失 TLS 块导致 sing-box `initialize outbound: TLS required` FATAL）；
+/// - [`SubFormat::ShareLinks`] 双核心皆可。
+///
+/// 不匹配时返回明确错误（含检测到的订阅格式与当前核心类型），核心不启动。
+fn check_subscription_core_compat(
+    format: subscription::SubFormat,
+    core_type: CoreType,
+) -> PanelResult<()> {
+    let compatible = match format {
+        subscription::SubFormat::ShareLinks => true,
+        subscription::SubFormat::SingBoxJson => core_type == CoreType::SingBox,
+        subscription::SubFormat::ClashYaml => core_type == CoreType::Mihomo,
+    };
+    if compatible {
+        return Ok(());
+    }
+    let (format_name, supported_core) = match format {
+        subscription::SubFormat::ClashYaml => ("clash", "mihomo"),
+        subscription::SubFormat::SingBoxJson => ("sing-box", "sing-box"),
+        subscription::SubFormat::ShareLinks => {
+            unreachable!("ShareLinks 双核心皆可，不会走到不匹配分支")
+        }
+    };
+    Err(PanelError::Client(format!(
+        "订阅格式为 {format_name}，仅支持 {supported_core} 核心，当前核心类型为 {core_type}，请在设置中切换核心类型"
+    )))
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -702,6 +736,43 @@ mod tests {
         state.stop().await;
         let status = state.status().await;
         assert!(!status.core_running);
+    }
+
+    /// 项 1：clash 格式订阅 + sing-box 核心 → start 返回明确的格式/核心不匹配错误，
+    /// 核心不启动、系统代理零调用。
+    #[tokio::test]
+    async fn start_rejects_clash_format_with_singbox_core() {
+        const YAML: &str = "port: 7890\nproxies:\n  - name: n1\n    type: ss\n    server: example.com\n    port: 8388\n    cipher: aes-256-gcm\n    password: pw\nrules:\n  - MATCH,DIRECT\n";
+        let addr = spawn_server(StatusCode::OK, YAML).await;
+        let dir = tempfile::tempdir().unwrap();
+        // 通用订阅路径：subscriptions.json 指向本地 server（clash 格式）。
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        store
+            .add("clash-sub", &format!("http://{addr}/sub"), true, None)
+            .unwrap();
+
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.mitm_enabled = false;
+        cfg.system_proxy_enabled = true;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        let err = state.start().await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("clash"), "应包含检测到的格式 clash: {msg}");
+        assert!(msg.contains("mihomo"), "应包含受支持的核心 mihomo: {msg}");
+        assert!(msg.contains("切换核心类型"), "应提示切换核心类型: {msg}");
+
+        // 核心未启动、系统代理零调用。
+        let status = state.status().await;
+        assert!(!status.core_running);
+        assert_eq!(mock.calls(), vec![]);
     }
 
     /// 通用订阅集成：subscriptions.json 指向本地 server（base64 分享链接）→ start 成功。
