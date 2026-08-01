@@ -824,7 +824,10 @@ pub async fn download_core(
     Ok(LocalCoreView::from_core(&core, &active))
 }
 
-/// 将指定路径设为核心二进制：校验存在且可执行后写回 `client.json` 的 `core_binary`。
+/// 将指定路径设为核心二进制：校验存在且可执行后，先在本地核心清单
+/// （已下载 + 系统探测合并）中按路径匹配其 `core_type`，未命中则按文件名
+/// 推断；随后同时写回 `client.json` 的 `core_binary` 与 `core_type`，避免
+/// 启用异类型核心时两者不一致。无法识别类型时返回错误提示手动选择。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
     let bin = PathBuf::from(&path);
@@ -839,6 +842,13 @@ pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result
             return Err(format!("核心二进制不可执行: {path}"));
         }
     }
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let core_type = merge_cores(inv.list_installed(), inv.detect_system_cores())
+        .into_iter()
+        .find(|c| c.path == bin)
+        .map(|c| c.core_type)
+        .or_else(|| pp_client::infer_core_type(&bin))
+        .ok_or_else(|| format!("无法识别核心类型: {path}，请在设置页手动选择核心类型"))?;
     let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
         Ok(cfg) => cfg,
         Err(_) => pp_client::ClientConfig::new(
@@ -850,6 +860,7 @@ pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result
         ),
     };
     config.core_binary = bin;
+    config.core_type = core_type;
     config.save().map_err(|e| format!("保存配置失败: {e}"))
 }
 
