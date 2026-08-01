@@ -1,7 +1,0 @@
-listen = "127.0.0.1:18081"
-grpc_listen = "127.0.0.1:150052"
-database_url = "sqlite:///tmp/pp.db?mode=rwc"
-static_dir = "crates/pp-web/dist"
-cors_origins = "http://localhost:8085"
-auto_register_agents = false
-jwt_secret = "this-is-a-test-jwt-secret-very-long-and-random-1234567890"

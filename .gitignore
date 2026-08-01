@@ -19,3 +19,21 @@ scripts/.deploy-secrets.env
 node_modules/
 crates/pp-web/dist/
 __pycache__/
+
+# Local configs (tracked examples only)
+config/hub.toml
+hub-test.toml
+
+# Env files (keep template)
+.env.*
+!.env.example
+
+# Keys and certs
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+id_rsa*
+
+# Temp files
+deploy/sing-box-sub-temp.json
