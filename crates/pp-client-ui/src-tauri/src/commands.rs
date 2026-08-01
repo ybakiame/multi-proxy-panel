@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use pp_client::{
     build_core_config_v2, compose_mihomo_config, compose_singbox_config, detect_resource_from_url,
-    fetch_subscription_with_ua, parse_config_meta, resolve_remote_overrides, ClientConfig,
-    ClientState, ConfigMeta, EffectiveOverrides, Profile, ProfileStoreV2, RemoteKind,
-    RemoteManager, RemoteResource, SubContent, Subscription, SubscriptionFetcher,
-    SubscriptionStore,
+    fetch_subscription_with_ua, infer_core_type, parse_config_meta, resolve_remote_overrides,
+    ClientConfig, ClientCoreInventory, ClientState, ConfigMeta, EffectiveOverrides, Profile,
+    ProfileStoreV2, RemoteKind, RemoteManager, RemoteResource, SubContent, Subscription,
+    SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
@@ -217,15 +217,35 @@ pub struct SaveConfigView {
 
 /// 保存配置实现（命令层可测试的纯逻辑）。
 ///
-/// 不再因 hub_url / sub_token 为空而拒绝保存：旧实现会在新装/未填订阅信息时
-/// 直接报错，导致 MITM 开关、系统代理开关、混合端口等基本设置「无法保存」；
-/// 缺失项降级为 `warning` 提示。
+/// - **基本设置可随时保存**：不再因 hub_url / sub_token 为空而拒绝保存（旧实现
+///   会在新装/未填订阅信息时直接报错，导致 MITM 开关、系统代理开关、混合端口等
+///   基本设置「无法保存」）；缺失项降级为 `warning` 提示；
+/// - **core_type 联动本地核心**：`core_type` 变更且当前 `core_binary` 不属于该
+///   类型时自动填入该类型首选本地核心（版本最高已下载 → 系统探测）；
+///   找不到时保留原路径并返回 `warning` 提示去核心管理下载。
 fn save_config_impl(
     data_dir: &std::path::Path,
     cfg: ClientConfigView,
 ) -> Result<SaveConfigView, String> {
-    let config = cfg.into_config(data_dir)?;
+    let mut config = cfg.into_config(data_dir)?;
     let mut warnings: Vec<String> = Vec::new();
+
+    // core_type 联动本地核心二进制。
+    let prev_core_type = ClientConfig::load(data_dir).ok().map(|c| c.core_type);
+    if prev_core_type != Some(config.core_type) {
+        let belongs = !config.core_binary.as_os_str().is_empty()
+            && infer_core_type(&config.core_binary) == Some(config.core_type);
+        if !belongs {
+            let inv = ClientCoreInventory::new(data_dir.to_path_buf());
+            match inv.preferred_binary(config.core_type) {
+                Some(path) => config.core_binary = path,
+                None => warnings.push(format!(
+                    "核心类型已切换为 {}，但未找到该类型的本地核心，请到核心管理下载",
+                    config.core_type
+                )),
+            }
+        }
+    }
 
     // hub_url / sub_token 非空校验放宽为提示（不阻塞基本设置保存）。
     if config.hub_url.trim().is_empty() {
@@ -246,7 +266,7 @@ fn save_config_impl(
 }
 
 /// 保存配置（`hub_url` / `sub_token` 为空时以 warning 提示而非拒绝，保证
-/// 基本设置随时可保存）。
+/// 基本设置随时可保存；`core_type` 变更时联动本地核心二进制）。
 #[tauri::command]
 pub async fn save_config(
     state: State<'_, AppState>,
@@ -1381,6 +1401,17 @@ mod tests {
         }
     }
 
+    /// 写入一个「已下载核心」假二进制（`cores/<dir>/<version>/<dir>`）。
+    fn write_core(data_dir: &std::path::Path, core_dir: &str, version: &str) {
+        let bin = data_dir
+            .join("cores")
+            .join(core_dir)
+            .join(version)
+            .join(core_dir);
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        std::fs::write(&bin, b"fake core").unwrap();
+    }
+
     // ---------- 项 1 回归：命令层序列化往返 ----------
 
     #[test]
@@ -1460,6 +1491,94 @@ mod tests {
         assert!(
             warning.contains("hub_url") && warning.contains("sub_token"),
             "{warning}"
+        );
+    }
+
+    // ---------- 项 2 回归：core_type 联动本地核心 ----------
+
+    #[test]
+    fn save_config_switching_core_type_auto_fills_preferred_binary() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        write_core(dir.path(), "mihomo", "1.19.29");
+        let prev = ClientConfig::new(
+            dir.path().to_path_buf(),
+            "http://127.0.0.1:50052",
+            "tok",
+            CoreType::SingBox,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+        );
+        prev.save().unwrap();
+
+        // 用户把 core_type 切到 mihomo，但 core_binary 仍指向 sing-box。
+        let mut view = full_view(dir.path());
+        view.core_type = "mihomo".to_string();
+        let result = with_empty_path(|| save_config_impl(dir.path(), view).unwrap());
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.core_type, CoreType::Mihomo);
+        // 自动联动：填入已下载 mihomo 首选二进制。
+        assert_eq!(
+            saved.core_binary,
+            dir.path().join("cores/mihomo/1.19.29/mihomo")
+        );
+        assert!(
+            result.warning.is_none(),
+            "找到本地核心时不应有联动 warning: {:?}",
+            result.warning
+        );
+    }
+
+    #[test]
+    fn save_config_switching_core_type_without_local_core_keeps_and_warns() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        let prev = ClientConfig::new(
+            dir.path().to_path_buf(),
+            "http://127.0.0.1:50052",
+            "tok",
+            CoreType::SingBox,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+        );
+        prev.save().unwrap();
+
+        let mut view = full_view(dir.path());
+        view.core_type = "mihomo".to_string();
+        let result = with_empty_path(|| save_config_impl(dir.path(), view).unwrap());
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.core_type, CoreType::Mihomo);
+        // 找不到 mihomo 本地核心 → 保留原二进制并返回 warning。
+        assert_eq!(
+            saved.core_binary,
+            dir.path().join("cores/sing-box/1.13.15/sing-box")
+        );
+        let warning = result.warning.expect("应返回联动 warning");
+        assert!(warning.contains("核心类型已切换"), "{warning}");
+    }
+
+    #[test]
+    fn save_config_same_core_type_keeps_binary_untouched() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        let prev = ClientConfig::new(
+            dir.path().to_path_buf(),
+            "http://127.0.0.1:50052",
+            "tok",
+            CoreType::SingBox,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+        );
+        prev.save().unwrap();
+
+        let view = full_view(dir.path());
+        with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.core_type, CoreType::SingBox);
+        // 未切换 core_type → 二进制保持原样（不触发联动）。
+        assert_eq!(
+            saved.core_binary,
+            dir.path().join("cores/sing-box/1.13.15/sing-box")
         );
     }
 }

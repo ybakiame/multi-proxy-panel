@@ -350,6 +350,27 @@ impl ClientCoreInventory {
             .chain(self.detect_system_cores())
             .find(|c| paths_equal(&c.path, &config.core_binary))
     }
+
+    /// 某核心类型的首选本地二进制：
+    ///
+    /// 1. 已下载核心中版本号最大的一个（语义化版本排序，预发布低于同基础的
+    ///    稳定版，如 `1.14.0-beta.4` < `1.14.0` 但 `> 1.13.15`）；
+    /// 2. 无已下载核心时回退到系统 PATH 探测到的该类型第一个核心；
+    /// 3. 都没有 → `None`（命令层据此提示用户去核心管理下载）。
+    pub fn preferred_binary(&self, core_type: CoreType) -> Option<PathBuf> {
+        let downloaded = self
+            .list_installed()
+            .into_iter()
+            .filter(|c| c.core_type == core_type)
+            .max_by(|a, b| compare_core_versions(&a.version, &b.version));
+        if let Some(core) = downloaded {
+            return Some(core.path);
+        }
+        self.detect_system_cores()
+            .into_iter()
+            .find(|c| c.core_type == core_type)
+            .map(|c| c.path)
+    }
 }
 
 /// 核心目录 / 二进制基础名。
@@ -572,6 +593,131 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// 语义化版本比较（供 [`ClientCoreInventory::preferred_binary`] 排序已下载核心）。
+///
+/// 约定：
+/// - 数字段（`.` 分隔）按数值比较：`1.14.0` > `1.13.15`；
+/// - 数字段相同但带预发布后缀的版本低于同基础稳定版（`1.14.0-beta.4` < `1.14.0`）；
+/// - mihomo 自命名通道（`Alpha-` / `Release-` 前缀，如 `Alpha-1.19.30`）按「前缀标记为
+///   预发布 + 后续数字段数值」参与排序；
+/// - 无法解析出版本段的字符串（如 `unknown`）按空版本段处理 → 视为最旧。
+fn compare_core_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let (a_pre, a_core) = split_version_identity(a);
+    let (b_pre, b_core) = split_version_identity(b);
+
+    let a_nums = parse_numeric_segments(&a_core);
+    let b_nums = parse_numeric_segments(&b_core);
+    // 按数字段逐段比较；先达到段尾且数字相等者更小（1.14 < 1.14.0）。
+    for (x, y) in a_nums.iter().zip(b_nums.iter()) {
+        match x.cmp(y) {
+            std::cmp::Ordering::Equal => {}
+            other => return other,
+        }
+    }
+    let len_cmp = a_nums.len().cmp(&b_nums.len());
+    if len_cmp != std::cmp::Ordering::Equal {
+        return len_cmp;
+    }
+    // 数字段完全相等：稳定版 > 预发布；预发布之间按通道前缀 + 尾段兜底。
+    match (a_pre, b_pre) {
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, None) => std::cmp::Ordering::Equal,
+        (Some(p), Some(q)) => p.cmp(&q).then_with(|| a_core.cmp(&b_core)),
+    }
+}
+
+/// 拆出版本标识的（预发布前缀, 数字主干）。
+///
+/// `1.14.0-beta.4` → `(Some("beta.4"), "1.14.0")`；
+/// `Alpha-1.19.30` → `(Some("alpha"), "1.19.30")`；
+/// `1.13.15` → `(None, "1.13.15")`。
+fn split_version_identity(v: &str) -> (Option<String>, String) {
+    let v = v.trim();
+    // mihomo 自有前缀通道（`Alpha` / `Release`，大小写不敏感）。
+    if let Some(rest) = v
+        .strip_prefix("Alpha-")
+        .or_else(|| v.strip_prefix("alpha-"))
+        .or_else(|| v.strip_prefix("Release-"))
+        .or_else(|| v.strip_prefix("release-"))
+    {
+        return (Some("alpha".to_string()), rest.to_string());
+    }
+    // 标准 `数字[.数字].prerelease`：`-` 后为预发布标记。
+    if let Some(idx) = v.find('-') {
+        let (core, pre) = v.split_at(idx);
+        let pre = pre.trim_start_matches('-');
+        if !core.is_empty() && core.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return (Some(pre.to_ascii_lowercase()), core.to_string());
+        }
+    }
+    (None, v.to_string())
+}
+
+/// 解析 `.` 分隔的数字段（非数字段截断忽略）。
+fn parse_numeric_segments(s: &str) -> Vec<u64> {
+    s.split('.')
+        .map(|seg| seg.trim_end_matches(|c: char| !c.is_ascii_digit()))
+        .filter(|seg| !seg.is_empty())
+        .filter_map(|seg| seg.parse::<u64>().ok())
+        .collect()
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::compare_core_versions;
+    use std::cmp::Ordering;
+
+    #[test]
+    fn compares_numeric_segments() {
+        assert_eq!(compare_core_versions("1.13.15", "1.14.0"), Ordering::Less);
+        assert_eq!(
+            compare_core_versions("1.14.0", "1.13.15"),
+            Ordering::Greater
+        );
+        assert_eq!(compare_core_versions("1.14.0", "1.14.0"), Ordering::Equal);
+        // 段尾语义：1.14 < 1.14.0。
+        assert_eq!(compare_core_versions("1.14", "1.14.0"), Ordering::Less);
+    }
+
+    #[test]
+    fn prerelease_sorts_below_same_base_stable() {
+        assert_eq!(
+            compare_core_versions("1.14.0-beta.4", "1.14.0"),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_core_versions("1.14.0", "1.14.0-beta.4"),
+            Ordering::Greater
+        );
+        // 预发布基础版本高于旧稳定版：1.14.0-beta.4 > 1.13.15。
+        assert_eq!(
+            compare_core_versions("1.13.15", "1.14.0-beta.4"),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn mihomo_alpha_channel_sorts_by_numeric_after_prefix() {
+        assert_eq!(
+            compare_core_versions("Alpha-1.19.30", "1.19.29"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_core_versions("Alpha-1.19.30", "1.19.30"),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn unknown_versions_fallback_lowest() {
+        // 无法解析出版本段（如 `unknown`）按空版本段处理 → 视为最旧，低于真实
+        // 版本；两个 unknown 之间相等。
+        assert_eq!(compare_core_versions("unknown", "1.19.29"), Ordering::Less);
+        assert_eq!(compare_core_versions("unknown", "unknown"), Ordering::Equal);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,6 +741,26 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+    }
+
+    /// 全局 PATH 锁：环境变量是进程级状态，并行测试间互斥，避免相互串台。
+    static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 在指定 PATH 下执行闭包（互斥串行化，测试内单线程修改/恢复环境变量）。
+    fn with_patched_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
+        let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var_os("PATH");
+        // Rust 2024 下 std::env 的 set_var/remove_var 标记为 unsafe（并发修改
+        // 环境变量是未定义行为），PATH_LOCK 保证测试进程内串行访问。
+        unsafe {
+            std::env::set_var("PATH", path);
+        }
+        let result = f();
+        match old {
+            Some(v) => unsafe { std::env::set_var("PATH", v) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+        result
     }
 
     /// 构造含若干条目的 tar.gz。
@@ -800,20 +966,11 @@ mod tests {
         let bin = dir.path().join("sing-box");
         write_executable(&bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n");
 
-        let old = std::env::var_os("PATH");
-        // Rust 2024 下 std::env 的 set_var/remove_var 标记为 unsafe（并发修改
-        // 环境变量是未定义行为），测试进程内单线程调用。
-        unsafe {
-            std::env::set_var("PATH", dir.path());
-        }
-        let result = {
+        // PATH 由 with_patched_path 加锁串行修改/恢复，避免与并行测试竞争。
+        let result = with_patched_path(dir.path(), || {
             let inv = ClientCoreInventory::new(PathBuf::new());
             inv.detect_system_cores()
-        };
-        match old {
-            Some(v) => unsafe { std::env::set_var("PATH", v) },
-            None => unsafe { std::env::remove_var("PATH") },
-        }
+        });
 
         let found = result
             .iter()
@@ -959,5 +1116,50 @@ mod tests {
             ),
             Some("1.19.29".to_string())
         );
+    }
+
+    // ---------- ⑧ preferred_binary：已下载版本排序 + 系统回退 ----------
+
+    #[test]
+    fn preferred_binary_picks_newest_downloaded_version() {
+        let dir = tempfile::tempdir().unwrap();
+        write_executable(
+            &dir.path().join("cores/sing-box/1.13.15/sing-box"),
+            b"#!/bin/sh\necho 'sing-box version 1.13.15'\n",
+        );
+        write_executable(
+            &dir.path().join("cores/sing-box/1.14.0-beta.4/sing-box"),
+            b"#!/bin/sh\necho 'sing-box version 1.14.0-beta.4'\n",
+        );
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+
+        let bin = inv.preferred_binary(CoreType::SingBox);
+        // 语义化版本排序：1.14.0-beta.4（基础 1.14.0）> 1.13.15。
+        assert_eq!(
+            bin,
+            Some(dir.path().join("cores/sing-box/1.14.0-beta.4/sing-box"))
+        );
+    }
+
+    #[test]
+    fn preferred_binary_falls_back_to_system_core() {
+        let dir = tempfile::tempdir().unwrap();
+        // 无任何已下载核心 → 回退系统 PATH 探测。
+        let system_bin = dir.path().join("mihomo");
+        write_executable(&system_bin, b"#!/bin/sh\necho 'Mihomo Meta v1.19.29'\n");
+        let inv = ClientCoreInventory::new(dir.path().join("cores"));
+
+        let result = with_patched_path(dir.path(), || inv.preferred_binary(CoreType::Mihomo));
+        assert_eq!(result, Some(system_bin));
+    }
+
+    #[test]
+    fn preferred_binary_none_when_unavailable() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        let result = with_patched_path(Path::new("/nonexistent-bin-dir"), || {
+            inv.preferred_binary(CoreType::SingBox)
+        });
+        assert_eq!(result, None);
     }
 }
