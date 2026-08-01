@@ -20,7 +20,7 @@ use pp_script::{Notifier, ScriptDialect, ScriptKind, TaskScript};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::import::{ImportedConfig, parse_import};
+use crate::import::{ConfigMeta, ImportedConfig, parse_import};
 
 /// 一条远程订阅资源。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,6 +117,8 @@ pub struct ImportSummary {
     pub hostnames: usize,
     /// 跳过（source 为空未拉取）与解析偏差的警告列表。
     pub warnings: Vec<String>,
+    /// 本次导入配置头解析出的元数据（`#!key=value`）。
+    pub meta: ConfigMeta,
 }
 
 /// 全部远程订阅缓存合并后的运行时配置。
@@ -270,11 +272,11 @@ impl RemoteManager {
         Ok(merged)
     }
 
-    /// 将一次本地导入的 [`ImportedConfig`] 合并进固定缓存 `remote_cache/imported.json`。
+    /// 将一次导入的 [`ImportedConfig`] 合并进固定缓存 `remote_cache/imported.json`。
     ///
-    /// 本地导入不做远端拉取（脚本钩子 / 定时任务的 `source` 为空且 URL 未知不可用），
-    /// 因此 `source` 为空的脚本钩子与任务会被跳过并计入 [`ImportSummary::warnings`]；
-    /// 重写规则与 hostname 直接合入。重复导入在既有缓存上追加（不覆盖）。
+    /// 脚本钩子 / 定时任务的 `source` 为空（未拉取）时跳过并计入
+    /// [`ImportSummary::warnings`]；重写规则与 hostname 直接合入。
+    /// 重复导入在既有缓存上追加（不覆盖）。
     pub fn merge_imported(&self, imported: &ImportedConfig) -> PanelResult<ImportSummary> {
         let mut summary = ImportSummary::default();
         summary.warnings.extend(imported.warnings.iter().cloned());
@@ -334,6 +336,24 @@ impl RemoteManager {
         Ok(summary)
     }
 
+    /// 导入一段三方配置内容并合并进本地缓存：
+    /// `parse_import` → [`Self::fill_script_sources`]（拉取脚本源码）→ [`Self::merge_imported`]。
+    ///
+    /// 单个脚本 / 任务脚本拉取失败仅记入 [`ImportSummary::warnings`] 并跳过，
+    /// 不阻塞重写规则与 hostname 的合入。返回摘要含配置头元数据与拉取统计。
+    pub async fn import_content(
+        &self,
+        content: &str,
+        dialect: ScriptDialect,
+    ) -> PanelResult<ImportSummary> {
+        let mut imported = parse_import(content, dialect)
+            .map_err(|e| PanelError::Client(format!("imported config parse failed: {e}")))?;
+        self.fill_script_sources(&mut imported).await;
+        let mut summary = self.merge_imported(&imported)?;
+        summary.meta = imported.meta;
+        Ok(summary)
+    }
+
     /// 拉取单个 URL 的文本内容；非 2xx 视为失败。
     async fn fetch_text(&self, url: &str) -> PanelResult<String> {
         let resp = self
@@ -353,29 +373,32 @@ impl RemoteManager {
             .map_err(|e| PanelError::Client(format!("failed to read remote body ({url}): {e}")))
     }
 
-    /// 拉取 Snippet 片段：解析 → 逐个回填脚本钩子/任务源码（失败记 warning 跳过）。
-    async fn fetch_snippet(&self, remote: &RemoteResource) -> PanelResult<ImportedConfig> {
-        let text = self.fetch_text(&remote.url).await?;
-        let mut imported = parse_import(&text, remote.dialect).map_err(|e| {
-            PanelError::Client(format!("snippet '{}' parse failed: {e}", remote.name))
-        })?;
-
+    /// 回填 Snippet 中脚本钩子 / 定时任务的远端源码。
+    ///
+    /// 逐个拉取 [`ImportedConfig::script_urls`] 与 [`ImportedConfig::task_scripts`] 指向的
+    /// 脚本，成功写回对应 `source`；失败记入 [`ImportedConfig::warnings`] 并丢弃该脚本，
+    /// 不阻塞其他脚本与规则。
+    pub async fn fill_script_sources(&self, imported: &mut ImportedConfig) {
         let scripts = std::mem::take(&mut imported.scripts);
         let script_urls = std::mem::take(&mut imported.script_urls);
         let mut kept_scripts = Vec::new();
-        for (rule, (_name, url)) in scripts.into_iter().zip(script_urls) {
+        let mut kept_urls = Vec::new();
+        for (rule, (name, url)) in scripts.into_iter().zip(script_urls) {
             match self.fetch_text(&url).await {
                 Ok(source) => {
                     let mut rule = rule;
                     rule.source = source;
                     kept_scripts.push(rule);
+                    kept_urls.push((name, url));
                 }
                 Err(e) => imported
                     .warnings
                     .push(format!("hook script fetch failed: {e}")),
             }
         }
+        // 保持 scripts 与 script_urls 对齐（仅保留拉取成功的脚本）
         imported.scripts = kept_scripts;
+        imported.script_urls = kept_urls;
 
         let task_scripts = std::mem::take(&mut imported.task_scripts);
         let mut kept_tasks = Vec::new();
@@ -391,6 +414,15 @@ impl RemoteManager {
             }
         }
         imported.task_scripts = kept_tasks;
+    }
+
+    /// 拉取 Snippet 片段：解析 → 逐个回填脚本钩子/任务源码（失败记 warning 跳过）。
+    async fn fetch_snippet(&self, remote: &RemoteResource) -> PanelResult<ImportedConfig> {
+        let text = self.fetch_text(&remote.url).await?;
+        let mut imported = parse_import(&text, remote.dialect).map_err(|e| {
+            PanelError::Client(format!("snippet '{}' parse failed: {e}", remote.name))
+        })?;
+        self.fill_script_sources(&mut imported).await;
         Ok(imported)
     }
 
@@ -939,6 +971,201 @@ mod tests {
         assert_eq!(
             merged.hostnames,
             vec!["a.example.com".to_string(), "b.example.com".to_string()]
+        );
+    }
+
+    /// 启动本地导入测试服务：提供 CamScanner 脚本与 404 端点。
+    async fn spawn_import_server() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new()
+            .route(
+                "/camscanner.js",
+                axum::routing::get(|| async { "const camscanner = 1;" }),
+            )
+            .route(
+                "/missing.js",
+                axum::routing::get(|| async { (StatusCode::NOT_FOUND, "not found") }),
+            );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn detect_resource_from_url_maps_suffixes_to_kind_and_dialect() {
+        assert_eq!(
+            detect_resource_from_url("https://example.com/config.sgmodule"),
+            Some((RemoteKind::Snippet, ScriptDialect::Surge))
+        );
+        assert_eq!(
+            detect_resource_from_url("https://example.com/conf.plugin"),
+            Some((RemoteKind::Snippet, ScriptDialect::Loon))
+        );
+        assert_eq!(
+            detect_resource_from_url("https://example.com/rules.loon"),
+            Some((RemoteKind::Snippet, ScriptDialect::Loon))
+        );
+        assert_eq!(
+            detect_resource_from_url("https://example.com/rules.conf"),
+            Some((RemoteKind::Snippet, ScriptDialect::QuantumultX))
+        );
+        assert_eq!(
+            detect_resource_from_url("https://example.com/script.js"),
+            Some((RemoteKind::Script, ScriptDialect::QuantumultX))
+        );
+        // 带 query / fragment：后缀判定忽略 query
+        assert_eq!(
+            detect_resource_from_url("https://example.com/rules.sgmodule?token=abc&x=1"),
+            Some((RemoteKind::Snippet, ScriptDialect::Surge))
+        );
+        assert_eq!(
+            detect_resource_from_url("https://example.com/script.js?token=abc#frag"),
+            Some((RemoteKind::Script, ScriptDialect::QuantumultX))
+        );
+        // 大小写不敏感
+        assert_eq!(
+            detect_resource_from_url("https://example.com/RULES.SGMODULE"),
+            Some((RemoteKind::Snippet, ScriptDialect::Surge))
+        );
+        // 无后缀 / 其他后缀 / 空串 → None
+        assert_eq!(detect_resource_from_url("https://example.com/rules"), None);
+        assert_eq!(
+            detect_resource_from_url("https://example.com/rules.txt"),
+            None
+        );
+        assert_eq!(detect_resource_from_url(""), None);
+        // 尾斜杠仍以最后一段文件名判定后缀（目录式 URL 视作片段）
+        assert_eq!(
+            detect_resource_from_url("https://example.com/rules.conf/"),
+            Some((RemoteKind::Snippet, ScriptDialect::QuantumultX))
+        );
+    }
+
+    #[tokio::test]
+    async fn import_content_fills_script_sources_and_merges_surge_sgmodule() {
+        let base = spawn_import_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let content = format!(
+            "#!name=扫描全能王-解锁VIP\n\
+             #!desc=扫描全能王-手机扫描仪 解锁黄金会员\n\
+             #!date=2026-01-21\n\
+             #!category=🐹 BOBO Premium\n\
+             #!author=叮当猫chxm1023\n\
+             #!icon=https://example.com/CamScanner.png\n\
+             #!openUrl=https://apps.apple.com/app/id388627783\n\
+             \n\
+             [Script]\n\
+             扫描全能王-解锁黄金会员 = type=http-response, pattern=https:\\/\\/api-cs\\.intsig\\.net\\/purchase\\/cs\\/query_property, script-path={base}/camscanner.js, requires-body=true, max-size=-1, timeout=60\n\
+             \n\
+             [MITM]\n\
+             hostname = %APPEND% api-cs.intsig.net\n"
+        );
+
+        let summary = manager
+            .import_content(&content, ScriptDialect::Surge)
+            .await
+            .unwrap();
+        assert_eq!(summary.rewrites, 0);
+        assert_eq!(summary.scripts, 1, "脚本 source 已回填，merge 不再跳过");
+        assert_eq!(summary.tasks, 0);
+        assert_eq!(summary.hostnames, 1);
+        assert_eq!(summary.meta.name.as_deref(), Some("扫描全能王-解锁VIP"));
+        assert_eq!(
+            summary.meta.open_url.as_deref(),
+            Some("https://apps.apple.com/app/id388627783")
+        );
+        assert!(
+            !summary
+                .warnings
+                .iter()
+                .any(|w| w.contains("source not fetched")),
+            "不应有 source not fetched 警告: {:?}",
+            summary.warnings
+        );
+
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.scripts.len(), 1);
+        assert_eq!(merged.scripts[0].source, "const camscanner = 1;");
+        assert_eq!(merged.scripts[0].name, "扫描全能王-解锁黄金会员");
+        assert_eq!(merged.hostnames, vec!["api-cs.intsig.net".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn import_content_records_warning_on_script_fetch_failure_and_keeps_rewrites() {
+        let base = spawn_import_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let content = format!(
+            "#!name=失败导入\n\
+             [rewrite_local]\n\
+             ^https?://api-cs\\.intsig\\.net/purchase script-response-body {base}/missing.js\n\
+             ^https?://example\\.com/ url-and-header https://target.example.com/\n\
+             [mitm]\n\
+             hostname = *.camscanner.com\n"
+        );
+
+        let summary = manager
+            .import_content(&content, ScriptDialect::QuantumultX)
+            .await
+            .unwrap();
+        assert_eq!(summary.rewrites, 1, "rewrite 不受脚本拉取失败影响");
+        assert_eq!(summary.scripts, 0, "拉取失败的脚本被跳过");
+        assert_eq!(summary.tasks, 0);
+        assert_eq!(summary.hostnames, 1);
+        assert_eq!(summary.meta.name.as_deref(), Some("失败导入"));
+        assert!(
+            summary.warnings.iter().any(|w| w.contains("missing.js")),
+            "应有脚本拉取失败 warning: {:?}",
+            summary.warnings
+        );
+
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.rewrites.len(), 1);
+        assert!(merged.scripts.is_empty());
+        assert!(merged.task_scripts.is_empty());
+        assert_eq!(merged.hostnames, vec!["*.camscanner.com".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn import_content_handles_qx_conf_sample() {
+        let base = spawn_import_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        // QX 常见的 4 段式：`pattern url script-response-body <path>`（多余 `url` 修饰符忽略）
+        let content = format!(
+            "#!name=扫描全能王-QX\n\
+             #!desc=QX 重写样例\n\
+             [rewrite_local]\n\
+             ^https:\\/\\/.*\\.(intsig\\.net|camscanner\\.com) url script-response-body {base}/camscanner.js\n\
+             [mitm]\n\
+             hostname = *.camscanner.com, *.intsig.net\n"
+        );
+
+        let summary = manager
+            .import_content(&content, ScriptDialect::QuantumultX)
+            .await
+            .unwrap();
+        assert_eq!(summary.rewrites, 0);
+        assert_eq!(summary.scripts, 1, "脚本 source 已回填，merge 不再跳过");
+        assert_eq!(summary.tasks, 0);
+        assert_eq!(summary.hostnames, 2);
+        assert_eq!(summary.meta.name.as_deref(), Some("扫描全能王-QX"));
+        assert!(
+            summary.warnings.is_empty(),
+            "warnings: {:?}",
+            summary.warnings
+        );
+
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.scripts.len(), 1);
+        assert_eq!(merged.scripts[0].name, "hook-0");
+        assert_eq!(merged.scripts[0].source, "const camscanner = 1;");
+        assert_eq!(
+            merged.hostnames,
+            vec!["*.camscanner.com".to_string(), "*.intsig.net".to_string()]
         );
     }
 }

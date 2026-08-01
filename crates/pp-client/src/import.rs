@@ -272,13 +272,18 @@ fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str
         cfg.warn("rewrite", line, "unrecognized line");
         return;
     }
-    let (pattern_src, action) = (tokens[0], tokens[1]);
+    // 兼容部分生态写法 `pattern url script-response-body <path>`（多余的 `url` 修饰符忽略）
+    let (pattern_src, action, args) = if tokens.len() >= 3 && tokens[1] == "url" {
+        (tokens[0], tokens[2], &tokens[3..])
+    } else {
+        (tokens[0], tokens[1], &tokens[2..])
+    };
     let Some(pattern) = compile_pattern(pattern_src, cfg, "rewrite", line) else {
         return;
     };
     match action {
         "url-and-header" | "url-307" | "url-302" => {
-            let Some(target) = tokens.get(2) else {
+            let Some(target) = args.first() else {
                 cfg.warn("rewrite", line, "missing rewrite target");
                 return;
             };
@@ -299,7 +304,7 @@ fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str
             });
         }
         "script-response-body" | "script-request-body" | "script-echo-response" => {
-            let Some(path) = tokens.get(2) else {
+            let Some(path) = args.first() else {
                 cfg.warn("rewrite", line, "missing script path");
                 return;
             };
@@ -331,11 +336,11 @@ fn parse_qx_rewrite(cfg: &mut ImportedConfig, hook_index: &mut usize, line: &str
             });
         }
         "url-response-body" | "url-request-header" => {
-            let Some(regex_target) = tokens.get(2) else {
+            let Some(regex_target) = args.first() else {
                 cfg.warn("rewrite", line, "missing body regex");
                 return;
             };
-            let Some(replacement) = tokens.get(3) else {
+            let Some(replacement) = args.get(1) else {
                 cfg.warn("rewrite", line, "missing replacement");
                 return;
             };

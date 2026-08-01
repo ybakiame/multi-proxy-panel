@@ -83,6 +83,17 @@ export interface TaskScriptView {
   last_error: string | null;
 }
 
+/** 配置头 `#!key=value` 元数据（与 Rust 侧 `ConfigMetaView` 对齐）。 */
+export interface ConfigMetaView {
+  name: string | null;
+  desc: string | null;
+  author: string | null;
+  icon: string | null;
+  date: string | null;
+  category: string | null;
+  open_url: string | null;
+}
+
 /** `import_config` 的导入摘要。 */
 export interface ImportSummary {
   rewrites: number;
@@ -90,6 +101,8 @@ export interface ImportSummary {
   tasks: number;
   hostnames: number;
   warnings: string[];
+  /** 配置头解析出的元数据（名称/描述等）。 */
+  meta: ConfigMetaView;
 }
 
 /** 复写模板列表视图（与 Rust 侧 `ProfileView` 对齐）。 */

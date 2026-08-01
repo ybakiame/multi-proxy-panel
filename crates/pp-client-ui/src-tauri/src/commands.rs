@@ -324,6 +324,32 @@ pub struct FetchReportView {
     pub warnings: Vec<String>,
 }
 
+/// 配置头 `#!key=value` 元数据的对外视图。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConfigMetaView {
+    pub name: Option<String>,
+    pub desc: Option<String>,
+    pub author: Option<String>,
+    pub icon: Option<String>,
+    pub date: Option<String>,
+    pub category: Option<String>,
+    pub open_url: Option<String>,
+}
+
+impl ConfigMetaView {
+    fn from_meta(meta: &pp_client::ConfigMeta) -> Self {
+        Self {
+            name: meta.name.clone(),
+            desc: meta.desc.clone(),
+            author: meta.author.clone(),
+            icon: meta.icon.clone(),
+            date: meta.date.clone(),
+            category: meta.category.clone(),
+            open_url: meta.open_url.clone(),
+        }
+    }
+}
+
 /// 一次配置导入摘要的对外视图。
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportSummaryView {
@@ -332,6 +358,8 @@ pub struct ImportSummaryView {
     pub tasks: usize,
     pub hostnames: usize,
     pub warnings: Vec<String>,
+    /// 配置头解析出的元数据（前端展示名称/描述等）。
+    pub meta: ConfigMetaView,
 }
 
 /// 列出全部远程资源（`remotes.json` 清单）。
@@ -442,8 +470,8 @@ pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String
     Ok(output.0.to_string())
 }
 
-/// 导入 QX / Surge / Loon 配置片段：解析后合并写入本地导入缓存
-/// `remote_cache/imported.json`（脚本 / 任务 URL 不拉取，source 为空则跳过计 warning）。
+/// 导入 QX / Surge / Loon 配置片段：解析 → 拉取脚本源码回填 → 合并写入本地导入缓存
+/// `remote_cache/imported.json`。单个脚本拉取失败记 warning 跳过，不阻塞其他规则合入。
 #[tauri::command]
 pub async fn import_config(
     state: State<'_, AppState>,
@@ -460,18 +488,18 @@ pub async fn import_config(
             ));
         }
     };
-    let imported = pp_client::parse_import(&content, script_dialect)
-        .map_err(|e| format!("解析配置失败: {e}"))?;
     let manager = RemoteManager::new(state.data_dir.clone());
     let summary = manager
-        .merge_imported(&imported)
-        .map_err(|e| format!("写入导入缓存失败: {e}"))?;
+        .import_content(&content, script_dialect)
+        .await
+        .map_err(|e| format!("导入配置失败: {e}"))?;
     Ok(ImportSummaryView {
         rewrites: summary.rewrites,
         scripts: summary.scripts,
         tasks: summary.tasks,
         hostnames: summary.hostnames,
         warnings: summary.warnings,
+        meta: ConfigMetaView::from_meta(&summary.meta),
     })
 }
 
