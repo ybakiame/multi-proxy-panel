@@ -15,8 +15,10 @@ export default function Mitm() {
   }, [loadConfig, refreshTraffic]);
 
   // 配置加载后同步白名单文本（每行一个 hostname）。
+  // `mitm_hostnames` 在 config 未加载完成或字段缺失时可能为 undefined，
+  // 需在 join 前防御，避免渲染期 TypeError 导致整页崩溃（黑屏）。
   useEffect(() => {
-    setHostnames(config?.mitm_hostnames.join("\n") ?? "");
+    setHostnames(config?.mitm_hostnames?.join("\n") ?? "");
   }, [config?.mitm_hostnames]);
 
   // RFC3339 时间戳转为本地可读时间；解析失败时原样展示。

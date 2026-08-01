@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * 与 Rust 侧 `src-tauri/src/commands.rs` 的 serde 视图结构对齐。
  *
- * 字段名以命令层实际 `#[serde(rename_all = "camelCase")]` 输出为准，
- * 与任务描述中的 `mitm.hostnames` / `mitm.script_dialect` 嵌套结构不同
- * （实际为扁平化的 `mitm_hostnames` / `mitm_script_dialect`）。
+ * 命令层 `*View` 结构体按字段名原样（snake_case）序列化（无 rename_all），
+ * 本文件的 TS 类型与其逐字段一致；与任务描述中的 `mitm.hostnames` /
+ * `mitm.script_dialect` 嵌套结构不同（实际为扁平化的 `mitm_hostnames` /
+ * `mitm_script_dialect`）。
  */
 
 export type CoreType = "singbox" | "mihomo";

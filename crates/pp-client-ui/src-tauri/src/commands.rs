@@ -46,8 +46,11 @@ impl pp_script::Notifier for TauriNotifier {
 }
 
 /// 客户端配置的对外视图（serde 简单结构，避免直接暴露内部类型）。
+///
+/// 注意：所有 `*View` 结构体按字段名原样（snake_case）序列化，与前端
+/// `src/api.ts` 的 TS 类型逐字段对齐；曾一度使用 `rename_all = "camelCase"`
+/// 导致前端读取 `mitm_hostnames` 等字段全部为 `undefined` 而崩溃。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ClientConfigView {
     /// 数据目录（展示用；持久化路径由应用状态决定）。
     pub data_dir: String,
@@ -110,7 +113,6 @@ impl ClientConfigView {
 
 /// 客户端运行状态的对外视图。
 #[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
 pub struct ClientStatusView {
     pub core_running: bool,
     pub mitm_addr: Option<String>,
@@ -129,7 +131,6 @@ impl ClientStatusView {
 
 /// 一条流量记录的对外视图。
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TrafficRecordView {
     pub id: String,
     pub method: String,
@@ -255,7 +256,6 @@ pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecor
 
 /// 一条远程订阅资源的对外视图。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RemoteResourceView {
     pub name: String,
     pub url: String,
@@ -300,7 +300,6 @@ impl RemoteResourceView {
 
 /// 一次 `fetch_remotes` 拉取报告的对外视图。
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FetchReportView {
     pub fetched: usize,
     pub scripts: usize,
@@ -311,7 +310,6 @@ pub struct FetchReportView {
 
 /// 一次配置导入摘要的对外视图。
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ImportSummaryView {
     pub rewrites: usize,
     pub scripts: usize,
