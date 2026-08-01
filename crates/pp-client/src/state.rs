@@ -2,8 +2,9 @@
 //!
 //! [`ClientState`] 编排客户端整体生命周期：
 //!
-//! **启动**：拉取订阅 → 合成核心配置 → 启动核心 → （可选）启动 MITM →
-//! （可选）启用系统代理。任一步失败时回滚已完成步骤。
+//! **启动**：拉取订阅 → （可选）启动 MITM（拿到监听地址）→ 合成核心配置
+//! （注入 MITM 路由规则与回流入口）→ 启动核心 → 启用系统代理（指向核心
+//! mixed 主入口）。任一步失败时回滚已完成步骤。
 //!
 //! **停止**：按启动逆序逐项关闭（best-effort，单项失败不影响其余）。
 
@@ -111,31 +112,130 @@ impl ClientState {
         self.scheduler.as_ref().map(|h| Arc::clone(&h.scheduler))
     }
 
-    /// 启动：订阅 → 合成配置 → 核心 → MITM → 系统代理，失败回滚。
+    /// 启动：订阅 → MITM → 合成配置（MITM 链路）→ 核心 → 系统代理，失败回滚。
+    ///
+    /// 启动顺序：先拉取订阅，MITM 启用时先启动 MITM（拿到监听地址），合成配置时
+    /// 注入 [`MitmChain`]（路由规则 + 回流入口），再启动核心，最后启用系统代理
+    /// （始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。
     pub async fn start(&mut self) -> PanelResult<()> {
         tracing::info!(hub_url = %self.config.hub_url, "客户端启动：拉取订阅");
         let fetcher = subscription::SubscriptionFetcher::new();
+
         let config_json = match self.config.core_type {
             CoreType::SingBox => {
                 let (sub_config, _info) = fetcher
                     .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
                     .await?;
-                core_config::compose_singbox_config(&sub_config, self.config.mixed_port, None)?
+                // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
+                let chain = self.start_mitm_chain().await?;
+                let cfg =
+                    core_config::compose_singbox_config(&sub_config, self.config.mixed_port, chain);
+                match cfg {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        self.rollback_mitm_started().await;
+                        return Err(e);
+                    }
+                }
             }
             CoreType::Mihomo => {
                 let (yaml, _info) = fetcher
                     .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
                     .await?;
-                core_config::compose_mihomo_config(&yaml, self.config.mixed_port, None)?
+                let chain = self.start_mitm_chain().await?;
+                let cfg = core_config::compose_mihomo_config(&yaml, self.config.mixed_port, chain);
+                match cfg {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        self.rollback_mitm_started().await;
+                        return Err(e);
+                    }
+                }
             }
         };
         self.start_services(&config_json).await
     }
 
-    /// 在订阅与配置合成之后，启动核心 →（可选）MITM →（可选）系统代理，失败回滚。
+    /// MITM 启用时启动 MITM 并返回链路信息；未启用时返回 `None`。
     ///
-    /// 回滚策略：核心启动成功后，若 MITM 构建/启动失败则停止核心；若系统代理启用
-    /// 失败则按逆序关闭 MITM 与核心，最后把错误向上传播。
+    /// 读取远程订阅缓存（重写规则 / 脚本钩子 / 主机名 / 定时任务），构建并启动
+    /// MITM，上游指向核心回流 mixed 入口（`mixed_port + 1`）。调度器启动失败时
+    /// 回滚已启动的 MITM；其余失败发生在 MITM 启动之前，无需回滚。
+    async fn start_mitm_chain(&mut self) -> PanelResult<Option<core_config::MitmChain>> {
+        if !self.config.mitm_enabled {
+            return Ok(None);
+        }
+        tracing::info!("启动 MITM 代理");
+        // 读取远程订阅缓存：重写规则 / 脚本钩子 / 主机名 / 定时任务。
+        let remote = RemoteManager::new(self.config.data_dir.clone());
+        let merged = match remote.load_cached() {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+        // 合并白名单（本地配置 + 远程订阅），供 MITM 与核心路由规则共用。
+        let mut hostnames = self.config.mitm.hostnames.clone();
+        for extra in &merged.hostnames {
+            if !hostnames.contains(extra) {
+                hostnames.push(extra.clone());
+            }
+        }
+        let rewrite = RewriteEngine {
+            rules: merged.rewrites,
+        };
+        let host = Arc::new(ScriptHost::new(
+            Arc::new(ReqwestHttpExecutor::new()),
+            Arc::new(FilePersistentStore::new(
+                self.config.data_dir.join("script_store"),
+            )),
+            Arc::clone(&self.notifier),
+        ));
+        let hooks = ScriptHookEngine::new(
+            Arc::clone(&host),
+            self.config.mitm.script_dialect,
+            ScriptLimits::default(),
+            merged.scripts,
+        );
+        // MITM 上游指向核心回流 mixed 入口（mixed_port + 1）。
+        let return_port = self.config.mixed_port + 1;
+        let options = MitmBuildOptions {
+            extra_hostnames: hostnames.clone(),
+            upstream_port: Some(return_port),
+            rewrite,
+            hooks: Some(hooks),
+        };
+        let proxy = match build_mitm_proxy(&self.config, options, self.recorder.clone()) {
+            Ok(p) => p,
+            Err(e) => return Err(e),
+        };
+        let running = match proxy.start().await {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+        let mitm_addr = running.addr;
+        self.mitm = Some(running);
+        // 定时任务调度器（MITM 就绪后启动；失败回滚 MITM）。
+        if let Err(e) = self.start_scheduler(host, merged.task_scripts).await {
+            self.stop_mitm().await;
+            return Err(e);
+        }
+        Ok(Some(core_config::MitmChain {
+            proxy_addr: mitm_addr,
+            return_port,
+            hostnames,
+        }))
+    }
+
+    /// MITM 已启动后、后续步骤失败时的回滚：关闭 MITM 与调度器。
+    async fn rollback_mitm_started(&mut self) {
+        self.stop_mitm().await;
+        self.stop_scheduler().await;
+    }
+
+    /// 在订阅与配置合成之后，启动核心 → 启用系统代理（指向核心 mixed 主入口），
+    /// 失败回滚。MITM 已在 [`Self::start`] 中先于核心启动。
+    ///
+    /// 回滚策略：核心启动失败则关闭 MITM 与调度器；系统代理启用失败则按逆序
+    /// 关闭核心、MITM 与调度器，最后把错误向上传播。
     async fn start_services(&mut self, config_json: &serde_json::Value) -> PanelResult<()> {
         tracing::info!(binary = %self.config.core_binary.display(), "启动核心");
         let core = CoreRunner::create(
@@ -143,72 +243,19 @@ impl ClientState {
             &self.config.core_binary,
             &self.config.data_dir,
         )?;
-        core.start(config_json).await?;
+        if let Err(e) = core.start(config_json).await {
+            self.rollback_mitm_started().await;
+            return Err(e);
+        }
         self.core = Some(core);
 
-        if self.config.mitm_enabled {
-            tracing::info!("启动 MITM 代理");
-            // 读取远程订阅缓存：重写规则 / 脚本钩子 / 主机名 / 定时任务。
-            let remote = RemoteManager::new(self.config.data_dir.clone());
-            let merged = match remote.load_cached() {
-                Ok(m) => m,
-                Err(e) => {
-                    self.stop_core().await;
-                    return Err(e);
-                }
-            };
-            let rewrite = RewriteEngine {
-                rules: merged.rewrites,
-            };
-            let host = Arc::new(ScriptHost::new(
-                Arc::new(ReqwestHttpExecutor::new()),
-                Arc::new(FilePersistentStore::new(
-                    self.config.data_dir.join("script_store"),
-                )),
-                Arc::clone(&self.notifier),
-            ));
-            let hooks = ScriptHookEngine::new(
-                Arc::clone(&host),
-                self.config.mitm.script_dialect,
-                ScriptLimits::default(),
-                merged.scripts,
-            );
-            let options = MitmBuildOptions {
-                extra_hostnames: merged.hostnames,
-                upstream_port: None,
-                rewrite,
-                hooks: Some(hooks),
-            };
-            let proxy = match build_mitm_proxy(&self.config, options, self.recorder.clone()) {
-                Ok(p) => p,
-                Err(e) => {
-                    self.stop_core().await;
-                    return Err(e);
-                }
-            };
-            match proxy.start().await {
-                Ok(running) => self.mitm = Some(running),
-                Err(e) => {
-                    self.stop_core().await;
-                    return Err(e);
-                }
-            }
-            // 定时任务调度器（MITM 就绪后启动；失败回滚 MITM 与核心）。
-            if let Err(e) = self.start_scheduler(host, merged.task_scripts).await {
-                self.stop_mitm().await;
-                self.stop_core().await;
-                return Err(e);
-            }
-        }
-
         if self.config.system_proxy_enabled {
-            let addr = self.mitm.as_ref().map(|m| m.addr).unwrap_or_else(|| {
-                SocketAddr::new(Ipv4Addr::LOCALHOST.into(), self.config.mixed_port)
-            });
+            // 系统代理始终指向核心 mixed 主入口（MITM 挂在核心之后）。
+            let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), self.config.mixed_port);
             if let Err(e) = self.sysproxy.enable(addr).await {
-                tracing::error!(%addr, "启用系统代理失败，回滚 MITM 与核心");
-                self.stop_mitm().await;
+                tracing::error!(%addr, "启用系统代理失败，回滚核心与 MITM");
                 self.stop_core().await;
+                self.rollback_mitm_started().await;
                 return Err(e);
             }
         }
@@ -290,7 +337,7 @@ impl ClientState {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use axum::http::StatusCode;
@@ -299,7 +346,7 @@ mod tests {
 
     use crate::config::ClientConfig;
     use crate::remote::{RemoteKind, RemoteResource};
-    use crate::sysproxy::MockSystemProxy;
+    use crate::sysproxy::{MockSystemProxy, SysProxyCall};
 
     /// 记录通知的 Notifier（验证注入链路：ClientState → ScriptHost → `$notify`）。
     #[derive(Debug, Default)]
@@ -348,6 +395,29 @@ mod tests {
     fn fake_core_script(dir: &TempDir) -> PathBuf {
         let path = dir.path().join("fake-core.sh");
         std::fs::write(&path, "#!/bin/sh\nsleep 5\n").unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
+    }
+
+    /// 写一个把 `-c <config>` 参数对应的配置文件复制到 `capture` 的假核心脚本
+    /// （用于断言核心实际收到的合成配置，从而验证 MITM 先于核心启动）。
+    fn fake_core_capturing_args(dir: &TempDir, capture: &Path) -> PathBuf {
+        let path = dir.path().join("fake-core-capture.sh");
+        let script = format!(
+            "#!/bin/sh\n\
+             prev=\"\"\n\
+             for arg in \"$@\"; do\n\
+               if [ \"$prev\" = \"-c\" ]; then\n\
+                 cp \"$arg\" {}\n\
+               fi\n\
+               prev=\"$arg\"\n\
+             done\n\
+             sleep 5\n",
+            capture.display()
+        );
+        std::fs::write(&path, script).unwrap();
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&path, perms).unwrap();
@@ -531,6 +601,100 @@ mod tests {
 
         state.stop().await;
         let status = state.status().await;
+        assert!(!status.core_running);
+    }
+
+    /// MITM 链路（方案 D）：MITM 先于核心启动，系统代理指向核心 mixed 主入口。
+    #[tokio::test]
+    async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_port() {
+        let base = spawn_integration_server().await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 预置远程 snippet 缓存（含 MITM 白名单 *.example.com / api.example2.com）。
+        let remote = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "rules".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: pp_script::ScriptDialect::QuantumultX,
+            ..RemoteResource::default()
+        }];
+        remote.save(&remotes).unwrap();
+        let report = remote.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1, "snippet fetch should succeed");
+
+        // 假核心把收到的合成配置复制出来，供断言核心实际配置。
+        let capture = dir.path().join("core-config-capture.json");
+        let core_bin = fake_core_capturing_args(&dir, &capture);
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            base,
+            "tok",
+            CoreType::SingBox,
+            core_bin,
+        );
+        cfg.mitm_enabled = true;
+        cfg.system_proxy_enabled = true;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        let status = state.status().await;
+        let mitm_addr = status.mitm_addr.expect("MITM 应已运行");
+
+        // 系统代理指向核心 mixed 主端口（而非 MITM 随机端口）。
+        let calls = mock.calls();
+        assert_eq!(calls.len(), 1, "系统代理应只启用一次");
+        match &calls[0] {
+            SysProxyCall::Enable(addr) => {
+                assert_eq!(addr.port(), 17890, "系统代理应指向核心 mixed 主入口端口")
+            }
+            SysProxyCall::Disable => panic!("不应出现 disable"),
+        }
+
+        // MITM 先于核心：核心收到的配置里 pp-mitm outbound 端口 == MITM 实际
+        // 监听端口（随机端口，只有 MITM 启动后才能注入配置）。
+        let mut attempts = 0;
+        while !capture.exists() && attempts < 100 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            attempts += 1;
+        }
+        assert!(capture.exists(), "假核心应已复制合成配置");
+        let core_config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
+
+        // 双 mixed 入站：主入口 + 回流入口。
+        let inbounds = core_config["inbounds"].as_array().unwrap();
+        assert_eq!(inbounds.len(), 2);
+        assert_eq!(inbounds[0]["tag"], "main-in");
+        assert_eq!(inbounds[0]["listen_port"], 17890);
+        assert_eq!(inbounds[1]["tag"], "mitm-return");
+        assert_eq!(inbounds[1]["listen_port"], 17891);
+
+        // pp-mitm outbound 指向 MITM 实际监听端口。
+        let outbounds = core_config["outbounds"].as_array().unwrap();
+        let pp_mitm = outbounds
+            .iter()
+            .find(|o| o["tag"] == "pp-mitm")
+            .expect("核心配置应含 pp-mitm outbound");
+        assert_eq!(pp_mitm["type"], "http");
+        assert_eq!(pp_mitm["server_port"], mitm_addr.port());
+
+        // 白名单路由规则：inbound 匹配主入口，域名按通配/精确正确分流。
+        let rules = core_config["route"]["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["inbound"], serde_json::json!(["main-in"]));
+        assert_eq!(
+            rules[0]["domain_suffix"],
+            serde_json::json!(["example.com"])
+        );
+        assert_eq!(rules[0]["domain"], serde_json::json!(["api.example2.com"]));
+        assert_eq!(rules[0]["outbound"], "pp-mitm");
+
+        state.stop().await;
+        let status = state.status().await;
+        assert!(status.mitm_addr.is_none());
         assert!(!status.core_running);
     }
 
