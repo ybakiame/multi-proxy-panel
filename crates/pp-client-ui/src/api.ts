@@ -268,6 +268,45 @@ export function refreshSubscription(id: string): Promise<SubscriptionView> {
   return invoke<SubscriptionView>("refresh_subscription", { id });
 }
 
+/** 核心来源：`downloaded`（已下载）/ `system`（系统探测）。 */
+export type CoreSource = "downloaded" | "system";
+
+/** 本地核心视图（与 Rust 侧 `LocalCoreView` 对齐）。 */
+export interface LocalCoreView {
+  /** 核心类型：`singbox` / `mihomo`。 */
+  core_type: string;
+  version: string;
+  path: string;
+  source: CoreSource;
+  /** 是否为当前启用的核心（`core_binary` 匹配）。 */
+  active: boolean;
+}
+
+/** 列出本地可用核心（已下载 + 系统探测，含 active 标记）。 */
+export function listCores(): Promise<LocalCoreView[]> {
+  return invoke<LocalCoreView[]>("list_cores");
+}
+
+/** 列出远端最近 10 个发布版本（GitHub releases）。 */
+export function listRemoteCoreVersions(coreType: string): Promise<string[]> {
+  return invoke<string[]>("list_remote_core_versions", { core_type: coreType });
+}
+
+/** 下载指定版本核心并返回其视图。 */
+export function downloadCore(coreType: string, version: string): Promise<LocalCoreView> {
+  return invoke<LocalCoreView>("download_core", { core_type: coreType, version });
+}
+
+/** 将指定路径设为核心二进制（校验后写回 client.json）。 */
+export function setActiveCore(path: string): Promise<void> {
+  return invoke<void>("set_active_core", { path });
+}
+
+/** 手动刷新系统核心探测。 */
+export function detectSystemCores(): Promise<LocalCoreView[]> {
+  return invoke<LocalCoreView[]>("detect_system_cores");
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {
