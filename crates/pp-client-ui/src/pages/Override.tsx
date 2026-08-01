@@ -111,6 +111,8 @@ export default function Override() {
   const [detail, setDetail] = useState<ProfileDetailView | null>(null);
   const [yamlValue, setYamlValue] = useState("");
   const [jsValue, setJsValue] = useState("");
+  const [yamlUrl, setYamlUrl] = useState("");
+  const [jsUrl, setJsUrl] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +152,8 @@ export default function Override() {
       setDetail(profile);
       setYamlValue(profile.yaml_override);
       setJsValue(profile.js_override);
+      setYamlUrl(profile.yaml_url ?? "");
+      setJsUrl(profile.js_url ?? "");
     } catch (err) {
       setDetail(null);
       setError(toErrorMessage(err));
@@ -183,6 +187,8 @@ export default function Override() {
         name: detail.name,
         yaml_override: yamlValue,
         js_override: jsValue,
+        yaml_url: yamlUrl,
+        js_url: jsUrl,
       });
       setSuccess(`模板「${detail.name}」已保存，需重启代理后生效`);
       await refreshList();
@@ -350,7 +356,9 @@ export default function Override() {
                   </Badge>
                 )}
               </div>
-              <Card.Description>针对该模板独立维护 YAML / JS 复写，保存后需重启代理生效</Card.Description>
+              <Card.Description>
+                针对该模板独立维护本地 YAML / JS 复写与远程 URL（远程为基底、本地叠加），保存后需重启代理生效
+              </Card.Description>
             </Card.Header>
             <Card.Content className="flex flex-col gap-4">
               <Tabs>
@@ -367,6 +375,20 @@ export default function Override() {
                   </Tabs.List>
                 </Tabs.ListContainer>
                 <Tabs.Panel id="yaml" className="flex flex-col gap-2 pt-3">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="yaml-remote-url">远程 URL（可选）</Label>
+                    <Input
+                      id="yaml-remote-url"
+                      aria-label="YAML 复写远程 URL"
+                      value={yamlUrl}
+                      onChange={(event) => setYamlUrl(event.target.value)}
+                      placeholder="https://example.com/remote-override.yaml"
+                      fullWidth
+                    />
+                    <p className="text-xs text-muted">
+                      启动时拉取远程 YAML 作为基底，本地 YAML 深合并覆盖（远程失效自动回退缓存）
+                    </p>
+                  </div>
                   <Editor value={yamlValue} onChange={setYamlValue} language="yaml" placeholder={YAML_PLACEHOLDER} />
                   <p className="text-xs text-muted">
                     {selectedProfile.core_type === "mihomo"
@@ -375,6 +397,21 @@ export default function Override() {
                   </p>
                 </Tabs.Panel>
                 <Tabs.Panel id="js" className="flex flex-col gap-2 pt-3">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="js-remote-url">远程 URL（可选）</Label>
+                    <Input
+                      id="js-remote-url"
+                      aria-label="JS 复写远程 URL"
+                      value={jsUrl}
+                      onChange={(event) => setJsUrl(event.target.value)}
+                      placeholder="https://example.com/remote-override.js"
+                      fullWidth
+                    />
+                    <p className="text-xs text-muted">
+                      启动时拉取远程 JS 复写，远程 main 先执行、本地 main
+                      后执行（本地可见远程结果；远程失效自动回退缓存）
+                    </p>
+                  </div>
                   <Editor value={jsValue} onChange={setJsValue} language="js" placeholder={JS_PLACEHOLDER} />
                   <p className="text-xs text-muted">
                     {selectedProfile.core_type === "singbox"
@@ -389,7 +426,8 @@ export default function Override() {
                 <Alert.Content>
                   <Alert.Title>配置生成链路</Alert.Title>
                   <Alert.Description>
-                    订阅取节点 → 内置模板 → YAML 复写 → JS 复写 → 核心。复写修改需重启代理后生效。
+                    订阅取节点 → 内置模板 → 远程 YAML → 本地 YAML → 远程 JS → 本地 JS →
+                    核心。远程为基底、本地叠加覆盖；远程失效自动回退缓存。复写修改需重启代理后生效。
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
