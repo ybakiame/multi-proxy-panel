@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, Input, Label, Meter, Modal, Switch, Table } from "@heroui/react";
+import { Alert, Button, Card, Chip, Input, Label, Meter, Modal, Switch, Table } from "@heroui/react";
 import {
   addSubscription,
   listSubscriptions,
@@ -7,8 +7,10 @@ import {
   removeSubscription,
   setSubscriptionEnabled,
   toErrorMessage,
+  updateSubscription,
 } from "../api";
-import type { SubscriptionUserInfo, SubscriptionView } from "../api";
+import type { SubscriptionFormat, SubscriptionUserInfo, SubscriptionView } from "../api";
+import { useAppStore } from "../store";
 
 /** 字节数格式化为 GB（保留两位小数）。 */
 function formatGb(bytes: number | null | undefined): string {
@@ -69,6 +71,28 @@ const UA_PRESETS = [
 
 type OpResult = { sub: SubscriptionView; kind: "add" | "refresh" };
 
+/** 订阅格式展示名：ClashYaml → Clash，SingBoxJson → sing-box。 */
+function formatLabel(format: SubscriptionFormat): string {
+  if (format === "ClashYaml") {
+    return "Clash";
+  }
+  if (format === "SingBoxJson") {
+    return "sing-box";
+  }
+  return "ShareLinks";
+}
+
+/** 订阅格式 Chip 配色：ShareLinks 强调色、ClashYaml 警告色、SingBoxJson 成功色。 */
+function formatColor(format: SubscriptionFormat): "accent" | "warning" | "success" {
+  if (format === "ClashYaml") {
+    return "warning";
+  }
+  if (format === "SingBoxJson") {
+    return "success";
+  }
+  return "accent";
+}
+
 export default function Nodes() {
   const [subs, setSubs] = useState<SubscriptionView[]>([]);
   const [busy, setBusy] = useState(false);
@@ -81,6 +105,15 @@ export default function Nodes() {
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
   const [newUa, setNewUa] = useState("");
+
+  // 编辑订阅对话框（名称 / URL / UA 可改，UA 沿用添加快捷 chips）
+  const [editSub, setEditSub] = useState<SubscriptionView | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editUa, setEditUa] = useState("");
+
+  // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示。
+  const clientCoreType = useAppStore((state) => state.config?.core_type);
 
   const refreshSubs = useCallback(async () => {
     try {
@@ -160,6 +193,32 @@ export default function Nodes() {
     }
   };
 
+  const openEdit = (sub: SubscriptionView) => {
+    setEditSub(sub);
+    setEditName(sub.name);
+    setEditUrl(sub.url);
+    setEditUa(sub.user_agent ?? "");
+    setError(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!editSub) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const ua = editUa.trim();
+      await updateSubscription(editSub.id, editName.trim(), editUrl.trim(), ua || undefined);
+      setEditSub(null);
+      await refreshSubs();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const anyEnabled = subs.some((sub) => sub.enabled);
   const formValid = newName.trim().length > 0 && newUrl.trim().length > 0;
 
@@ -189,6 +248,7 @@ export default function Nodes() {
                     <Table.Column isRowHeader>名称</Table.Column>
                     <Table.Column>URL</Table.Column>
                     <Table.Column>节点数</Table.Column>
+                    <Table.Column>格式</Table.Column>
                     <Table.Column>用量</Table.Column>
                     <Table.Column>到期时间</Table.Column>
                     <Table.Column>启用</Table.Column>
@@ -202,6 +262,20 @@ export default function Nodes() {
                           <Table.Cell>{sub.name}</Table.Cell>
                           <Table.Cell className="max-w-[240px] truncate font-mono text-xs">{sub.url}</Table.Cell>
                           <Table.Cell>{sub.node_count > 0 ? sub.node_count : "-"}</Table.Cell>
+                          <Table.Cell>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {sub.format ? (
+                                <Chip size="sm" variant="soft" color={formatColor(sub.format)}>
+                                  {formatLabel(sub.format)}
+                                </Chip>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                              {sub.format === "ClashYaml" && clientCoreType === "singbox" && (
+                                <span className="text-xs text-warning">需 mihomo 核心</span>
+                              )}
+                            </div>
+                          </Table.Cell>
                           <Table.Cell className="min-w-[180px]">
                             <Meter
                               aria-label={`${sub.name} 流量用量`}
@@ -235,6 +309,9 @@ export default function Nodes() {
                           </Table.Cell>
                           <Table.Cell>
                             <div className="flex items-center gap-2">
+                              <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => openEdit(sub)}>
+                                编辑
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -378,6 +455,83 @@ export default function Nodes() {
               </Button>
               <Button variant="primary" isPending={busy} isDisabled={!formValid} onPress={() => void handleAdd()}>
                 添加
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop
+        isOpen={!!editSub}
+        onOpenChange={(open) => {
+          if (!open) setEditSub(null);
+        }}
+      >
+        <Modal.Container>
+          <Modal.Dialog className="sm:max-w-[480px]">
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>编辑订阅</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-edit-name">名称</Label>
+                <Input
+                  id="sub-edit-name"
+                  aria-label="订阅名称"
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  placeholder="我的机场"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-edit-url">URL</Label>
+                <Input
+                  id="sub-edit-url"
+                  aria-label="订阅 URL"
+                  value={editUrl}
+                  onChange={(event) => setEditUrl(event.target.value)}
+                  placeholder="https://example.com/sub"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-edit-ua">User-Agent（可选）</Label>
+                <Input
+                  id="sub-edit-ua"
+                  aria-label="订阅 User-Agent"
+                  value={editUa}
+                  onChange={(event) => setEditUa(event.target.value)}
+                  placeholder="留空使用默认 clash.meta"
+                  fullWidth
+                />
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-xs text-muted">常用：</span>
+                  {UA_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.value}
+                      size="sm"
+                      variant={editUa === preset.value ? "primary" : "secondary"}
+                      onPress={() => setEditUa(preset.value)}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="secondary" onPress={() => setEditSub(null)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                isPending={busy}
+                isDisabled={editName.trim().length === 0 || editUrl.trim().length === 0}
+                onPress={() => void handleEditSave()}
+              >
+                保存
               </Button>
             </Modal.Footer>
           </Modal.Dialog>

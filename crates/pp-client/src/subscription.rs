@@ -54,6 +54,12 @@ pub struct Subscription {
     /// `subscriptions.json`（无此字段）可正常反序列化）。
     #[serde(default)]
     pub user_agent: Option<String>,
+    /// 最近一次 fetch 嗅探出的订阅内容格式（`ShareLinks` / `ClashYaml` /
+    /// `SingBoxJson`）；尚未成功拉取时为 `None`。
+    ///
+    /// `#[serde(default)]` 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
+    #[serde(default)]
+    pub format: Option<SubFormat>,
 }
 
 /// 订阅存储：读写 `data_dir/subscriptions.json`（load / save / add / remove / set_enabled）。
@@ -119,6 +125,7 @@ impl SubscriptionStore {
             node_count: 0,
             error: None,
             user_agent: user_agent.map(str::to_string),
+            format: None,
         };
         subs.push(sub.clone());
         self.save(&subs)?;
@@ -175,13 +182,14 @@ impl SubscriptionStore {
         if url_changed {
             target.userinfo = None;
             target.node_count = 0;
+            target.format = None;
         }
         self.save(&subs)
     }
 }
 
 /// 订阅内容格式（嗅探结果）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubFormat {
     /// 分享链接（base64 或明文行列表）。
     ShareLinks,

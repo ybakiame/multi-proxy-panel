@@ -11,7 +11,7 @@ use pp_client::{
     detect_resource_from_url, fetch_subscription_with_ua, infer_core_type, parse_config_meta,
     resolve_remote_overrides, ClientConfig, ClientCoreInventory, ClientState, ConfigMeta,
     EffectiveOverrides, PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager,
-    RemoteResource, SubContent, Subscription, SubscriptionFetcher, SubscriptionStore,
+    RemoteResource, SubContent, SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
@@ -1333,6 +1333,11 @@ pub struct SubscriptionView {
     pub node_count: u64,
     /// 最近一次 fetch 的错误信息（失败时记录；不阻塞已有数据展示）。
     pub error: Option<String>,
+    /// 最近一次 fetch 嗅探出的订阅内容格式（`ShareLinks` / `ClashYaml` /
+    /// `SingBoxJson`）；未成功拉取时为 `None`。
+    pub format: Option<String>,
+    /// 拉取时使用的请求 User-Agent（`None` / 空串 = 默认 clash.meta）。
+    pub user_agent: Option<String>,
 }
 
 impl SubscriptionView {
@@ -1348,7 +1353,18 @@ impl SubscriptionView {
                 .map(SubscriptionUserInfoView::from_info),
             node_count: sub.node_count,
             error: sub.error.clone(),
+            format: sub.format.map(sub_format_str).map(str::to_string),
+            user_agent: sub.user_agent.clone(),
         }
+    }
+}
+
+/// [`SubFormat`] 的字符串表示（与前端 `SubscriptionFormat` 的联合类型对齐）。
+fn sub_format_str(format: SubFormat) -> &'static str {
+    match format {
+        SubFormat::ShareLinks => "ShareLinks",
+        SubFormat::ClashYaml => "ClashYaml",
+        SubFormat::SingBoxJson => "SingBoxJson",
     }
 }
 
@@ -1382,6 +1398,7 @@ async fn apply_fetch(sub: &mut Subscription, url: &str) {
         Ok(result) => {
             sub.userinfo = result.userinfo;
             sub.node_count = result.singbox_nodes.len() as u64;
+            sub.format = Some(result.format);
             sub.error = None;
         }
         Err(e) => {

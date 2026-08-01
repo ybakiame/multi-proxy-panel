@@ -310,6 +310,9 @@ export interface SubscriptionUserInfo {
   expire: number | null;
 }
 
+/** 订阅内容格式（嗅探结果，与 Rust 侧 `SubFormat` 对齐）。 */
+export type SubscriptionFormat = "ShareLinks" | "ClashYaml" | "SingBoxJson";
+
 /** 一条订阅的对外视图（与 Rust 侧 `SubscriptionView` 对齐）。 */
 export interface SubscriptionView {
   id: string;
@@ -321,6 +324,10 @@ export interface SubscriptionView {
   node_count: number;
   /** 最近一次 fetch 的错误信息（失败时记录；不阻塞已有数据展示）。 */
   error: string | null;
+  /** 最近一次 fetch 嗅探出的订阅内容格式；未成功拉取时为 undefined。 */
+  format?: SubscriptionFormat;
+  /** 拉取时使用的请求 User-Agent（缺省/空串 = 默认 clash.meta）。 */
+  user_agent?: string;
 }
 
 /** 添加订阅的入参。 */
@@ -349,6 +356,16 @@ export function setSubscriptionEnabled(id: string, enabled: boolean): Promise<vo
 
 export function refreshSubscription(id: string): Promise<SubscriptionView> {
   return invoke<SubscriptionView>("refresh_subscription", { id });
+}
+
+/** 更新订阅的 name / url / user_agent（URL 变更时清空上次拉取的缓存）。 */
+export function updateSubscription(
+  id: string,
+  name: string,
+  url: string,
+  userAgent?: string,
+): Promise<SubscriptionView> {
+  return invoke<SubscriptionView>("update_subscription", { id, name, url, userAgent });
 }
 
 /** 核心来源：`downloaded`（已下载）/ `system`（系统探测）。 */
