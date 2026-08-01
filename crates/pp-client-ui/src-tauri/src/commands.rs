@@ -203,35 +203,29 @@ pub async fn save_config(state: State<'_, AppState>, cfg: ClientConfigView) -> R
 /// `ClientState` 注入 [`TauriNotifier`]：脚本 `$notify` / `$notification` 通过
 /// tauri-plugin-notification 发送 OS 桌面通知。
 ///
-/// 状态机的启动流程经 `run_blocking` 在独立线程驱动：`ClientState::start`
-/// 内部 `build_core_config` 的 future 含 rquickjs 非 `Send` 结构，不能直接在
-/// Tauri 命令（要求 `Send` future）中 `await`。
+/// `ClientState::start`（内部 `build_core_config` 的 JS 复写经 pp-script
+/// `ScriptWorker` 驱动）返回 `Send` future，可直接在 Tauri 命令（要求 `Send`
+/// future）中 `await`。
 #[tauri::command]
 pub async fn start_proxy(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ClientStatusView, String> {
-    let client = Arc::clone(&state.client);
-    let data_dir = state.data_dir.clone();
-    let result = run_blocking(move || async move {
-        let mut lock = client.lock().await;
-        if lock.is_none() {
-            let cfg = ClientConfig::load(&data_dir)
-                .map_err(|e| format!("未找到已保存的配置（{e}），请先保存配置"))?;
-            *lock = Some(ClientState::with_notifier(
-                cfg,
-                Arc::new(TauriNotifier::new(app)),
-            ));
-        }
-        let client = lock
-            .as_mut()
-            .ok_or_else(|| "客户端状态初始化失败".to_string())?;
-        client.start().await.map_err(|e| format!("启动失败: {e}"))?;
-        let status = client.status().await;
-        Ok(ClientStatusView::from_status(&status))
-    })
-    .await?;
-    Ok(result)
+    let mut lock = state.client.lock().await;
+    if lock.is_none() {
+        let cfg = ClientConfig::load(&state.data_dir)
+            .map_err(|e| format!("未找到已保存的配置（{e}），请先保存配置"))?;
+        *lock = Some(ClientState::with_notifier(
+            cfg,
+            Arc::new(TauriNotifier::new(app)),
+        ));
+    }
+    let client = lock
+        .as_mut()
+        .ok_or_else(|| "客户端状态初始化失败".to_string())?;
+    client.start().await.map_err(|e| format!("启动失败: {e}"))?;
+    let status = client.status().await;
+    Ok(ClientStatusView::from_status(&status))
 }
 
 /// 停止代理。
@@ -423,9 +417,8 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView
 
 /// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
 ///
-/// 脚本执行由 pp-script 的 `ScriptWorker` 在专有线程驱动（`Send` future）；
-/// 但 `scheduler.run_now` 的 future 含非 `Send` 结构，经 `run_blocking` 在
-/// 独立线程上驱动。
+/// 脚本执行由 pp-script 的 `ScriptWorker` 在专有线程驱动（`Send` future），
+/// `scheduler.run_now` 的 future 亦为 `Send`，可直接在 Tauri 命令中 `await`。
 #[tauri::command]
 pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
     let scheduler = {
@@ -437,15 +430,11 @@ pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String
             .scheduler_handle()
             .ok_or_else(|| "任务调度器未就绪".to_string())?
     };
-    let result = run_blocking(move || async move {
-        let output = scheduler
-            .run_now(&name)
-            .await
-            .map_err(|e| format!("运行任务失败: {e}"))?;
-        Ok(output.0.to_string())
-    })
-    .await?;
-    Ok(result)
+    let output = scheduler
+        .run_now(&name)
+        .await
+        .map_err(|e| format!("运行任务失败: {e}"))?;
+    Ok(output.0.to_string())
 }
 
 /// 导入 QX / Surge / Loon 配置片段：解析后合并写入本地导入缓存
@@ -690,11 +679,11 @@ pub fn set_profile_enabled(
 /// 复写取自 `ProfileStoreV2::active_for`（当前核心启用模板）；无启用模板时预览裸模板。
 #[tauri::command]
 pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
-    let data_dir = state.data_dir.clone();
-    run_blocking(move || preview_config_async(data_dir)).await
+    preview_config_async(state.data_dir.clone()).await
 }
 
-/// 预览的具体实现；future 含非 `Send` 结构，由 `run_blocking` 在独立线程驱动。
+/// 预览的具体实现（`build_core_config` 的 JS 复写经 pp-script `ScriptWorker`
+/// 驱动，future 为 `Send`，可直接在 Tauri 命令中 await）。
 async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, String> {
     let cfg = ClientConfig::load(&data_dir)
         .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
@@ -740,28 +729,6 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
             serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
         }
     }
-}
-
-/// 在独立线程上用 current_thread runtime 驱动非 `Send` 的 async 任务。
-///
-/// rquickjs QuickJS 执行产生的 future 含非 `Send` 结构，不能在 Tauri 命令
-/// （要求 `Send` future）中直接 `await`；按 `pp-script::worker` 的同类绕行：
-/// `spawn_blocking` + 新建 `current_thread` runtime + `block_on`。
-async fn run_blocking<F, Fut, T>(make_fut: F) -> Result<T, String>
-where
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: std::future::Future<Output = Result<T, String>> + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("创建阻塞运行时失败: {e}"))?;
-        rt.block_on(make_fut())
-    })
-    .await
-    .map_err(|e| format!("阻塞任务执行失败: {e}"))?
 }
 
 // ---------- 核心版本管理 ----------

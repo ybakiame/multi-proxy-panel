@@ -10,8 +10,9 @@ use tokio::sync::Mutex;
 pub struct AppState {
     /// 客户端运行状态机（未启动时为 `None`）。
     ///
-    /// 以 `Arc` 持有：部分 Tauri 命令需要把状态机移入独立线程驱动
-    /// （QuickJS 执行 future 非 `Send`，见 `commands::run_blocking`）。
+    /// 以 `Arc` 持有：多 Tauri 命令共享同一状态机；`ClientState::start` 的
+    /// future 为 `Send`（JS 复写经 pp-script `ScriptWorker` 驱动），可直接在
+    /// Tauri 命令中 `await`。
     pub client: Arc<Mutex<Option<ClientState>>>,
     /// 数据目录（配置、证书、核心二进制统一存放于此）。
     pub data_dir: PathBuf,
