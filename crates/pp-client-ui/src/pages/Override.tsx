@@ -5,9 +5,32 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
-import { Alert, Button, Card } from "@heroui/react";
-import { getProfileOverrides, previewCoreConfig, saveProfileOverrides, toErrorMessage } from "../api";
-import type { ProfileOverrides } from "../api";
+import {
+  Alert,
+  AlertDialog,
+  Badge,
+  Button,
+  Card,
+  Chip,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  Tabs,
+} from "@heroui/react";
+import clsx from "clsx";
+import {
+  createProfile,
+  deleteProfile,
+  getProfile,
+  listProfiles,
+  previewCoreConfig,
+  setProfileEnabled,
+  toErrorMessage,
+  updateProfile,
+} from "../api";
+import type { CoreType, ProfileDetailView, ProfileView } from "../api";
 import { useAppStore } from "../store";
 
 const JS_PLACEHOLDER = `function main(config) {
@@ -20,6 +43,17 @@ const YAML_PLACEHOLDER = `# 按 RFC 7386 深合并：对象递归合并，数组
 # 示例：覆盖出站端口
 # mixed-port: 7890
 `;
+
+const CORE_LABELS: Record<CoreType, string> = {
+  singbox: "sing-box",
+  mihomo: "mihomo",
+};
+
+/** 核心类型 Chip 配色：sing-box 用强调色、mihomo 用警告色区分。 */
+const CORE_CHIP_COLORS: Record<CoreType, "accent" | "warning"> = {
+  singbox: "accent",
+  mihomo: "warning",
+};
 
 type EditorLanguage = "yaml" | "json" | "js";
 
@@ -71,7 +105,10 @@ function Editor({ value, onChange, language, placeholder, height = "320px", read
 }
 
 export default function Override() {
-  const coreType = useAppStore((state) => state.config?.core_type);
+  const clientCoreType = useAppStore((state) => state.config?.core_type);
+  const [profiles, setProfiles] = useState<ProfileView[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ProfileDetailView | null>(null);
   const [yamlValue, setYamlValue] = useState("");
   const [jsValue, setJsValue] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
@@ -79,11 +116,20 @@ export default function Override() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  // 新建模板对话框
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newCoreType, setNewCoreType] = useState<CoreType>("singbox");
+
+  // 删除确认
+  const [deleteTarget, setDeleteTarget] = useState<ProfileView | null>(null);
+
+  const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
+  const previewLanguage: EditorLanguage = clientCoreType === "mihomo" ? "yaml" : "json";
+
+  const refreshList = useCallback(async () => {
     try {
-      const overrides = await getProfileOverrides();
-      setYamlValue(overrides.yaml_override);
-      setJsValue(overrides.js_override);
+      setProfiles(await listProfiles());
       setError(null);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -91,17 +137,55 @@ export default function Override() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshList();
+  }, [refreshList]);
 
-  const handleSave = async () => {
+  const selectProfile = useCallback(async (id: string) => {
+    setSelectedId(id);
+    setPreview(null);
+    setError(null);
+    setSuccess(null);
+    try {
+      const profile = await getProfile(id);
+      setDetail(profile);
+      setYamlValue(profile.yaml_override);
+      setJsValue(profile.js_override);
+    } catch (err) {
+      setDetail(null);
+      setError(toErrorMessage(err));
+    }
+  }, []);
+
+  /** 启用圆点：未启用 → 启用（同核心单选）；已启用 → 停用。 */
+  const handleToggleEnable = async (profile: ProfileView) => {
     setBusy(true);
     setError(null);
     setSuccess(null);
-    const overrides: ProfileOverrides = { yaml_override: yamlValue, js_override: jsValue };
     try {
-      await saveProfileOverrides(overrides);
-      setSuccess("复写已保存，需重启代理后生效");
+      await setProfileEnabled(profile.id, !profile.enabled);
+      setSuccess(profile.enabled ? `模板「${profile.name}」已停用` : `模板「${profile.name}」已启用，需重启代理后生效`);
+      await refreshList();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!detail) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await updateProfile({
+        id: detail.id,
+        name: detail.name,
+        yaml_override: yamlValue,
+        js_override: jsValue,
+      });
+      setSuccess(`模板「${detail.name}」已保存，需重启代理后生效`);
+      await refreshList();
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -122,88 +206,245 @@ export default function Override() {
     }
   };
 
-  const previewLanguage: EditorLanguage = coreType === "mihomo" ? "yaml" : "json";
+  const handleCreate = async () => {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const created = await createProfile({ name: newName.trim(), core_type: newCoreType });
+      setSuccess(`模板「${created.name}」已创建`);
+      setCreateOpen(false);
+      setNewName("");
+      setNewCoreType("singbox");
+      await refreshList();
+      void selectProfile(created.id);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteProfile(deleteTarget.id);
+      setSuccess(`模板「${deleteTarget.name}」已删除`);
+      if (selectedId === deleteTarget.id) {
+        setSelectedId(null);
+        setDetail(null);
+        setPreview(null);
+      }
+      setDeleteTarget(null);
+      await refreshList();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">复写</h1>
-        <p className="text-sm text-muted">对生成的核心配置做 YAML 深合并与 JS 脚本复写</p>
+        <p className="text-sm text-muted">多模板管理：同一核心可维护多个复写模板，仅启用一个生效</p>
       </div>
 
-      <Alert status="accent">
-        <Alert.Indicator />
-        <Alert.Content>
-          <Alert.Title>配置生成链路</Alert.Title>
-          <Alert.Description>
-            订阅取节点 → 内置模板 → YAML 复写 → JS 复写 → 核心。订阅内容只用于提取代理节点，
-            实际运行配置由本地模板生成，复写在此基础上生效。
-          </Alert.Description>
-        </Alert.Content>
-      </Alert>
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        {/* 左侧：模板列表 */}
+        <Card className="w-full shrink-0 lg:w-80">
+          <Card.Header>
+            <Card.Title>复写模板</Card.Title>
+            <Card.Description>点击左侧圆点启用；同核心单选，已启用的可再次点击停用</Card.Description>
+          </Card.Header>
+          <Card.Content className="flex flex-col gap-2">
+            {profiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                <span className="text-sm text-muted">暂无模板</span>
+                <span className="text-xs text-muted/80">点击下方「新建模板」创建首个复写模板</span>
+              </div>
+            ) : (
+              profiles.map((profile) => {
+                const isSelected = profile.id === selectedId;
+                return (
+                  <div
+                    key={profile.id}
+                    className={clsx(
+                      "flex items-center gap-3 rounded-lg border p-3 transition-colors",
+                      isSelected ? "border-accent/60 bg-accent/5" : "border-border/70 bg-surface-secondary/40",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      aria-label={profile.enabled ? `停用 ${profile.name}` : `启用 ${profile.name}`}
+                      aria-pressed={profile.enabled}
+                      disabled={busy}
+                      onClick={() => void handleToggleEnable(profile)}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {profile.enabled && <span className="size-2.5 rounded-full bg-success" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void selectProfile(profile.id)}
+                      className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
+                    >
+                      <span
+                        className={clsx(
+                          "truncate text-sm",
+                          isSelected ? "font-medium text-foreground" : "text-foreground/90",
+                        )}
+                      >
+                        {profile.name}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[profile.core_type]}>
+                          {CORE_LABELS[profile.core_type]}
+                        </Chip>
+                        <span className={clsx("text-xs", profile.enabled ? "text-success" : "text-muted")}>
+                          {profile.enabled ? "启用中" : "已停用"}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={busy}
+                        onPress={() => void selectProfile(profile.id)}
+                      >
+                        编辑
+                      </Button>
+                      <Button size="sm" variant="tertiary" isDisabled={busy} onPress={() => setDeleteTarget(profile)}>
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </Card.Content>
+          <Card.Footer>
+            <Button variant="primary" fullWidth isDisabled={busy} onPress={() => setCreateOpen(true)}>
+              新建模板
+            </Button>
+          </Card.Footer>
+        </Card>
 
-      <Card>
-        <Card.Header>
-          <Card.Title>YAML 复写</Card.Title>
-          <Card.Description>按 RFC 7386 深合并：对象递归合并，数组与标量整体替换。留空表示不启用。</Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-4">
-          <Editor value={yamlValue} onChange={setYamlValue} language="yaml" placeholder={YAML_PLACEHOLDER} />
-        </Card.Content>
-        <Card.Footer>
-          <Button variant="primary" isPending={busy} onPress={() => void handleSave()}>
-            保存
-          </Button>
-        </Card.Footer>
-      </Card>
+        {/* 右侧：编辑器区 */}
+        {selectedProfile ? (
+          <Card key={selectedProfile.id} className="min-w-0 flex-1">
+            <Card.Header>
+              <div className="flex flex-wrap items-center gap-2">
+                <Card.Title>{selectedProfile.name}</Card.Title>
+                <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[selectedProfile.core_type]}>
+                  {CORE_LABELS[selectedProfile.core_type]}
+                </Chip>
+                {selectedProfile.enabled && (
+                  <Badge color="success" variant="soft" size="sm">
+                    <Badge.Label>启用中</Badge.Label>
+                  </Badge>
+                )}
+              </div>
+              <Card.Description>针对该模板独立维护 YAML / JS 复写，保存后需重启代理生效</Card.Description>
+            </Card.Header>
+            <Card.Content className="flex flex-col gap-4">
+              <Tabs>
+                <Tabs.ListContainer>
+                  <Tabs.List aria-label="复写编辑器">
+                    <Tabs.Tab id="yaml">
+                      YAML 复写
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                    <Tabs.Tab id="js">
+                      JS 复写
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                  </Tabs.List>
+                </Tabs.ListContainer>
+                <Tabs.Panel id="yaml" className="flex flex-col gap-2 pt-3">
+                  <Editor value={yamlValue} onChange={setYamlValue} language="yaml" placeholder={YAML_PLACEHOLDER} />
+                  <p className="text-xs text-muted">
+                    {selectedProfile.core_type === "mihomo"
+                      ? "mihomo 推荐优先使用 YAML 复写做深合并覆盖；留空表示不启用。"
+                      : "按 RFC 7386 深合并：对象递归合并，数组与标量整体替换；留空表示不启用。"}
+                  </p>
+                </Tabs.Panel>
+                <Tabs.Panel id="js" className="flex flex-col gap-2 pt-3">
+                  <Editor value={jsValue} onChange={setJsValue} language="js" placeholder={JS_PLACEHOLDER} />
+                  <p className="text-xs text-muted">
+                    {selectedProfile.core_type === "singbox"
+                      ? "sing-box 推荐优先使用 JS 复写做程序化调整；需定义 function main(config) 并返回 config；留空表示不启用。"
+                      : "双核心通用：需定义 function main(config) 并返回 config；留空表示不启用。"}
+                  </p>
+                </Tabs.Panel>
+              </Tabs>
 
-      <Card>
-        <Card.Header>
-          <Card.Title>JS 复写</Card.Title>
-          <Card.Description>
-            同步纯函数 <code className="font-mono text-xs">function main(config) {"{ ... return config; }"}</code>， 在
-            YAML 复写之后执行。留空表示不启用。
-          </Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-4">
-          <Editor value={jsValue} onChange={setJsValue} language="js" placeholder={JS_PLACEHOLDER} />
-        </Card.Content>
-        <Card.Footer>
-          <Button variant="primary" isPending={busy} onPress={() => void handleSave()}>
-            保存
-          </Button>
-        </Card.Footer>
-      </Card>
+              <Alert status="accent">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>配置生成链路</Alert.Title>
+                  <Alert.Description>
+                    订阅取节点 → 内置模板 → YAML 复写 → JS 复写 → 核心。复写修改需重启代理后生效。
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
 
-      <Card>
-        <Card.Header>
-          <Card.Title>生效配置预览</Card.Title>
-          <Card.Description>
-            按当前保存的复写拉取订阅并生成最终核心配置（不含 MITM 链路）。若尚未保存复写，预览使用空复写。
-          </Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-4">
-          {preview === null ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-              <span className="text-sm text-muted">尚未生成预览</span>
-              <span className="text-xs text-muted/80">点击「生成预览」查看最终核心配置（只读）</span>
-            </div>
-          ) : (
-            <Editor value={preview} onChange={() => undefined} language={previewLanguage} height="480px" readOnly />
-          )}
-        </Card.Content>
-        <Card.Footer>
-          <Button variant="secondary" isPending={busy} onPress={() => void handlePreview()}>
-            生成预览
-          </Button>
-        </Card.Footer>
-      </Card>
+              <Card className="border border-border/70 bg-surface-secondary/40">
+                <Card.Header>
+                  <Card.Title>生效配置预览</Card.Title>
+                  <Card.Description>
+                    按当前客户端核心类型拉取订阅并生成最终核心配置（不含 MITM 链路）；无启用模板时预览裸模板
+                  </Card.Description>
+                </Card.Header>
+                <Card.Content>
+                  {preview === null ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                      <span className="text-sm text-muted">尚未生成预览</span>
+                      <span className="text-xs text-muted/80">点击「生成预览」查看最终核心配置（只读）</span>
+                    </div>
+                  ) : (
+                    <Editor
+                      value={preview}
+                      onChange={() => undefined}
+                      language={previewLanguage}
+                      height="480px"
+                      readOnly
+                    />
+                  )}
+                </Card.Content>
+              </Card>
+            </Card.Content>
+            <Card.Footer>
+              <div className="flex w-full items-center justify-end gap-3">
+                <Button variant="secondary" isPending={busy} onPress={() => void handlePreview()}>
+                  生成预览
+                </Button>
+                <Button variant="primary" isPending={busy} onPress={() => void handleSave()}>
+                  保存
+                </Button>
+              </div>
+            </Card.Footer>
+          </Card>
+        ) : (
+          <Card className="flex min-h-[420px] flex-1 items-center justify-center">
+            <Card.Content className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+              <span className="text-sm text-muted">选择一个模板开始编辑</span>
+              <span className="text-xs text-muted/80">从左侧列表选择模板，或点击「新建模板」创建</span>
+            </Card.Content>
+          </Card>
+        )}
+      </div>
 
       {success && (
         <Alert status="success">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Title>保存成功</Alert.Title>
+            <Alert.Title>操作成功</Alert.Title>
             <Alert.Description>{success}</Alert.Description>
           </Alert.Content>
         </Alert>
@@ -218,6 +459,100 @@ export default function Override() {
           </Alert.Content>
         </Alert>
       )}
+
+      {/* 新建模板 */}
+      <Modal.Backdrop isOpen={createOpen} onOpenChange={setCreateOpen}>
+        <Modal.Container>
+          <Modal.Dialog className="sm:max-w-[480px]">
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>新建复写模板</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="profile-name">名称</Label>
+                <Input
+                  id="profile-name"
+                  aria-label="模板名称"
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  placeholder="例如：香港-去广告"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label>核心类型</Label>
+                <Select
+                  aria-label="核心类型"
+                  placeholder="选择核心类型"
+                  value={newCoreType}
+                  onChange={(value) => setNewCoreType((value as CoreType | null) ?? "singbox")}
+                  fullWidth
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="singbox" textValue="sing-box">
+                        sing-box
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                      <ListBox.Item id="mihomo" textValue="mihomo">
+                        mihomo
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="secondary" onPress={() => setCreateOpen(false)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                isPending={busy}
+                isDisabled={newName.trim().length === 0}
+                onPress={() => void handleCreate()}
+              >
+                创建
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      {/* 删除确认 */}
+      <AlertDialog.Backdrop
+        isOpen={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog>
+            <AlertDialog.CloseTrigger />
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>删除模板</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>确定删除模板「{deleteTarget?.name}」吗？该操作不可撤销。</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" onPress={() => setDeleteTarget(null)}>
+                取消
+              </Button>
+              <Button slot="close" variant="danger" isPending={busy} onPress={() => void handleDelete()}>
+                删除
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }
