@@ -8,6 +8,7 @@ pub mod error;
 pub mod host;
 pub mod scheduler;
 pub mod types;
+pub mod worker;
 
 pub use dialect::*;
 pub use engine::*;
@@ -16,3 +17,4 @@ pub use error::*;
 pub use host::*;
 pub use scheduler::*;
 pub use types::*;
+pub use worker::*;
