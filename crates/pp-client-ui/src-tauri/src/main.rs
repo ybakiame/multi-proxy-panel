@@ -53,6 +53,7 @@ fn main() {
             commands::refresh_subscription,
             commands::list_cores,
             commands::list_remote_core_versions,
+            commands::list_downloaded_versions,
             commands::download_core,
             commands::set_active_core,
             commands::detect_system_cores,

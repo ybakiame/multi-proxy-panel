@@ -1129,6 +1129,25 @@ pub async fn list_remote_core_versions(
         .map_err(|e| format!("拉取远端版本失败: {e}"))
 }
 
+/// 列出指定核心类型已下载的版本（版本目录扫描，语义化版本倒序）的具体实现。
+fn list_downloaded_versions_impl(
+    data_dir: &std::path::Path,
+    core_type: String,
+) -> Result<Vec<String>, String> {
+    let ct = core_type_from_str(&core_type)?;
+    let inv = pp_client::ClientCoreInventory::new(data_dir.to_path_buf());
+    Ok(inv.list_downloaded_versions(ct))
+}
+
+/// 列出指定核心类型已下载的版本（版本目录扫描，语义化版本倒序）。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_downloaded_versions(
+    state: State<'_, AppState>,
+    core_type: String,
+) -> Result<Vec<String>, String> {
+    list_downloaded_versions_impl(&state.data_dir, core_type)
+}
+
 /// 下载指定版本核心并返回其视图。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn download_core(
@@ -1650,5 +1669,27 @@ mod tests {
             saved.core_binary,
             dir.path().join("cores/sing-box/1.13.15/sing-box")
         );
+    }
+
+    // ---------- 项 2：list_downloaded_versions 命令层 ----------
+
+    #[test]
+    fn list_downloaded_versions_lists_semantic_descending() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        write_core(dir.path(), "sing-box", "1.14.0-beta.4");
+        write_core(dir.path(), "sing-box", "1.14.0");
+        write_core(dir.path(), "mihomo", "1.19.29");
+
+        // 语义化倒序：1.14.0 > 1.14.0-beta.4 > 1.13.15。
+        let versions =
+            list_downloaded_versions_impl(dir.path(), "singbox".to_string()).unwrap();
+        assert_eq!(versions, vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]);
+
+        let mihomo = list_downloaded_versions_impl(dir.path(), "mihomo".to_string()).unwrap();
+        assert_eq!(mihomo, vec!["1.19.29"]);
+
+        // 无效 core_type 字符串报错。
+        assert!(list_downloaded_versions_impl(dir.path(), "bogus".to_string()).is_err());
     }
 }

@@ -117,6 +117,19 @@ impl ClientCoreInventory {
         out
     }
 
+    /// 扫描 `cores_dir/<type>/<version>/` 版本目录，列出该核心类型已下载的版本号，
+    /// 按语义化版本倒序（最新在前，预发布低于同基础稳定版）。
+    pub fn list_downloaded_versions(&self, core_type: CoreType) -> Vec<String> {
+        let mut versions: Vec<String> = self
+            .list_installed()
+            .into_iter()
+            .filter(|c| c.core_type == core_type && c.source == CoreSource::Downloaded)
+            .map(|c| c.version)
+            .collect();
+        versions.sort_by(|a, b| compare_core_versions(b, a));
+        versions
+    }
+
     /// 列举远端最近 10 个发布版本（去 `v` 前缀）。
     pub async fn list_remote_versions(&self, core_type: CoreType) -> PanelResult<Vec<String>> {
         let (owner, repo) = core_type.github_repo();
@@ -820,8 +833,39 @@ mod tests {
         assert_eq!(mh.source, CoreSource::Downloaded);
     }
 
-    // ---------- ② list_remote_versions：mock releases API ----------
+    #[test]
+    fn list_downloaded_versions_sorts_semantically_descending() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
 
+        // 语义化倒序：1.14.0 > 1.14.0-beta.4 > 1.13.15。
+        for v in ["1.13.15", "1.14.0-beta.4", "1.14.0"] {
+            write_executable(
+                &dir.path().join(format!("cores/sing-box/{v}/sing-box")),
+                b"fake",
+            );
+        }
+        // 无二进制文件的版本目录不计入。
+        std::fs::create_dir_all(dir.path().join("cores/sing-box/1.12.0")).unwrap();
+        // 其他核心类型不计入。
+        write_executable(&dir.path().join("cores/mihomo/1.19.29/mihomo"), b"fake");
+
+        assert_eq!(
+            inv.list_downloaded_versions(CoreType::SingBox),
+            vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]
+        );
+        assert_eq!(
+            inv.list_downloaded_versions(CoreType::Mihomo),
+            vec!["1.19.29"]
+        );
+        assert!(
+            inv.list_downloaded_versions(CoreType::SingBox)
+                .into_iter()
+                .all(|v| !v.starts_with("1.12"))
+        );
+    }
+
+    // ---------- ② list_remote_versions：mock releases API ----------
     #[tokio::test]
     async fn list_remote_versions_parses_both_cores() {
         let singbox_releases = serde_json::json!([
