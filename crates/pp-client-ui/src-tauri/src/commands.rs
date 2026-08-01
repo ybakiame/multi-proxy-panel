@@ -4,6 +4,7 @@
 //! 前端；内部类型与视图的转换通过字段映射与 `serde_json` 往返完成。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use pp_client::{ClientConfig, ClientState, RemoteManager, RemoteResource};
 use pp_common::CoreType;
@@ -13,6 +14,36 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::state::AppState;
+
+/// 通过 tauri-plugin-notification 发送 OS 桌面通知的 [`pp_script::Notifier`]。
+///
+/// 通知发送失败时回退为 `tracing::warn` 日志，不阻断脚本执行。
+pub struct TauriNotifier {
+    app: tauri::AppHandle,
+}
+
+impl TauriNotifier {
+    /// 使用应用句柄创建通知器。
+    pub fn new(app: tauri::AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl pp_script::Notifier for TauriNotifier {
+    fn notify(&self, title: &str, subtitle: &str, body: &str, _options: Option<serde_json::Value>) {
+        use tauri_plugin_notification::NotificationExt;
+        if let Err(e) = self
+            .app
+            .notification()
+            .builder()
+            .title(title)
+            .body(format!("{subtitle}\n{body}"))
+            .show()
+        {
+            tracing::warn!(error = %e, "发送桌面通知失败");
+        }
+    }
+}
 
 /// 客户端配置的对外视图（serde 简单结构，避免直接暴露内部类型）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,13 +193,22 @@ pub async fn save_config(state: State<'_, AppState>, cfg: ClientConfigView) -> R
 }
 
 /// 启动代理（无运行状态时先基于已保存配置新建）。
+///
+/// `ClientState` 注入 [`TauriNotifier`]：脚本 `$notify` / `$notification` 通过
+/// tauri-plugin-notification 发送 OS 桌面通知。
 #[tauri::command]
-pub async fn start_proxy(state: State<'_, AppState>) -> Result<ClientStatusView, String> {
+pub async fn start_proxy(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<ClientStatusView, String> {
     let mut lock = state.client.lock().await;
     if lock.is_none() {
         let cfg = ClientConfig::load(&state.data_dir)
             .map_err(|e| format!("未找到已保存的配置（{e}），请先保存配置"))?;
-        *lock = Some(ClientState::new(cfg));
+        *lock = Some(ClientState::with_notifier(
+            cfg,
+            Arc::new(TauriNotifier::new(app)),
+        ));
     }
     let client = lock.as_mut().ok_or("客户端状态初始化失败")?;
     client.start().await.map_err(|e| format!("启动失败: {e}"))?;
