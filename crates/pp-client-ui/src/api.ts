@@ -54,16 +54,16 @@ export interface RemoteResource {
   url: string;
   /** `Script`（纯 JS 脚本） / `Snippet`（配置片段）。 */
   kind: RemoteKind;
-  /** 脚本方言：`Surge` / `QuantumultX` / `Loon`。 */
+  /** 脚本方言：`Surge` / `Loon`（UI 已移除 QuantumultX 选项）。 */
   dialect: string;
   /** 资源描述（null = 未配置）。 */
   description: string | null;
   /** 更新间隔（秒）。 */
   update_interval_secs: number;
   enabled: boolean;
-  /** 用户为模块参数配置的值 `[key, value]`（对应 `#!arguments=` 声明的键；旧清单缺省为空）。 */
+  /** 用户为模块参数配置的值 `[key, value]`（对应 `#!arguments=` 声明的键）。 */
   argument_values: [string, string][];
-  /** 资源图标 URL（可选；嗅探结果预填）。 */
+  /** 资源图标 URL（null = 未配置）。 */
   icon: string | null;
 }
 
@@ -87,6 +87,13 @@ export interface TaskScriptView {
   last_error: string | null;
 }
 
+/** 模块参数声明（`#!arguments=` 键/默认值/描述，与 Rust 侧 `ArgSpecView` 对齐）。 */
+export interface ArgSpecView {
+  key: string;
+  default_value: string;
+  description: string | null;
+}
+
 /** 配置头 `#!key=value` 元数据（与 Rust 侧 `ConfigMetaView` 对齐）。 */
 export interface ConfigMetaView {
   name: string | null;
@@ -96,6 +103,8 @@ export interface ConfigMetaView {
   date: string | null;
   category: string | null;
   open_url: string | null;
+  /** 模块参数声明（`#!arguments=` / `#!arguments-desc=`；无声明时为空列表）。 */
+  arguments: ArgSpecView[];
 }
 
 /** `detect_remote` 的嗅探结果（kind/dialect 按后缀判定，meta 为 Snippet 拉取解析的配置头）。 */

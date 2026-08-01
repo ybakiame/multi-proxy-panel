@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Avatar,
   Button,
   Card,
   Input,
@@ -24,11 +25,15 @@ import {
   runTask,
   toErrorMessage,
 } from "../api";
-import type { DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
+import type { ArgSpecView, DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
 
-/** 远程资源添加表单的方言选项（与 `RemoteResourceView.dialect` 的 serde 表示一致）。 */
+/**
+ * 远程资源添加表单的方言选项（UI 已放弃 QuantumultX，仅保留 Surge / Loon）。
+ *
+ * `detect_remote` 对 `.conf` / `.js` 仍会判定为 QuantumultX，前端在填充时
+ * 通过 {@link normalizeDialect} 归一为 Loon（Loon 同时注入 QX 与 Surge 两套 API）。
+ */
 const REMOTE_DIALECT_OPTIONS = [
-  { id: "QuantumultX", label: "QuantumultX" },
   { id: "Surge", label: "Surge" },
   { id: "Loon", label: "Loon" },
 ] as const;
@@ -39,6 +44,20 @@ const IMPORT_DIALECT_OPTIONS = [
   { id: "surge", label: "Surge" },
   { id: "loon", label: "Loon" },
 ] as const;
+
+/** 添加表单里一条模块参数的编辑态（值由用户填写）。 */
+interface ArgEdit {
+  key: string;
+  default_value: string;
+  description: string | null;
+  value: string;
+}
+
+/** 编辑 Modal 中一条参数值的编辑态。 */
+interface ArgValueEdit {
+  key: string;
+  value: string;
+}
 
 /** 将 `detect_remote` 返回的类型字符串归一为选项值（大小写防御）。 */
 function normalizeKind(kind: string | null): string | null {
@@ -53,6 +72,18 @@ function normalizeKind(kind: string | null): string | null {
     return "Snippet";
   }
   return kind.trim();
+}
+
+/** 将 `detect_remote` 返回的方言归一为 UI 选项：QuantumultX → Loon（已放弃 QX）。 */
+function normalizeDialect(dialect: string | null | undefined): string | null {
+  if (!dialect) {
+    return null;
+  }
+  const trimmed = dialect.trim();
+  if (trimmed === "QuantumultX" || trimmed.toLowerCase() === "quantumultx") {
+    return "Loon";
+  }
+  return trimmed;
 }
 
 /** 从 URL 派生资源名：取路径末段文件名并去掉常见后缀（与后端 `derive_name_from_url` 一致）。 */
@@ -114,8 +145,15 @@ export default function Scripts() {
   const [detectInfo, setDetectInfo] = useState<string | null>(null);
   const [newIcon, setNewIcon] = useState<string | null>(null);
   const [newIconFailed, setNewIconFailed] = useState(false);
+  // 嗅探解析出的模块参数声明，值由用户填写，随 add_remote 以 argument_values 提交。
+  const [argEdits, setArgEdits] = useState<ArgEdit[]>([]);
   // 已嗅探过的 URL：避免失焦与「嗅探」按钮同时触发时重复拉取。
   const lastDetectedUrlRef = useRef("");
+
+  // 已添加资源的模块参数编辑对话框
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRemote, setEditRemote] = useState<RemoteResource | null>(null);
+  const [editArgs, setEditArgs] = useState<ArgValueEdit[]>([]);
 
   // 配置导入
   const [importText, setImportText] = useState("");
@@ -157,24 +195,44 @@ export default function Scripts() {
     try {
       const result: DetectRemoteView = await detectRemote(url);
       const kind = normalizeKind(result.kind);
+      const dialect = normalizeDialect(result.dialect);
       if (kind) {
         setNewKind(kind);
       }
-      if (result.dialect) {
-        setNewDialect(result.dialect);
+      if (dialect) {
+        setNewDialect(dialect);
       }
-      // 名称仅在用户未填写时填充：优先 meta.name，其次从 URL 派生（脚本类无 meta 时也能预填）。
+      // 名称仅在用户未填写时填充：优先 meta.name，其次从 URL 派生。
       setNewName((prev) => (prev.trim() !== "" ? prev : result.meta?.name?.trim() || deriveNameFromUrl(url)));
       // 描述仅在用户未填写时填充。
       setNewDescription((prev) => (prev.trim() !== "" ? prev : (result.meta?.desc?.trim() ?? "")));
       if (result.meta) {
         setNewIcon(result.meta.icon ?? null);
         setNewIconFailed(false);
+        setArgEdits(
+          (result.meta.arguments ?? []).map((arg: ArgSpecView) => ({
+            key: arg.key,
+            default_value: arg.default_value,
+            description: arg.description,
+            value: "",
+          })),
+        );
+      }
+      // 汇总识别结果提示。
+      const parts: string[] = [];
+      if (kind) {
+        parts.push(kind === "Script" ? "脚本" : "片段");
+      }
+      if (dialect) {
+        parts.push(dialect);
+      }
+      if (result.meta?.arguments?.length) {
+        parts.push(`${result.meta.arguments.length} 个模块参数`);
       }
       if (result.meta?.name) {
-        setDetectInfo(`已识别：${result.meta.name}`);
-      } else if (result.kind || result.dialect) {
-        setDetectInfo(`已识别类型：${kind === "Script" ? "脚本" : "片段"} / ${result.dialect}`);
+        setDetectInfo(`已识别：${result.meta.name}${parts.length ? `（${parts.join(" / ")}）` : ""}`);
+      } else if (parts.length > 0) {
+        setDetectInfo(`已识别类型：${parts.join(" / ")}`);
       } else {
         setDetectInfo("未识别出类型与元数据，可手动填写");
       }
@@ -199,7 +257,12 @@ export default function Scripts() {
     setNewIcon(null);
     setNewIconFailed(false);
     setDetectInfo(null);
+    setArgEdits([]);
     lastDetectedUrlRef.current = "";
+  }, []);
+
+  const handleArgChange = useCallback((key: string, value: string) => {
+    setArgEdits((prev) => prev.map((arg) => (arg.key === key ? { ...arg, value } : arg)));
   }, []);
 
   const handleAdd = async () => {
@@ -216,7 +279,9 @@ export default function Scripts() {
         update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
         enabled: true,
         icon: newIcon,
-        argument_values: [],
+        argument_values: argEdits
+          .filter((arg) => arg.value.trim() !== "")
+          .map((arg) => [arg.key, arg.value.trim()] as [string, string]),
       });
       setAddOpen(false);
       resetAddForm();
@@ -252,6 +317,45 @@ export default function Scripts() {
     } catch (err) {
       setError(toErrorMessage(err));
       await refreshRemotes();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 打开已添加资源的模块参数编辑对话框（名称/URL/类型/方言不可改，提示删除后重新添加）。 */
+  const handleOpenEdit = (remote: RemoteResource) => {
+    setEditRemote(remote);
+    setEditArgs(
+      remote.argument_values.map(([key, value]) => ({
+        key,
+        value,
+      })),
+    );
+    setError(null);
+    setEditOpen(true);
+  };
+
+  /** 保存模块参数：remove + add 原地更新 argument_values（无 update 命令，顺序会移到末尾）。 */
+  const handleEditSave = async () => {
+    if (!editRemote) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const next: RemoteResource = {
+        ...editRemote,
+        argument_values: editArgs
+          .filter((arg) => arg.value.trim() !== "")
+          .map((arg) => [arg.key, arg.value.trim()] as [string, string]),
+      };
+      await removeRemote(next.name);
+      await addRemote(next);
+      setEditOpen(false);
+      setEditRemote(null);
+      await refreshRemotes();
+    } catch (err) {
+      setError(toErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -339,10 +443,10 @@ export default function Scripts() {
                   <Table.ScrollContainer>
                     <Table.Content aria-label="远程资源" className="min-w-[720px]">
                       <Table.Header>
+                        <Table.Column>图标</Table.Column>
                         <Table.Column isRowHeader>名称</Table.Column>
                         <Table.Column>描述</Table.Column>
                         <Table.Column>类型</Table.Column>
-                        <Table.Column>URL</Table.Column>
                         <Table.Column>更新间隔</Table.Column>
                         <Table.Column>启用</Table.Column>
                         <Table.Column>操作</Table.Column>
@@ -350,10 +454,21 @@ export default function Scripts() {
                       <Table.Body>
                         {remotes.map((remote) => (
                           <Table.Row key={remote.name}>
+                            <Table.Cell>
+                              <Avatar size="sm" className="h-6 w-6">
+                                {remote.icon ? <Avatar.Image src={remote.icon} alt={`${remote.name} 图标`} /> : null}
+                                <Avatar.Fallback color="accent">
+                                  {(remote.name.charAt(0) || "?").toUpperCase()}
+                                </Avatar.Fallback>
+                              </Avatar>
+                            </Table.Cell>
                             <Table.Cell>{remote.name}</Table.Cell>
                             <Table.Cell className="max-w-[200px] truncate">{remote.description ?? "-"}</Table.Cell>
-                            <Table.Cell>{remote.kind === "Script" ? "脚本" : "片段"}</Table.Cell>
-                            <Table.Cell className="max-w-[240px] truncate font-mono text-xs">{remote.url}</Table.Cell>
+                            <Table.Cell>
+                              {remote.kind === "Script"
+                                ? "脚本"
+                                : `片段 / ${normalizeDialect(remote.dialect) ?? remote.dialect}`}
+                            </Table.Cell>
                             <Table.Cell>{formatInterval(remote.update_interval_secs)}</Table.Cell>
                             <Table.Cell>
                               <Switch
@@ -370,14 +485,24 @@ export default function Scripts() {
                               </Switch>
                             </Table.Cell>
                             <Table.Cell>
-                              <Button
-                                size="sm"
-                                variant="tertiary"
-                                isDisabled={busy}
-                                onPress={() => void handleRemove(remote.name)}
-                              >
-                                删除
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="tertiary"
+                                  isDisabled={busy}
+                                  onPress={() => handleOpenEdit(remote)}
+                                >
+                                  参数
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="tertiary"
+                                  isDisabled={busy}
+                                  onPress={() => void handleRemove(remote.name)}
+                                >
+                                  删除
+                                </Button>
+                              </div>
                             </Table.Cell>
                           </Table.Row>
                         ))}
@@ -563,7 +688,7 @@ export default function Scripts() {
               <Alert.Content>
                 <Alert.Title>导入完成</Alert.Title>
                 <Alert.Description>
-                  重写 {importResult.rewrites}、脚本 {importResult.scripts}、任务 {importResult.tasks}、主机名{" "}
+                  重写 {importResult.rewrites}、脚本 {importResult.scripts}、任务 {importResult.tasks}、 主机名{" "}
                   {importResult.hostnames}
                   {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
                 </Alert.Description>
@@ -718,6 +843,26 @@ export default function Scripts() {
                   fullWidth
                 />
               </div>
+              {argEdits.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <Label>模块参数</Label>
+                  {argEdits.map((arg) => (
+                    <div key={arg.key} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-xs font-medium">{arg.key}</span>
+                        {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
+                      </div>
+                      <Input
+                        aria-label={`参数 ${arg.key}`}
+                        value={arg.value}
+                        onChange={(event) => handleArgChange(arg.key, event.target.value)}
+                        placeholder={arg.default_value ? `默认：${arg.default_value}` : "填写参数值（可选）"}
+                        fullWidth
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="secondary" onPress={() => setAddOpen(false)}>
@@ -730,6 +875,59 @@ export default function Scripts() {
                 onPress={() => void handleAdd()}
               >
                 添加
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={editOpen} onOpenChange={setEditOpen}>
+        <Modal.Container>
+          <Modal.Dialog className="sm:max-w-[480px]">
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>编辑模块参数</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="flex flex-col gap-4">
+              <div className="flex items-center gap-2">
+                <Label>资源</Label>
+                <span className="truncate text-sm font-medium">{editRemote?.name ?? "-"}</span>
+              </div>
+              {editArgs.length === 0 ? (
+                <p className="text-sm text-muted">
+                  该资源未声明模块参数（<code className="font-mono">#!arguments=</code>）。
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {editArgs.map((arg) => (
+                    <div key={arg.key} className="flex flex-col gap-1">
+                      <Label htmlFor={`edit-arg-${arg.key}`}>{arg.key}</Label>
+                      <Input
+                        id={`edit-arg-${arg.key}`}
+                        aria-label={`参数 ${arg.key}`}
+                        value={arg.value}
+                        onChange={(event) =>
+                          setEditArgs((prev) =>
+                            prev.map((item) => (item.key === arg.key ? { ...item, value: event.target.value } : item)),
+                          )
+                        }
+                        placeholder="填写参数值（留空使用默认值）"
+                        fullWidth
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted">
+                仅支持编辑模块参数值；名称 / URL / 类型 / 方言如需修改，请「删除后重新添加」。
+              </p>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="secondary" onPress={() => setEditOpen(false)}>
+                取消
+              </Button>
+              <Button variant="primary" isPending={busy} onPress={() => void handleEditSave()}>
+                保存
               </Button>
             </Modal.Footer>
           </Modal.Dialog>
