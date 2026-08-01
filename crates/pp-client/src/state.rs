@@ -123,6 +123,15 @@ impl ClientState {
     /// 系统代理（始终指向核心 mixed 主入口，MITM 挂在核心之后由核心路由规则分发）。
     /// Profile 构建失败时尚未启动任何组件，无需回滚。
     pub async fn start(&mut self) -> PanelResult<()> {
+        // 总是从磁盘重新加载最新配置：设置页即改即存（8eab048）只写盘
+        // client.json，本实例可能持有旧快照；直接用缓存的 config 启动会让
+        // 已保存的设置（如 TUN 开关）不生效。data_dir 由应用状态决定，以
+        // 实例当前值为准（防 client.json 中的旧路径覆盖）。
+        let data_dir = self.config.data_dir.clone();
+        let mut loaded = ClientConfig::load(&data_dir)?;
+        loaded.data_dir = data_dir;
+        self.config = loaded;
+
         tracing::info!("客户端启动：解析订阅");
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
 
@@ -549,13 +558,16 @@ mod tests {
     }
 
     fn test_config(dir: &TempDir, hub_url: String) -> ClientConfig {
-        ClientConfig::new(
+        let cfg = ClientConfig::new(
             dir.path().to_path_buf(),
             hub_url,
             "tok",
             CoreType::SingBox,
             fake_core_script(dir),
-        )
+        );
+        // start 现在总是从磁盘 reload 配置：测试配置必须先落盘 client.json。
+        cfg.save().unwrap();
+        cfg
     }
 
     /// 假核心脚本必须能被 CoreManager 真实拉起/停止，否则回滚测试不具代表性。
@@ -578,6 +590,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = test_config(&dir, format!("http://{addr}"));
         cfg.system_proxy_enabled = true;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -603,6 +616,7 @@ mod tests {
         let mut cfg = test_config(&dir, format!("http://{addr}"));
         cfg.system_proxy_enabled = true;
         cfg.mitm_enabled = true;
+        cfg.save().unwrap();
         // ca_dir 被普通文件占位 → FileCaStore 无法写 CA → build_mitm_proxy 失败。
         std::fs::write(dir.path().join("certs"), b"i am a file").unwrap();
 
@@ -695,6 +709,7 @@ mod tests {
 
         let mut cfg = test_config(&dir, base);
         cfg.mitm_enabled = true;
+        cfg.save().unwrap();
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
         state.start().await.unwrap();
@@ -725,6 +740,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = test_config(&dir, format!("http://{addr}"));
         cfg.core_type = CoreType::Mihomo;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -760,6 +776,7 @@ mod tests {
         );
         cfg.mitm_enabled = false;
         cfg.system_proxy_enabled = true;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -815,6 +832,7 @@ mod tests {
             fake_core_script(&dir),
         );
         cfg.mitm_enabled = false;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -858,6 +876,7 @@ mod tests {
         );
         cfg.mitm_enabled = true;
         cfg.system_proxy_enabled = true;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -966,6 +985,7 @@ mod tests {
             core_bin,
         );
         cfg.mitm_enabled = true;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -1046,6 +1066,7 @@ mod tests {
         let mut cfg = test_config(&dir, format!("http://{addr}"));
         cfg.mitm_enabled = true;
         cfg.system_proxy_enabled = true;
+        cfg.save().unwrap();
 
         let mock = Arc::new(MockSystemProxy::new());
         let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -1080,6 +1101,7 @@ mod tests {
 
         let mut cfg = test_config(&dir, base);
         cfg.mitm_enabled = true;
+        cfg.save().unwrap();
         let notifier = Arc::new(RecordingNotifier::new());
         let mut state = ClientState::with_notifier(cfg, notifier.clone());
         state.start().await.unwrap();
@@ -1104,5 +1126,62 @@ mod tests {
         let mut state = ClientState::new(test_config(&dir, String::new()));
         let fut = state.start();
         assert_send(&fut);
+    }
+
+    /// 项 1 回归：start 总是从磁盘重新加载配置。
+    ///
+    /// 磁盘 client.json `tun_enabled=false`，但实例缓存旧快照 `tun_enabled=true`
+    /// （模拟 UI 即改即存前已创建的 `ClientState`）；start 后核心收到的合成配置
+    /// 必须不含 tun 入站（用户实测「设置中关闭 TUN，启动仍注入 tun-in」）。
+    #[tokio::test]
+    async fn start_reloads_disk_config_so_tun_toggle_takes_effect() {
+        let body = r#"{
+            "log": {"level": "info"},
+            "outbounds": [
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+                  "uuid": "12345678-1234-1234-1234-123456789012",
+                  "tls": { "enabled": true, "server_name": "example.com" } }
+            ],
+            "route": { "final": "direct" }
+        }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        // 磁盘配置：TUN 已关闭（用户实测场景）。
+        let capture = dir.path().join("core-config-capture.json");
+        let core_bin = fake_core_capturing_args(&dir, &capture);
+        let mut disk = ClientConfig::new(
+            dir.path().to_path_buf(),
+            format!("http://{addr}"),
+            "tok",
+            CoreType::SingBox,
+            core_bin,
+        );
+        disk.tun_enabled = false;
+        disk.save().unwrap();
+
+        // 缓存的旧快照：TUN 仍开启（模拟 ClientState 在用户关闭 TUN 前已创建）。
+        let mut stale = disk.clone();
+        stale.tun_enabled = true;
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(stale, mock.clone());
+        state.start().await.unwrap();
+
+        let mut attempts = 0;
+        while !capture.exists() && attempts < 100 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            attempts += 1;
+        }
+        assert!(capture.exists(), "假核心应已复制合成配置");
+        let core_config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
+        let inbounds = core_config["inbounds"].as_array().unwrap();
+        assert!(
+            !inbounds.iter().any(|i| i["type"] == "tun"),
+            "磁盘 tun_enabled=false 时不应注入 tun 入站: {core_config}"
+        );
+
+        state.stop().await;
     }
 }
