@@ -9,6 +9,7 @@
 
 pub mod config;
 pub mod core_config;
+pub mod cores;
 pub mod http_exec;
 pub mod import;
 pub mod mitm;
@@ -23,6 +24,7 @@ pub mod sysproxy;
 
 pub use config::*;
 pub use core_config::*;
+pub use cores::*;
 pub use http_exec::*;
 pub use import::*;
 pub use mitm::*;
