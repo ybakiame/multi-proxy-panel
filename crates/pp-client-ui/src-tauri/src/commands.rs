@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::{
-    build_core_config, compose_mihomo_config, compose_singbox_config, fetch_subscription,
+    build_core_config, compose_mihomo_config, compose_singbox_config, fetch_subscription_with_ua,
     ClientConfig, ClientState, Profile, ProfileStoreV2, RemoteManager, RemoteResource, SubContent,
     Subscription, SubscriptionFetcher, SubscriptionStore,
 };
@@ -938,6 +938,8 @@ impl SubscriptionView {
 pub struct AddSubscriptionInput {
     pub name: String,
     pub url: String,
+    /// 请求 User-Agent；`None` / 空串使用默认 `clash.meta`。
+    pub user_agent: Option<String>,
 }
 
 /// 校验订阅 URL 必须为 http/https。
@@ -955,9 +957,9 @@ fn parse_subscription_id(id: &str) -> Result<Uuid, String> {
 }
 
 /// 把一次 fetch 结果合并进订阅（成功更新 userinfo / 节点数并清空 error；
-/// 失败仅记录 error，保留旧数据）。
+/// 失败仅记录 error，保留旧数据）。拉取 UA 取订阅条目配置（`None` → 默认 clash.meta）。
 async fn apply_fetch(sub: &mut Subscription, url: &str) {
-    match fetch_subscription(url).await {
+    match fetch_subscription_with_ua(url, sub.user_agent.as_deref()).await {
         Ok(result) => {
             sub.userinfo = result.userinfo;
             sub.node_count = result.singbox_nodes.len() as u64;
@@ -1002,10 +1004,16 @@ pub async fn add_subscription(
     }
     let url = input.url.trim().to_string();
     validate_subscription_url(&url)?;
+    // 空串 / 纯空白 UA 归一化为 None（使用默认 clash.meta）。
+    let ua = input
+        .user_agent
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     let store = SubscriptionStore::new(state.data_dir.clone());
     let mut sub = store
-        .add(&name, &url, true)
+        .add(&name, &url, true, ua)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
     apply_fetch(&mut sub, &url).await;
     update_subscription(&store, &sub)?;

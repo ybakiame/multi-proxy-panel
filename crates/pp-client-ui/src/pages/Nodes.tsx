@@ -59,6 +59,14 @@ function usageColor(percent: number): "accent" | "warning" | "danger" {
   return "accent";
 }
 
+/** 常用 UA 快捷选择（空串 = 默认 clash.meta）。 */
+const UA_PRESETS = [
+  { value: "", label: "默认" },
+  { value: "clash.meta", label: "clash.meta" },
+  { value: "clash-verge", label: "clash-verge" },
+  { value: "sing-box", label: "sing-box" },
+];
+
 type OpResult = { sub: SubscriptionView; kind: "add" | "refresh" };
 
 export default function Nodes() {
@@ -72,6 +80,7 @@ export default function Nodes() {
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
+  const [newUa, setNewUa] = useState("");
 
   const refreshSubs = useCallback(async () => {
     try {
@@ -91,11 +100,17 @@ export default function Nodes() {
     setError(null);
     setResult(null);
     try {
-      const sub = await addSubscription({ name: newName.trim(), url: newUrl.trim() });
+      const ua = newUa.trim();
+      const sub = await addSubscription({
+        name: newName.trim(),
+        url: newUrl.trim(),
+        user_agent: ua || undefined,
+      });
       setResult({ sub, kind: "add" });
       setAddOpen(false);
       setNewName("");
       setNewUrl("");
+      setNewUa("");
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -331,6 +346,30 @@ export default function Nodes() {
                   placeholder="https://example.com/sub"
                   fullWidth
                 />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-ua">User-Agent（可选）</Label>
+                <Input
+                  id="sub-ua"
+                  aria-label="订阅 User-Agent"
+                  value={newUa}
+                  onChange={(event) => setNewUa(event.target.value)}
+                  placeholder="留空使用默认 clash.meta"
+                  fullWidth
+                />
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-xs text-muted">常用：</span>
+                  {UA_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.value}
+                      size="sm"
+                      variant={newUa === preset.value ? "primary" : "secondary"}
+                      onPress={() => setNewUa(preset.value)}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </Modal.Body>
             <Modal.Footer>

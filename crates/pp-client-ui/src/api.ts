@@ -246,6 +246,8 @@ export interface SubscriptionView {
 export interface AddSubscriptionInput {
   name: string;
   url: string;
+  /** 请求 User-Agent；缺省/空串使用默认 `clash.meta`。 */
+  user_agent?: string;
 }
 
 export function listSubscriptions(): Promise<SubscriptionView[]> {
