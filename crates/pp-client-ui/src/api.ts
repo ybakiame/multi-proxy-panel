@@ -90,6 +90,14 @@ export interface ImportSummary {
   warnings: string[];
 }
 
+/** Profile 复写配置（与 Rust 侧 `ProfileOverridesView` 对齐；空串 = 未启用）。 */
+export interface ProfileOverrides {
+  /** YAML 深合并复写（RFC 7386 式）。 */
+  yaml_override: string;
+  /** JS 复写（同步纯函数 `function main(config){...; return config}`）。 */
+  js_override: string;
+}
+
 export function getConfig(): Promise<ClientConfig> {
   return invoke<ClientConfig>("get_config");
 }
@@ -140,6 +148,21 @@ export function runTask(name: string): Promise<string> {
 
 export function importConfig(content: string, dialect: string): Promise<ImportSummary> {
   return invoke<ImportSummary>("import_config", { content, dialect });
+}
+
+/** 读取 Profile 复写配置（不存在时返回空串默认）。 */
+export function getProfileOverrides(): Promise<ProfileOverrides> {
+  return invoke<ProfileOverrides>("get_profile_overrides");
+}
+
+/** 保存 Profile 复写配置（YAML/JS 校验失败时被命令层拒绝）。 */
+export function saveProfileOverrides(overrides: ProfileOverrides): Promise<void> {
+  return invoke<void>("save_profile_overrides", { ov: overrides });
+}
+
+/** 生成生效配置预览（sing-box 为 JSON、mihomo 为 YAML 文本）。 */
+export function previewCoreConfig(): Promise<string> {
+  return invoke<string>("preview_core_config");
 }
 
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */

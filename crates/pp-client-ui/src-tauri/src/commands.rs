@@ -6,7 +6,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use pp_client::{ClientConfig, ClientState, RemoteManager, RemoteResource};
+use pp_client::{
+    build_core_config, compose_mihomo_config, compose_singbox_config, ClientConfig, ClientState,
+    ProfileOverrides, ProfileStore, RemoteManager, RemoteResource, SubContent, SubscriptionFetcher,
+};
 use pp_common::CoreType;
 use pp_mitm::TrafficRecorder;
 use pp_script::{ScriptDialect, TaskScriptView};
@@ -197,24 +200,36 @@ pub async fn save_config(state: State<'_, AppState>, cfg: ClientConfigView) -> R
 ///
 /// `ClientState` 注入 [`TauriNotifier`]：脚本 `$notify` / `$notification` 通过
 /// tauri-plugin-notification 发送 OS 桌面通知。
+///
+/// 状态机的启动流程经 `run_blocking` 在独立线程驱动：`ClientState::start`
+/// 内部 `build_core_config` 的 future 含 rquickjs 非 `Send` 结构，不能直接在
+/// Tauri 命令（要求 `Send` future）中 `await`。
 #[tauri::command]
 pub async fn start_proxy(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ClientStatusView, String> {
-    let mut lock = state.client.lock().await;
-    if lock.is_none() {
-        let cfg = ClientConfig::load(&state.data_dir)
-            .map_err(|e| format!("未找到已保存的配置（{e}），请先保存配置"))?;
-        *lock = Some(ClientState::with_notifier(
-            cfg,
-            Arc::new(TauriNotifier::new(app)),
-        ));
-    }
-    let client = lock.as_mut().ok_or("客户端状态初始化失败")?;
-    client.start().await.map_err(|e| format!("启动失败: {e}"))?;
-    let status = client.status().await;
-    Ok(ClientStatusView::from_status(&status))
+    let client = Arc::clone(&state.client);
+    let data_dir = state.data_dir.clone();
+    let result = run_blocking(move || async move {
+        let mut lock = client.lock().await;
+        if lock.is_none() {
+            let cfg = ClientConfig::load(&data_dir)
+                .map_err(|e| format!("未找到已保存的配置（{e}），请先保存配置"))?;
+            *lock = Some(ClientState::with_notifier(
+                cfg,
+                Arc::new(TauriNotifier::new(app)),
+            ));
+        }
+        let client = lock
+            .as_mut()
+            .ok_or_else(|| "客户端状态初始化失败".to_string())?;
+        client.start().await.map_err(|e| format!("启动失败: {e}"))?;
+        let status = client.status().await;
+        Ok(ClientStatusView::from_status(&status))
+    })
+    .await?;
+    Ok(result)
 }
 
 /// 停止代理。
@@ -406,8 +421,9 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView
 
 /// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
 ///
-/// 脚本执行由 pp-script 的 `ScriptWorker` 在专有线程驱动（`Send` future），
-/// 直接 `await` 调度器即可，无需 `spawn_blocking` 绕行。
+/// 脚本执行由 pp-script 的 `ScriptWorker` 在专有线程驱动（`Send` future）；
+/// 但 `scheduler.run_now` 的 future 含非 `Send` 结构，经 `run_blocking` 在
+/// 独立线程上驱动。
 #[tauri::command]
 pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
     let scheduler = {
@@ -419,11 +435,15 @@ pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String
             .scheduler_handle()
             .ok_or_else(|| "任务调度器未就绪".to_string())?
     };
-    let output = scheduler
-        .run_now(&name)
-        .await
-        .map_err(|e| format!("运行任务失败: {e}"))?;
-    Ok(output.0.to_string())
+    let result = run_blocking(move || async move {
+        let output = scheduler
+            .run_now(&name)
+            .await
+            .map_err(|e| format!("运行任务失败: {e}"))?;
+        Ok(output.0.to_string())
+    })
+    .await?;
+    Ok(result)
 }
 
 /// 导入 QX / Surge / Loon 配置片段：解析后合并写入本地导入缓存
@@ -457,4 +477,154 @@ pub async fn import_config(
         hostnames: summary.hostnames,
         warnings: summary.warnings,
     })
+}
+
+/// Profile 复写配置的对外视图（与前端 `ProfileOverrides` TS 类型逐字段对齐）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProfileOverridesView {
+    /// YAML 深合并复写（空串 = 未启用）。
+    pub yaml_override: String,
+    /// JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。
+    pub js_override: String,
+}
+
+impl ProfileOverridesView {
+    fn from_overrides(ov: &ProfileOverrides) -> Self {
+        Self {
+            yaml_override: ov.yaml_override.clone(),
+            js_override: ov.js_override.clone(),
+        }
+    }
+}
+
+/// 读取 Profile 复写配置；`data_dir/profile.json` 不存在或损坏时返回空串默认。
+#[tauri::command]
+pub fn get_profile_overrides(state: State<'_, AppState>) -> Result<ProfileOverridesView, String> {
+    let store = ProfileStore::new(state.data_dir.clone());
+    let overrides = store.load().map_err(|e| format!("读取复写配置失败: {e}"))?;
+    Ok(ProfileOverridesView::from_overrides(&overrides))
+}
+
+/// 校验 YAML 复写：非空时必须是可解析的 YAML mapping（与 `apply_yaml_override` 一致）。
+fn validate_yaml_override(yaml: &str) -> Result<(), String> {
+    if yaml.trim().is_empty() {
+        return Ok(());
+    }
+    let patch: serde_json::Value =
+        serde_yaml::from_str(yaml).map_err(|e| format!("YAML 复写解析失败: {e}"))?;
+    if patch.is_null() {
+        return Ok(());
+    }
+    if !patch.is_object() {
+        return Err("YAML 复写必须是 mapping（对象）".to_string());
+    }
+    Ok(())
+}
+
+/// 粗检 JS 复写是否定义了 `main` 函数（同步纯函数模式）。
+fn validate_js_override(js: &str) -> Result<(), String> {
+    if js.trim().is_empty() {
+        return Ok(());
+    }
+    if !js.contains("function main") && !js.contains("main(") {
+        return Err(
+            "JS 复写需定义 main 函数（function main(config) { ... return config; }）".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// 保存 Profile 复写配置到 `data_dir/profile.json`（校验失败不落盘）。
+#[tauri::command]
+pub fn save_profile_overrides(
+    state: State<'_, AppState>,
+    ov: ProfileOverridesView,
+) -> Result<(), String> {
+    validate_yaml_override(&ov.yaml_override)?;
+    validate_js_override(&ov.js_override)?;
+    let store = ProfileStore::new(state.data_dir.clone());
+    let overrides = ProfileOverrides {
+        yaml_override: ov.yaml_override,
+        js_override: ov.js_override,
+    };
+    store
+        .save(&overrides)
+        .map_err(|e| format!("保存复写配置失败: {e}"))
+}
+
+/// 生成生效配置预览：拉取订阅 → 内置模板 → YAML/JS 复写 → 核心合成（不含 MITM 链路）。
+///
+/// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
+/// 需要已保存的客户端配置（`data_dir/client.json`，含 hub_url / sub_token / core_type）。
+#[tauri::command]
+pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
+    let data_dir = state.data_dir.clone();
+    run_blocking(move || preview_config_async(data_dir)).await
+}
+
+/// 预览的具体实现；future 含非 `Send` 结构，由 `run_blocking` 在独立线程驱动。
+async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, String> {
+    let cfg = ClientConfig::load(&data_dir)
+        .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
+    let store = ProfileStore::new(data_dir);
+    let overrides = store.load().map_err(|e| format!("读取复写配置失败: {e}"))?;
+
+    let fetcher = SubscriptionFetcher::new();
+    let sub_content = match cfg.core_type {
+        CoreType::SingBox => {
+            let (config, _) = fetcher
+                .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
+                .await
+                .map_err(|e| format!("拉取订阅失败: {e}"))?;
+            SubContent::SingBox(config)
+        }
+        CoreType::Mihomo => {
+            let (yaml, _) = fetcher
+                .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
+                .await
+                .map_err(|e| format!("拉取订阅失败: {e}"))?;
+            SubContent::Mihomo(yaml)
+        }
+    };
+
+    let profile_cfg = build_core_config(cfg.core_type, &sub_content, &overrides)
+        .await
+        .map_err(|e| format!("生成配置失败: {e}"))?;
+
+    match cfg.core_type {
+        CoreType::SingBox => {
+            let value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
+                .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;
+            serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
+        }
+        CoreType::Mihomo => {
+            let yaml =
+                serde_yaml::to_string(&profile_cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
+            let value = compose_mihomo_config(&yaml, cfg.mixed_port, None)
+                .map_err(|e| format!("合成 mihomo 配置失败: {e}"))?;
+            serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
+        }
+    }
+}
+
+/// 在独立线程上用 current_thread runtime 驱动非 `Send` 的 async 任务。
+///
+/// rquickjs QuickJS 执行产生的 future 含非 `Send` 结构，不能在 Tauri 命令
+/// （要求 `Send` future）中直接 `await`；按 `pp-script::worker` 的同类绕行：
+/// `spawn_blocking` + 新建 `current_thread` runtime + `block_on`。
+async fn run_blocking<F, Fut, T>(make_fut: F) -> Result<T, String>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<T, String>> + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("创建阻塞运行时失败: {e}"))?;
+        rt.block_on(make_fut())
+    })
+    .await
+    .map_err(|e| format!("阻塞任务执行失败: {e}"))?
 }

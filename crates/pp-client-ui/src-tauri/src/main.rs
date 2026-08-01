@@ -38,6 +38,9 @@ fn main() {
             commands::list_tasks,
             commands::run_task,
             commands::import_config,
+            commands::get_profile_overrides,
+            commands::save_profile_overrides,
+            commands::preview_core_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
