@@ -162,7 +162,7 @@ fn merge_argument_descriptions(args: &mut Vec<ArgSpec>, value: &str) {
     }
 }
 
-/// 提取 `#!arguments-desc=` 的 `(key, desc)` 键值对（严格 JSON → 宽松语法回退）。
+/// 提取 `#!arguments-desc=` 的 `(key, desc)` 键值对（严格 JSON → 宽松语法 → 朴素语法回退）。
 fn parse_desc_pairs(value: &str) -> Vec<(String, String)> {
     // 1. 严格 JSON 对象：`{"key": "desc", ...}`。
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(value) {
@@ -189,6 +189,60 @@ fn parse_desc_pairs(value: &str) -> Vec<(String, String)> {
             .map(|quoted| quoted[1..quoted.len().saturating_sub(1)].to_string())
             .unwrap_or_default();
         out.push((key, desc));
+    }
+    if !out.is_empty() {
+        return out;
+    }
+    // 3. 朴素语法：`key:描述`（无 `{}`、无引号，描述可含空格/中文，逗号分隔多个）。
+    //    `regex` crate 不支持 look-around，故手工扫描：仅在逗号后紧跟 `key:` 时才切分，
+    //    避免描述内的逗号误切。
+    parse_naive_desc_pairs(value)
+}
+
+/// 朴素 `#!arguments-desc=` 语法 `key:描述[, key2:描述2, ...]` 的键值对提取。
+///
+/// 描述无引号、可含中文/空格/冒号/逗号；仅在逗号后紧跟合法键 + 冒号的位置切分新段。
+fn parse_naive_desc_pairs(value: &str) -> Vec<(String, String)> {
+    fn is_valid_key(s: &str) -> bool {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+    }
+
+    let mut out = Vec::new();
+    let mut rest = value.trim();
+    loop {
+        let seg = rest.trim_start();
+        if seg.is_empty() {
+            break;
+        }
+        let Some(colon) = seg.find(':') else { break };
+        let key = &seg[..colon];
+        if !is_valid_key(key) {
+            break;
+        }
+        let desc_src = &seg[colon + 1..];
+        // 定位描述终点：下一个逗号且其后紧跟 `key:` 的位置；无则延伸到末尾。
+        let mut seg_end = desc_src.len();
+        let mut next_start: Option<usize> = None;
+        for (offset, c) in desc_src.char_indices() {
+            if c == ',' {
+                let after = desc_src[offset + 1..].trim_start();
+                if let Some(c2) = after.find(':') {
+                    if is_valid_key(&after[..c2]) {
+                        seg_end = offset;
+                        next_start = Some(offset + 1);
+                        break;
+                    }
+                }
+            }
+        }
+        let desc = desc_src[..seg_end].trim();
+        out.push((key.to_string(), desc.to_string()));
+        match next_start {
+            Some(ns) => rest = &desc_src[ns..],
+            None => break,
+        }
     }
     out
 }
@@ -293,6 +347,8 @@ fn strip_quotes(s: &str) -> &str {
 }
 
 /// 解析 `key=value` 值（`true` / `1` / `yes` 视为真，默认假）。
+///
+/// Surge 的 `requires-body` 同时接受布尔与数字形式：`true/false` 与 `1/0` 均正确映射。
 fn parse_bool(v: Option<&String>) -> bool {
     matches!(
         v.map(|s| s.trim().to_ascii_lowercase()).as_deref(),
@@ -300,8 +356,20 @@ fn parse_bool(v: Option<&String>) -> bool {
     )
 }
 
-fn parse_usize(v: Option<&String>) -> Option<usize> {
-    v.and_then(|s| s.trim().parse().ok())
+/// Surge `max-size` 无限制值映射的近似上限（10MB）。
+///
+/// Surge 语义中 `max-size=-1` / `max-size=0` 表示「不限制 body 大小」；pp-mitm 的
+/// `max_size` 为 `usize`，直接映射 `usize::MAX` 会破坏内部缓冲语义，故折中映射为
+/// 10MB 上限（足够承载绝大多数真实响应体）。
+const MAX_SIZE_UNLIMITED: usize = 10 * 1024 * 1024;
+
+/// 解析 Surge `max-size`：`-1` / `0`（unlimited）→ [`MAX_SIZE_UNLIMITED`]，正常数字原样解析。
+fn parse_max_size(v: Option<&String>) -> Option<usize> {
+    let s = v?.trim();
+    match s {
+        "-1" | "0" => Some(MAX_SIZE_UNLIMITED),
+        s => s.parse::<usize>().ok(),
+    }
 }
 
 /// 解析逗号分隔的 `key=value` 参数列表；key 归一化为小写，value 去引号。
@@ -612,7 +680,8 @@ fn parse_surge_script(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &s
                     .get("requires-body")
                     .or_else(|| params.get("require-body")),
             );
-            let max_size = parse_usize(params.get("max-size")).unwrap_or(131072);
+            // `max-size=-1` / `0`（Surge unlimited）映射为 10MB 上限，见 [`parse_max_size`]。
+            let max_size = parse_max_size(params.get("max-size")).unwrap_or(131072);
             // Surge/Loon 脚本行参数 `argument={key}|...`（模板占位运行时替换）。
             let argument = params.get("argument").cloned();
             cfg.script_urls
@@ -1208,6 +1277,134 @@ plain = type=http-request, pattern=^https://example\.com/, script-path=https://e
         assert_eq!(cfg.scripts[1].argument, None);
         // meta 同步解析出 arguments。
         assert_eq!(cfg.meta.arguments.len(), 2);
+    }
+
+    /// ① `#!arguments-desc=` 朴素语法 `key:描述`（无 `{}`、无引号，可含中文/空格，
+    /// 逗号分隔多个）→ ArgSpec.description 正确填充。
+    #[test]
+    fn config_meta_parses_arguments_desc_naive_syntax() {
+        // 单条朴素语法（BaiDuTieBa 真实样例）。
+        let content = r#"#!arguments=per_filter_video:0
+#!arguments-desc=per_filter_video:设置为1则推荐页不展示视频贴
+"#;
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.arguments.len(), 1);
+        let spec = &meta.arguments[0];
+        assert_eq!(spec.key, "per_filter_video");
+        assert_eq!(spec.default_value, "0");
+        assert_eq!(
+            spec.description.as_deref(),
+            Some("设置为1则推荐页不展示视频贴")
+        );
+
+        // 多条逗号分隔：描述内的逗号不误切，仅 `,key:` 处切分。
+        let content2 = r#"#!arguments=per_filter_video:0, banner:1
+#!arguments-desc=per_filter_video:推荐页关闭视频贴, banner:顶部横幅开关
+"#;
+        let meta2 = parse_config_meta(content2);
+        assert_eq!(meta2.arguments.len(), 2);
+        let pf = meta2
+            .arguments
+            .iter()
+            .find(|a| a.key == "per_filter_video")
+            .unwrap();
+        assert_eq!(pf.default_value, "0");
+        assert_eq!(pf.description.as_deref(), Some("推荐页关闭视频贴"));
+        let banner = meta2.arguments.iter().find(|a| a.key == "banner").unwrap();
+        assert_eq!(banner.default_value, "1");
+        assert_eq!(banner.description.as_deref(), Some("顶部横幅开关"));
+
+        // 描述含逗号（非 `key:` 前缀）不切分。
+        let content3 = "#!arguments-desc=per_filter_video:推荐页关闭视频,弹窗\n";
+        let meta3 = parse_config_meta(content3);
+        assert_eq!(
+            meta3.arguments[0].description.as_deref(),
+            Some("推荐页关闭视频,弹窗")
+        );
+    }
+
+    /// ③ Surge `[Script]` 行 `requires-body` 数字形式 `1/0` 与布尔 `true/false` 均正确解析。
+    #[test]
+    fn surge_script_requires_body_accepts_numeric_and_boolean() {
+        let content = r#"
+[Script]
+num1 = type=http-response,pattern=^https://a\.com/,script-path=https://example.com/a.js,requires-body=1
+num0 = type=http-response,pattern=^https://b\.com/,script-path=https://example.com/b.js,requires-body=0
+bt = type=http-response,pattern=^https://c\.com/,script-path=https://example.com/c.js,requires-body=true
+bf = type=http-response,pattern=^https://d\.com/,script-path=https://example.com/d.js,requires-body=false
+none = type=http-response,pattern=^https://e\.com/,script-path=https://example.com/e.js
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(cfg.scripts.len(), 5);
+        assert!(cfg.scripts[0].requires_body, "requires-body=1 → true");
+        assert!(!cfg.scripts[1].requires_body, "requires-body=0 → false");
+        assert!(cfg.scripts[2].requires_body, "requires-body=true → true");
+        assert!(!cfg.scripts[3].requires_body, "requires-body=false → false");
+        assert!(!cfg.scripts[4].requires_body, "缺省 → false");
+    }
+
+    /// ④ Surge `max-size=-1` / `0`（unlimited）映射为 10MB 上限；正常数字原样解析；
+    /// 缺省回退 131072。
+    #[test]
+    fn surge_script_max_size_unlimited_and_normal_values() {
+        let content = r#"
+[Script]
+unlimited = type=http-response,pattern=^https://a\.com/,script-path=https://example.com/a.js,max-size=-1
+zero = type=http-response,pattern=^https://b\.com/,script-path=https://example.com/b.js,max-size=0
+normal = type=http-response,pattern=^https://c\.com/,script-path=https://example.com/c.js,max-size=4096
+default = type=http-response,pattern=^https://d\.com/,script-path=https://example.com/d.js
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+        assert_eq!(cfg.scripts.len(), 4);
+        assert_eq!(
+            cfg.scripts[0].max_size,
+            10 * 1024 * 1024,
+            "max-size=-1 → unlimited"
+        );
+        assert_eq!(
+            cfg.scripts[1].max_size,
+            10 * 1024 * 1024,
+            "max-size=0 → unlimited"
+        );
+        assert_eq!(cfg.scripts[2].max_size, 4096, "正常数字原样");
+        assert_eq!(cfg.scripts[3].max_size, 131072, "缺省回退");
+    }
+
+    /// ①③④ BaiDuTieBa.sgmodule 真实样例整段断言：朴素 desc、三花括号占位原样保留、
+    /// `requires-body=1`、`max-size=-1` 与 pattern 中 `\/(...)` 均正确解析。
+    #[test]
+    fn surge_script_badubatieba_sample_fixture() {
+        let content = r#"#!arguments=per_filter_video:0
+#!arguments-desc=per_filter_video:设置为1则推荐页不展示视频贴
+[Script]
+贴吧proto = type=http-response,pattern=^https?:\/\/(tiebac|c\.tieba)\.baidu\.com\/...$ ,requires-body=1,binary-body-mode=1,max-size=-1,script-path=https://example.com/x.js,argument=per_filter_video_thread={{{per_filter_video}}}
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        // 头部参数：朴素 desc 合并进 ArgSpec。
+        assert_eq!(cfg.meta.arguments.len(), 1);
+        let spec = &cfg.meta.arguments[0];
+        assert_eq!(spec.key, "per_filter_video");
+        assert_eq!(spec.default_value, "0");
+        assert_eq!(
+            spec.description.as_deref(),
+            Some("设置为1则推荐页不展示视频贴")
+        );
+
+        // [Script] 行：requires-body=1 / max-size=-1 / argument 三花括号占位保留原文。
+        assert_eq!(cfg.scripts.len(), 1);
+        assert_eq!(cfg.scripts[0].name, "贴吧proto");
+        assert_eq!(
+            cfg.scripts[0].pattern.as_str(),
+            r"^https?:\/\/(tiebac|c\.tieba)\.baidu\.com\/...$"
+        );
+        assert!(cfg.scripts[0].requires_body);
+        assert_eq!(cfg.scripts[0].max_size, 10 * 1024 * 1024);
+        assert_eq!(
+            cfg.scripts[0].argument.as_deref(),
+            Some("per_filter_video_thread={{{per_filter_video}}}")
+        );
+        assert_eq!(cfg.script_urls[0].1, "https://example.com/x.js");
     }
 
     /// ② QX rewrite 脚本行同样提取 `argument=`。

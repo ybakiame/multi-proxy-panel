@@ -145,26 +145,41 @@ pub struct MergedRemoteConfig {
     pub metas: Vec<ConfigMeta>,
 }
 
-/// 把 Surge/Loon 模块 `argument=` 模板中的 `{key}` 占位替换为具体值。
+/// 把 Surge/Loon 模块 `argument=` 模板中的 `{key}` / `{{{key}}}` 占位替换为具体值。
 ///
 /// 优先级：用户配置值（`user_values`，key→值）→ 参数声明默认值（`defaults`，
-/// key→默认值）→ 无则保留原占位符。返回值即注入 JS `$argument` 的字符串。
+/// key→默认值）→ 无则保留原占位符。`{{{key}}}`（Surge 标准三花括号占位）与 `{key}`
+/// 两种形式均支持，且优先匹配长形式，避免简写替换污染三花括号占位。返回值即注入
+/// JS `$argument` 的字符串。
 pub fn resolve_argument_template(
     template: &str,
     user_values: &HashMap<String, String>,
     defaults: &HashMap<String, String>,
 ) -> String {
+    // 用户值覆盖默认值（键重复时以用户配置为准）。
+    let mut values: HashMap<String, String> = HashMap::new();
+    values.extend(defaults.iter().map(|(k, v)| (k.clone(), v.clone())));
+    values.extend(user_values.iter().map(|(k, v)| (k.clone(), v.clone())));
+
     let mut out = template.to_string();
-    for (key, value) in user_values {
-        out = out.replace(&format!("{{{key}}}"), value);
+    // 先替换长形式 `{{{key}}}`，再替换简写 `{key}`；未声明的占位（无值）保留原样。
+    for (key, value) in &values {
+        out = out.replace(&placeholder(key, true), value);
     }
-    for (key, value) in defaults {
-        out = out.replace(&format!("{{{key}}}"), value);
+    for (key, value) in &values {
+        out = out.replace(&placeholder(key, false), value);
     }
     out
 }
 
-/// 对缓存合并后的脚本钩子规则做 argument 模板替换：`{key}` → 用户值 →
+/// 构造占位符字面量：`triple=true` 生成 `{{{key}}}`（Surge 三花括号标准占位），
+/// 否则生成 `{key}`（简写形式）。
+fn placeholder(key: &str, triple: bool) -> String {
+    let (open, close) = if triple { ("{{{", "}}}") } else { ("{", "}") };
+    format!("{open}{key}{close}")
+}
+
+/// 对缓存合并后的脚本钩子规则做 argument 模板替换：`{key}` / `{{{key}}}` → 用户值 →
 /// 参数声明默认值 → 保留原样（见 [`resolve_argument_template`]）。
 ///
 /// `remotes` 提供用户配置的参数值（[`RemoteResource::argument_values`]），
@@ -1332,6 +1347,56 @@ mod tests {
         assert_eq!(out[1].argument, None);
     }
 
+    /// `resolve_argument_template` 支持 Surge 标准三花括号占位 `{{{key}}}`（优先匹配
+    /// 长形式），同时兼容简写 `{key}`；用户值优先于默认值，未声明占位保留原样。
+    #[test]
+    fn resolve_argument_template_supports_triple_brace_placeholders() {
+        let user_values = HashMap::from([("per_filter_video".to_string(), "1".to_string())]);
+        let defaults = HashMap::from([("per_filter_video".to_string(), "0".to_string())]);
+
+        // 三花括号占位：无用户值 → 默认值 0。
+        assert_eq!(
+            resolve_argument_template(
+                "per_filter_video_thread={{{per_filter_video}}}",
+                &HashMap::new(),
+                &defaults,
+            ),
+            "per_filter_video_thread=0"
+        );
+        // 三花括号占位：用户值覆盖默认值。
+        assert_eq!(
+            resolve_argument_template(
+                "per_filter_video_thread={{{per_filter_video}}}",
+                &user_values,
+                &defaults,
+            ),
+            "per_filter_video_thread=1"
+        );
+        // 长形式优先：`{{{a}}}` 整体替换，不被简写 `{a}` 部分污染。
+        assert_eq!(
+            resolve_argument_template(
+                "{{{a}}}|{a}",
+                &HashMap::new(),
+                &HashMap::from([("a".to_string(), "X".to_string())]),
+            ),
+            "X|X"
+        );
+        // 未声明的三花括号占位保留原样。
+        assert_eq!(
+            resolve_argument_template("{{{missing}}}", &HashMap::new(), &HashMap::new(),),
+            "{{{missing}}}"
+        );
+        // 简写与三花括号共存。
+        assert_eq!(
+            resolve_argument_template(
+                "{server}|{{{token}}}",
+                &HashMap::from([("token".to_string(), "abc".to_string())]),
+                &HashMap::from([("server".to_string(), "api.example.com".to_string())]),
+            ),
+            "api.example.com|abc"
+        );
+    }
+
     /// `RemoteResource` 新增字段（argument_values / icon）经 save → load 往返保留；
     /// 旧清单缺省这些字段（serde default）。
     #[test]
@@ -1413,5 +1478,85 @@ mod tests {
         let server = meta.arguments.iter().find(|a| a.key == "server").unwrap();
         assert_eq!(server.default_value, "api.example.com");
         assert_eq!(server.description.as_deref(), Some("API 服务器"));
+    }
+
+    /// ①③④ BaiDuTieBa 真实样例经 fetch → cache → load → apply 全链路：朴素 desc、
+    /// 数字布尔 requires-body、无限制 max-size、三花括号占位替换为默认值/用户值。
+    #[tokio::test]
+    async fn snippet_badubatieba_sample_roundtrip_and_argument_resolution() {
+        // `argument=` 模板原文含三花括号，用字面量避免 format 转义。
+        let arg_tpl = "per_filter_video_thread={{{per_filter_video}}}";
+        let base = spawn_remote_server(move |base| {
+            format!(
+                "#!arguments=per_filter_video:0\n\
+                 #!arguments-desc=per_filter_video:设置为1则推荐页不展示视频贴\n\
+                 \n\
+                 [Script]\n\
+                 贴吧proto = type=http-response,pattern=^https?:\\/\\/(tiebac|c\\.tieba)\\.baidu\\.com\\/...$ ,requires-body=1,binary-body-mode=1,max-size=-1,script-path={base}/hook.js,argument={arg_tpl}\n"
+            )
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let remotes = vec![RemoteResource {
+            name: "baidu".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            ..RemoteResource::default()
+        }];
+
+        let report = manager.fetch_all(&remotes).await;
+        assert_eq!(report.fetched, 1);
+        assert!(
+            report.warnings.is_empty(),
+            "warnings: {:?}",
+            report.warnings
+        );
+
+        // meta：朴素 desc 与默认值合并进 ArgSpec。
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.metas.len(), 1);
+        let spec = &merged.metas[0].arguments[0];
+        assert_eq!(spec.key, "per_filter_video");
+        assert_eq!(spec.default_value, "0");
+        assert_eq!(
+            spec.description.as_deref(),
+            Some("设置为1则推荐页不展示视频贴")
+        );
+
+        // 脚本钩子：requires-body=1 / max-size=-1 / 三花括号占位原文。
+        assert_eq!(merged.scripts.len(), 1);
+        assert_eq!(merged.scripts[0].name, "贴吧proto");
+        assert!(merged.scripts[0].requires_body);
+        assert_eq!(merged.scripts[0].max_size, 10 * 1024 * 1024);
+        assert_eq!(
+            merged.scripts[0].argument.as_deref(),
+            Some("per_filter_video_thread={{{per_filter_video}}}")
+        );
+
+        // apply_argument_templates：无用户值 → 默认值 0。
+        let resolved = apply_argument_templates(merged.scripts, &merged.metas, &remotes);
+        assert_eq!(
+            resolved[0].argument.as_deref(),
+            Some("per_filter_video_thread=0")
+        );
+
+        // 用户配置值 1 → 覆盖默认值。
+        let remotes_with_value = vec![RemoteResource {
+            name: "baidu".into(),
+            url: format!("{base}/snippet"),
+            kind: RemoteKind::Snippet,
+            dialect: ScriptDialect::Surge,
+            argument_values: vec![("per_filter_video".to_string(), "1".to_string())],
+            ..RemoteResource::default()
+        }];
+        let merged2 = manager.load_cached().unwrap();
+        let resolved2 =
+            apply_argument_templates(merged2.scripts, &merged2.metas, &remotes_with_value);
+        assert_eq!(
+            resolved2[0].argument.as_deref(),
+            Some("per_filter_video_thread=1")
+        );
     }
 }
