@@ -434,12 +434,18 @@ pub struct FetchReportView {
     pub warnings: Vec<String>,
 }
 
-/// 模块参数声明的对外视图（`#!arguments=` 键/默认值/描述）。
+/// 模块参数声明的对外视图（`#!arguments=` / Loon `[Argument]` 段）。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ArgSpecView {
     pub key: String,
     pub default_value: String,
     pub description: Option<String>,
+    /// 控件类型：`Input`（文本输入）/ `Select`（下拉选择）。
+    pub kind: String,
+    /// `Select` 控件的可选项。
+    pub options: Vec<String>,
+    /// 参数分组标签（无分组时为 null）。
+    pub tag: Option<String>,
 }
 
 /// 配置头 `#!key=value` 元数据的对外视图。
@@ -473,6 +479,12 @@ impl ConfigMetaView {
                     key: arg.key.clone(),
                     default_value: arg.default_value.clone(),
                     description: arg.description.clone(),
+                    kind: match arg.kind {
+                        pp_client::ArgKind::Select => "Select".to_string(),
+                        pp_client::ArgKind::Input => "Input".to_string(),
+                    },
+                    options: arg.options.clone(),
+                    tag: arg.tag.clone(),
                 })
                 .collect(),
         }

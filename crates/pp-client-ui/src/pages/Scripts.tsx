@@ -50,6 +50,9 @@ interface ArgEdit {
   key: string;
   default_value: string;
   description: string | null;
+  kind: "Input" | "Select";
+  options: string[];
+  tag: string | null;
   value: string;
 }
 
@@ -122,6 +125,18 @@ function formatInterval(secs: number): string {
     return `${secs / 3600} 小时`;
   }
   return `${secs} 秒`;
+}
+
+/** 按参数分组标签（`tag`）分组；无 tag 的归入默认组。 */
+function groupArgsByTag(args: ArgEdit[]): { tag: string | null; args: ArgEdit[] }[] {
+  const groups = new Map<string | null, ArgEdit[]>();
+  for (const arg of args) {
+    const tag = arg.tag ?? null;
+    const group = groups.get(tag) ?? [];
+    group.push(arg);
+    groups.set(tag, group);
+  }
+  return Array.from(groups.entries()).map(([tag, items]) => ({ tag, args: items }));
 }
 
 export default function Scripts() {
@@ -214,6 +229,9 @@ export default function Scripts() {
             key: arg.key,
             default_value: arg.default_value,
             description: arg.description,
+            kind: arg.kind ?? "Input",
+            options: arg.options ?? [],
+            tag: arg.tag ?? null,
             value: "",
           })),
         );
@@ -844,21 +862,61 @@ export default function Scripts() {
                 />
               </div>
               {argEdits.length > 0 && (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3">
                   <Label>模块参数</Label>
-                  {argEdits.map((arg) => (
-                    <div key={arg.key} className="flex flex-col gap-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="font-mono text-xs font-medium">{arg.key}</span>
-                        {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
-                      </div>
-                      <Input
-                        aria-label={`参数 ${arg.key}`}
-                        value={arg.value}
-                        onChange={(event) => handleArgChange(arg.key, event.target.value)}
-                        placeholder={arg.default_value ? `默认：${arg.default_value}` : "填写参数值（可选）"}
-                        fullWidth
-                      />
+                  {groupArgsByTag(argEdits).map((group) => (
+                    <div key={group.tag ?? "__untagged"} className="flex flex-col gap-2">
+                      {group.tag && (
+                        <span className="border-b border-border/40 pb-1 text-xs font-medium text-muted">
+                          {group.tag}
+                        </span>
+                      )}
+                      {group.args.map((arg) => (
+                        <div key={arg.key} className="flex flex-col gap-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="font-mono text-xs font-medium">{arg.key}</span>
+                            {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
+                          </div>
+                          {arg.kind === "Select" ? (
+                            <Select
+                              aria-label={`参数 ${arg.key}`}
+                              placeholder={arg.default_value ? `默认：${arg.default_value}` : "选择参数值（可选）"}
+                              value={arg.value}
+                              onChange={(value) => handleArgChange(arg.key, String(value ?? ""))}
+                              fullWidth
+                            >
+                              <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                              </Select.Trigger>
+                              <Select.Popover>
+                                <ListBox>
+                                  {arg.options.length > 0 ? (
+                                    arg.options.map((option) => (
+                                      <ListBox.Item key={option} id={option} textValue={option}>
+                                        {option}
+                                        <ListBox.ItemIndicator />
+                                      </ListBox.Item>
+                                    ))
+                                  ) : (
+                                    <ListBox.Item id="__empty" textValue="无可选选项">
+                                      无可选选项
+                                    </ListBox.Item>
+                                  )}
+                                </ListBox>
+                              </Select.Popover>
+                            </Select>
+                          ) : (
+                            <Input
+                              aria-label={`参数 ${arg.key}`}
+                              value={arg.value}
+                              onChange={(event) => handleArgChange(arg.key, event.target.value)}
+                              placeholder={arg.default_value ? `默认：${arg.default_value}` : "填写参数值（可选）"}
+                              fullWidth
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

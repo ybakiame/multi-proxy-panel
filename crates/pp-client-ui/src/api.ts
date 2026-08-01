@@ -101,11 +101,17 @@ export interface TaskScriptView {
   last_error: string | null;
 }
 
-/** 模块参数声明（`#!arguments=` 键/默认值/描述，与 Rust 侧 `ArgSpecView` 对齐）。 */
+/** 模块参数声明（`#!arguments=` / Loon `[Argument]` 段，与 Rust 侧 `ArgSpecView` 对齐）。 */
 export interface ArgSpecView {
   key: string;
   default_value: string;
   description: string | null;
+  /** 控件类型：`Input`（文本输入）/ `Select`（下拉选择）。 */
+  kind: "Input" | "Select";
+  /** `Select` 控件的可选项。 */
+  options: string[];
+  /** 参数分组标签（无分组时为 null）。 */
+  tag: string | null;
 }
 
 /** 配置头 `#!key=value` 元数据（与 Rust 侧 `ConfigMetaView` 对齐）。 */
