@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use pp_common::{CoreType, PanelResult};
 use pp_mitm::{MemoryRecorder, RewriteEngine, RunningProxy, ScriptHookEngine};
-use pp_script::{MemoryPersistentStore, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript};
+use pp_script::{FilePersistentStore, ScriptHost, ScriptLimits, ScriptScheduler, TaskScript};
 use tokio::task::JoinHandle;
 
 use crate::config::ClientConfig;
@@ -139,7 +139,9 @@ impl ClientState {
             };
             let host = Arc::new(ScriptHost::new(
                 Arc::new(ReqwestHttpExecutor::new()),
-                Arc::new(MemoryPersistentStore::new()),
+                Arc::new(FilePersistentStore::new(
+                    self.config.data_dir.join("script_store"),
+                )),
                 Arc::new(TracingNotifier::new()),
             ));
             let hooks = ScriptHookEngine::new(
