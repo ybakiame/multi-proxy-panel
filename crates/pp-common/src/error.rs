@@ -36,6 +36,9 @@ pub enum PanelError {
     #[error("mitm error: {0}")]
     Mitm(String),
 
+    #[error("client error: {0}")]
+    Client(String),
+
     #[error("traffic error: {0}")]
     Traffic(String),
 

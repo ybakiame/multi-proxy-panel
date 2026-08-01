@@ -12,6 +12,7 @@ members = [
     "crates/pp-agent",
     "crates/pp-cli",
     "crates/pp-mitm",
+    "crates/pp-client",
     # "crates/pp-web",  # now a standalone React/Vite app, see crates/pp-web/README.md
 ]
 
@@ -115,6 +116,7 @@ pp-subscription = { path = "crates/pp-subscription" }
 pp-core = { path = "crates/pp-core" }
 pp-script = { path = "crates/pp-script" }
 pp-mitm = { path = "crates/pp-mitm" }
+pp-client = { path = "crates/pp-client" }
 
 [profile]
 
