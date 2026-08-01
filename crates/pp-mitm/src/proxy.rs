@@ -25,7 +25,32 @@ use crate::config::MitmConfig;
 use crate::recorder::{TrafficRecord, TrafficRecorder};
 use crate::rewrite::{RewriteAction, RewriteEngine};
 use crate::script_hook::ScriptHookEngine;
-use crate::upstream::UpstreamConnector;
+use crate::upstream::{UpstreamConnector, UpstreamProxy};
+
+/// 依据上游策略决定 WebSocket 连接器。
+///
+/// 直连（[`UpstreamProxy::Direct`]）时返回 `None`，保持 hudsucker 默认行为；
+/// 经 HTTP/SOCKS5 父代理时返回基于主连接器 TLS 配置的
+/// `tokio_tungstenite::Connector`，使 wss 的 TLS 层与主连接器一致。
+///
+/// # 已知限制
+///
+/// hudsucker 0.25 的 WebSocket 上游连接由 tokio-tungstenite 内部直连
+/// `TcpStream` 建立（`tokio-tungstenite/src/connect.rs` 硬编码
+/// `TcpStream::connect`），`with_websocket_connector` 仅控制其上的 TLS 层。
+/// 因此即使设置了连接器，WebSocket 的 TCP 连接仍无法经父代理转发，这里只能
+/// 做到 TLS 配置对齐；若需完整支持须 fork hudsucker 替换连接建立逻辑。
+fn websocket_connector_for(
+    upstream: UpstreamProxy,
+    connector: &UpstreamConnector,
+) -> Option<hudsucker::tokio_tungstenite::Connector> {
+    match upstream {
+        UpstreamProxy::Direct => None,
+        _ => Some(hudsucker::tokio_tungstenite::Connector::Rustls(
+            connector.websocket_tls_config(),
+        )),
+    }
+}
 
 /// hudsucker 拦截代理。
 pub struct MitmProxy {
@@ -79,6 +104,12 @@ impl MitmProxy {
         // 经 HTTP CONNECT / SOCKS5 父代理建隧道后 TLS 握手。
         let connector = UpstreamConnector::new(self.config.upstream, provider)
             .map_err(|e| PanelError::Mitm(format!("init upstream connector: {e}")))?;
+        let websocket_connector = websocket_connector_for(self.config.upstream, &connector);
+        if websocket_connector.is_some() {
+            tracing::warn!(
+                "WebSocket 上游仍由 hudsucker 直连（TCP 层不可插拔），仅 TLS 配置与主连接器对齐"
+            );
+        }
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let handler = Handler {
@@ -89,14 +120,18 @@ impl MitmProxy {
             state: None,
         };
 
-        let proxy = Proxy::builder()
+        let mut builder = Proxy::builder()
             .with_listener(listener)
             .with_ca(ca)
             .with_http_connector(connector)
             .with_http_handler(handler)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
-            })
+            });
+        if let Some(websocket_connector) = websocket_connector {
+            builder = builder.with_websocket_connector(websocket_connector);
+        }
+        let proxy = builder
             .build()
             .map_err(|e| PanelError::Mitm(format!("build hudsucker proxy: {e}")))?;
 
@@ -648,5 +683,45 @@ mod tests {
         running.shutdown();
         server.abort();
         parent_task.abort();
+    }
+
+    #[test]
+    fn websocket_connector_wired_only_for_upstream_chain() {
+        let provider = hudsucker::rustls::crypto::aws_lc_rs::default_provider();
+        let http_addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let socks5_addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+
+        // 直连：不设置 WebSocket 连接器（保持 hudsucker 默认）。
+        let direct = UpstreamConnector::new(UpstreamProxy::Direct, provider.clone()).unwrap();
+        assert!(
+            websocket_connector_for(UpstreamProxy::Direct, &direct).is_none(),
+            "Direct 上游不应设置 WebSocket 连接器"
+        );
+
+        // HTTP 父代理：设置连接器，且 wss 仅声明 http/1.1 ALPN（WebSocket
+        // 基于 HTTP/1.1 Upgrade，声明 h2 会破坏偏好 h2 上游的握手）。
+        let http =
+            UpstreamConnector::new(UpstreamProxy::Http { addr: http_addr }, provider.clone())
+                .unwrap();
+        let connector = websocket_connector_for(UpstreamProxy::Http { addr: http_addr }, &http)
+            .expect("HTTP 上游应设置 WebSocket 连接器");
+        match connector {
+            hudsucker::tokio_tungstenite::Connector::Rustls(config) => {
+                assert_eq!(
+                    config.alpn_protocols,
+                    vec![b"http/1.1".to_vec()],
+                    "wss 仅支持 HTTP/1.1，不得声明 h2 ALPN"
+                );
+            }
+            _ => panic!("expected rustls websocket connector"),
+        }
+
+        // SOCKS5 父代理：同样设置。
+        let socks5 =
+            UpstreamConnector::new(UpstreamProxy::Socks5 { addr: socks5_addr }, provider).unwrap();
+        assert!(
+            websocket_connector_for(UpstreamProxy::Socks5 { addr: socks5_addr }, &socks5).is_some(),
+            "SOCKS5 上游应设置 WebSocket 连接器"
+        );
     }
 }

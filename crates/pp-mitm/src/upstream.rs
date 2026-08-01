@@ -64,10 +64,13 @@ pub enum UpstreamError {
 ///
 /// 实现 `tower::Service<Uri>`，`Response` 为满足 hyper 传输要求的
 /// [`UpstreamConnection`]，从而通过 hudsucker `with_http_connector` 接入。
+/// 同时维护一套 WebSocket 专用的 rustls 配置（[`Self::websocket_tls_config`]），
+/// 供 hudsucker 的 `with_websocket_connector` 使用。
 #[derive(Clone)]
 pub struct UpstreamConnector {
     upstream: UpstreamProxy,
     tls: Arc<ClientConfig>,
+    ws_tls: Arc<ClientConfig>,
 }
 
 impl UpstreamConnector {
@@ -78,17 +81,44 @@ impl UpstreamConnector {
     pub fn new(upstream: UpstreamProxy, provider: CryptoProvider) -> Result<Self, UpstreamError> {
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let mut config = ClientConfig::builder_with_provider(Arc::new(provider))
+        let ws_roots = roots.clone();
+        let provider = Arc::new(provider);
+
+        let mut config = ClientConfig::builder_with_provider(Arc::clone(&provider))
             .with_safe_default_protocol_versions()
             .map_err(|e| UpstreamError::Tls(e.to_string()))?
             .with_root_certificates(roots)
             .with_no_client_auth();
         // 与 hyper-rustls 默认一致：向上游协商 HTTP/1.1 与 h2。
         config.alpn_protocols = vec![b"http/1.1".to_vec(), b"h2".to_vec()];
+
+        // WebSocket 专用：同一 provider/roots，但 WebSocket 基于 HTTP/1.1
+        // Upgrade，只声明 http/1.1，避免偏好 h2 的上游协商出 WebSocket
+        // 无法承载的协议。
+        let mut ws_config = ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| UpstreamError::Tls(e.to_string()))?
+            .with_root_certificates(ws_roots)
+            .with_no_client_auth();
+        ws_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+
         Ok(Self {
             upstream,
             tls: Arc::new(config),
+            ws_tls: Arc::new(ws_config),
         })
+    }
+
+    /// WebSocket 上游专用的 rustls 客户端配置。
+    ///
+    /// 与主连接器使用同一 TLS provider 与 webpki roots，但 ALPN 仅声明
+    /// `http/1.1`。hudsucker 通过 `with_websocket_connector`
+    /// （`tokio_tungstenite::Connector`）消费该配置。
+    ///
+    /// 注意：hudsucker 0.25 的 WebSocket 上游连接由 tokio-tungstenite 内部
+    /// 直连 `TcpStream` 建立，该配置仅控制 TLS 层，无法让 TCP 走上游代理链。
+    pub fn websocket_tls_config(&self) -> Arc<ClientConfig> {
+        Arc::clone(&self.ws_tls)
     }
 }
 
