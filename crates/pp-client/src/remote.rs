@@ -77,6 +77,21 @@ pub struct FetchReport {
     pub warnings: Vec<String>,
 }
 
+/// 一次本地导入合并进缓存的摘要。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportSummary {
+    /// 合并进缓存的重写规则数。
+    pub rewrites: usize,
+    /// 合并进缓存的脚本钩子数（`source` 非空才会合并）。
+    pub scripts: usize,
+    /// 合并进缓存的定时任务数（`source` 非空才会合并）。
+    pub tasks: usize,
+    /// 本次导入贡献的 hostname 数。
+    pub hostnames: usize,
+    /// 跳过（source 为空未拉取）与解析偏差的警告列表。
+    pub warnings: Vec<String>,
+}
+
 /// 全部远程订阅缓存合并后的运行时配置。
 #[derive(Default)]
 pub struct MergedRemoteConfig {
@@ -228,6 +243,70 @@ impl RemoteManager {
         Ok(merged)
     }
 
+    /// 将一次本地导入的 [`ImportedConfig`] 合并进固定缓存 `remote_cache/imported.json`。
+    ///
+    /// 本地导入不做远端拉取（脚本钩子 / 定时任务的 `source` 为空且 URL 未知不可用），
+    /// 因此 `source` 为空的脚本钩子与任务会被跳过并计入 [`ImportSummary::warnings`]；
+    /// 重写规则与 hostname 直接合入。重复导入在既有缓存上追加（不覆盖）。
+    pub fn merge_imported(&self, imported: &ImportedConfig) -> PanelResult<ImportSummary> {
+        let mut summary = ImportSummary::default();
+        summary.warnings.extend(imported.warnings.iter().cloned());
+
+        let cache_dir = self.data_dir.join("remote_cache");
+        let cache_path = cache_dir.join("imported.json");
+        let mut cached = CachedRemoteConfig::default();
+        if cache_path.exists() {
+            match std::fs::read_to_string(&cache_path) {
+                Ok(text) => match serde_json::from_str::<CachedRemoteConfig>(&text) {
+                    Ok(c) => cached = c,
+                    Err(e) => summary.warnings.push(format!(
+                        "existing local import cache unreadable, start fresh: {e}"
+                    )),
+                },
+                Err(e) => summary.warnings.push(format!(
+                    "existing local import cache unreadable, start fresh: {e}"
+                )),
+            }
+        }
+
+        for (rule, (name, url)) in imported.scripts.iter().zip(imported.script_urls.iter()) {
+            if rule.source.is_empty() {
+                summary.warnings.push(format!(
+                    "script '{name}' source not fetched ({url}), skipped"
+                ));
+                continue;
+            }
+            cached.scripts.push(CachedScriptRule::from(rule));
+            summary.scripts += 1;
+        }
+        for (task, url) in &imported.task_scripts {
+            if task.source.is_empty() {
+                summary.warnings.push(format!(
+                    "task '{}' source not fetched ({url}), skipped",
+                    task.name
+                ));
+                continue;
+            }
+            cached.task_scripts.push(task.clone());
+            summary.tasks += 1;
+        }
+        cached
+            .rewrites
+            .extend(imported.rewrites.iter().map(CachedRewriteRule::from));
+        summary.rewrites = imported.rewrites.len();
+        for hostname in &imported.hostnames {
+            if !cached.hostnames.contains(hostname) {
+                cached.hostnames.push(hostname.clone());
+            }
+        }
+        summary.hostnames = imported.hostnames.len();
+
+        std::fs::create_dir_all(&cache_dir)?;
+        let text = serde_json::to_string_pretty(&cached)?;
+        std::fs::write(&cache_path, text)?;
+        Ok(summary)
+    }
+
     /// 拉取单个 URL 的文本内容；非 2xx 视为失败。
     async fn fetch_text(&self, url: &str) -> PanelResult<String> {
         let resp = self
@@ -334,7 +413,7 @@ impl Notifier for TracingNotifier {
 }
 
 /// 可落盘的 Snippet 缓存视图：`Regex` 以 pattern 字符串持久化。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct CachedRemoteConfig {
     rewrites: Vec<CachedRewriteRule>,
     scripts: Vec<CachedScriptRule>,
@@ -728,5 +807,108 @@ mod tests {
         assert_eq!(merged.rewrites.len(), 1);
         assert!(merged.scripts.is_empty());
         assert!(merged.task_scripts.is_empty());
+    }
+
+    #[test]
+    fn merge_imported_keeps_rewrites_hostnames_and_skips_source_empty_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+        let imported = ImportedConfig {
+            rewrites: vec![RewriteRule {
+                pattern: Regex::new(r"^https?://example\.com/").unwrap(),
+                kind: RewriteKind::Reject,
+            }],
+            scripts: vec![ScriptRule {
+                name: "hook-0".into(),
+                kind: ScriptKind::HttpResponse,
+                pattern: Regex::new(r"^https?://example\.com/rsp").unwrap(),
+                requires_body: true,
+                max_size: 131072,
+                source: String::new(),
+            }],
+            script_urls: vec![(
+                "hook-0".to_string(),
+                "https://example.com/hook.js".to_string(),
+            )],
+            task_scripts: vec![(
+                TaskScript {
+                    name: "签到".into(),
+                    cron_expr: "0 0 9 * * *".into(),
+                    source: String::new(),
+                    dialect: ScriptDialect::QuantumultX,
+                    enabled: true,
+                },
+                "https://example.com/task.js".to_string(),
+            )],
+            hostnames: vec!["*.example.com".to_string()],
+            warnings: vec!["parse deviation".to_string()],
+        };
+
+        let summary = manager.merge_imported(&imported).unwrap();
+        // 重写/hostname 合入；source 为空的脚本与任务跳过计 warning
+        assert_eq!(summary.rewrites, 1);
+        assert_eq!(summary.hostnames, 1);
+        assert_eq!(summary.scripts, 0);
+        assert_eq!(summary.tasks, 0);
+        assert!(summary.warnings.iter().any(|w| w.contains("hook-0")));
+        assert!(summary.warnings.iter().any(|w| w.contains("签到")));
+        assert!(
+            summary
+                .warnings
+                .iter()
+                .any(|w| w.contains("parse deviation"))
+        );
+
+        // 缓存已写入 remote_cache/imported.json 并被 load_cached 读取
+        assert!(dir.path().join("remote_cache/imported.json").exists());
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.rewrites.len(), 1);
+        assert!(merged.scripts.is_empty());
+        assert!(merged.task_scripts.is_empty());
+        assert_eq!(merged.hostnames, vec!["*.example.com".to_string()]);
+    }
+
+    #[test]
+    fn merge_imported_appends_to_existing_import_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+
+        let first = ImportedConfig {
+            rewrites: vec![RewriteRule {
+                pattern: Regex::new(r"^https?://a\.com/").unwrap(),
+                kind: RewriteKind::Reject,
+            }],
+            scripts: vec![],
+            script_urls: vec![],
+            task_scripts: vec![],
+            hostnames: vec!["a.example.com".to_string()],
+            warnings: vec![],
+        };
+        manager.merge_imported(&first).unwrap();
+
+        let second = ImportedConfig {
+            rewrites: vec![RewriteRule {
+                pattern: Regex::new(r"^https?://b\.com/").unwrap(),
+                kind: RewriteKind::UrlRewrite {
+                    target: "https://c.com/$1".into(),
+                },
+            }],
+            scripts: vec![],
+            script_urls: vec![],
+            task_scripts: vec![],
+            hostnames: vec!["a.example.com".to_string(), "b.example.com".to_string()],
+            warnings: vec![],
+        };
+        let summary = manager.merge_imported(&second).unwrap();
+        assert_eq!(summary.rewrites, 1);
+        // 重复 hostname 已在缓存中，不影响本次计数（本次贡献仍为 2）
+        assert_eq!(summary.hostnames, 2);
+
+        let merged = manager.load_cached().unwrap();
+        assert_eq!(merged.rewrites.len(), 2);
+        assert_eq!(
+            merged.hostnames,
+            vec!["a.example.com".to_string(), "b.example.com".to_string()]
+        );
     }
 }

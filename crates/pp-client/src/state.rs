@@ -83,6 +83,11 @@ impl ClientState {
         self.scheduler.as_ref().map(|h| h.scheduler.as_ref())
     }
 
+    /// 定时任务调度器的 `Arc` 句柄（供外部在独立线程驱动脚本执行；未就绪时为 `None`）。
+    pub fn scheduler_handle(&self) -> Option<Arc<ScriptScheduler>> {
+        self.scheduler.as_ref().map(|h| Arc::clone(&h.scheduler))
+    }
+
     /// 启动：订阅 → 合成配置 → 核心 → MITM → 系统代理，失败回滚。
     pub async fn start(&mut self) -> PanelResult<()> {
         tracing::info!(hub_url = %self.config.hub_url, "客户端启动：拉取订阅");
