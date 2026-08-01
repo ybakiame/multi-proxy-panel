@@ -125,10 +125,12 @@ pub fn parse_config_meta(content: &str) -> ConfigMeta {
 
 /// 解析 `#!arguments= key:default, key2:default2` 声明：逗号分隔，值可含空格（trim）。
 ///
-/// 无 `:` 的段（如 `#!arguments= foo`）静默跳过（无默认值无从声明）。
+/// 逗号切分是引号感知的（`Types:"Translate,External"` 内的逗号不切分）；
+/// 值可带引号（`key:"default"`，去引号）或裸值（`key:default`）。无 `:` 的段
+/// （如 `#!arguments= foo`）静默跳过（无默认值无从声明）。
 fn parse_arguments_decl(value: &str) -> Vec<ArgSpec> {
     let mut args = Vec::new();
-    for pair in value.split(',') {
+    for pair in split_kv_segments(value) {
         let pair = pair.trim();
         if pair.is_empty() {
             continue;
@@ -142,7 +144,7 @@ fn parse_arguments_decl(value: &str) -> Vec<ArgSpec> {
         }
         args.push(ArgSpec {
             key: key.to_string(),
-            default_value: default_value.trim().to_string(),
+            default_value: strip_quotes(default_value.trim()).to_string(),
             description: None,
         });
     }
@@ -345,11 +347,15 @@ fn derive_name_from_url(url: &str) -> String {
     url.to_string()
 }
 
-/// 去掉首尾双引号（`"* * * * *"` → `* * * * *`）。
+/// 去掉首尾成对双引号（`"* * * * *"` → `* * * * *`）；仅当首尾均为引号时剥离
+/// （`Types="a"&Vendor="b"` 这类整体未加引号的值保持原样）。
 fn strip_quotes(s: &str) -> &str {
     let t = s.trim();
-    let t = t.strip_prefix('"').unwrap_or(t);
-    t.strip_suffix('"').unwrap_or(t)
+    if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        &t[1..t.len() - 1]
+    } else {
+        t
+    }
 }
 
 /// 解析 `key=value` 值（`true` / `1` / `yes` 视为真，默认假）。
@@ -378,10 +384,43 @@ fn parse_max_size(v: Option<&String>) -> Option<usize> {
     }
 }
 
+/// 按逗号切分 `key=value` / `key:value` 段，但跳过引号内与 `[` `]` / `{` `}` 内嵌的逗号
+/// （`Types:"Translate,External"`、`argument=[{a},{b}]`、正则量词 `\d{1,2}` 均不误切）。
+fn split_kv_segments(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut depth = 0i32;
+    for c in input.chars() {
+        match c {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(c);
+            }
+            '[' | '{' if !in_quotes => {
+                depth += 1;
+                current.push(c);
+            }
+            ']' | '}' if !in_quotes => {
+                depth -= 1;
+                current.push(c);
+            }
+            ',' if !in_quotes && depth == 0 => {
+                out.push(std::mem::take(&mut current));
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
 /// 解析逗号分隔的 `key=value` 参数列表；key 归一化为小写，value 去引号。
 fn parse_kv_params(input: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    for pair in input.split(',') {
+    for pair in split_kv_segments(input) {
         let pair = pair.trim();
         if pair.is_empty() {
             continue;
@@ -1466,5 +1505,99 @@ default = type=http-response,pattern=^https://d\.com/,script-path=https://exampl
         let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
         assert_eq!(cfg.scripts.len(), 1);
         assert_eq!(cfg.scripts[0].argument.as_deref(), Some("{server}"));
+    }
+
+    /// ① `#!` 头 `=` 两侧空格：key trim 后匹配、value trim。
+    #[test]
+    fn parse_config_meta_trims_whitespace_around_equals() {
+        let content = "#!name = 测试名称 \n#!desc = 描述内容\n#!author =  作者  \n#!icon = https://example.com/i.png\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.name.as_deref(), Some("测试名称"));
+        assert_eq!(meta.desc.as_deref(), Some("描述内容"));
+        assert_eq!(meta.author.as_deref(), Some("作者"));
+        assert_eq!(meta.icon.as_deref(), Some("https://example.com/i.png"));
+    }
+
+    /// ② `#!arguments` 引号感知切分：`Types:"Translate,External"` 不切碎、值去引号、
+    /// key 含 `[0]` 下标正常。
+    #[test]
+    fn parse_arguments_decl_quote_aware_split_and_unquote() {
+        let content = "#!arguments = Types:\"Translate,External\",Languages[0]:\"AUTO\",Vendor:\"Google\",plain:value\n";
+        let meta = parse_config_meta(content);
+        assert_eq!(meta.arguments.len(), 4);
+        let types = meta.arguments.iter().find(|a| a.key == "Types").unwrap();
+        assert_eq!(types.default_value, "Translate,External");
+        let lang = meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Languages[0]")
+            .unwrap();
+        assert_eq!(lang.default_value, "AUTO");
+        let vendor = meta.arguments.iter().find(|a| a.key == "Vendor").unwrap();
+        assert_eq!(vendor.default_value, "Google");
+        // 无引号裸值原样解析（回归旧语法）。
+        let plain = meta.arguments.iter().find(|a| a.key == "plain").unwrap();
+        assert_eq!(plain.default_value, "value");
+    }
+
+    /// ①② Surge `.sgmodule` 样例：`#!arguments` 引号感知切分 + Surge `[Script]` 行
+    /// 的 `{{{key}}}` 占位原文与 `engine` 忽略。
+    #[test]
+    fn dualsubs_spotify_surge_sgmodule_sample_fixture() {
+        let content = r#"#!name = 🍿️ DualSubs: 🎵 Spotify
+#!desc = Spotify 增强及双语歌词
+#!arguments = Types:"Translate,External",Languages[0]:"AUTO",Languages[1]:"ZH",Vendor:"Google",LogLevel:"WARN"
+[Script]
+🍿️ DualSubs.Spotify.Tracks = type=http-response, pattern=^https?:\/\/api\.spotify\.com\/v1\/tracks\?, requires-body=1, engine=webview, script-path=https://example.com/r.js, argument=Types="{{{Types}}}"&Languages[0]="{{{Languages[0]}}}"&Vendor="{{{Vendor}}}"
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        // ① 头空格 trim。
+        assert_eq!(cfg.meta.name.as_deref(), Some("🍿️ DualSubs: 🎵 Spotify"));
+        assert_eq!(cfg.meta.desc.as_deref(), Some("Spotify 增强及双语歌词"));
+
+        // ② `#!arguments` 引号感知：含逗号值不切碎、key 含 `[0]`、去引号。
+        assert_eq!(cfg.meta.arguments.len(), 5);
+        let types = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Types")
+            .unwrap();
+        assert_eq!(types.default_value, "Translate,External");
+        let lang0 = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Languages[0]")
+            .unwrap();
+        assert_eq!(lang0.default_value, "AUTO");
+        let lang1 = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Languages[1]")
+            .unwrap();
+        assert_eq!(lang1.default_value, "ZH");
+        let vendor = cfg
+            .meta
+            .arguments
+            .iter()
+            .find(|a| a.key == "Vendor")
+            .unwrap();
+        assert_eq!(vendor.default_value, "Google");
+
+        // Surge [Script]：name = type=...；`{{{key}}}` 占位原文保留，engine 忽略。
+        assert_eq!(cfg.scripts.len(), 1);
+        assert_eq!(cfg.scripts[0].name, "🍿️ DualSubs.Spotify.Tracks");
+        assert_eq!(cfg.scripts[0].kind, ScriptKind::HttpResponse);
+        assert!(cfg.scripts[0].requires_body);
+        assert_eq!(
+            cfg.scripts[0].argument.as_deref(),
+            Some(
+                "Types=\"{{{Types}}}\"&Languages[0]=\"{{{Languages[0]}}}\"&Vendor=\"{{{Vendor}}}\""
+            )
+        );
+        assert_eq!(cfg.script_urls[0].1, "https://example.com/r.js");
     }
 }
