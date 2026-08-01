@@ -400,7 +400,8 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView
 
 /// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
 ///
-/// QuickJS 运行时非 Send，脚本执行放到阻塞线程上的独立 current_thread runtime 驱动。
+/// 脚本执行由 pp-script 的 `ScriptWorker` 在专有线程驱动（`Send` future），
+/// 直接 `await` 调度器即可，无需 `spawn_blocking` 绕行。
 #[tauri::command]
 pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
     let scheduler = {
@@ -412,19 +413,11 @@ pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String
             .scheduler_handle()
             .ok_or_else(|| "任务调度器未就绪".to_string())?
     };
-    let output = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("构建脚本运行时失败: {e}"))?;
-        let result = rt
-            .block_on(scheduler.run_now(&name))
-            .map_err(|e| format!("运行任务失败: {e}"))?;
-        Ok(result.0.to_string())
-    })
-    .await
-    .map_err(|e| format!("任务线程异常: {e}"))??;
-    Ok(output)
+    let output = scheduler
+        .run_now(&name)
+        .await
+        .map_err(|e| format!("运行任务失败: {e}"))?;
+    Ok(output.0.to_string())
 }
 
 /// 导入 QX / Surge / Loon 配置片段：解析后合并写入本地导入缓存
