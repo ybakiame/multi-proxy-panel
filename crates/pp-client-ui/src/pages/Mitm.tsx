@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, TextArea } from "@heroui/react";
+import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
 import { useAppStore } from "../store";
 
 export default function Mitm() {
@@ -18,6 +18,12 @@ export default function Mitm() {
   useEffect(() => {
     setHostnames(config?.mitm_hostnames.join("\n") ?? "");
   }, [config?.mitm_hostnames]);
+
+  // RFC3339 时间戳转为本地可读时间；解析失败时原样展示。
+  const formatTime = (iso: string) => {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  };
 
   const handleSave = async () => {
     if (!config) {
@@ -111,27 +117,46 @@ export default function Mitm() {
         <Card>
           <Card.Header>
             <Card.Title>抓包记录</Card.Title>
-            <Card.Description>MITM 捕获的 HTTP 流量（当前为空）</Card.Description>
+            <Card.Description>MITM 捕获的 HTTP 流量，仅在代理运行时可用</Card.Description>
           </Card.Header>
           <Card.Content>
             {traffic.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                 <span className="text-sm text-muted">暂无抓包记录</span>
-                <span className="text-xs text-muted/80">后端 `list_traffic` 暂未暴露 recorder，MVP 阶段恒为空列表</span>
+                <span className="text-xs text-muted/80">代理启动并命中 Hostname 白名单后，流量将显示在此</span>
               </div>
             ) : (
-              <ul className="flex flex-col gap-2 text-sm">
-                {traffic.map((record) => (
-                  <li key={record.id} className="flex items-center gap-2">
-                    <span className="font-mono text-muted">
-                      {record.method} {record.url}
-                    </span>
-                    <span>{record.response_status}</span>
-                  </li>
-                ))}
-              </ul>
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="抓包记录" className="min-w-[640px]">
+                    <Table.Header>
+                      <Table.Column isRowHeader>时间</Table.Column>
+                      <Table.Column>方法</Table.Column>
+                      <Table.Column>URL</Table.Column>
+                      <Table.Column>状态</Table.Column>
+                      <Table.Column>耗时</Table.Column>
+                    </Table.Header>
+                    <Table.Body>
+                      {traffic.map((record) => (
+                        <Table.Row key={record.id}>
+                          <Table.Cell>{formatTime(record.timestamp)}</Table.Cell>
+                          <Table.Cell>{record.method}</Table.Cell>
+                          <Table.Cell>{record.url}</Table.Cell>
+                          <Table.Cell>{record.response_status}</Table.Cell>
+                          <Table.Cell>{record.duration_ms} ms</Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
+              </Table>
             )}
           </Card.Content>
+          <Card.Footer>
+            <Button variant="primary" onPress={() => void refreshTraffic()}>
+              刷新
+            </Button>
+          </Card.Footer>
         </Card>
       </div>
     </div>
