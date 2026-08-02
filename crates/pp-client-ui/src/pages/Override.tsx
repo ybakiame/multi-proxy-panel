@@ -5,20 +5,7 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
-import {
-  Alert,
-  AlertDialog,
-  Badge,
-  Button,
-  Card,
-  Chip,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  Tabs,
-} from "@heroui/react";
+import { Alert, AlertDialog, Button, Card, Chip, Input, Label, ListBox, Modal, Select, Tabs } from "@heroui/react";
 import clsx from "clsx";
 import {
   createProfile,
@@ -26,7 +13,6 @@ import {
   getProfile,
   listProfiles,
   previewCoreConfig,
-  setProfileEnabled,
   toErrorMessage,
   updateProfile,
 } from "../api";
@@ -160,22 +146,6 @@ export default function Override() {
     }
   }, []);
 
-  /** 启用圆点：未启用 → 启用（同核心单选）；已启用 → 停用。 */
-  const handleToggleEnable = async (profile: ProfileView) => {
-    setBusy(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      await setProfileEnabled(profile.id, !profile.enabled);
-      setSuccess(profile.enabled ? `模板「${profile.name}」已停用` : `模板「${profile.name}」已启用，需重启代理后生效`);
-      await refreshList();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!detail) return;
     setBusy(true);
@@ -256,22 +226,22 @@ export default function Override() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold">复写</h1>
-        <p className="text-sm text-muted">多模板管理：同一核心可维护多个复写模板，仅启用一个生效</p>
+        <h1 className="text-xl font-semibold">覆写</h1>
+        <p className="text-sm text-muted">多模板管理：按核心类型维护覆写模板，在订阅页关联后随订阅生效</p>
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* 左侧：模板列表 */}
         <Card className="w-full shrink-0 lg:w-80">
           <Card.Header>
-            <Card.Title>复写模板</Card.Title>
-            <Card.Description>点击左侧圆点启用；同核心单选，已启用的可再次点击停用</Card.Description>
+            <Card.Title>覆写模板</Card.Title>
+            <Card.Description>按核心类型维护，在订阅页关联后随订阅生效</Card.Description>
           </Card.Header>
           <Card.Content className="flex flex-col gap-2">
             {profiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                 <span className="text-sm text-muted">暂无模板</span>
-                <span className="text-xs text-muted/80">点击下方「新建模板」创建首个复写模板</span>
+                <span className="text-xs text-muted/80">点击下方「新建模板」创建首个覆写模板</span>
               </div>
             ) : (
               profiles.map((profile) => {
@@ -284,16 +254,6 @@ export default function Override() {
                       isSelected ? "border-accent/60 bg-accent/5" : "border-border/70 bg-surface-secondary/40",
                     )}
                   >
-                    <button
-                      type="button"
-                      aria-label={profile.enabled ? `停用 ${profile.name}` : `启用 ${profile.name}`}
-                      aria-pressed={profile.enabled}
-                      disabled={busy}
-                      onClick={() => void handleToggleEnable(profile)}
-                      className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {profile.enabled && <span className="size-2.5 rounded-full bg-success" />}
-                    </button>
                     <button
                       type="button"
                       onClick={() => void selectProfile(profile.id)}
@@ -311,9 +271,6 @@ export default function Override() {
                         <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[profile.core_type]}>
                           {CORE_LABELS[profile.core_type]}
                         </Chip>
-                        <span className={clsx("text-xs", profile.enabled ? "text-success" : "text-muted")}>
-                          {profile.enabled ? "启用中" : "已停用"}
-                        </span>
                       </span>
                     </button>
                     <div className="flex shrink-0 flex-col gap-1">
@@ -350,26 +307,21 @@ export default function Override() {
                 <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[selectedProfile.core_type]}>
                   {CORE_LABELS[selectedProfile.core_type]}
                 </Chip>
-                {selectedProfile.enabled && (
-                  <Badge color="success" variant="soft" size="sm">
-                    <Badge.Label>启用中</Badge.Label>
-                  </Badge>
-                )}
               </div>
               <Card.Description>
-                针对该模板独立维护本地 YAML / JS 复写与远程 URL（远程为基底、本地叠加），保存后需重启代理生效
+                针对该模板独立维护本地 YAML / JS 覆写与远程 URL（远程为基底、本地叠加），保存后需重启代理生效
               </Card.Description>
             </Card.Header>
             <Card.Content className="flex flex-col gap-4">
               <Tabs>
                 <Tabs.ListContainer>
-                  <Tabs.List aria-label="复写编辑器">
+                  <Tabs.List aria-label="覆写编辑器">
                     <Tabs.Tab id="yaml">
-                      YAML 复写
+                      YAML 覆写
                       <Tabs.Indicator />
                     </Tabs.Tab>
                     <Tabs.Tab id="js">
-                      JS 复写
+                      JS 覆写
                       <Tabs.Indicator />
                     </Tabs.Tab>
                   </Tabs.List>
@@ -379,7 +331,7 @@ export default function Override() {
                     <Label htmlFor="yaml-remote-url">远程 URL（可选）</Label>
                     <Input
                       id="yaml-remote-url"
-                      aria-label="YAML 复写远程 URL"
+                      aria-label="YAML 覆写远程 URL"
                       value={yamlUrl}
                       onChange={(event) => setYamlUrl(event.target.value)}
                       placeholder="https://example.com/remote-override.yaml"
@@ -392,7 +344,7 @@ export default function Override() {
                   <Editor value={yamlValue} onChange={setYamlValue} language="yaml" placeholder={YAML_PLACEHOLDER} />
                   <p className="text-xs text-muted">
                     {selectedProfile.core_type === "mihomo"
-                      ? "mihomo 推荐优先使用 YAML 复写做深合并覆盖；留空表示不启用。"
+                      ? "mihomo 推荐优先使用 YAML 覆写做深合并覆盖；留空表示不启用。"
                       : "按 RFC 7386 深合并：对象递归合并，数组与标量整体替换；留空表示不启用。"}
                   </p>
                 </Tabs.Panel>
@@ -401,21 +353,21 @@ export default function Override() {
                     <Label htmlFor="js-remote-url">远程 URL（可选）</Label>
                     <Input
                       id="js-remote-url"
-                      aria-label="JS 复写远程 URL"
+                      aria-label="JS 覆写远程 URL"
                       value={jsUrl}
                       onChange={(event) => setJsUrl(event.target.value)}
                       placeholder="https://example.com/remote-override.js"
                       fullWidth
                     />
                     <p className="text-xs text-muted">
-                      启动时拉取远程 JS 复写，远程 main 先执行、本地 main
+                      启动时拉取远程 JS 覆写，远程 main 先执行、本地 main
                       后执行（本地可见远程结果；远程失效自动回退缓存）
                     </p>
                   </div>
                   <Editor value={jsValue} onChange={setJsValue} language="js" placeholder={JS_PLACEHOLDER} />
                   <p className="text-xs text-muted">
                     {selectedProfile.core_type === "singbox"
-                      ? "sing-box 推荐优先使用 JS 复写做程序化调整；需定义 function main(config) 并返回 config；留空表示不启用。"
+                      ? "sing-box 推荐优先使用 JS 覆写做程序化调整；需定义 function main(config) 并返回 config；留空表示不启用。"
                       : "双核心通用：需定义 function main(config) 并返回 config；留空表示不启用。"}
                   </p>
                 </Tabs.Panel>
@@ -427,7 +379,7 @@ export default function Override() {
                   <Alert.Title>配置生成链路</Alert.Title>
                   <Alert.Description>
                     订阅取节点 → 内置模板 → 远程 YAML → 本地 YAML → 远程 JS → 本地 JS →
-                    核心。远程为基底、本地叠加覆盖；远程失效自动回退缓存。复写修改需重启代理后生效。
+                    核心。远程为基底、本地叠加覆盖；远程失效自动回退缓存。覆写修改需重启代理后生效。
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
@@ -436,7 +388,7 @@ export default function Override() {
                 <Card.Header>
                   <Card.Title>生效配置预览</Card.Title>
                   <Card.Description>
-                    按当前客户端核心类型拉取订阅并生成最终核心配置（不含 MITM 链路）；无启用模板时预览裸模板
+                    按当前客户端核心类型拉取订阅并生成最终核心配置（不含 MITM 链路）；未关联覆写模板时预览裸配置
                   </Card.Description>
                 </Card.Header>
                 <Card.Content>
@@ -504,7 +456,7 @@ export default function Override() {
           <Modal.Dialog className="sm:max-w-[480px]">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <Modal.Heading>新建复写模板</Modal.Heading>
+              <Modal.Heading>新建覆写模板</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">

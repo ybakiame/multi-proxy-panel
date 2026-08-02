@@ -22,7 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/nodes", label: "订阅", icon: ServerStackIcon },
   { to: "/mitm", label: "MITM", icon: BeakerIcon },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon },
-  { to: "/override", label: "复写", icon: AdjustmentsHorizontalIcon },
+  { to: "/override", label: "覆写", icon: AdjustmentsHorizontalIcon },
   { to: "/settings", label: "设置", icon: Cog6ToothIcon },
 ];
 

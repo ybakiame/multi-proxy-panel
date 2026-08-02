@@ -172,55 +172,52 @@ export interface ImportSummary {
   meta: ConfigMetaView;
 }
 
-/** 复写模板列表视图（与 Rust 侧 `ProfileView` 对齐）。 */
+/** 覆写模板列表视图（与 Rust 侧 `ProfileView` 对齐）。 */
 export interface ProfileView {
   id: string;
   name: string;
   /** 核心类型：`singbox` / `mihomo`。 */
   core_type: CoreType;
-  /** 是否启用（同核心类型下最多一条为 true）。 */
-  enabled: boolean;
-  /** YAML 复写字节数（列表展示用）。 */
+  /** YAML 覆写字节数（列表展示用）。 */
   yaml_bytes: number;
-  /** JS 复写字节数（列表展示用）。 */
+  /** JS 覆写字节数（列表展示用）。 */
   js_bytes: number;
-  /** 远程 YAML 复写 URL（null = 未配置）。 */
+  /** 远程 YAML 覆写 URL（null = 未配置）。 */
   yaml_url: string | null;
-  /** 远程 JS 复写 URL（null = 未配置）。 */
+  /** 远程 JS 覆写 URL（null = 未配置）。 */
   js_url: string | null;
 }
 
-/** 复写模板详情视图（含复写内容，与 Rust 侧 `ProfileDetailView` 对齐）。 */
+/** 覆写模板详情视图（含覆写内容，与 Rust 侧 `ProfileDetailView` 对齐）。 */
 export interface ProfileDetailView {
   id: string;
   name: string;
   core_type: CoreType;
-  enabled: boolean;
-  /** YAML 深合并复写（RFC 7386 式；空串 = 未启用）。 */
+  /** YAML 深合并覆写（RFC 7386 式；空串 = 未启用）。 */
   yaml_override: string;
-  /** JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。 */
+  /** JS 覆写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。 */
   js_override: string;
-  /** 远程 YAML 复写 URL（null = 未配置）。 */
+  /** 远程 YAML 覆写 URL（null = 未配置）。 */
   yaml_url: string | null;
-  /** 远程 JS 复写 URL（null = 未配置）。 */
+  /** 远程 JS 覆写 URL（null = 未配置）。 */
   js_url: string | null;
 }
 
-/** 新建复写模板入参。 */
+/** 新建覆写模板入参。 */
 export interface CreateProfileInput {
   name: string;
   core_type: CoreType;
 }
 
-/** 更新复写模板入参（YAML/JS 复写与远程 URL 校验失败时被命令层拒绝）。 */
+/** 更新覆写模板入参（YAML/JS 覆写与远程 URL 校验失败时被命令层拒绝）。 */
 export interface UpdateProfileInput {
   id: string;
   name: string;
   yaml_override: string;
   js_override: string;
-  /** 远程 YAML 复写 URL（空串 = 未配置）。 */
+  /** 远程 YAML 覆写 URL（空串 = 未配置）。 */
   yaml_url: string;
-  /** 远程 JS 复写 URL（空串 = 未配置）。 */
+  /** 远程 JS 覆写 URL（空串 = 未配置）。 */
   js_url: string;
 }
 
@@ -307,34 +304,29 @@ export function importConfig(content: string, dialect: string): Promise<ImportSu
   return invoke<ImportSummary>("import_config", { content, dialect });
 }
 
-/** 列出全部复写模板。 */
+/** 列出全部覆写模板。 */
 export function listProfiles(): Promise<ProfileView[]> {
   return invoke<ProfileView[]>("list_profiles");
 }
 
-/** 新建复写模板（重名报错，错误信息由命令层上抛）。 */
+/** 新建覆写模板（重名报错，错误信息由命令层上抛）。 */
 export function createProfile(input: CreateProfileInput): Promise<ProfileView> {
   return invoke<ProfileView>("create_profile", { input });
 }
 
-/** 读取单个复写模板详情（含 YAML / JS 复写内容）。 */
+/** 读取单个覆写模板详情（含 YAML / JS 覆写内容）。 */
 export function getProfile(id: string): Promise<ProfileDetailView> {
   return invoke<ProfileDetailView>("get_profile", { id });
 }
 
-/** 更新复写模板的可编辑字段（name / yaml_override / js_override）。 */
+/** 更新覆写模板的可编辑字段（name / yaml_override / js_override）。 */
 export function updateProfile(input: UpdateProfileInput): Promise<void> {
   return invoke<void>("update_profile", { input });
 }
 
-/** 删除复写模板。 */
+/** 删除覆写模板。 */
 export function deleteProfile(id: string): Promise<void> {
   return invoke<void>("delete_profile", { id });
-}
-
-/** 切换复写模板启用状态（启用时同核心其他模板自动停用）。 */
-export function setProfileEnabled(id: string, enabled: boolean): Promise<void> {
-  return invoke<void>("set_profile_enabled", { id, enabled });
 }
 
 /** 生成生效配置预览（按当前客户端核心类型；sing-box 为 JSON、mihomo 为 YAML 文本）。 */
@@ -382,6 +374,8 @@ export interface AddSubscriptionInput {
   url: string;
   /** 请求 User-Agent；缺省/空串使用默认 `clash.meta`。 */
   user_agent?: string;
+  /** 关联的覆写模板 id（`null` / 空串 = 不使用覆写）。 */
+  profile_id?: string | null;
 }
 
 export function listSubscriptions(): Promise<SubscriptionView[]> {
@@ -409,14 +403,18 @@ export function refreshSubscription(id: string): Promise<SubscriptionView> {
   return invoke<SubscriptionView>("refresh_subscription", { id });
 }
 
-/** 更新订阅的 name / url / user_agent（URL 变更时清空上次拉取的缓存）。 */
+/**
+ * 更新订阅的 name / url / user_agent / 关联覆写模板（URL 变更时清空上次拉取的缓存）。
+ * `profileId`：模板 id = 关联；`null` / 空串 = 取消关联。
+ */
 export function updateSubscription(
   id: string,
   name: string,
   url: string,
+  profileId: string | null,
   userAgent?: string,
 ): Promise<SubscriptionView> {
-  return invoke<SubscriptionView>("update_subscription", { id, name, url, userAgent });
+  return invoke<SubscriptionView>("update_subscription", { id, name, url, profile_id: profileId, userAgent });
 }
 
 /** 核心来源：`downloaded`（已下载）/ `system`（系统探测）。 */

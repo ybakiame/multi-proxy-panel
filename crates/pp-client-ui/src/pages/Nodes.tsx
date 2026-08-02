@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, Chip, Input, Label, Meter, Modal, Switch, Table } from "@heroui/react";
+import { Alert, Button, Card, Chip, Input, Label, ListBox, Meter, Modal, Select, Switch, Table } from "@heroui/react";
 import {
   addSubscription,
+  listProfiles,
   listSubscriptions,
   refreshSubscription,
   removeSubscription,
@@ -9,7 +10,7 @@ import {
   toErrorMessage,
   updateSubscription,
 } from "../api";
-import type { SubscriptionFormat, SubscriptionUserInfo, SubscriptionView } from "../api";
+import type { ProfileView, SubscriptionFormat, SubscriptionUserInfo, SubscriptionView } from "../api";
 import { useAppStore } from "../store";
 
 /** 字节数格式化为 GB（保留两位小数）。 */
@@ -93,8 +94,14 @@ function formatColor(format: SubscriptionFormat): "accent" | "warning" | "succes
   return "accent";
 }
 
+/** 核心类型展示名：singbox → sing-box，mihomo → mihomo（用于关联覆写提示）。 */
+function coreLabel(coreType: string | undefined): string {
+  return coreType === "mihomo" ? "mihomo" : "sing-box";
+}
+
 export default function Nodes() {
   const [subs, setSubs] = useState<SubscriptionView[]>([]);
+  const [profiles, setProfiles] = useState<ProfileView[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OpResult | null>(null);
@@ -105,15 +112,21 @@ export default function Nodes() {
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
   const [newUa, setNewUa] = useState("");
+  // 关联覆写模板 id（"" = 不关联）
+  const [newProfileId, setNewProfileId] = useState("");
 
-  // 编辑订阅对话框（名称 / URL / UA 可改，UA 沿用添加快捷 chips）
+  // 编辑订阅对话框（名称 / URL / UA / 关联覆写可改，UA 沿用添加快捷 chips）
   const [editSub, setEditSub] = useState<SubscriptionView | null>(null);
   const [editName, setEditName] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [editUa, setEditUa] = useState("");
+  // 关联覆写模板 id（"" = 不关联）
+  const [editProfileId, setEditProfileId] = useState("");
 
-  // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示。
+  // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示与关联覆写过滤。
   const clientCoreType = useAppStore((state) => state.config?.core_type);
+  const config = useAppStore((state) => state.config);
+  const loadConfig = useAppStore((state) => state.loadConfig);
 
   const refreshSubs = useCallback(async () => {
     try {
@@ -124,9 +137,22 @@ export default function Nodes() {
     }
   }, []);
 
+  const loadProfiles = useCallback(async () => {
+    try {
+      setProfiles(await listProfiles());
+      setError(null);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }, []);
+
   useEffect(() => {
     void refreshSubs();
-  }, [refreshSubs]);
+    void loadProfiles();
+  }, [refreshSubs, loadProfiles]);
+
+  /** 当前客户端核心类型下可关联的覆写模板（带核心过滤）。 */
+  const coreProfiles = profiles.filter((profile) => profile.core_type === clientCoreType);
 
   const handleAdd = async () => {
     setBusy(true);
@@ -138,12 +164,15 @@ export default function Nodes() {
         name: newName.trim(),
         url: newUrl.trim(),
         user_agent: ua || undefined,
+        // 「不关联」传 null（与后端 `None` 语义对齐）
+        profile_id: newProfileId === "" ? null : newProfileId,
       });
       setResult({ sub, kind: "add" });
       setAddOpen(false);
       setNewName("");
       setNewUrl("");
       setNewUa("");
+      setNewProfileId("");
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -171,6 +200,10 @@ export default function Nodes() {
     try {
       await setSubscriptionEnabled(sub.id, !sub.enabled);
       await refreshSubs();
+      // 停用的是当前生效订阅时，后端已自动清除选中；本地刷新配置保持首页一致。
+      if (sub.enabled && config?.active_subscription_id === sub.id) {
+        await loadConfig();
+      }
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -198,6 +231,7 @@ export default function Nodes() {
     setEditName(sub.name);
     setEditUrl(sub.url);
     setEditUa(sub.user_agent ?? "");
+    setEditProfileId(sub.profile_id ?? "");
     setError(null);
   };
 
@@ -209,7 +243,8 @@ export default function Nodes() {
     setError(null);
     try {
       const ua = editUa.trim();
-      await updateSubscription(editSub.id, editName.trim(), editUrl.trim(), ua || undefined);
+      // 「不关联」传空串（与后端 `Some("")` 取消关联语义对齐；`None` 或空串均取消）。
+      await updateSubscription(editSub.id, editName.trim(), editUrl.trim(), editProfileId, ua || undefined);
       setEditSub(null);
       await refreshSubs();
     } catch (err) {
@@ -226,7 +261,9 @@ export default function Nodes() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">订阅</h1>
-        <p className="text-sm text-muted">多订阅源管理：拉取节点、用量与到期展示，取第一个启用的订阅生效</p>
+        <p className="text-sm text-muted">
+          多订阅源管理：拉取节点、用量与到期展示，启用后可被首页选择，选择的订阅唯一生效
+        </p>
       </div>
 
       <Card>
@@ -251,12 +288,14 @@ export default function Nodes() {
                     <Table.Column>格式</Table.Column>
                     <Table.Column>用量</Table.Column>
                     <Table.Column>到期时间</Table.Column>
+                    <Table.Column>覆写</Table.Column>
                     <Table.Column>启用</Table.Column>
                     <Table.Column>操作</Table.Column>
                   </Table.Header>
                   <Table.Body>
                     {subs.map((sub) => {
                       const percent = usagePercent(sub.userinfo);
+                      const linkedProfile = sub.profile_id ? profiles.find((p) => p.id === sub.profile_id) : undefined;
                       return (
                         <Table.Row key={sub.id}>
                           <Table.Cell>{sub.name}</Table.Cell>
@@ -292,6 +331,17 @@ export default function Nodes() {
                             </Meter>
                           </Table.Cell>
                           <Table.Cell>{formatExpire(sub.userinfo?.expire)}</Table.Cell>
+                          <Table.Cell>
+                            {sub.profile_id ? (
+                              linkedProfile ? (
+                                <span className="text-xs">{linkedProfile.name}</span>
+                              ) : (
+                                <span className="text-xs text-warning">已失效</span>
+                              )
+                            ) : (
+                              <span className="text-muted">-</span>
+                            )}
+                          </Table.Cell>
                           <Table.Cell>
                             <Switch
                               aria-label={`启用 ${sub.name}`}
@@ -357,7 +407,7 @@ export default function Nodes() {
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>生效提示</Alert.Title>
-            <Alert.Description>取第一个启用的订阅生效，重启代理应用后应用新订阅</Alert.Description>
+            <Alert.Description>启用的订阅可在首页选择，首页选择的订阅唯一生效</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
@@ -448,6 +498,42 @@ export default function Nodes() {
                   ))}
                 </div>
               </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-profile">关联覆写</Label>
+                {coreProfiles.length > 0 ? (
+                  <Select
+                    id="sub-profile"
+                    aria-label="关联覆写"
+                    placeholder="选择覆写模板"
+                    value={newProfileId}
+                    onChange={(value) => setNewProfileId(String(value ?? ""))}
+                    fullWidth
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="" textValue="不关联">
+                          不关联
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                        {coreProfiles.map((profile) => (
+                          <ListBox.Item key={profile.id} id={profile.id} textValue={profile.name}>
+                            {profile.name}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-warning">
+                    当前核心（{coreLabel(clientCoreType)}）暂无覆写模板，可到「覆写」页创建
+                  </p>
+                )}
+              </div>
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="secondary" onPress={() => setAddOpen(false)}>
@@ -519,6 +605,42 @@ export default function Nodes() {
                     </Button>
                   ))}
                 </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="sub-edit-profile">关联覆写</Label>
+                {coreProfiles.length > 0 ? (
+                  <Select
+                    id="sub-edit-profile"
+                    aria-label="关联覆写"
+                    placeholder="选择覆写模板"
+                    value={editProfileId}
+                    onChange={(value) => setEditProfileId(String(value ?? ""))}
+                    fullWidth
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="" textValue="不关联">
+                          不关联
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                        {coreProfiles.map((profile) => (
+                          <ListBox.Item key={profile.id} id={profile.id} textValue={profile.name}>
+                            {profile.name}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-warning">
+                    当前核心（{coreLabel(clientCoreType)}）暂无覆写模板，可到「覆写」页创建
+                  </p>
+                )}
               </div>
             </Modal.Body>
             <Modal.Footer>
