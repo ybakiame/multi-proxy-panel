@@ -1,5 +1,7 @@
 /src/main/**/generated
 /src/main/jniLibs/**/*.so
+# libbox.aar 为 GPL-3.0 本地构建产物（体积大），不入库，用 scripts/build-libbox.sh 构建
+/libs/*.aar
 /src/main/assets/tauri.conf.json
 /tauri.build.gradle.kts
 /proguard-tauri.pro
