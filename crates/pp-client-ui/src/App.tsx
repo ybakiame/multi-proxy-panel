@@ -7,6 +7,7 @@ import { setToastMode } from "./toast";
 import { MobileNav } from "./layout/MobileNav";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import Logs from "./pages/Logs";
 import Mitm from "./pages/Mitm";
 import Nodes from "./pages/Nodes";
 import Override from "./pages/Override";
@@ -132,6 +133,7 @@ export default function App() {
                 <Route path="/mitm" element={<Mitm />} />
                 <Route path="/scripts" element={<Scripts />} />
                 <Route path="/override" element={<Override />} />
+                <Route path="/logs" element={<Logs />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

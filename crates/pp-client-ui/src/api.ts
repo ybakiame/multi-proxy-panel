@@ -520,6 +520,33 @@ export function toErrorMessage(err: unknown): string {
   return String(err);
 }
 
+/** 一条日志条目（与 Rust 侧 `LogEntry` 对齐：`ts`/`level`/`target`/`message`）。 */
+export interface LogEntry {
+  /** RFC3339 本地时间（如 `2026-08-02T21:00:00+08:00`）。 */
+  ts: string;
+  /** 级别（`ERROR`/`WARN`/`INFO`/`DEBUG`/`TRACE`）。 */
+  level: string;
+  /** `tracing` target（模块路径，或前端日志的 `frontend`）。 */
+  target: string;
+  /** 消息（含结构化字段，形如 `key=value`）。 */
+  message: string;
+}
+
+/** 取内存环形缓冲中的日志（最新在前），可限制条数（`limit`）与最小级别（`minLevel`）。 */
+export function getLogs(limit?: number, minLevel?: string): Promise<LogEntry[]> {
+  return invoke<LogEntry[]>("get_logs", { limit: limit ?? null, minLevel: minLevel ?? null });
+}
+
+/** 把 `data_dir/logs/` 下全部滚动文件按时间序合并导出，返回导出文件路径。 */
+export function exportLogs(): Promise<string> {
+  return invoke<string>("export_logs");
+}
+
+/** 清空内存日志环形缓冲（不删除滚动文件）。 */
+export function clearLogs(): Promise<void> {
+  return invoke<void>("clear_logs");
+}
+
 /** 把前端日志（`target="frontend"`）写入后端 tracing 管道，供日志页与排查共用。 */
 export function logFrontend(level: string, message: string): Promise<void> {
   return invoke<void>("log_frontend", { level, message });

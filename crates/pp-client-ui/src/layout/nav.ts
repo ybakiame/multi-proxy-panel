@@ -3,6 +3,7 @@ import {
   AdjustmentsHorizontalIcon,
   BeakerIcon,
   Cog6ToothIcon,
+  DocumentTextIcon,
   ServerStackIcon,
   Squares2X2Icon,
   WrenchScrewdriverIcon,
@@ -22,5 +23,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/mitm", label: "MITM", icon: BeakerIcon },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon },
   { to: "/override", label: "覆写", icon: AdjustmentsHorizontalIcon },
+  { to: "/logs", label: "日志", icon: DocumentTextIcon },
   { to: "/settings", label: "设置", icon: Cog6ToothIcon },
 ];
