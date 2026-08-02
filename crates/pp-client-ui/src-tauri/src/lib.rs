@@ -4,6 +4,8 @@
 //! [`tauri::mobile_entry_point`] 注入移动入口，`main` 不参与编译。
 
 mod commands;
+#[cfg(target_os = "android")]
+mod core_bridge;
 mod state;
 
 /// WSL 下 WebKitGTK 兼容与 GPU 处理。
@@ -119,6 +121,11 @@ pub fn run() {
     // 必须在任何 WebKit 相关初始化之前执行。
     #[cfg(target_os = "linux")]
     configure_wsl_webkit_workaround();
+
+    // Android 核心由 Kotlin 侧 libbox 驱动：启动时安装核心引擎桥（P1a 为占位
+    // 实现，P1c 接入真实通道），保证启动代理时报错清晰而非 spawn 失败乱码。
+    #[cfg(target_os = "android")]
+    core_bridge::install_android_core_bridge();
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));

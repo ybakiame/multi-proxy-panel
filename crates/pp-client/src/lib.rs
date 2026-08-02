@@ -3,12 +3,14 @@
 //! 提供客户端配置（[`config`]）、分享链接解析（[`share_link`]）、双核心节点转换
 //! （[`node_convert`]）、通用订阅管理（[`subscription`]）、三方配置片段导入
 //! （[`import`]）、Profile 模板与复写（[`profile`]）、核心配置合成（[`core_config`]）、
-//! 系统代理（[`sysproxy`]）、核心运行器（[`runner`]）、MITM 构建（[`mitm`]）与运行状态编排（[`state`]）。
+//! 系统代理（[`sysproxy`]）、核心运行器（[`runner`]）、核心引擎桥（[`core_engine`]）、
+//! MITM 构建（[`mitm`]）与运行状态编排（[`state`]）。
 
 #![allow(clippy::result_large_err)]
 
 pub mod config;
 pub mod core_config;
+pub mod core_engine;
 pub mod cores;
 pub mod http_exec;
 pub mod import;
@@ -25,6 +27,7 @@ pub mod sysproxy;
 
 pub use config::*;
 pub use core_config::*;
+pub use core_engine::*;
 pub use cores::*;
 pub use http_exec::*;
 pub use import::*;
