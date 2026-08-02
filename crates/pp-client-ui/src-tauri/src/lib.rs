@@ -8,6 +8,8 @@ mod commands;
 mod core_bridge;
 mod state;
 
+use tauri::Manager;
+
 /// WSL 下 WebKitGTK 兼容与 GPU 处理。
 ///
 /// WSL2 中 Tauri v2 在 Linux 使用的 WebKitGTK 存在导致页面全黑的上游已知问题
@@ -112,6 +114,39 @@ fn configure_wsl_webkit_workaround() {
     );
 }
 
+/// 解析应用数据目录。
+///
+/// - 桌面：沿用 [`state::AppState::default_data_dir`]（`$HOME/.proxy-panel-client`），
+///   行为与既有版本完全一致，不迁移已有数据；
+/// - Android：`HOME` 为只读 `/`，写 `$HOME/.proxy-panel-client` 必然失败；改用
+///   Tauri path resolver 的应用私有可写目录 `app_data_dir()`（如
+///   `/data/user/0/com.proxypanel.client/files`，随应用卸载清除，属移动端预期语义），
+///   不可用时回退 `app_local_data_dir()`，仍失败视为配置错误，终止启动并报错。
+fn resolve_data_dir(app: &tauri::App) -> std::path::PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        match app.path().app_data_dir() {
+            Ok(dir) => return dir,
+            Err(app_data_err) => {
+                tracing::warn!(
+                    "Android app_data_dir() 解析失败：{app_data_err}，回退 app_local_data_dir()"
+                );
+                match app.path().app_local_data_dir() {
+                    Ok(dir) => return dir,
+                    Err(local_data_err) => panic!(
+                        "Android 应用数据目录解析失败：app_data_dir {app_data_err}，app_local_data_dir {local_data_err}"
+                    ),
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        state::AppState::default_data_dir()
+    }
+}
+
 /// 应用入口。
 ///
 /// Android/iOS 构建时经 `#[cfg_attr(mobile, tauri::mobile_entry_point)]` 生成
@@ -126,11 +161,17 @@ pub fn run() {
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
-    let data_dir = state::AppState::default_data_dir();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(state::AppState::new(data_dir))
+        .setup(|app| {
+            // Android 上 HOME 为只读 `/`，数据目录须在 setup 阶段经 AppHandle
+            // 的 path resolver 解析应用私有目录（桌面仍走 default_data_dir）。
+            let data_dir = resolve_data_dir(app);
+            tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
+            app.manage(state::AppState::new(data_dir));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
