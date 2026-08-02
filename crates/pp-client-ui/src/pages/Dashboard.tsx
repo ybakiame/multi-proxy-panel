@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, Chip, Label, ListBox, Select } from "@heroui/react";
+import { Alert, Button, Card, Chip, Label, ListBox, Select, Switch } from "@heroui/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listCores,
@@ -10,7 +10,7 @@ import {
   setRuleMode as setRuleModeApi,
   toErrorMessage,
 } from "../api";
-import type { CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
+import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
 import { useAppStore } from "../store";
 
 const CORE_LABELS: Record<CoreType, string> = {
@@ -31,7 +31,8 @@ function coreLabel(value: string): string {
 }
 
 export default function Dashboard() {
-  const { config, status, loading, error, loadConfig, refreshStatus, start, stop, setStatus } = useAppStore();
+  const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
+    useAppStore();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [subs, setSubs] = useState<SubscriptionView[]>([]);
   const [cores, setCores] = useState<LocalCoreView[]>([]);
@@ -39,6 +40,28 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
+
+  /**
+   * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值），
+   * 成功返回后端 warning，失败时 store.error 由页面级 Alert 展示并 `loadConfig()` 回滚。
+   */
+  const persistConfig = useCallback(
+    async (patch: Partial<ClientConfig>) => {
+      const current = useAppStore.getState().config;
+      if (!current) {
+        return;
+      }
+      setSaveWarning(null);
+      try {
+        const warning = await saveConfig({ ...current, ...patch });
+        setSaveWarning(warning);
+      } catch {
+        await loadConfig();
+      }
+    },
+    [saveConfig, loadConfig],
+  );
 
   const loadSubscriptions = useCallback(async () => {
     try {
@@ -294,6 +317,40 @@ export default function Dashboard() {
               {message}
             </span>
           ))}
+
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <Switch
+                isSelected={config?.mitm_enabled ?? false}
+                isDisabled={!config || loading || busy !== null}
+                onChange={(next) => void persistConfig({ mitm_enabled: next })}
+              >
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  启用 MITM
+                </Switch.Content>
+              </Switch>
+              <span className="text-xs text-muted">拦截并解密 HTTPS 流量（重写/脚本钩子），重启代理生效</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Switch
+                isSelected={config?.system_proxy_enabled ?? false}
+                isDisabled={!config || loading || busy !== null}
+                onChange={(next) => void persistConfig({ system_proxy_enabled: next })}
+              >
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  启用系统代理
+                </Switch.Content>
+              </Switch>
+              <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
+            </div>
+            {saveWarning && <span className="text-xs text-warning">{saveWarning}</span>}
+          </div>
 
           <div className="flex items-center gap-4">
             {running ? (
