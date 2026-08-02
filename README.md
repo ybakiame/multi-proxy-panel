@@ -173,6 +173,36 @@ bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
 ```
 
+#### Android 构建
+
+桌面客户端同时维护 Android 工程（`src-tauri/gen/android/`，Gradle + Kotlin 壳，minSdk 26）。构建 Debug APK：
+
+**环境要求**
+
+- JDK 17（Android Gradle 插件要求）
+- Android SDK：compileSdk 为 36，需安装 `platforms;android-36`（`sdkmanager "platforms;android-36"`）
+- Android NDK：`*-android26-clang` 工具链（minSdk 26 对应），路径见下方配置
+- Rust Android targets（`rustup target add ...`）：`aarch64-linux-android`、`armv7-linux-androideabi`、`i686-linux-android`、`x86_64-linux-android`
+- 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`
+- 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `crates/pp-client-ui/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
+
+**构建命令**
+
+```bash
+cd crates/pp-client-ui
+bunx tauri android build --debug --apk
+```
+
+`beforeBuildCommand` 会先执行 `bun run build` 构建前端，随后 gradle 为全部 4 个 ABI（arm64-v8a / armeabi-v7a / x86 / x86_64）编译 Rust 动态库并打包。
+
+**产物位置**
+
+```text
+src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+```
+
+APK 为 universal flavor（含全部 ABI），包名 `com.proxypanel.client`，`minSdk=26`、`targetSdk=36`。该目录（`gen/android` 下）已被内部 `.gitignore` 覆盖，构建产物不会进入版本库。
+
 ## 项目结构
 
 ```
