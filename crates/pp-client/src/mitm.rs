@@ -4,6 +4,8 @@
 //! - CA 从 `client_config.mitm.ca_dir` 加载，缺失时自动生成
 //! - 上游指向本机核心回流 mixed 入站端口（[`UpstreamProxy::Http`]，默认
 //!   `mixed_port + 1`，可通过 [`MitmBuildOptions::upstream_port`] 覆盖）
+//! - hostname 白名单中 `-` / `!` 前缀条目（排除项）剥前缀后放入
+//!   [`MitmConfig::excluded_hostnames`]，其余放入 `hostnames`
 //! - 重写引擎为空、流量记录由调用方传入
 
 use std::net::{Ipv4Addr, SocketAddr};
@@ -20,7 +22,8 @@ use crate::config::ClientConfig;
 /// MITM 构建的可选注入项（远程订阅：重写规则 / 主机名 / 脚本钩子）。
 #[derive(Default)]
 pub struct MitmBuildOptions {
-    /// 额外主机名白名单，与 `client_config.mitm.hostnames` 合并去重。
+    /// 额外主机名（可含 `-` / `!` 前缀排除项），与
+    /// `client_config.mitm.hostnames` 合并去重。
     pub extra_hostnames: Vec<String>,
     /// MITM 上游（回流）端口；`None` 时默认 `client_config.mixed_port + 1`。
     pub upstream_port: Option<u16>,
@@ -34,6 +37,8 @@ pub struct MitmBuildOptions {
 ///
 /// 上游指向本机核心回流 mixed 入站端口（[`UpstreamProxy::Http`]，默认
 /// `mixed_port + 1`），即 MITM 解密后的流量回到核心继续正常路由。
+/// hostname 中 `-` / `!` 前缀条目为排除项（剥前缀后进入
+/// `MitmConfig.excluded_hostnames`，命中不拦截），其余为白名单。
 /// `recorder` 由调用方注入并持有，供外部通过 `TrafficRecorder::list()` 取回抓包记录；
 /// `options` 提供远程订阅合并的额外 hostname / 重写规则 / 脚本钩子。
 pub fn build_mitm_proxy(
@@ -57,14 +62,25 @@ pub fn build_mitm_proxy(
             hostname_sources.push(extra);
         }
     }
-    let hostnames = hostname_sources
-        .iter()
-        .map(|h| HostnameMatcher::from_pattern(h))
-        .collect();
+    // `-` / `!` 前缀条目为排除项（见 import 解析），剥前缀后构造排除匹配器；
+    // 其余为白名单匹配器。
+    let mut hostnames = Vec::new();
+    let mut excluded_hostnames = Vec::new();
+    for hostname in &hostname_sources {
+        if let Some(pattern) = hostname
+            .strip_prefix('-')
+            .or_else(|| hostname.strip_prefix('!'))
+        {
+            excluded_hostnames.push(HostnameMatcher::from_pattern(pattern));
+        } else {
+            hostnames.push(HostnameMatcher::from_pattern(hostname));
+        }
+    }
 
     let config = MitmConfig {
         listen_addr: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
         hostnames,
+        excluded_hostnames,
         upstream,
         ..MitmConfig::default()
     };

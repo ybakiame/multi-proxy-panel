@@ -172,6 +172,20 @@ struct RequestState {
     start: Instant,
 }
 
+/// 依据配置判断 `host` 是否应拦截。
+///
+/// 排除列表（`excluded_hostnames`）优先级高于白名单：命中排除的主机一律不拦截；
+/// 白名单为空时除排除命中外全量拦截。
+fn should_intercept_host(config: &MitmConfig, host: &str) -> bool {
+    if config.excluded_hostnames.iter().any(|m| m.matches(host)) {
+        return false;
+    }
+    if config.hostnames.is_empty() {
+        return true;
+    }
+    config.hostnames.iter().any(|m| m.matches(host))
+}
+
 /// hudsucker 处理器：每请求独立克隆，内部 state 串联请求/响应两阶段。
 #[derive(Clone)]
 struct Handler {
@@ -322,7 +336,7 @@ impl HttpHandler for Handler {
     }
 
     async fn should_intercept_connect(&mut self, _ctx: &HttpContext, req: &Request<Body>) -> bool {
-        // CONNECT 请求的 URI 形如 host:port，去掉端口后与白名单匹配。
+        // CONNECT 请求的 URI 形如 host:port，去掉端口后与匹配器比对。
         let host = req
             .uri()
             .host()
@@ -330,10 +344,7 @@ impl HttpHandler for Handler {
             .split(':')
             .next()
             .unwrap_or_default();
-        if self.config.hostnames.is_empty() {
-            return true;
-        }
-        self.config.hostnames.iter().any(|m| m.matches(host))
+        should_intercept_host(&self.config, host)
     }
 }
 
@@ -655,6 +666,89 @@ mod tests {
         assert!(
             websocket_connector_for(UpstreamProxy::Socks5 { addr: socks5_addr }, &socks5).is_some(),
             "SOCKS5 上游应设置 WebSocket 连接器"
+        );
+    }
+
+    /// 构造带指定 hostnames / excluded_hostnames 的 Handler。
+    fn test_handler(
+        hostnames: Vec<HostnameMatcher>,
+        excluded_hostnames: Vec<HostnameMatcher>,
+    ) -> Handler {
+        let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(16));
+        let rewrite = RewriteEngine { rules: Vec::new() };
+        let config = MitmConfig {
+            listen_addr: "127.0.0.1:0".parse().unwrap(),
+            hostnames,
+            excluded_hostnames,
+            ..MitmConfig::default()
+        };
+        Handler {
+            config: Arc::new(config),
+            rewrite: Arc::new(rewrite),
+            hooks: None,
+            recorder,
+            state: None,
+        }
+    }
+
+    /// CONNECT 请求：uri 为 `host:443` 形式，返回值与
+    /// `should_intercept_connect` 内部提取的 host 一致（`vip.iqiyi.com:443` → `vip.iqiyi.com`）。
+    fn connect_host(host: &str) -> String {
+        Request::builder()
+            .uri(format!("{host}:443"))
+            .body(Body::empty())
+            .unwrap()
+            .uri()
+            .host()
+            .unwrap()
+            .split(':')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn should_intercept_connect_excluded_host_wins_over_whitelist() {
+        // `*.iqiyi.com` 在白名单，`vip.iqiyi.com` 同时被排除 → 排除命中时不拦截。
+        let handler = test_handler(
+            vec![HostnameMatcher::Suffix("iqiyi.com".to_string())],
+            vec![HostnameMatcher::Suffix("vip.iqiyi.com".to_string())],
+        );
+        assert!(
+            !should_intercept_host(&handler.config, &connect_host("vip.iqiyi.com")),
+            "排除命中即使白名单命中也不应拦截"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_intercept_connect_whitelist_hit_intercepts() {
+        let handler = test_handler(
+            vec![HostnameMatcher::Suffix("iqiyi.com".to_string())],
+            vec![HostnameMatcher::Exact("blocked.example.com".to_string())],
+        );
+        assert!(
+            should_intercept_host(&handler.config, &connect_host("api.iqiyi.com")),
+            "未排除且白名单命中应拦截"
+        );
+        assert!(
+            !should_intercept_host(&handler.config, &connect_host("blocked.example.com")),
+            "白名单未命中不应拦截"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_intercept_connect_empty_whitelist_intercepts_unless_excluded() {
+        let handler = test_handler(
+            Vec::new(),
+            vec![HostnameMatcher::Suffix("vip.iqiyi.com".to_string())],
+        );
+        assert!(
+            should_intercept_host(&handler.config, &connect_host("example.com")),
+            "白名单为空时未命中排除应全量拦截"
+        );
+        assert!(
+            !should_intercept_host(&handler.config, &connect_host("vip.iqiyi.com")),
+            "白名单为空时命中排除仍不拦截"
         );
     }
 }

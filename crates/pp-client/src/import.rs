@@ -667,7 +667,8 @@ fn parse_qx_task(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &str) {
 
 /// `[mitm]` / `[MITM]` hostname 行解析：`hostname = a, b, -exclude`。
 ///
-/// `-` / `!` 前缀为排除项，pp-mitm 仅支持白名单，记 warning 后跳过；
+/// `-` / `!` 前缀为排除项（`!` 归一为 `-`），随白名单一并保留在
+/// `cfg.hostnames` 中，由下游（`build_mitm_proxy` / 核心路由规则）按前缀分流；
 /// Surge 的 `%APPEND%` 前缀直接剥离。
 fn parse_mitm_hostnames(cfg: &mut ImportedConfig, line: &str) {
     let Some(eq) = line.find('=') else {
@@ -687,15 +688,11 @@ fn parse_mitm_hostnames(cfg: &mut ImportedConfig, line: &str) {
             .strip_prefix("%APPEND%")
             .map(str::trim)
             .unwrap_or(entry);
-        if entry.starts_with('-') || entry.starts_with('!') {
-            cfg.warn(
-                "mitm",
-                line,
-                &format!("exclude pattern '{entry}' not supported, skipped"),
-            );
-            continue;
+        if let Some(rest) = entry.strip_prefix('!') {
+            cfg.hostnames.push(format!("-{rest}"));
+        } else {
+            cfg.hostnames.push(entry.to_string());
         }
-        cfg.hostnames.push(entry.to_string());
     }
 }
 
@@ -1266,13 +1263,40 @@ hostname = *.example.com, api.example2.com, -exclude.example.com
         assert_eq!(task2.cron_expr, "0 30 12 * * *");
         assert_eq!(url2, "https://example.com/clean.js");
 
-        // `-` 前缀排除项记 warning，不进白名单
+        // `-` 前缀排除项带前缀随白名单保留，不再记 warning
         assert_eq!(
             cfg.hostnames,
-            vec!["*.example.com".to_string(), "api.example2.com".to_string()]
+            vec![
+                "*.example.com".to_string(),
+                "api.example2.com".to_string(),
+                "-exclude.example.com".to_string()
+            ]
         );
         assert!(
-            cfg.warnings
+            !cfg.warnings
+                .iter()
+                .any(|w| w.contains("exclude.example.com"))
+        );
+    }
+
+    #[test]
+    fn mitm_hostname_bang_prefix_normalized_to_dash() {
+        let content = r#"
+[mitm]
+hostname = *.example.com, !exclude.example.com
+"#;
+        let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
+
+        // `!` 前缀归一为 `-` 后随白名单保留，无排除相关 warning。
+        assert_eq!(
+            cfg.hostnames,
+            vec![
+                "*.example.com".to_string(),
+                "-exclude.example.com".to_string()
+            ]
+        );
+        assert!(
+            !cfg.warnings
                 .iter()
                 .any(|w| w.contains("exclude.example.com"))
         );
@@ -1389,10 +1413,16 @@ hostname = %APPEND% *.example.com, -exclude.example.com
             other => panic!("unexpected kind: {other:?}"),
         }
 
-        // [MITM]：%APPEND% 剥离，- 排除记 warning
-        assert_eq!(cfg.hostnames, vec!["*.example.com".to_string()]);
+        // [MITM]：%APPEND% 剥离，- 排除项带前缀保留
+        assert_eq!(
+            cfg.hostnames,
+            vec![
+                "*.example.com".to_string(),
+                "-exclude.example.com".to_string()
+            ]
+        );
         assert!(
-            cfg.warnings
+            !cfg.warnings
                 .iter()
                 .any(|w| w.contains("exclude.example.com"))
         );

@@ -11,7 +11,9 @@ pub struct MitmChain {
     pub proxy_addr: SocketAddr,
     /// MITM 回流入口端口（核心回流 mixed 入站监听端口，通常为 `mixed_port + 1`）。
     pub return_port: u16,
-    /// 需经 MITM 的白名单主机名（`*.` 前缀按后缀匹配，其余精确匹配）。
+    /// 需经 MITM 的白名单主机名（`*.` 前缀按后缀匹配，其余精确匹配）；
+    /// `-` / `!` 前缀条目为排除项，不生成核心路由规则（对应域名流量直连，
+    /// 不进 MITM 入站）。
     pub hostnames: Vec<String>,
 }
 
@@ -248,6 +250,11 @@ pub fn compose_singbox_config(
     let mut domain = Vec::new();
     let mut domain_suffix = Vec::new();
     for hostname in &chain.hostnames {
+        // `-` / `!` 前缀为排除项（不拦截），不进入核心路由：对应域名流量直连，
+        // 不会送进 MITM 入站。
+        if hostname.starts_with('-') || hostname.starts_with('!') {
+            continue;
+        }
         match hostname.strip_prefix("*.") {
             Some(suffix) => domain_suffix.push(Value::String(suffix.to_string())),
             None => domain.push(Value::String(hostname.clone())),
@@ -412,6 +419,11 @@ pub fn compose_mihomo_config(
         .unwrap_or_default();
     let mut prepended = Vec::new();
     for hostname in &chain.hostnames {
+        // `-` / `!` 前缀为排除项（不拦截），不生成核心路由规则：对应域名流量
+        // 直连，不会送进 MITM 入站。
+        if hostname.starts_with('-') || hostname.starts_with('!') {
+            continue;
+        }
         let rule = match hostname.strip_prefix("*.") {
             Some(suffix) => {
                 format!("AND,((IN-NAME,main-in),(DOMAIN-SUFFIX,{suffix})),pp-mitm")
@@ -479,7 +491,11 @@ mod tests {
         let chain = MitmChain {
             proxy_addr: "127.0.0.1:34567".parse().unwrap(),
             return_port: 17891,
-            hostnames: vec!["example.com".to_string(), "*.cdn.example.net".to_string()],
+            hostnames: vec![
+                "example.com".to_string(),
+                "*.cdn.example.net".to_string(),
+                "-excluded.example.org".to_string(),
+            ],
         };
         let cfg = compose_singbox_config(&sub, 17890, Some(chain)).unwrap();
 
@@ -501,7 +517,8 @@ mod tests {
         assert_eq!(outbounds[1]["server"], "127.0.0.1");
         assert_eq!(outbounds[1]["server_port"], 34567);
 
-        // route 规则前插：inbound 匹配主入口，精确/后缀正确分流，final 保留。
+        // route 规则前插：inbound 匹配主入口，精确/后缀正确分流，final 保留；
+        // `-excluded.example.org` 为排除项，不进入路由规则。
         let rules = cfg["route"]["rules"].as_array().unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0]["inbound"], json!(["main-in"]));
@@ -651,7 +668,11 @@ rules:
         let chain = MitmChain {
             proxy_addr: "127.0.0.1:34567".parse().unwrap(),
             return_port: 17891,
-            hostnames: vec!["example.com".to_string(), "*.cdn.example.net".to_string()],
+            hostnames: vec![
+                "example.com".to_string(),
+                "*.cdn.example.net".to_string(),
+                "-excluded.example.org".to_string(),
+            ],
         };
         let cfg = compose_mihomo_config(yaml, 17890, Some(chain)).unwrap();
 
@@ -676,7 +697,8 @@ rules:
         assert_eq!(pp_mitm["port"], 34567);
         assert_eq!(proxies[0]["name"], "n1");
 
-        // 白名单规则前插（精确→DOMAIN，通配→DOMAIN-SUFFIX），原规则保留。
+        // 白名单规则前插（精确→DOMAIN，通配→DOMAIN-SUFFIX），原规则保留；
+        // `-excluded.example.org` 为排除项，不生成规则。
         // 逻辑规则语法为 `LOGIC_TYPE,((payload1),(payload2)),Proxy`：AND 与
         // 子规则之间必须有逗号，否则 mihomo 无法解析。
         let rules = cfg["rules"].as_array().unwrap();

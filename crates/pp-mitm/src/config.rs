@@ -46,6 +46,8 @@ pub struct MitmConfig {
     pub ca_dir: PathBuf,
     /// 需要代理拦截的主机名列表。
     pub hostnames: Vec<HostnameMatcher>,
+    /// 主机名排除列表：命中排除的主机不拦截（优先级高于 `hostnames` 白名单）。
+    pub excluded_hostnames: Vec<HostnameMatcher>,
     /// 单个请求/响应可缓存的最大 body 字节数。
     pub max_body_size: usize,
     /// 是否启用流量记录。
@@ -62,6 +64,7 @@ impl Default for MitmConfig {
             listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             ca_dir: PathBuf::new(),
             hostnames: Vec::new(),
+            excluded_hostnames: Vec::new(),
             max_body_size: 131_072,
             record_enabled: true,
             script_dialect: pp_script::ScriptDialect::Surge,
@@ -113,6 +116,7 @@ mod tests {
         let cfg = MitmConfig::default();
         assert_eq!(cfg.listen_addr.port(), 0);
         assert!(cfg.hostnames.is_empty());
+        assert!(cfg.excluded_hostnames.is_empty());
         assert_eq!(cfg.max_body_size, 131_072);
         assert!(cfg.record_enabled);
         assert!(matches!(
