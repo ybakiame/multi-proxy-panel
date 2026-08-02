@@ -502,7 +502,11 @@ fn get_mitm_ca_impl(data_dir: &std::path::Path) -> Result<MitmCaView, String> {
         .load_or_generate()
         .map_err(|e| format!("读取 MITM CA 失败: {e}"))?;
     Ok(MitmCaView {
-        path: data_dir.join("certs").join("ca.crt").to_string_lossy().into_owned(),
+        path: data_dir
+            .join("certs")
+            .join("ca.crt")
+            .to_string_lossy()
+            .into_owned(),
         pem: material.cert_pem,
     })
 }
@@ -1219,78 +1223,133 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
 ///
 /// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
 /// 需要已保存的客户端配置（`data_dir/client.json`）。订阅选择与覆写解析与启动路径
-/// （`state.rs`）一致：首页选中的订阅（`active_subscription_id`）唯一生效，其关联的
-/// 覆写模板经 `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录
-/// `data_dir/profile_cache`），与本地复写一起由 `build_core_config_v2` 合成；未选中
-/// 订阅时回退旧版 Hub 订阅路径（deprecated，无覆写）。
+/// （`state.rs`）一致：
+/// - `subscription_id = Some(id)`：按指定订阅预览（忽略 enabled 状态，订阅表格
+///   行内「预览」使用），不存在报错「订阅不存在」。
+/// - `subscription_id = None`：首页选中的订阅（`active_subscription_id`）唯一生效，
+///   其关联的覆写模板经 `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录
+///   `data_dir/profile_cache`），与本地复写一起由 `build_core_config_v2` 合成；
+///   未选中订阅时回退旧版 Hub 订阅路径（deprecated，无覆写）。
 #[tauri::command]
-pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
-    preview_config_async(state.data_dir.clone()).await
+pub async fn preview_core_config(
+    state: State<'_, AppState>,
+    subscription_id: Option<String>,
+) -> Result<String, String> {
+    // 空串 / `None` 均视为「未指定」，沿用首页选中订阅路径。
+    let preview_id = match subscription_id.as_deref() {
+        Some(s) if !s.trim().is_empty() => Some(parse_subscription_id(s.trim())?),
+        _ => None,
+    };
+    preview_core_config_impl(state.data_dir.clone(), preview_id).await
 }
 
 /// 预览的具体实现（`build_core_config_v2` 的 JS 复写经 pp-script `ScriptWorker`
 /// 驱动，future 为 `Send`，可直接在 Tauri 命令中 await）。
-async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, String> {
+///
+/// `preview_id = Some(id)` 时按指定订阅预览（不存在报错「订阅不存在」，忽略
+/// enabled 状态）；`None` 时保持既有 `active_subscription_id` 选择逻辑（含停用
+/// 校验与旧版 Hub 回退）。
+async fn preview_core_config_impl(
+    data_dir: PathBuf,
+    preview_id: Option<Uuid>,
+) -> Result<String, String> {
     let cfg = ClientConfig::load(&data_dir)
         .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
     // 远程复写缓存目录（与启动路径一致：`data_dir/profile_cache`）。
     let cache_dir = data_dir.join("profile_cache");
 
-    // 订阅选择（与启动路径一致）：首页选中的订阅唯一生效；未选中时回退旧版 Hub
-    // 订阅路径（deprecated，无覆写）。
+    // 订阅选择：指定 id 时定位订阅（忽略 enabled）；未指定时沿用首页选中订阅
+    // （`active_subscription_id`），未选中回退旧版 Hub 订阅路径（deprecated，无覆写）。
     let sub_store = SubscriptionStore::new(data_dir.clone());
     let mut linked_profile_id = None;
-    let sub_content = match cfg.active_subscription_id {
+    let specified = match preview_id {
         Some(id) => {
             let subs = sub_store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
-            let sub = subs
-                .iter()
-                .find(|s| s.id == id)
-                .ok_or_else(|| "所选订阅不存在，请在首页重新选择".to_string())?;
-            if !sub.enabled {
-                return Err("所选订阅已停用，请在订阅页启用或在首页重新选择".to_string());
+            Some(
+                subs.iter()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| "订阅不存在".to_string())?
+                    .clone(),
+            )
+        }
+        None => None,
+    };
+    let sub_content = if let Some(sub) = &specified {
+        linked_profile_id = sub.profile_id;
+        let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+            .await
+            .map_err(|e| format!("拉取订阅「{}」失败: {e}", sub.name))?;
+        // 格式兼容校验（等价启动路径 `state.rs` 的 `check_subscription_core_compat`）：
+        // 预览任意订阅时，订阅格式与当前核心不兼容直接报错（指明订阅名）。
+        check_preview_core_compat(fetch.format, cfg.core_type)
+            .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
+        match cfg.core_type {
+            CoreType::SingBox => {
+                SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
             }
-            linked_profile_id = sub.profile_id;
-            let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
-                .await
-                .map_err(|e| format!("拉取订阅失败: {e}"))?;
-            match cfg.core_type {
-                CoreType::SingBox => {
-                    SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
-                }
-                CoreType::Mihomo => {
-                    let yaml = serde_yaml::to_string(&serde_json::json!({
-                        "proxies": fetch.mihomo_nodes,
-                    }))
-                    .map_err(|e| format!("序列化配置失败: {e}"))?;
-                    SubContent::Mihomo(yaml)
-                }
+            CoreType::Mihomo => {
+                let yaml = serde_yaml::to_string(&serde_json::json!({
+                    "proxies": fetch.mihomo_nodes,
+                }))
+                .map_err(|e| format!("序列化配置失败: {e}"))?;
+                SubContent::Mihomo(yaml)
             }
         }
-        None if !cfg.hub_url.is_empty() && !cfg.sub_token.is_empty() => {
-            let fetcher = SubscriptionFetcher::new();
-            match cfg.core_type {
-                CoreType::SingBox => {
-                    let (config, _) = fetcher
-                        .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
-                        .await
-                        .map_err(|e| format!("拉取订阅失败: {e}"))?;
-                    SubContent::SingBox(config)
+    } else {
+        match cfg.active_subscription_id {
+            Some(id) => {
+                let subs = sub_store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+                let sub = subs
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| "所选订阅不存在，请在首页重新选择".to_string())?;
+                if !sub.enabled {
+                    return Err("所选订阅已停用，请在订阅页启用或在首页重新选择".to_string());
                 }
-                CoreType::Mihomo => {
-                    let (yaml, _) = fetcher
-                        .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
-                        .await
-                        .map_err(|e| format!("拉取订阅失败: {e}"))?;
-                    SubContent::Mihomo(yaml)
+                linked_profile_id = sub.profile_id;
+                let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+                    .await
+                    .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                match cfg.core_type {
+                    CoreType::SingBox => {
+                        SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
+                    }
+                    CoreType::Mihomo => {
+                        let yaml = serde_yaml::to_string(&serde_json::json!({
+                            "proxies": fetch.mihomo_nodes,
+                        }))
+                        .map_err(|e| format!("序列化配置失败: {e}"))?;
+                        SubContent::Mihomo(yaml)
+                    }
                 }
             }
+            None if !cfg.hub_url.is_empty() && !cfg.sub_token.is_empty() => {
+                let fetcher = SubscriptionFetcher::new();
+                match cfg.core_type {
+                    CoreType::SingBox => {
+                        let (config, _) = fetcher
+                            .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
+                            .await
+                            .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                        SubContent::SingBox(config)
+                    }
+                    CoreType::Mihomo => {
+                        let (yaml, _) = fetcher
+                            .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
+                            .await
+                            .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                        SubContent::Mihomo(yaml)
+                    }
+                }
+            }
+            _ => return Err("请先在首页选择要使用的订阅".to_string()),
         }
-        _ => return Err("请先在首页选择要使用的订阅".to_string()),
     };
 
     // 覆写解析（纯关联制，与启动路径一致）：当前生效订阅关联的覆写模板；
-    // 订阅未关联（或 legacy Hub 回退路径）不使用任何覆写。
+    // 订阅未关联（或 legacy Hub 回退路径）不使用任何覆写。指定订阅预览时
+    // 错误信息指明订阅名。
+    let sub_name = specified.as_ref().map(|s| s.name.as_str());
     let store = ProfileStoreV2::new(data_dir);
     let (effective, warnings) = match linked_profile_id {
         Some(pid) => {
@@ -1298,14 +1357,27 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
             let linked = profiles
                 .iter()
                 .find(|p| p.id == pid)
-                .ok_or_else(|| "订阅关联的覆写模板不存在，请在订阅页重新关联".to_string())?;
+                .ok_or_else(|| match sub_name {
+                    Some(name) => {
+                        format!("订阅「{name}」关联的覆写模板不存在，请在订阅页重新关联")
+                    }
+                    None => "订阅关联的覆写模板不存在，请在订阅页重新关联".to_string(),
+                })?;
             if linked.core_type != cfg.core_type {
-                return Err(format!(
-                    "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
-                    linked.name,
-                    pp_client::core_type_display_name(linked.core_type),
-                    pp_client::core_type_display_name(cfg.core_type),
-                ));
+                return Err(match sub_name {
+                    Some(name) => format!(
+                        "订阅「{name}」关联的覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
+                        linked.name,
+                        pp_client::core_type_display_name(linked.core_type),
+                        pp_client::core_type_display_name(cfg.core_type),
+                    ),
+                    None => format!(
+                        "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
+                        linked.name,
+                        pp_client::core_type_display_name(linked.core_type),
+                        pp_client::core_type_display_name(cfg.core_type),
+                    ),
+                });
             }
             resolve_remote_overrides(&cache_dir, linked).await
         }
@@ -1351,6 +1423,35 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
             serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
         }
     }
+}
+
+/// 订阅格式 ↔ 核心类型绑定校验（等价启动路径 `state.rs` 的
+/// `check_subscription_core_compat`）：
+///
+/// - [`SubFormat::SingBoxJson`] 仅支持 sing-box 核心（其节点为 sing-box JSON，跨格式
+///   转 mihomo 有信息丢失）；
+/// - [`SubFormat::ClashYaml`] 仅支持 mihomo 核心（clash 订阅节点转 sing-box outbound
+///   时丢失 TLS 块导致 sing-box `TLS required` FATAL）；
+/// - [`SubFormat::ShareLinks`] 双核心皆可。
+///
+/// 不匹配时返回明确错误（含检测到的订阅格式与当前核心类型）。
+fn check_preview_core_compat(format: SubFormat, core_type: CoreType) -> Result<(), String> {
+    let compatible = match format {
+        SubFormat::ShareLinks => true,
+        SubFormat::SingBoxJson => core_type == CoreType::SingBox,
+        SubFormat::ClashYaml => core_type == CoreType::Mihomo,
+    };
+    if compatible {
+        return Ok(());
+    }
+    let (format_name, supported_core) = if format == SubFormat::ClashYaml {
+        ("clash", "mihomo")
+    } else {
+        ("sing-box", "sing-box")
+    };
+    Err(format!(
+        "订阅格式为 {format_name}，仅支持 {supported_core} 核心，当前核心类型为 {core_type}，请在设置中切换核心类型"
+    ))
 }
 
 // ---------- 核心版本管理 ----------
@@ -1784,9 +1885,7 @@ fn set_subscription_enabled_impl(
         if let Ok(mut config) = ClientConfig::load(data_dir) {
             if config.active_subscription_id == Some(id) {
                 config.active_subscription_id = None;
-                config
-                    .save()
-                    .map_err(|e| format!("保存配置失败: {e}"))?;
+                config.save().map_err(|e| format!("保存配置失败: {e}"))?;
             }
         }
     }
@@ -1887,6 +1986,7 @@ pub async fn update_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
 
     /// 简易临时目录（测试用，避免新增 tempfile dev-dependency）：
     /// 进程 id + 原子计数器生成唯一路径，Drop 时递归清理。
@@ -2184,8 +2284,7 @@ mod tests {
         write_core(dir.path(), "mihomo", "1.19.29");
 
         // 语义化倒序：1.14.0 > 1.14.0-beta.4 > 1.13.15。
-        let versions =
-            list_downloaded_versions_impl(dir.path(), "singbox".to_string()).unwrap();
+        let versions = list_downloaded_versions_impl(dir.path(), "singbox".to_string()).unwrap();
         assert_eq!(versions, vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]);
 
         let mihomo = list_downloaded_versions_impl(dir.path(), "mihomo".to_string()).unwrap();
@@ -2230,9 +2329,8 @@ mod tests {
         );
         cfg.save().unwrap();
 
-        let err = with_empty_path(|| {
-            delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err()
-        });
+        let err =
+            with_empty_path(|| delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err());
         assert!(err.contains("正在使用的核心不可删除"), "{err}");
         assert!(bin.exists(), "active 核心不应被删除");
     }
@@ -2311,8 +2409,8 @@ mod tests {
         cfg.save().unwrap();
 
         // 不存在的订阅报错。
-        let err = set_active_subscription_impl(dir.path(), Some(Uuid::new_v4().to_string()))
-            .unwrap_err();
+        let err =
+            set_active_subscription_impl(dir.path(), Some(Uuid::new_v4().to_string())).unwrap_err();
         assert!(err.contains("不存在"), "{err}");
 
         // 已停用的订阅报错。
@@ -2374,6 +2472,124 @@ mod tests {
         set_subscription_enabled_impl(dir.path(), other.id, false).unwrap();
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.active_subscription_id, Some(sub.id));
+    }
+
+    // ---------- 配置预览（指定订阅 / active 订阅路径） ----------
+
+    /// 启动一个本地 HTTP mock 订阅服务器（无外部依赖）：raw TCP 监听，
+    /// 每个连接先读取请求再返回固定 200 响应体。
+    fn spawn_sub_server(body: &'static str) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else {
+                    continue;
+                };
+                let mut buf = [0u8; 8192];
+                // 先读请求再响应，避免对端请求未发完时关闭连接。
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// sing-box JSON 格式的最小订阅（含 `outbounds`，嗅探为 `SingBoxJson`）。
+    const PREVIEW_SUB_JSON: &str = r#"{
+        "outbounds": [
+            { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+              "uuid": "12345678-1234-1234-1234-123456789012",
+              "tls": { "enabled": true, "server_name": "example.com" } }
+        ]
+    }"#;
+
+    #[tokio::test]
+    async fn preview_core_config_specified_subscription_generates_config() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        let base = spawn_sub_server(PREVIEW_SUB_JSON);
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        // enabled = false：预览指定订阅应忽略启用状态。
+        let sub = store
+            .add("spec", &format!("{base}/sub"), false, None)
+            .unwrap();
+
+        let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
+            .await
+            .expect("指定订阅预览应成功");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box 预览应为 JSON");
+        assert!(value.get("outbounds").is_some());
+        assert!(value.get("inbounds").is_some());
+    }
+
+    #[tokio::test]
+    async fn preview_core_config_specified_unknown_subscription_errors() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        let err = preview_core_config_impl(dir.path().to_path_buf(), Some(Uuid::new_v4()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("订阅不存在"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn preview_core_config_none_uses_active_subscription_selection() {
+        let dir = TestDir::new();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        // 已停用的订阅：None 走 active 路径应报「已停用」，而非「订阅不存在」。
+        let off = store
+            .add("off", "https://example.com/sub", false, None)
+            .unwrap();
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.active_subscription_id = Some(off.id);
+        cfg.save().unwrap();
+
+        let err = preview_core_config_impl(dir.path().to_path_buf(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("已停用"), "{err}");
+
+        // 未选中订阅 + 无 Hub 配置 → 既有报错（active 路径的兜底分支）。
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+        let err = preview_core_config_impl(dir.path().to_path_buf(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("请先在首页选择要使用的订阅"), "{err}");
     }
 
     #[test]
