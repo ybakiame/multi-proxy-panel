@@ -254,6 +254,11 @@ export function detectRemote(url: string): Promise<DetectRemoteView> {
   return invoke<DetectRemoteView>("detect_remote", { url });
 }
 
+/** 读取远程资源本地图标缓存（data URL；未缓存 / 读取失败返回 null，前端回退远程 URL）。 */
+export function getRemoteIcon(name: string): Promise<string | null> {
+  return invoke<string | null>("get_remote_icon", { name });
+}
+
 export function removeRemote(name: string): Promise<void> {
   return invoke<void>("remove_remote", { name });
 }

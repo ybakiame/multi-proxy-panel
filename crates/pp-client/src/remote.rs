@@ -338,6 +338,14 @@ impl RemoteManager {
                         .push(format!("remote '{}': {e}", remote.name)),
                 },
             }
+            // 图标本地化缓存（best-effort）：失败仅记 warning，不影响 fetched 计数。
+            if let Some(icon_url) = &remote.icon {
+                if let Err(e) = self.cache_icon(&remote.name, icon_url).await {
+                    report
+                        .warnings
+                        .push(format!("remote '{}': icon cache failed: {e}", remote.name));
+                }
+            }
         }
         report
     }
@@ -583,6 +591,65 @@ impl RemoteManager {
         std::fs::write(&path, text)?;
         Ok(path)
     }
+
+    /// 在 `data_dir/icons/` 下查找 `<safe_name(name)>.<ext>` 图标缓存；存在即返回
+    /// 路径，无则 `None`。ext 必须属于 [`ICON_EXTENSIONS`] 白名单（大小写不敏感）。
+    pub fn icon_file(&self, name: &str) -> Option<PathBuf> {
+        let dir = self.data_dir.join("icons");
+        let base = safe_name(name);
+        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.file_stem().and_then(|s| s.to_str()) != Some(base.as_str()) {
+                continue;
+            }
+            let Some(ext) = path.extension().and_then(|x| x.to_str()) else {
+                continue;
+            };
+            if ICON_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()) {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    /// 下载远程资源图标到本地缓存 `data_dir/icons/<safe_name>.<ext>`。
+    ///
+    /// 下载委托 [`crate::fetch_resource_bytes`]（GitHub 代理前缀 / 走本地代理 /
+    /// 30s 超时与文本拉取一致）。扩展名优先级：URL 路径后缀（[`ICON_EXTENSIONS`]
+    /// 白名单内）→ 按响应字节推断图片格式（[`icon_ext_from_bytes`]）→ `.img`。
+    /// 写入前删除该 name 的其他旧扩展名文件（图标换源/换格式后不残留）。
+    ///
+    /// 返回写出的路径；响应为空（无图标内容）时返回 `None`。调用方应 best-effort
+    /// 处理返回值，失败不阻塞主流程。
+    pub async fn cache_icon(&self, name: &str, url: &str) -> PanelResult<Option<PathBuf>> {
+        let bytes =
+            crate::fetch_resource_bytes(&self.data_dir, url, std::time::Duration::from_secs(30))
+                .await?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        let ext = icon_ext_from_url(url)
+            .or_else(|| icon_ext_from_bytes(&bytes))
+            .unwrap_or("img");
+
+        let dir = self.data_dir.join("icons");
+        std::fs::create_dir_all(&dir)?;
+        let base = safe_name(name);
+        // 删除该 name 的其他旧扩展名文件（保留本次写入目标）。
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.file_stem().and_then(|s| s.to_str()) == Some(base.as_str())
+                    && path.extension().and_then(|x| x.to_str()) != Some(ext)
+                {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+        let path = dir.join(format!("{base}.{ext}"));
+        std::fs::write(&path, &bytes)?;
+        Ok(Some(path))
+    }
 }
 
 /// 文件名安全化：路径分隔符替换为 `_`，避免资源名造成目录穿越。
@@ -590,6 +657,61 @@ fn safe_name(name: &str) -> String {
     name.chars()
         .map(|c| if c == '/' || c == '\\' { '_' } else { c })
         .collect()
+}
+
+/// 远程资源图标缓存允许的扩展名白名单。
+const ICON_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "gif", "svg", "ico"];
+
+/// 从 URL 路径后缀取图标扩展名（忽略 query / fragment，大小写不敏感）；
+/// 后缀不在 [`ICON_EXTENSIONS`] 白名单内返回 `None`。
+fn icon_ext_from_url(url: &str) -> Option<&'static str> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)?;
+    match ext.as_str() {
+        "png" => Some("png"),
+        "jpg" => Some("jpg"),
+        "jpeg" => Some("jpeg"),
+        "webp" => Some("webp"),
+        "gif" => Some("gif"),
+        "svg" => Some("svg"),
+        "ico" => Some("ico"),
+        _ => None,
+    }
+}
+
+/// 从响应字节推断图标格式（等价于按响应 Content-Type 推断：`fetch_resource_bytes`
+/// 仅返回字节、不含响应头，故以文件签名识别常见图片格式）。无法识别返回 `None`。
+fn icon_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
+    // PNG：89 50 4E 47
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Some("png");
+    }
+    // JPEG：FF D8 FF
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("jpg");
+    }
+    // GIF：GIF8
+    if bytes.starts_with(b"GIF8") {
+        return Some("gif");
+    }
+    // WebP：RIFF....WEBP
+    if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        return Some("webp");
+    }
+    // ICO：00 00 01 00
+    if bytes.starts_with(&[0x00, 0x00, 0x01, 0x00]) {
+        return Some("ico");
+    }
+    // SVG 是文本：跳过前导空白后以 `<?xml` / `<svg` 开头视为 SVG。
+    let head = bytes.iter().take_while(|b| b.is_ascii_whitespace()).count();
+    let head_bytes = &bytes[head.min(bytes.len())..bytes.len().min(head + 256)];
+    if head_bytes.starts_with(b"<?xml") || head_bytes.starts_with(b"<svg") {
+        return Some("svg");
+    }
+    None
 }
 
 /// 使用 tracing 记录桌面通知的 Notifier（OS 原生通知后续接入 Tauri）。
@@ -1903,5 +2025,75 @@ http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, scrip
             .unwrap_err();
         assert!(err.to_string().contains("不存在"));
         assert!(manager.load().unwrap().is_empty());
+    }
+
+    /// 启动本地图标测试服务：
+    /// - `/icon.png`：PNG 签名字节（URL 后缀白名单路径）
+    /// - `/icon.svg`：SVG 文本（换源清理旧扩展名）
+    /// - `/noext`：PNG 字节、URL 无后缀（验证按字节推断扩展名）
+    /// - `/empty`：空响应（验证返回 `None` 不落盘）
+    async fn spawn_icon_server() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let png: &'static [u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        let app = axum::Router::new()
+            .route("/icon.png", axum::routing::get(move || async move { png }))
+            .route(
+                "/icon.svg",
+                axum::routing::get(|| async { "<svg xmlns='http://www.w3.org/2000/svg'/>" }),
+            )
+            .route("/noext", axum::routing::get(move || async move { png }))
+            .route("/empty", axum::routing::get(|| async { "" }));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn cache_icon_downloads_infers_extension_and_cleans_old_files() {
+        let base = spawn_icon_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let manager = RemoteManager::new(dir.path().to_path_buf());
+
+        // 未缓存时 icon_file 返回 None。
+        assert_eq!(manager.icon_file("rules"), None);
+
+        // URL 后缀 .png → 落盘 icons/rules.png，icon_file 命中。
+        let png_path = manager
+            .cache_icon("rules", &format!("{base}/icon.png"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(png_path.file_name().unwrap().to_str().unwrap(), "rules.png");
+        assert_eq!(manager.icon_file("rules").unwrap(), png_path);
+
+        // 换源为 SVG：旧 rules.png 被删除，只保留 rules.svg。
+        let svg_path = manager
+            .cache_icon("rules", &format!("{base}/icon.svg"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(svg_path.file_name().unwrap().to_str().unwrap(), "rules.svg");
+        assert!(!dir.path().join("icons/rules.png").exists());
+        assert_eq!(manager.icon_file("rules").unwrap(), svg_path);
+
+        // URL 无后缀 → 按字节签名推断为 png。
+        let sniffed = manager
+            .cache_icon("weird", &format!("{base}/noext"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sniffed.file_name().unwrap().to_str().unwrap(), "weird.png");
+
+        // 空响应 → None，不落盘。
+        assert!(
+            manager
+                .cache_icon("empty", &format!("{base}/empty"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(manager.icon_file("empty"), None);
     }
 }

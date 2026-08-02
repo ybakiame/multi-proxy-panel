@@ -18,6 +18,7 @@ import {
   addRemote,
   detectRemote,
   fetchRemotes,
+  getRemoteIcon,
   importConfig,
   listRemotes,
   listTasks,
@@ -140,6 +141,8 @@ function groupArgsByTag<T extends { key: string; tag: string | null }>(args: T[]
 
 export default function Scripts() {
   const [remotes, setRemotes] = useState<RemoteResource[]>([]);
+  // 本地图标缓存（name → data URL）：优先本地，远程 URL 兜底。
+  const [iconCache, setIconCache] = useState<Record<string, string>>({});
   const [tasks, setTasks] = useState<TaskScriptView[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,7 +186,21 @@ export default function Scripts() {
 
   const refreshRemotes = useCallback(async () => {
     try {
-      setRemotes(await listRemotes());
+      const list = await listRemotes();
+      setRemotes(list);
+      // 并行加载本地图标缓存：成功写入 data URL，失败忽略（回退远程 URL）。
+      const icons: Record<string, string> = {};
+      await Promise.allSettled(
+        list
+          .filter((r) => r.icon)
+          .map(async (r) => {
+            const dataUrl = await getRemoteIcon(r.name);
+            if (dataUrl) {
+              icons[r.name] = dataUrl;
+            }
+          }),
+      );
+      setIconCache(icons);
       setError(null);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -505,7 +522,12 @@ export default function Scripts() {
                           <Table.Row key={remote.name}>
                             <Table.Cell>
                               <Avatar size="sm" className="h-6 w-6">
-                                {remote.icon ? <Avatar.Image src={remote.icon} alt={`${remote.name} 图标`} /> : null}
+                                {remote.icon ? (
+                                  <Avatar.Image
+                                    src={iconCache[remote.name] ?? remote.icon}
+                                    alt={`${remote.name} 图标`}
+                                  />
+                                ) : null}
                                 <Avatar.Fallback color="accent">
                                   {(remote.name.charAt(0) || "?").toUpperCase()}
                                 </Avatar.Fallback>

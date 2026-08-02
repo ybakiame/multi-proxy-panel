@@ -133,30 +133,33 @@ fn build_fetch_client(timeout: std::time::Duration, cfg: &config::ClientConfig) 
     no_proxy_client()
 }
 
-/// 读取响应体；非 2xx 视为失败（沿用既有 fetch 语义）。
-async fn read_body(resp: reqwest::Response, url: &str) -> Result<String, String> {
+/// 读取响应体字节；非 2xx 视为失败（沿用既有 fetch 语义）。
+async fn read_body_bytes(resp: reqwest::Response, url: &str) -> Result<bytes::Bytes, String> {
     let status = resp.status();
     if !status.is_success() {
         return Err(format!("remote fetch returned HTTP {status} ({url})"));
     }
-    resp.text()
+    resp.bytes()
         .await
         .map_err(|e| format!("failed to read remote body ({url}): {e}"))
 }
 
-/// 拉取单个 URL 的文本内容；请求层错误（connect/timeout 等）重试一次，非 2xx 视为失败。
-async fn fetch_url_text_with_retry(client: &reqwest::Client, url: &str) -> Result<String, String> {
+/// 拉取单个 URL 的二进制内容；请求层错误（connect/timeout 等）重试一次，非 2xx 视为失败。
+async fn fetch_url_bytes_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<bytes::Bytes, String> {
     match client.get(url).send().await {
-        Ok(resp) => read_body(resp, url).await,
+        Ok(resp) => read_body_bytes(resp, url).await,
         // 请求层错误（connect/timeout 等）重试一次；仍失败以最后一次错误为准。
         Err(_) => match client.get(url).send().await {
-            Ok(resp) => read_body(resp, url).await,
+            Ok(resp) => read_body_bytes(resp, url).await,
             Err(e) => Err(format!("remote fetch failed ({url}): {e}")),
         },
     }
 }
 
-/// 远程资源拉取（Hub 订阅 / 脚本 / 嗅探共用入口）。
+/// 远程资源二进制拉取（Hub 订阅 / 脚本 / 图标共用入口）。
 ///
 /// - 从 `data_dir/client.json` best-effort 读取 GitHub 访问设置（失败按默认值）
 /// - URL 先经 [`normalize_resource_url`] 归一化，GitHub URL 再经
@@ -164,11 +167,11 @@ async fn fetch_url_text_with_retry(client: &reqwest::Client, url: &str) -> Resul
 /// - `fetch_via_local_proxy` 时请求经本机核心 mixed 端口代理，否则 `no_proxy()` 直连
 /// - 请求层错误重试一次；最终失败且原始 URL 是 GitHub URL 时，错误信息追加
 ///   「设置 → GitHub 访问」的处理提示
-pub async fn fetch_resource_text(
+pub async fn fetch_resource_bytes(
     data_dir: &std::path::Path,
     url: &str,
     timeout: std::time::Duration,
-) -> pp_common::PanelResult<String> {
+) -> pp_common::PanelResult<bytes::Bytes> {
     use pp_common::PanelError;
 
     let is_github = is_github_url(url);
@@ -177,8 +180,8 @@ pub async fn fetch_resource_text(
         apply_github_proxy_prefix(&normalize_resource_url(url), &cfg.github_proxy_prefix);
     let client = build_fetch_client(timeout, &cfg);
 
-    match fetch_url_text_with_retry(&client, &request_url).await {
-        Ok(text) => Ok(text),
+    match fetch_url_bytes_with_retry(&client, &request_url).await {
+        Ok(bytes) => Ok(bytes),
         Err(e) => {
             if is_github {
                 Err(PanelError::Client(format!(
@@ -189,6 +192,23 @@ pub async fn fetch_resource_text(
             }
         }
     }
+}
+
+/// 远程资源文本拉取（Hub 订阅 / 脚本 / 嗅探共用入口），语义与
+/// [`fetch_resource_bytes`] 一致（GitHub 代理前缀 / 走本地代理 / 重试 / 提示）。
+///
+/// 返回体按 UTF-8 解码；非 UTF-8 内容视为失败。
+pub async fn fetch_resource_text(
+    data_dir: &std::path::Path,
+    url: &str,
+    timeout: std::time::Duration,
+) -> pp_common::PanelResult<String> {
+    use pp_common::PanelError;
+
+    let bytes = fetch_resource_bytes(data_dir, url, timeout).await?;
+    String::from_utf8(bytes.to_vec()).map_err(|e| {
+        PanelError::Client(format!("remote fetch returned non-UTF-8 body ({url}): {e}"))
+    })
 }
 
 #[cfg(test)]

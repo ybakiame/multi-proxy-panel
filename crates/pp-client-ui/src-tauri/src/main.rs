@@ -36,6 +36,7 @@ fn main() {
             commands::list_remotes,
             commands::add_remote,
             commands::update_remote,
+            commands::get_remote_icon,
             commands::detect_remote,
             commands::remove_remote,
             commands::fetch_remotes,

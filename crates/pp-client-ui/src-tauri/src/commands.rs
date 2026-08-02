@@ -614,10 +614,19 @@ pub async fn add_remote(
     if remotes.iter().any(|r| r.name == remote.name) {
         return Err(format!("远程资源 '{}' 已存在", remote.name));
     }
+    let name = remote.name.clone();
+    let icon = remote.icon.clone();
     remotes.push(remote);
     manager
         .save(&remotes)
-        .map_err(|e| format!("保存远程资源失败: {e}"))
+        .map_err(|e| format!("保存远程资源失败: {e}"))?;
+    // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
+    if let Some(icon_url) = icon {
+        if let Err(e) = manager.cache_icon(&name, &icon_url).await {
+            tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+        }
+    }
+    Ok(())
 }
 
 /// 删除一条远程资源；不存在时报错。
@@ -656,10 +665,52 @@ pub async fn update_remote(
     remote.url = pp_client::normalize_resource_url(&remote.url);
     pp_client::prefill_argument_values(&mut remote);
     let name = remote.name.clone();
+    let icon = remote.icon.clone();
     let manager = RemoteManager::new(state.data_dir.clone());
     manager
         .update_resource(&name, remote)
-        .map_err(|e| format!("更新远程资源失败: {e}"))
+        .map_err(|e| format!("更新远程资源失败: {e}"))?;
+    // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
+    if let Some(icon_url) = icon {
+        if let Err(e) = manager.cache_icon(&name, &icon_url).await {
+            tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+        }
+    }
+    Ok(())
+}
+
+/// 读取远程资源本地图标缓存，返回 `data:{mime};base64,...` data URL。
+///
+/// 缓存不存在（未下载 / 已删除）时返回 `None`，前端回退远程 URL / 首字母。
+/// MIME 按扩展名推断：png/jpg/jpeg/webp/gif/svg/ico，未知按
+/// `application/octet-stream`。
+#[tauri::command]
+pub async fn get_remote_icon(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    let manager = RemoteManager::new(state.data_dir.clone());
+    let Some(path) = manager.icon_file(&name) else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取图标缓存失败: {e}"))?;
+    let mime = match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("ico") => "image/x-icon",
+        _ => "application/octet-stream",
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(format!("data:{mime};base64,{encoded}")))
 }
 
 /// 远程资源类型的字符串表示（与 `RemoteResourceView.kind` 的 serde 表示一致）。
