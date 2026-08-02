@@ -1517,6 +1517,37 @@ pub async fn detect_system_cores(state: State<'_, AppState>) -> Result<Vec<Local
         .collect())
 }
 
+/// `delete_core` 的具体实现（命令层可测试的纯逻辑）。
+///
+/// 删除约束（与前端设置页核心管理一致）：
+/// - 系统来源核心不可删除（合并清单中该 path 来源为 `System`）；
+/// - 当前使用中的核心不可删除（`path == active_binary(data_dir)`）；
+/// - 其余委托 [`pp_client::ClientCoreInventory::delete`]（下载目录归属校验等）。
+fn delete_core_impl(data_dir: &std::path::Path, path: &str) -> Result<(), String> {
+    let bin = PathBuf::from(path);
+    let inv = pp_client::ClientCoreInventory::new(data_dir.to_path_buf());
+    // 先拒绝系统来源核心（已下载 + 系统探测合并清单中命中且为 system）。
+    let matched = merge_cores(inv.list_installed(), inv.detect_system_cores())
+        .into_iter()
+        .find(|c| c.path == bin);
+    if matched.is_some_and(|c| c.source == pp_client::CoreSource::System) {
+        return Err("系统核心不可删除：仅支持删除已下载的核心".to_string());
+    }
+    // 再拒绝正在使用的核心。
+    let active = active_binary(data_dir);
+    if bin == active {
+        return Err("正在使用的核心不可删除：请先切换其他核心".to_string());
+    }
+    inv.delete(&bin, &active)
+        .map_err(|e| format!("删除核心失败: {e}"))
+}
+
+/// 删除一个已下载核心（系统来源 / 当前使用中的核心不可删除）。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn delete_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    delete_core_impl(&state.data_dir, &path)
+}
+
 // ---------- 订阅管理 ----------
 
 /// 订阅用户信息的对外视图（与 `pp_client::SubscriptionInfo` 字段对齐）。
@@ -1891,12 +1922,17 @@ mod tests {
     /// 在受控 PATH 下执行闭包（互斥串行化；避免宿主环境 PATH 中的真实核心干扰
     /// 系统探测回退）。
     fn with_empty_path<T>(f: impl FnOnce() -> T) -> T {
+        with_patched_path(std::path::Path::new("/nonexistent-pp-test-bin"), f)
+    }
+
+    /// 把 PATH 替换为指定目录执行闭包（互斥串行化；供注入假系统核心测试用）。
+    fn with_patched_path<T>(path: &std::path::Path, f: impl FnOnce() -> T) -> T {
         let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let old = std::env::var_os("PATH");
         // Rust 2024 下 std::env 的 set_var 标记为 unsafe（并发修改环境变量是未定义
         // 行为），PATH_LOCK 保证测试进程内串行访问。
         unsafe {
-            std::env::set_var("PATH", "/nonexistent-pp-test-bin");
+            std::env::set_var("PATH", path);
         }
         let result = f();
         match old {
@@ -2157,6 +2193,79 @@ mod tests {
 
         // 无效 core_type 字符串报错。
         assert!(list_downloaded_versions_impl(dir.path(), "bogus".to_string()).is_err());
+    }
+
+    // ---------- 项 2.1：delete_core 命令层 ----------
+
+    #[test]
+    fn delete_core_deletes_downloaded_core_and_clears_version_dir() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        write_core(dir.path(), "sing-box", "1.14.0");
+        let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
+
+        with_empty_path(|| delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap());
+
+        assert!(!bin.exists(), "二进制应被删除");
+        assert!(
+            !dir.path().join("cores/sing-box/1.13.15").exists(),
+            "版本目录应删除"
+        );
+        // 其他版本保留。
+        assert!(dir.path().join("cores/sing-box/1.14.0/sing-box").exists());
+    }
+
+    #[test]
+    fn delete_core_rejects_active_binary() {
+        let dir = TestDir::new();
+        write_core(dir.path(), "sing-box", "1.13.15");
+        let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
+        // 配置 active 指向该核心。
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            bin.clone(),
+        );
+        cfg.save().unwrap();
+
+        let err = with_empty_path(|| {
+            delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err()
+        });
+        assert!(err.contains("正在使用的核心不可删除"), "{err}");
+        assert!(bin.exists(), "active 核心不应被删除");
+    }
+
+    #[test]
+    fn delete_core_rejects_system_source() {
+        let dir = TestDir::new();
+        // 在受控 PATH 下构造系统核心：`bin/sing-box`（可执行假脚本）。
+        let system_bin = dir.path().join("bin/sing-box");
+        std::fs::create_dir_all(system_bin.parent().unwrap()).unwrap();
+        std::fs::write(&system_bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&system_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let err = with_patched_path(&dir.path().join("bin"), || {
+            delete_core_impl(dir.path(), &system_bin.to_string_lossy())
+        })
+        .unwrap_err();
+        assert!(err.contains("系统核心不可删除"), "{err}");
+        assert!(system_bin.exists(), "系统核心不应被删除");
+    }
+
+    #[test]
+    fn delete_core_rejects_nonexistent_path() {
+        let dir = TestDir::new();
+        let missing = dir.path().join("cores/sing-box/9.9.9/sing-box");
+        let err = with_empty_path(|| {
+            delete_core_impl(dir.path(), &missing.to_string_lossy()).unwrap_err()
+        });
+        assert!(err.contains("不存在"), "{err}");
     }
 
     // ---------- MITM CA 证书命令 ----------

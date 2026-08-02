@@ -64,6 +64,7 @@ fn main() {
             commands::download_core,
             commands::set_active_core,
             commands::detect_system_cores,
+            commands::delete_core,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -384,6 +384,63 @@ impl ClientCoreInventory {
             .find(|c| c.core_type == core_type)
             .map(|c| c.path)
     }
+
+    /// 删除一个已下载核心（仅限 `cores_dir` 内的下载核心）。
+    ///
+    /// 删除 `cores/<type>/<version>/` 整个版本目录，类型目录删空后顺带清理。
+    /// 错误：路径不在 `cores_dir` 内（系统核心）/ 路径不存在 / 该核心为
+    /// `active_binary`（正在使用）。
+    ///
+    /// 安全约束：真实删除前先 `canonicalize` 校验路径归属，禁止删除 `cores_dir`
+    /// 之外的任何内容（防目录穿越 / 符号链接逃逸）。
+    pub fn delete(&self, path: &Path, active_binary: &Path) -> PanelResult<()> {
+        // 防目录穿越：canonicalize 后确认目标位于下载目录之内。下载目录不存在时
+        // 必然无已下载核心可删。
+        let cores_dir = std::fs::canonicalize(self.cores_dir())
+            .map_err(|_| PanelError::Core("核心下载目录不存在".to_string()))?;
+        let bin = std::fs::canonicalize(path)
+            .map_err(|e| PanelError::Core(format!("核心二进制不存在: {e}")))?;
+        if !bin.starts_with(&cores_dir) {
+            return Err(PanelError::Core(
+                "系统核心不可删除：仅支持删除下载目录内的核心".to_string(),
+            ));
+        }
+        // 结构校验：目标必须形如 `cores/<type>/<version>/<binary>`，避免误删
+        // 类型目录甚至整个下载目录。
+        if !bin.is_file() {
+            return Err(PanelError::Core("无效的核心二进制路径".to_string()));
+        }
+        let version_dir = bin
+            .parent()
+            .ok_or_else(|| PanelError::Core("无法定位核心版本目录".to_string()))?;
+        let type_dir = version_dir
+            .parent()
+            .ok_or_else(|| PanelError::Core("无法定位核心类型目录".to_string()))?;
+        if type_dir.parent() != Some(cores_dir.as_path()) {
+            return Err(PanelError::Core("无效的核心二进制路径".to_string()));
+        }
+        // 正在使用的核心不可删除。
+        if paths_equal(&bin, active_binary) {
+            return Err(PanelError::Core(
+                "正在使用的核心不可删除：请先切换其他核心".to_string(),
+            ));
+        }
+        tracing::info!(
+            path = %bin.display(),
+            version_dir = %version_dir.display(),
+            "删除本地核心"
+        );
+        std::fs::remove_dir_all(version_dir)
+            .map_err(|e| PanelError::Core(format!("删除核心失败: {e}")))?;
+        // 类型目录（`cores/<type>/`）删空后顺带清理。
+        if std::fs::read_dir(type_dir)
+            .map(|mut it| it.next().is_none())
+            .unwrap_or(false)
+        {
+            let _ = std::fs::remove_dir(type_dir);
+        }
+        Ok(())
+    }
 }
 
 /// 核心目录 / 二进制基础名。
@@ -1205,5 +1262,126 @@ mod tests {
             inv.preferred_binary(CoreType::SingBox)
         });
         assert_eq!(result, None);
+    }
+
+    // ---------- ⑨ delete：本地核心删除 ----------
+
+    #[test]
+    fn delete_removes_version_dir_keeps_other_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+
+        let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
+        write_executable(&bin, b"fake");
+        // 同类型其他版本保留；active 指向它（而非被删目标）。
+        let other = dir.path().join("cores/sing-box/1.14.0/sing-box");
+        write_executable(&other, b"fake");
+
+        inv.delete(&bin, &other).unwrap();
+
+        assert!(!bin.exists(), "二进制应被删除");
+        assert!(
+            !dir.path().join("cores/sing-box/1.13.15").exists(),
+            "版本目录应整体删除"
+        );
+        // 类型目录保留（还有其他版本），其他版本不受影响。
+        assert!(other.exists(), "其他版本应保留");
+        assert!(dir.path().join("cores/sing-box").is_dir());
+    }
+
+    #[test]
+    fn delete_prunes_empty_type_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        let bin = dir.path().join("cores/mihomo/1.19.29/mihomo");
+        write_executable(&bin, b"fake");
+
+        inv.delete(&bin, Path::new("/nonexistent/other")).unwrap();
+
+        // 版本目录与类型目录均被清理；cores 目录本身保留。
+        assert!(!dir.path().join("cores/mihomo").exists());
+        assert!(dir.path().join("cores").is_dir());
+    }
+
+    #[test]
+    fn delete_rejects_path_outside_cores_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        // cores 目录存在，但目标在其外（系统核心语义）。
+        std::fs::create_dir_all(dir.path().join("cores")).unwrap();
+        let system_bin = dir.path().join("bin/sing-box");
+        write_executable(&system_bin, b"fake");
+
+        let err = inv
+            .delete(&system_bin, Path::new("/nonexistent/active"))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("系统核心不可删除"),
+            "应拒绝系统路径: {err}"
+        );
+        assert!(system_bin.exists(), "系统核心不应被删除");
+    }
+
+    #[test]
+    fn delete_rejects_active_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
+        write_executable(&bin, b"fake");
+
+        let err = inv.delete(&bin, &bin).unwrap_err();
+        assert!(
+            err.to_string().contains("正在使用的核心不可删除"),
+            "应拒绝使用中的核心: {err}"
+        );
+        assert!(bin.exists(), "active 核心不应被删除");
+    }
+
+    #[test]
+    fn delete_rejects_nonexistent_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        let missing = dir.path().join("cores/sing-box/9.9.9/sing-box");
+
+        let err = inv
+            .delete(&missing, Path::new("/nonexistent/active"))
+            .unwrap_err();
+        assert!(err.to_string().contains("不存在"), "应报路径不存在: {err}");
+    }
+
+    #[test]
+    fn delete_rejects_directory_under_cores_dir() {
+        // 传入类型目录/版本目录本身（非二进制文件）应被拒绝，防止误删更大范围。
+        let dir = tempfile::tempdir().unwrap();
+        let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+        let version_dir = dir.path().join("cores/sing-box/1.13.15/sing-box");
+        write_executable(&version_dir, b"fake");
+        std::fs::create_dir_all(dir.path().join("cores/mihomo/1.19.29")).unwrap();
+
+        // 类型目录（无二进制）不可删。
+        let err = inv
+            .delete(
+                &dir.path().join("cores/mihomo"),
+                Path::new("/nonexistent/active"),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("无效的核心二进制路径"),
+            "应拒绝目录: {err}"
+        );
+        assert!(dir.path().join("cores/mihomo").is_dir());
+
+        // 版本目录（无二进制）不可删。
+        let err = inv
+            .delete(
+                &dir.path().join("cores/mihomo/1.19.29"),
+                Path::new("/nonexistent/active"),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("无效的核心二进制路径"),
+            "应拒绝目录: {err}"
+        );
+        assert!(dir.path().join("cores/mihomo/1.19.29").is_dir());
     }
 }
