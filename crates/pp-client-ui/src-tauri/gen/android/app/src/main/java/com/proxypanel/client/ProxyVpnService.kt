@@ -40,13 +40,24 @@ import java.util.NoSuchElementException
  * TUN/VPN 前台服务：通过 libbox（sing-box）驱动，由 [VpnPlugin] 的
  * start/stop 命令控制启停。
  *
- * 启动序列（对齐 sing-box experimental/libbox）：
- *   1. Libbox.setup(SetupOptions) 设置数据路径
+ * 启动序列（对齐 sing-box experimental/libbox 与 SFA 官方语义）：
+ *   1. Libbox.setup(SetupOptions) 设置数据路径（进程内仅一次）
  *   2. Libbox.newService(config, platformInterface) 解析配置并创建服务
  *   3. BoxService.start() 启动核心（openTun 由 [PlatformInterface] 回调，
- *      用 VpnService.Builder.establish() 取得 tun fd 返回给核心）
+ *      用 VpnService.Builder.establish() 取得 pfd，保留所有权并返回 `pfd.fd`
+ *      原始 fd 号给核心；核心侧 `dup(fd)` 出一份独立 fd 供 tun 使用）
  *
- * 停止序列：BoxService.close()，随后 VpnService 会撤销本服务持有的 fd。
+ * 停止序列：先 close pfd（原始 fd），再 BoxService.close()（关闭核心持有的
+ * dup fd / tun 接口），随后 VpnService 撤销 VPN。
+ *
+ * fd 生命周期对齐 SFA：**不调用 detachFd()**。detachFd 会把原始 fd 所有权转交
+ * 出去且 Kotlin 侧 `close()` 变成空操作，导致原始 fd 无人关闭（fd 泄漏）并绕过
+ * VpnService 的 fd 生命周期跟踪，是真机「file already closed」的诱因。
+ *
+ * 重复启动防护：`startInProgress` 标志保证同一时刻只有一个 startBox 序列；
+ * 重启（服务存活时再次收到 start）在 startBox 内先有序关闭旧实例再启动新实例，
+ * 禁止两个 BoxService 并发 establish()（并发 establish 会撤销前一 tun 导致
+ * 启动期即报 file already closed）。
  */
 class ProxyVpnService : VpnService() {
 
@@ -116,10 +127,32 @@ class ProxyVpnService : VpnService() {
 
     @Volatile
     private var setupDone = false
-  }
 
-  private var boxService: BoxService? = null
-  private var tunFd: ParcelFileDescriptor? = null
+    /**
+     * 生命周期锁：串行化 startBox/stopBox 的 boxService/tunFd 访问，跨实例共享
+     * （重启时旧实例的迟到 stop 与新实例的 start 并发，锁保证互斥）。SFA 用
+     * CommandServer + status 状态机达成同样效果，这里用锁 + [startInProgress]
+     * 标志对齐「同一时刻只允许一个启动序列」的语义。
+     */
+    private val lifecycleLock = Any()
+
+    /** 启动序列进行中：防重复 start 并发启动两个 BoxService（SFA 的 status != Stopped 守卫）。 */
+    @Volatile
+    private var startInProgress = false
+
+    /**
+     * 当前注册的 BoxService 及其 tun pfd，进程级共享（跨实例）：
+     * 重启时新实例的 startBox 需先关闭旧实例残留的 box（「先有序 stop 再 start」），
+     * 而旧实例迟到的 stopBox 不得关闭新实例已启动的 box（用 [boxOwner] 判定归属）。
+     * 所有访问必须在 [lifecycleLock] 临界区内进行。
+     */
+    private var boxService: BoxService? = null
+
+    private var tunFd: ParcelFileDescriptor? = null
+
+    /** 当前 box/tun 的持有者实例：仅持有者可关闭，防旧实例迟到的 stop 误关新 box。 */
+    private var boxOwner: ProxyVpnService? = null
+  }
 
   /** 停止请求标记：startBox 在后台线程启动期间到达 stop 时，启动完成后立即有序关闭。 */
   @Volatile
@@ -257,16 +290,13 @@ class ProxyVpnService : VpnService() {
           ?: throw IllegalStateException(
             "android: 无法建立 VPN 隧道（授权可能已被系统撤销）"
           )
-      try {
-        tunFd = pfd
-        return pfd.detachFd()
-      } catch (e: Exception) {
-        // establish 已成功但后续步骤失败：回收半开 pfd 防 fd 泄漏。detachFd()
-        // 成功后 fd 所有权已归 libbox，Kotlin 不再 close（stopBox 对 detached
-        // 对象的 close 是无害的，保留原有清理路径）。
-        runCatching { pfd.close() }
-        throw e
-      }
+      // SFA 语义（VPNService.kt:184-188）：保留 pfd 所有权，仅返回原始 fd 号，
+      // 不调用 detachFd()。核心侧 service.go OpenTun 会对该 fd 做 dup() 取一份
+      // 独立 fd 给 tun 使用；Kotlin 侧在 stopBox 关闭 pfd（原始 fd）。若 detachFd，
+      // 原始 fd 所有权被转交且 pfd.close() 变空操作，原始 fd 无人关闭（fd 泄漏）
+      // 并绕过 VpnService 生命周期跟踪，是真机「file already closed」的诱因。
+      tunFd = pfd
+      return pfd.fd
     }
 
     override fun writeLog(message: String) {
@@ -352,10 +382,21 @@ class ProxyVpnService : VpnService() {
       return Service.START_NOT_STICKY
     }
 
+    // 重复 start 防护：同一时刻只允许一个 startBox 序列（对齐 SFA onStartCommand
+    // 的 status != Stopped 守卫）。已有启动序列进行中时忽略本次 start，避免两个
+    // BoxService 并发 establish()（并发 establish 会撤销前一 tun 导致
+    // 启动期即报 file already closed）。
+    if (startInProgress) {
+      Log.w(TAG, "start ignored: another start sequence is in progress")
+      return Service.START_NOT_STICKY
+    }
+
     // 新的启动序列开始，清除上一轮停止请求标记。
     stopRequested = false
 
-    // newService/start 为阻塞调用，放到后台线程执行。
+    // newService/start 为阻塞调用，放到后台线程执行（对齐 SFA：onStartCommand
+    // 立即返回，start 在 IO 后台线程异步执行，不做同步等待）。
+    startInProgress = true
     Thread {
       try {
         startBox(config)
@@ -371,11 +412,14 @@ class ProxyVpnService : VpnService() {
       } catch (e: Exception) {
         Log.e(TAG, "failed to start libbox service", e)
         running = false
-        // openTun（establish 前后）与 startBox 失败都落到这里：附带 libbox 最近
-        // 日志，让前端 Alert 直接展示 Go 侧错误链（如 "query tun name" / "dup tun
-        // file descriptor"），便于定位真机 file already closed 的完整根因链。
-        lastError = withLibboxLogTail(e.message ?: e.javaClass.simpleName)
+        // openTun（establish 前后）与 startBox 失败都落到这里：附带完整异常链
+        // （e.message + e.cause 逐层）+ libbox 最近日志，让前端 Alert 直接展示
+        // Go 侧错误链（如 "query tun name" / "dup tun file descriptor"），便于
+        // 定位真机 file already closed 的完整根因链。
+        lastError = withLibboxLogTail(buildExceptionChain(e))
         stopSelf()
+      } finally {
+        startInProgress = false
       }
     }.start()
 
@@ -395,7 +439,7 @@ class ProxyVpnService : VpnService() {
         stopBox()
       } catch (e: Exception) {
         Log.e(TAG, "failed to stop libbox service", e)
-        lastError = e.message ?: e.javaClass.simpleName
+        lastError = buildExceptionChain(e)
       } finally {
         mainHandler.post {
           stopForegroundCompat()
@@ -452,26 +496,62 @@ class ProxyVpnService : VpnService() {
   }
 
   private fun startBox(config: String) {
-    // 数据路径：basePath 用于日志等，workingPath/tempPath 供核心缓存使用。
+    // 数据路径（对齐 SFA Application.kt:99-110）：basePath 用内部 filesDir，
+    // workingPath 用外部 files 目录（外部存储可用时）供核心缓存使用，tempPath
+    // 用 cacheDir；外部目录不可用时回退内部 filesDir。fixAndroidStack 开启以
+    // 修复 Android 上 Go 栈回溯问题。username 留空回退 os.Getuid()（单应用场景）。
+    val workingDir = getExternalFilesDir(null)
     val setup =
       SetupOptions().apply {
         basePath = filesDir.absolutePath
-        workingPath = filesDir.absolutePath
+        workingPath = workingDir?.absolutePath ?: filesDir.absolutePath
         tempPath = cacheDir.absolutePath
-        // 不设置 username：Go 侧 os/user.Lookup 在 Android 上可能解析不到
-        // "app_<uid>"，留空则回退 os.Getuid()（即当前应用 uid），符合单应用场景。
         isTVOS = false
         fixAndroidStack = true
       }
     setupLibbox(setup)
 
     val service = Libbox.newService(config, platformInterface)
-    // 注册与 start 放同一临界区：stopBox 的 synchronized 会等待 start() 完成再
-    // close，避免停止线程在启动期间 close 半启动的服务；start 抛异常时 boxService
-    // 已注册，onDestroy 仍能有序关闭释放资源。
-    synchronized(this) {
+    // 注册、有序重启与 start 放同一临界区（跨实例共享 lifecycleLock）：
+    //   - 若存在旧 box（重启：服务存活时再次 start / 旧实例残留），先有序关闭
+    //     再启动新实例，杜绝两个 BoxService 并发 establish()；
+    //   - stopBox 的锁会等待 start() 完成再 close，避免停止线程在启动期间
+    //     close 半启动的服务；
+    //   - start 抛异常时立即 close 该实例并复位状态，清理半启动痕迹。
+    synchronized(lifecycleLock) {
+      // 先有序 stop 再 start：关闭上一轮实例持有的 box 与 tun fd。
+      boxService?.let { old ->
+        boxService = null
+        boxOwner = null
+        try {
+          old.close()
+        } catch (e: Exception) {
+          Log.e(TAG, "failed to close previous libbox service", e)
+        }
+      }
+      tunFd?.let { old ->
+        try {
+          old.close()
+        } catch (e: Exception) {
+          Log.e(TAG, "failed to close previous tun fd", e)
+        }
+      }
+      tunFd = null
+
       boxService = service
-      service.start()
+      boxOwner = this
+      try {
+        service.start()
+      } catch (e: Exception) {
+        // 半启动清理：注册了但 start 抛异常（可能 openTun 已成功、后续 inbound
+        // 失败），立即 close 该实例、回收 tun pfd 并复位，防 fd 泄漏。
+        boxService = null
+        boxOwner = null
+        runCatching { service.close() }
+        runCatching { tunFd?.close() }
+        tunFd = null
+        throw e
+      }
     }
   }
 
@@ -547,34 +627,62 @@ class ProxyVpnService : VpnService() {
         stopBox()
       } catch (e: Exception) {
         Log.e(TAG, "failed to stop libbox service", e)
-        lastError = e.message ?: e.javaClass.simpleName
+        lastError = buildExceptionChain(e)
       }
     }.start()
   }
 
   /**
-   * 有序关闭核心与 TUN：复位 running → 关闭 BoxService → 关闭 tun fd。
-   * 幂等且加锁，避免 stop intent 与 onDestroy 并发双线程重复 close。
+   * 有序关闭核心与 TUN：复位 running → 关闭 BoxService → 关闭 tun pfd。
+   * 幂等且加锁（跨实例共享 lifecycleLock），避免 stop intent 与 onDestroy 并发
+   * 双线程重复 close。仅持有者实例可关闭：旧实例迟到的 stop 不得误关新实例已
+   * 启动的 box（防「先 stop 再 start」重启时序下误伤新实例）。
    */
   private fun stopBox() {
-    synchronized(this) {
+    synchronized(lifecycleLock) {
+      if (boxOwner != null && boxOwner !== this) {
+        // 本实例不是当前 box 的持有者（已被重启序列接管），迟到 stop 直接返回。
+        Log.i(TAG, "stop ignored: box owned by another instance")
+        return
+      }
       running = false
       val service = boxService ?: return
       boxService = null
-      try {
-        service.close()
-      } catch (e: Exception) {
-        Log.e(TAG, "failed to close libbox service", e)
-        lastError = e.message ?: e.javaClass.simpleName
-      }
+      boxOwner = null
+      // 关闭顺序对齐 SFA（BoxService.kt serviceStop/stopService）：先关 pfd（原始
+      // tun fd），再关 BoxService（关闭核心持有的 dup fd / tun 接口）。
       try {
         tunFd?.close()
       } catch (e: Exception) {
         Log.e(TAG, "failed to close tun fd", e)
-        lastError = e.message ?: e.javaClass.simpleName
+        lastError = buildExceptionChain(e)
       }
       tunFd = null
+      try {
+        service.close()
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to close libbox service", e)
+        lastError = buildExceptionChain(e)
+      }
     }
+  }
+
+  /** 拼接完整异常链：e.message + 逐层 e.cause，保留根因（如 gomobile 包装的 Go 错误）。 */
+  private fun buildExceptionChain(e: Throwable): String {
+    val parts = mutableListOf<String>()
+    var current: Throwable? = e
+    var depth = 0
+    while (current != null && depth < 10) {
+      val message = current.message ?: current.javaClass.simpleName
+      if (depth == 0) {
+        parts.add(message)
+      } else {
+        parts.add("caused by: $message")
+      }
+      current = current.cause
+      depth++
+    }
+    return parts.joinToString("\n")
   }
 
   private fun stopForegroundCompat() {
