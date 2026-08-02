@@ -8,6 +8,13 @@ authors = ["ProxyPanel Contributors"]
 repository = "https://github.com/your-org/proxy-panel"
 rust-version = "1.86"
 
+# Tauri 2 移动端（Android/iOS）构建要求 crate 提供 lib target：
+# gradle 侧的 tauri rust 插件以 `cargo build --lib` 产出共享库并由
+# `tauri::mobile_entry_point` 注入 JNI 入口；桌面端由 main 调用 `run()`。
+[lib]
+name = "pp_client_ui_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
