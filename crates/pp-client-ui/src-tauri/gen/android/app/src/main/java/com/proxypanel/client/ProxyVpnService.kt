@@ -53,9 +53,17 @@ class ProxyVpnService : VpnService() {
     /** Intent extra：sing-box JSON 配置内容。 */
     const val EXTRA_CONFIG = "config"
 
-    /** 服务运行标记，供插件 isRunning 命令与 UI 查询。 */
+    /**
+     * 服务运行标记，由服务自身真实生命周期维护（startBox 成功后置 true，
+     * 失败 / onDestroy / onRevoke 置 false）。VpnPlugin 不乐观设置。
+     */
     @Volatile
-    var isRunning = false
+    var running = false
+      private set
+
+    /** 最近一次启动失败原因（成功启动后清空；供插件 isRunning 命令与前端轮询读取）。 */
+    @Volatile
+    var lastError: String? = null
       private set
   }
 
@@ -182,7 +190,7 @@ class ProxyVpnService : VpnService() {
       val pfd =
         builder.establish()
           ?: throw IllegalStateException(
-            "android: the application is not prepared or is revoked"
+            "android: 无法建立 VPN 隧道（授权可能已被系统撤销）"
           )
       tunFd = pfd
       return pfd.detachFd()
@@ -241,21 +249,32 @@ class ProxyVpnService : VpnService() {
     val config = intent?.getStringExtra(EXTRA_CONFIG)
     if (config.isNullOrBlank()) {
       Log.w(TAG, "start command without config, stopping")
+      lastError = "缺少 VPN 配置"
       stopSelf()
       return Service.START_NOT_STICKY
     }
 
-    startForegroundWithNotification()
+    try {
+      startForegroundWithNotification()
+    } catch (e: Exception) {
+      Log.e(TAG, "failed to start foreground service", e)
+      running = false
+      lastError = "前台服务启动失败: ${e.message ?: e.javaClass.simpleName}"
+      stopSelf()
+      return Service.START_NOT_STICKY
+    }
 
     // newService/start 为阻塞调用，放到后台线程执行。
     Thread {
       try {
         startBox(config)
-        isRunning = true
+        running = true
+        lastError = null
         Log.i(TAG, "libbox service started")
       } catch (e: Exception) {
         Log.e(TAG, "failed to start libbox service", e)
-        isRunning = false
+        running = false
+        lastError = e.message ?: e.javaClass.simpleName
         stopSelf()
       }
     }.start()
@@ -326,7 +345,7 @@ class ProxyVpnService : VpnService() {
   }
 
   private fun stopBox() {
-    isRunning = false
+    running = false
     val service = boxService ?: return
     boxService = null
     try {

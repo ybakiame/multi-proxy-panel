@@ -218,6 +218,8 @@ pub fn run() {
             commands::gpu_acceleration,
             #[cfg(target_os = "android")]
             commands::request_vpn_permission,
+            #[cfg(target_os = "android")]
+            commands::vpn_last_error,
             commands::platform_info,
             logs::get_logs,
             logs::export_logs,

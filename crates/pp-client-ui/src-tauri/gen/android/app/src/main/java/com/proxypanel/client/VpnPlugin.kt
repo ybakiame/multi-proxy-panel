@@ -80,6 +80,12 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
+    // 服务已在运行时先停掉旧实例，避免新旧 libbox 并发启动（running 由服务
+    // 真实生命周期维护，此处仅读取判断）。
+    if (ProxyVpnService.running) {
+      activity.stopService(Intent(activity, ProxyVpnService::class.java))
+    }
+
     val intent =
       Intent(activity, ProxyVpnService::class.java)
         .putExtra(ProxyVpnService.EXTRA_CONFIG, config)
@@ -100,7 +106,9 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun isRunning(invoke: Invoke) {
     val result = JSObject()
-    result.put("running", ProxyVpnService.isRunning)
+    result.put("running", ProxyVpnService.running)
+    // lastError 为 null 时键被 JSONObject 移除，Rust 侧 `#[serde(default)]` 回退 None。
+    result.put("last_error", ProxyVpnService.lastError)
     invoke.resolve(result)
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Chip, Label, ListBox, Select, Switch } from "@heroui/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -11,6 +11,7 @@ import {
   setActiveSubscription,
   setRuleMode as setRuleModeApi,
   toErrorMessage,
+  vpnLastError,
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
@@ -48,6 +49,11 @@ export default function Dashboard() {
   // 运行平台（Android 由 VpnService 接管，隐藏桌面专属开关）。
   const [os, setOs] = useState<string | null>(null);
   const [vpnAuthBusy, setVpnAuthBusy] = useState(false);
+  // Android VPN 启动失败原因（非空时展示 danger Alert；来自 Kotlin ProxyVpnService.lastError）。
+  const [vpnError, setVpnError] = useState<string | null>(null);
+  // platformInfo 异步返回后才拿到 os，现有 2s 轮询闭包会捕获旧值；用 ref 让轮询读到最新平台。
+  const osRef = useRef(os);
+  osRef.current = os;
 
   /**
    * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
@@ -111,15 +117,25 @@ export default function Dashboard() {
       .catch(() => {
         // 命令失败保持未知平台（按桌面渲染）。
       });
-    // 状态轮询：每 2s 刷新一次运行状态。
+    // 状态轮询：每 2s 刷新一次运行状态；Android 并入读取 VPN 启动错误
+    // （libbox 在后台线程启动，失败不阻塞 start_proxy 返回，需轮询兜底展示）。
     const timer = window.setInterval(() => {
       void refreshStatus();
+      if (osRef.current === "android") {
+        void vpnLastError()
+          .then((err) => setVpnError(err ?? null))
+          .catch(() => {
+            // 命令失败保持当前展示（非致命，避免轮询抖动）。
+          });
+      }
     }, 2000);
     return () => window.clearInterval(timer);
   }, [loadConfig, refreshStatus, loadSubscriptions, loadCores, loadProfiles]);
 
   const handleStart = async () => {
     setBusy("start");
+    // 新一次启动尝试先清掉上一次的失败展示（服务侧 lastError 成功启动后也会清空）。
+    setVpnError(null);
     try {
       await start();
       toastSuccess("代理已启动");
@@ -319,6 +335,17 @@ export default function Dashboard() {
                 去授权
               </Button>
             </div>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {/* Android：libbox 后台启动失败被 start_proxy 静默吞掉，经 vpn_last_error() 轮询兜底展示。 */}
+      {isAndroid && vpnError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>VPN 启动失败</Alert.Title>
+            <Alert.Description>{vpnError}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}

@@ -427,6 +427,23 @@ pub async fn request_vpn_permission() -> Result<(), String> {
         .map_err(|e| format!("VPN 授权失败: {e}"))
 }
 
+/// 读取最近一次 VPN 启动失败原因（仅 Android）：经 `vpn` 插件 `isRunning` 命令
+/// 读取 Kotlin `ProxyVpnService.lastError`（服务启动失败时记录，成功启动后清空）。
+///
+/// 插件未初始化 / 命令失败 / 无失败记录时返回 `None`（前端轮询展示「启动失败」
+/// Alert 只在有值时出现）。桌面端无此命令（`generate_handler` 中
+/// `#[cfg(target_os = "android")]` 排除）。
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn vpn_last_error() -> Option<String> {
+    let handle = crate::core_bridge::vpn_plugin_handle()?;
+    let resp = handle
+        .run_mobile_plugin_async::<crate::core_bridge::IsRunningResponse>("isRunning", ())
+        .await
+        .ok()?;
+    resp.last_error
+}
+
 /// 查询代理运行状态。
 #[tauri::command]
 pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView, String> {

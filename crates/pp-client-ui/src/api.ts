@@ -504,6 +504,14 @@ export function requestVpnPermission(): Promise<void> {
   return invoke<void>("request_vpn_permission");
 }
 
+/**
+ * 读取最近一次 VPN 启动失败原因（仅 Android）：后端经 `vpn` 插件读取 Kotlin
+ * `ProxyVpnService.lastError`。无失败记录 / 非 Android 返回 `null`。
+ */
+export function vpnLastError(): Promise<string | null> {
+  return invoke<string | null>("vpn_last_error");
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {

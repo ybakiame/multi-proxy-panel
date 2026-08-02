@@ -20,10 +20,13 @@ use serde_json::Value;
 use tauri::plugin::mobile::PluginInvokeError;
 use tauri::plugin::PluginHandle;
 
-/// VpnPlugin `isRunning` 命令的响应体。
+/// VpnPlugin `isRunning` 命令的响应体（`pub` 供 `commands::vpn_last_error` 读取）。
 #[derive(Deserialize)]
-struct IsRunningResponse {
-    running: bool,
+pub struct IsRunningResponse {
+    pub running: bool,
+    /// 最近一次启动失败原因（无失败 / 未设置时缺失或为 null，回退 `None`）。
+    #[serde(default)]
+    pub last_error: Option<String>,
 }
 
 /// 已注册 `vpn` 插件的句柄（供 [`request_vpn_permission`] 命令调用 `prepare`）。
