@@ -38,6 +38,11 @@ pub struct PanelFeatures {
     pub clash_api_secret: String,
     /// Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（未知值回退 `zashboard`）。
     pub clash_api_ui: String,
+    /// 规则模式：`rule` / `global` / `direct`（非法值在注入时回退 `rule`）。
+    ///
+    /// mihomo 写入顶层 `mode:`；sing-box 无组合层 mode 字段，不写入配置（运行时
+    /// 经 Clash API `PATCH /configs` 热切换，见 [`push_clash_mode`]）。
+    pub rule_mode: String,
 }
 
 /// Clash 面板 UI 下载地址映射（公开约定，见 Task R 项 1）。
@@ -75,6 +80,9 @@ pub fn apply_panel_features(
 /// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
 ///   "127.0.0.1:port", external_ui: "ui", external_ui_download_url: <按选择>}`，
 ///   `secret` 非空时追加（模板已含 `experimental.clash_api` 时整体替换）。
+///
+/// 注：sing-box 无组合层 `mode` 字段，规则模式不写入配置，运行时经 Clash API
+/// （[`push_clash_mode`]）热切换。
 pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatures) {
     if features.tun_enabled {
         let Some(obj) = composed.as_object_mut() else {
@@ -131,6 +139,9 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
 
 /// mihomo 面板注入：
 ///
+/// - `mode` → 顶层写入 `mode: <rule_mode>`（归一化非法值回退 `rule`；模板/复写
+///   已含 `mode` 时以设置为准替换）。sing-box 无组合层 mode 字段，规则模式由
+///   [`push_clash_mode`] 运行时热切换；
 /// - `tun_enabled` → `tun = {enable: true, stack, auto-route, auto-detect-interface:
 ///   true, dns-hijack: ["any:53"]}`（模板已含 `tun` 键时整体替换）；
 /// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，
@@ -140,6 +151,12 @@ pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeature
     let Some(obj) = composed.as_object_mut() else {
         return;
     };
+
+    // 规则模式持久化：写入 mihomo 顶层 `mode`（模板已含时以设置为准替换）。
+    obj.insert(
+        "mode".to_string(),
+        Value::String(normalized_rule_mode(&features.rule_mode).to_string()),
+    );
 
     if features.tun_enabled {
         obj.insert(
@@ -173,6 +190,46 @@ pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeature
             );
         }
     }
+}
+
+/// 归一化规则模式：`rule` / `global` / `direct` 原样返回，其余（含空串）回退 `"rule"`。
+fn normalized_rule_mode(mode: &str) -> &str {
+    match mode {
+        "rule" | "global" | "direct" => mode,
+        _ => "rule",
+    }
+}
+
+/// 经 Clash API `PATCH /configs` 热切换规则模式（`rule` / `global` / `direct`）。
+///
+/// 目标：`http://127.0.0.1:{port}/configs`，body `{"mode": "<mode>"}`，5 秒超时、
+/// `no_proxy()` 直连；`secret` 非空时带 `Authorization: Bearer <secret>`。
+/// 连接失败 / 非 2xx 返回 `Err`。
+///
+/// 调用方按 best-effort 处理（核心启动后、`set_rule_mode` 热切换时），失败仅记
+/// 日志不阻断：sing-box 无组合层 mode 字段，运行时模式切换完全依赖此 PATCH。
+pub async fn push_clash_mode(port: u16, secret: &str, mode: &str) -> PanelResult<()> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .no_proxy()
+        .build()
+        .map_err(|e| PanelError::Client(format!("构建 Clash API 客户端失败: {e}")))?;
+    let mut request = client
+        .patch(format!("http://127.0.0.1:{port}/configs"))
+        .json(&serde_json::json!({ "mode": mode }));
+    if !secret.is_empty() {
+        request = request.bearer_auth(secret);
+    }
+    let resp = request.send().await.map_err(|e| {
+        PanelError::Client(format!("Clash API 推送规则模式失败（mode={mode}）: {e}"))
+    })?;
+    if !resp.status().is_success() {
+        return Err(PanelError::Client(format!(
+            "Clash API 推送规则模式失败（mode={mode}）: HTTP {}",
+            resp.status()
+        )));
+    }
+    Ok(())
 }
 
 /// 将订阅配置合成为可直接传给 sing-box 的本地配置。
@@ -737,6 +794,7 @@ rules:
             clash_api_port: 9090,
             clash_api_secret: "sekret".to_string(),
             clash_api_ui: "zashboard".to_string(),
+            rule_mode: "rule".to_string(),
         }
     }
 
@@ -894,6 +952,148 @@ rules:
         assert!(cfg.get("secret").is_none());
         assert!(cfg.get("external-ui").is_none());
         assert!(cfg.get("external-ui-url").is_none());
+    }
+
+    // ---------- 规则模式（mihomo 顶层 mode 注入 / sing-box 不写入） ----------
+
+    #[test]
+    fn apply_mihomo_panel_features_injects_rule_mode() {
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        let features = PanelFeatures {
+            rule_mode: "global".to_string(),
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
+
+        assert_eq!(cfg["mode"], "global", "mihomo 顶层应写入持久化规则模式");
+    }
+
+    /// 非法值（含空串）归一化回退 `rule` 后才写入。
+    #[test]
+    fn apply_mihomo_panel_features_falls_back_to_rule_for_invalid_mode() {
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        for invalid in ["", "bogus", "Rule", "direct2"] {
+            let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+            let features = PanelFeatures {
+                rule_mode: invalid.to_string(),
+                ..singbox_features()
+            };
+            apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
+            assert_eq!(cfg["mode"], "rule", "非法值 {invalid:?} 应回退 rule");
+        }
+    }
+
+    /// 模板/复写已含 `mode` 时以设置为准整体替换。
+    #[test]
+    fn apply_mihomo_panel_features_mode_overrides_template() {
+        let yaml = "mode: global\nmixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        assert_eq!(cfg["mode"], "global", "模板自带 mode 应被保留到注入前");
+        let features = PanelFeatures {
+            rule_mode: "direct".to_string(),
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
+
+        assert_eq!(cfg["mode"], "direct", "设置值应覆盖模板 mode");
+    }
+
+    /// sing-box 无组合层 mode 字段：即使设置规则模式也不写入配置（运行时经
+    /// Clash API `PATCH /configs` 热切换）。
+    #[test]
+    fn apply_singbox_panel_features_does_not_inject_mode() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        let features = PanelFeatures {
+            rule_mode: "global".to_string(),
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::SingBox, &features);
+
+        assert!(
+            cfg.get("mode").is_none(),
+            "sing-box 配置不应写入顶层 mode: {cfg}"
+        );
+    }
+
+    // ---------- Clash API 规则模式热切换（PATCH /configs） ----------
+
+    /// 本地 axum 服务验证：PATCH body 为 `{"mode": ...}`、secret 非空时带 Bearer
+    /// 鉴权；非 2xx 返回 Err。
+    #[tokio::test]
+    async fn push_clash_mode_patches_configs_with_bearer_and_checks_status() {
+        use axum::http::HeaderValue;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let captured_body = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let captured_auth = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let body_ref = std::sync::Arc::clone(&captured_body);
+        let auth_ref = std::sync::Arc::clone(&captured_auth);
+        let app = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(
+                move |req: axum::http::Request<axum::body::Body>| async move {
+                    *auth_ref.lock().unwrap() = req.headers().get("authorization").cloned();
+                    let bytes = axum::body::to_bytes(req.into_body(), 1024).await.unwrap();
+                    *body_ref.lock().unwrap() = Some(bytes.to_vec());
+                    axum::http::StatusCode::NO_CONTENT
+                },
+            ),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        push_clash_mode(addr.port(), "sekret", "direct")
+            .await
+            .unwrap();
+        assert_eq!(
+            captured_body.lock().unwrap().as_ref().unwrap(),
+            &br#"{"mode":"direct"}"#.to_vec()
+        );
+        assert_eq!(
+            captured_auth.lock().unwrap().as_ref(),
+            Some(&HeaderValue::from_static("Bearer sekret"))
+        );
+
+        // secret 空串 → 不带鉴权头。
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr2 = listener.local_addr().unwrap();
+        let captured_auth2 = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let auth_ref2 = std::sync::Arc::clone(&captured_auth2);
+        let app2 = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(
+                move |req: axum::http::Request<axum::body::Body>| async move {
+                    *auth_ref2.lock().unwrap() = req.headers().get("authorization").cloned();
+                    axum::http::StatusCode::NO_CONTENT
+                },
+            ),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app2).await.unwrap();
+        });
+        push_clash_mode(addr2.port(), "", "rule").await.unwrap();
+        assert!(
+            captured_auth2.lock().unwrap().as_ref().is_none(),
+            "空 secret 不应带 Authorization 头"
+        );
+
+        // 非 2xx → Err。
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr3 = listener.local_addr().unwrap();
+        let app3 = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(|| async { axum::http::StatusCode::BAD_REQUEST }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app3).await.unwrap();
+        });
+        assert!(push_clash_mode(addr3.port(), "", "direct").await.is_err());
     }
 
     // ---------- Clash 面板 UI 选择（yacd / zashboard / metacubexd） ----------

@@ -96,6 +96,11 @@ pub struct ClientConfigView {
     pub github_proxy_prefix: String,
     /// 远程资源拉取是否经本地核心 mixed 端口代理。
     pub fetch_via_local_proxy: bool,
+    /// 规则模式：`rule` / `global` / `direct`（默认 `rule`）。
+    ///
+    /// 非法值在 `into_config` 时原样落盘，由 `pp_client::ClientConfig` 的
+    /// `normalized_rule_mode()` 读取侧归一化兜底（合成与热切换均回退 `rule`）。
+    pub rule_mode: String,
 }
 
 impl Default for ClientConfigView {
@@ -121,6 +126,7 @@ impl Default for ClientConfigView {
             clash_api_ui: "zashboard".to_string(),
             github_proxy_prefix: String::new(),
             fetch_via_local_proxy: false,
+            rule_mode: "rule".to_string(),
         }
     }
 }
@@ -155,6 +161,7 @@ impl ClientConfigView {
             clash_api_ui: cfg.clash_api_ui.clone(),
             github_proxy_prefix: cfg.github_proxy_prefix.clone(),
             fetch_via_local_proxy: cfg.fetch_via_local_proxy,
+            rule_mode: cfg.rule_mode.clone(),
         }
     }
 
@@ -184,6 +191,7 @@ impl ClientConfigView {
             "clash_api_ui": self.clash_api_ui,
             "github_proxy_prefix": self.github_proxy_prefix,
             "fetch_via_local_proxy": self.fetch_via_local_proxy,
+            "rule_mode": self.rule_mode,
         });
         serde_json::from_value::<ClientConfig>(value).map_err(|e| e.to_string())
     }
@@ -195,6 +203,12 @@ pub struct ClientStatusView {
     pub core_running: bool,
     pub mitm_addr: Option<String>,
     pub system_proxy: bool,
+    /// 当前生效的规则模式（`rule` / `global` / `direct`）。
+    pub rule_mode: String,
+    /// 本次合成配置的规则条数（未运行时为 0）。
+    pub rule_count: u64,
+    /// Clash 面板 API 地址（核心运行中且 clash_api_enabled 时，否则 `None`）。
+    pub clash_api_url: Option<String>,
 }
 
 impl ClientStatusView {
@@ -203,6 +217,9 @@ impl ClientStatusView {
             core_running: status.core_running,
             mitm_addr: status.mitm_addr.map(|a| a.to_string()),
             system_proxy: status.system_proxy,
+            rule_mode: status.rule_mode.clone(),
+            rule_count: status.rule_count,
+            clash_api_url: status.clash_api_url.clone(),
         }
     }
 }
@@ -385,6 +402,65 @@ pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView
     let Some(client) = lock.as_ref() else {
         return Ok(ClientStatusView::default());
     };
+    let status = client.status().await;
+    Ok(ClientStatusView::from_status(&status))
+}
+
+/// 无运行客户端实例时的状态视图（`rule_mode` 取已落盘的归一化值）。
+fn idle_status_view(data_dir: &std::path::Path) -> ClientStatusView {
+    ClientStatusView {
+        core_running: false,
+        mitm_addr: None,
+        system_proxy: false,
+        rule_mode: ClientConfig::load(data_dir)
+            .map(|c| c.normalized_rule_mode().to_string())
+            .unwrap_or_else(|_| "rule".to_string()),
+        rule_count: 0,
+        clash_api_url: None,
+    }
+}
+
+/// `set_rule_mode` 的持久化部分（命令层可测试的纯逻辑）：校验模式合法并写入
+/// `client.json`。
+fn set_rule_mode_persist(data_dir: &std::path::Path, mode: &str) -> Result<(), String> {
+    match mode {
+        "rule" | "global" | "direct" => {}
+        _ => return Err("无效的规则模式".to_string()),
+    }
+    let mut config = ClientConfig::load(data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    config.rule_mode = mode.to_string();
+    config.save().map_err(|e| format!("保存配置失败: {e}"))
+}
+
+/// 设置规则模式（`rule` / `global` / `direct`）：写入 `client.json` 持久化。
+///
+/// 客户端已创建且核心运行中、Clash API 开启时，best-effort 经 `PATCH /configs`
+/// 热切换（失败不向用户报错，仅记 warning，当前模式以返回的 status 为准）。
+/// 返回值携带最新 `ClientStatusView`。
+#[tauri::command]
+pub async fn set_rule_mode(
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<ClientStatusView, String> {
+    set_rule_mode_persist(&state.data_dir, &mode)?;
+    let mut lock = state.client.lock().await;
+    let Some(client) = lock.as_mut() else {
+        return Ok(idle_status_view(&state.data_dir));
+    };
+    // 同步实例内存配置：status() 读取它返回最新模式（下次 start 亦从磁盘 reload）。
+    client.config.rule_mode = mode.clone();
+    let status = client.status().await;
+    if status.core_running && client.config.clash_api_enabled {
+        if let Err(e) = pp_client::push_clash_mode(
+            client.config.clash_api_port,
+            &client.config.clash_api_secret,
+            &mode,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, mode = %mode, "Clash API 热切换规则模式失败");
+        }
+    }
     let status = client.status().await;
     Ok(ClientStatusView::from_status(&status))
 }
@@ -1253,6 +1329,7 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
         clash_api_port: cfg.clash_api_port,
         clash_api_secret: cfg.clash_api_secret.clone(),
         clash_api_ui: cfg.clash_api_ui.clone(),
+        rule_mode: cfg.normalized_rule_mode().to_string(),
     };
     let mut value = match cfg.core_type {
         CoreType::SingBox => compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
@@ -1871,6 +1948,7 @@ mod tests {
         view.clash_api_ui = "yacd".to_string();
         view.github_proxy_prefix = "https://gh-proxy.com".to_string();
         view.fetch_via_local_proxy = true;
+        view.rule_mode = "direct".to_string();
 
         let result = with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
         assert!(
@@ -1892,6 +1970,7 @@ mod tests {
         assert_eq!(saved.clash_api_ui, "yacd");
         assert_eq!(saved.github_proxy_prefix, "https://gh-proxy.com");
         assert!(saved.fetch_via_local_proxy);
+        assert_eq!(saved.rule_mode, "direct");
 
         // load → from_config 往返保真（前端下次保存时的 payload 基础）。
         let view2 = ClientConfigView::from_config(&saved);
@@ -1905,6 +1984,7 @@ mod tests {
         assert_eq!(view2.clash_api_ui, "yacd");
         assert_eq!(view2.github_proxy_prefix, "https://gh-proxy.com");
         assert!(view2.fetch_via_local_proxy);
+        assert_eq!(view2.rule_mode, "direct");
     }
 
     #[test]
@@ -2218,5 +2298,70 @@ mod tests {
         sub.profile_id = None;
         let view = SubscriptionView::from_sub(&sub);
         assert_eq!(view.profile_id, None);
+    }
+
+    // ---------- 规则模式（set_rule_mode 持久化） ----------
+
+    #[test]
+    fn set_rule_mode_rejects_invalid_mode() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        for invalid in ["", "bogus", "Rule", "全局"] {
+            let err = set_rule_mode_persist(dir.path(), invalid).unwrap_err();
+            assert!(err.contains("无效的规则模式"), "{invalid:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn set_rule_mode_persists_valid_mode() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        // 默认 rule。
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.rule_mode, "rule");
+
+        for mode in ["global", "direct", "rule"] {
+            set_rule_mode_persist(dir.path(), mode).unwrap();
+            let saved = ClientConfig::load(dir.path()).unwrap();
+            assert_eq!(saved.rule_mode, mode, "{mode} 应落盘 client.json");
+        }
+    }
+
+    #[test]
+    fn idle_status_view_reports_persisted_rule_mode() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+        let view = idle_status_view(dir.path());
+        assert_eq!(view.rule_mode, "rule");
+        assert_eq!(view.rule_count, 0);
+        assert!(!view.core_running);
+        assert!(view.clash_api_url.is_none());
+
+        set_rule_mode_persist(dir.path(), "direct").unwrap();
+        let view = idle_status_view(dir.path());
+        assert_eq!(view.rule_mode, "direct");
     }
 }

@@ -40,6 +40,14 @@ pub struct ClientStatus {
     pub mitm_addr: Option<SocketAddr>,
     /// 系统代理当前是否启用。
     pub system_proxy: bool,
+    /// 当前生效的规则模式（= client.json 持久化值，非法值归一化为 `rule`）。
+    pub rule_mode: String,
+    /// 本次合成配置的规则条数（sing-box 取 `route.rules`、mihomo 取 `rules`
+    /// 数组长度；未运行时为 0）。
+    pub rule_count: u64,
+    /// Clash 面板 API 地址（核心运行中且 `clash_api_enabled` 时为
+    /// `http://127.0.0.1:{clash_api_port}`，否则 `None`）。
+    pub clash_api_url: Option<String>,
 }
 
 /// 定时任务调度器运行句柄。
@@ -63,6 +71,8 @@ pub struct ClientState {
     scheduler: Option<SchedulerHandle>,
     /// TUN 权限检测函数（默认 [`tun_auth_status`]；测试可注入覆盖以绕过真实权限检查）。
     tun_auth_check: Arc<dyn Fn(&Path) -> TunAuthStatus + Send + Sync>,
+    /// 本次合成配置的规则条数（start 成功后写入，stop 清零；供 status() 返回）。
+    rule_count: u64,
 }
 
 impl ClientState {
@@ -100,6 +110,7 @@ impl ClientState {
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
             tun_auth_check: Arc::new(tun_auth_status),
+            rule_count: 0,
         }
     }
 
@@ -274,6 +285,7 @@ impl ClientState {
             clash_api_port: self.config.clash_api_port,
             clash_api_secret: self.config.clash_api_secret.clone(),
             clash_api_ui: self.config.clash_api_ui.clone(),
+            rule_mode: self.config.normalized_rule_mode().to_string(),
         };
         let config_json = match self.config.core_type {
             CoreType::SingBox => {
@@ -308,7 +320,31 @@ impl ClientState {
                 cfg
             }
         };
-        self.start_services(&config_json).await
+        self.start_services(&config_json).await?;
+
+        // 运行状态扩展：记录本次合成配置的规则条数（未运行时为 0）。
+        self.rule_count = config_json_rule_count(&config_json, self.config.core_type);
+
+        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：mihomo
+        // 启动配置已含顶层 `mode`，此推送冗余但无害；sing-box 无组合层 mode 字段，
+        // 完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
+        let rule_mode = self.config.normalized_rule_mode().to_string();
+        if self.config.clash_api_enabled {
+            if let Err(e) = core_config::push_clash_mode(
+                self.config.clash_api_port,
+                &self.config.clash_api_secret,
+                &rule_mode,
+            )
+            .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    rule_mode = %rule_mode,
+                    "Clash API 推送规则模式失败"
+                );
+            }
+        }
+        Ok(())
     }
 
     /// MITM 启用时启动 MITM 并返回链路信息；未启用时返回 `None`。
@@ -429,6 +465,8 @@ impl ClientState {
         self.stop_mitm().await;
         self.stop_scheduler().await;
         self.stop_core().await;
+        // 未运行时规则条数清零。
+        self.rule_count = 0;
     }
 
     /// 当前运行状态。
@@ -437,10 +475,19 @@ impl ClientState {
             Some(c) => c.is_running().await,
             None => false,
         };
+        // 核心运行中且 Clash 面板 API 开启时才暴露其地址。
+        let clash_api_url = if core_running && self.config.clash_api_enabled {
+            Some(format!("http://127.0.0.1:{}", self.config.clash_api_port))
+        } else {
+            None
+        };
         ClientStatus {
             core_running,
             mitm_addr: self.mitm.as_ref().map(|m| m.addr),
             system_proxy: self.sysproxy.is_enabled().await,
+            rule_mode: self.config.normalized_rule_mode().to_string(),
+            rule_count: self.rule_count,
+            clash_api_url,
         }
     }
 
@@ -531,6 +578,22 @@ pub fn core_type_display_name(core_type: CoreType) -> &'static str {
     match core_type {
         CoreType::SingBox => "sing-box",
         CoreType::Mihomo => "mihomo",
+    }
+}
+
+/// 计算合成配置的规则条数：sing-box 取 `route.rules` 数组长度，mihomo 取顶层
+/// `rules` 数组长度（数组缺失按 0）。
+fn config_json_rule_count(config_json: &serde_json::Value, core_type: CoreType) -> u64 {
+    match core_type {
+        CoreType::SingBox => config_json
+            .get("route")
+            .and_then(|r| r.get("rules"))
+            .and_then(|rules| rules.as_array())
+            .map_or(0, |rules| rules.len() as u64),
+        CoreType::Mihomo => config_json
+            .get("rules")
+            .and_then(|rules| rules.as_array())
+            .map_or(0, |rules| rules.len() as u64),
     }
 }
 
@@ -817,10 +880,76 @@ mod tests {
 
         let status = state.status().await;
         assert!(status.core_running, "mihomo 核心应启动");
+        assert_eq!(status.rule_mode, "rule", "默认规则模式为 rule");
+        // yaml 含 1 条 `MATCH,DIRECT` 规则；clash_api 默认关闭 → 无 API 地址。
+        assert_eq!(status.rule_count, 1);
+        assert_eq!(status.clash_api_url, None);
 
         state.stop().await;
         let status = state.status().await;
         assert!(!status.core_running);
+    }
+
+    /// 规则模式 + Clash API 集成：启动成功且 clash_api_enabled 时，best-effort 经
+    /// `PATCH /configs` 推送持久化模式（对 sing-box 而言是唯一生效通道）；status()
+    /// 返回 rule_mode / rule_count / clash_api_url 新字段。
+    #[tokio::test]
+    async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
+        // 假 Clash API server：接收 PATCH /configs 并记录请求体。
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured_ref = Arc::clone(&captured);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let clash_addr = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(
+                move |req: axum::http::Request<axum::body::Body>| async move {
+                    let bytes = axum::body::to_bytes(req.into_body(), 1024).await.unwrap();
+                    *captured_ref.lock().unwrap() = Some(bytes.to_vec());
+                    axum::http::StatusCode::NO_CONTENT
+                },
+            ),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // 订阅含 1 条 route 规则（供 rule_count 断言）。
+        let sub_body = r#"{
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "route": { "final": "direct", "rules": [{"action": "sniff"}] }
+        }"#;
+        let addr = spawn_server(StatusCode::OK, sub_body).await;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(&dir, format!("http://{addr}"));
+        cfg.clash_api_enabled = true;
+        cfg.clash_api_port = clash_addr.port();
+        cfg.clash_api_secret = "sekret".to_string();
+        cfg.rule_mode = "global".to_string();
+        cfg.save().unwrap();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        state.start().await.unwrap();
+
+        // 启动时经 Clash API 推送持久化模式（rule_mode=global）。
+        let body = captured.lock().unwrap().clone().expect("应收到 PATCH 请求");
+        assert_eq!(body, br#"{"mode":"global"}"#);
+
+        // 状态扩展字段。
+        let status = state.status().await;
+        assert_eq!(status.rule_mode, "global");
+        assert_eq!(status.rule_count, 1);
+        assert_eq!(
+            status.clash_api_url,
+            Some(format!("http://127.0.0.1:{}", clash_addr.port()))
+        );
+
+        // 停止后规则条数清零、API 地址消失。
+        state.stop().await;
+        let status = state.status().await;
+        assert_eq!(status.rule_count, 0);
+        assert_eq!(status.clash_api_url, None);
     }
 
     /// 项 1：clash 格式订阅 + sing-box 核心 → start 返回明确的格式/核心不匹配错误，
@@ -1005,6 +1134,10 @@ mod tests {
         );
         assert_eq!(rules[0]["domain"], serde_json::json!(["api.example2.com"]));
         assert_eq!(rules[0]["outbound"], "pp-mitm");
+
+        // 运行状态扩展：本次合成配置含 1 条 MITM 白名单路由规则。
+        let status = state.status().await;
+        assert_eq!(status.rule_count, 1);
 
         state.stop().await;
         let status = state.status().await;
@@ -1441,6 +1574,7 @@ mod tests {
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
             tun_auth_check: Arc::new(|_| TunAuthStatus::Authorized),
+            rule_count: 0,
         };
         state.start().await.unwrap();
 

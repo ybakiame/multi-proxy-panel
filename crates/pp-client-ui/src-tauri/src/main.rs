@@ -32,6 +32,7 @@ fn main() {
             commands::tun_auth_status,
             commands::authorize_tun,
             commands::proxy_status,
+            commands::set_rule_mode,
             commands::list_traffic,
             commands::get_mitm_ca,
             commands::list_remotes,

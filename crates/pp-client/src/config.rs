@@ -80,6 +80,13 @@ pub struct ClientConfig {
     pub github_proxy_prefix: String,
     /// 远程资源拉取是否经本地核心 mixed 端口（`http://127.0.0.1:{mixed_port}`）代理。
     pub fetch_via_local_proxy: bool,
+    /// 规则模式：`rule` / `global` / `direct`（默认 `rule`）。
+    ///
+    /// 持久化到 client.json；合成配置时写入 mihomo 顶层 `mode:`，sing-box 无组合层
+    /// mode 字段，运行时经 Clash API（`PATCH /configs`）热切换。非法值在读取侧
+    /// （[`Self::normalized_rule_mode`]）回退 `rule`。结构体级 `#[serde(default)]`
+    /// 保证旧版 `client.json`（无此字段）按默认 `rule` 解析。
+    pub rule_mode: String,
 }
 
 impl Default for ClientConfig {
@@ -104,6 +111,7 @@ impl Default for ClientConfig {
             clash_api_ui: "zashboard".to_string(),
             github_proxy_prefix: String::new(),
             fetch_via_local_proxy: false,
+            rule_mode: "rule".to_string(),
         }
     }
 }
@@ -132,6 +140,15 @@ impl ClientConfig {
     /// 配置文件路径：`data_dir/client.json`。
     pub fn config_file(&self) -> PathBuf {
         self.data_dir.join("client.json")
+    }
+
+    /// 归一化规则模式：合法值 `rule` / `global` / `direct` 原样返回，非法值
+    /// （含空串）回退 `"rule"`。
+    pub fn normalized_rule_mode(&self) -> &str {
+        match self.rule_mode.as_str() {
+            "rule" | "global" | "direct" => &self.rule_mode,
+            _ => "rule",
+        }
     }
 
     /// 从 `data_dir/client.json` 加载配置。
@@ -179,6 +196,9 @@ mod tests {
         // GitHub 访问默认直连：无代理前缀、不走本地代理。
         assert!(cfg.github_proxy_prefix.is_empty());
         assert!(!cfg.fetch_via_local_proxy);
+        // 规则模式默认 rule。
+        assert_eq!(cfg.rule_mode, "rule");
+        assert_eq!(cfg.normalized_rule_mode(), "rule");
     }
 
     #[test]
@@ -211,6 +231,7 @@ mod tests {
         cfg.clash_api_ui = "metacubexd".to_string();
         cfg.github_proxy_prefix = "https://gh-proxy.com".to_string();
         cfg.fetch_via_local_proxy = true;
+        cfg.rule_mode = "global".to_string();
         cfg.active_subscription_id = Some(uuid::Uuid::new_v4());
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ClientConfig = serde_json::from_str(&json).unwrap();
@@ -244,6 +265,30 @@ mod tests {
         assert!(!cfg.fetch_via_local_proxy);
         // 旧 client.json 缺失 active_subscription_id 时按默认值解析（未选中订阅）。
         assert_eq!(cfg.active_subscription_id, None);
+        // 旧 client.json 缺失 rule_mode 时按默认值解析（rule）。
+        assert_eq!(cfg.rule_mode, "rule");
+        assert_eq!(cfg.normalized_rule_mode(), "rule");
+    }
+
+    #[test]
+    fn normalized_rule_mode_falls_back_for_invalid_values() {
+        let cfg = ClientConfig {
+            rule_mode: "direct".to_string(),
+            ..ClientConfig::default()
+        };
+        assert_eq!(cfg.normalized_rule_mode(), "direct");
+
+        for invalid in ["", "bogus", "Rule", "全局", "proxy"] {
+            let cfg = ClientConfig {
+                rule_mode: invalid.to_string(),
+                ..ClientConfig::default()
+            };
+            assert_eq!(
+                cfg.normalized_rule_mode(),
+                "rule",
+                "非法值 {invalid:?} 应回退 rule"
+            );
+        }
     }
 
     #[test]
