@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use pp_client::ClientState;
 use tokio::sync::Mutex;
+use tracing_appender::non_blocking::WorkerGuard;
 
 /// Tauri 应用共享状态。
 pub struct AppState {
@@ -16,14 +17,20 @@ pub struct AppState {
     pub client: Arc<Mutex<Option<ClientState>>>,
     /// 数据目录（配置、证书、核心二进制统一存放于此）。
     pub data_dir: PathBuf,
+    /// 日志非阻塞写入线程的保活 guard。
+    ///
+    /// 被 Drop 后滚动文件停止接收日志（见 `logs::init_logging`），因此必须随
+    /// `AppState` 存活到进程退出。
+    _log_guard: WorkerGuard,
 }
 
 impl AppState {
     /// 构造应用状态。
-    pub fn new(data_dir: PathBuf) -> Self {
+    pub fn new(data_dir: PathBuf, log_guard: WorkerGuard) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
             data_dir,
+            _log_guard: log_guard,
         }
     }
 

@@ -6,6 +6,7 @@
 mod commands;
 #[cfg(target_os = "android")]
 mod core_bridge;
+mod logs;
 mod state;
 
 use tauri::Manager;
@@ -128,8 +129,10 @@ fn resolve_data_dir(app: &tauri::App) -> std::path::PathBuf {
         match app.path().app_data_dir() {
             Ok(dir) => return dir,
             Err(app_data_err) => {
-                tracing::warn!(
-                    "Android app_data_dir() 解析失败：{app_data_err}，回退 app_local_data_dir()"
+                // tracing 尚未初始化（见 `run()`：日志初始化紧随本函数），此处的
+                // 告警用 eprintln 直出 stderr，保证诊断可见。
+                eprintln!(
+                    "[pp-client-ui] Android app_data_dir() 解析失败：{app_data_err}，回退 app_local_data_dir()"
                 );
                 match app.path().app_local_data_dir() {
                     Ok(dir) => return dir,
@@ -157,10 +160,6 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     configure_wsl_webkit_workaround();
 
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -168,8 +167,11 @@ pub fn run() {
             // Android 上 HOME 为只读 `/`，数据目录须在 setup 阶段经 AppHandle
             // 的 path resolver 解析应用私有目录（桌面仍走 default_data_dir）。
             let data_dir = resolve_data_dir(app);
+            // tracing 全局 subscriber 只能初始化一次；日志初始化紧随 data_dir
+            // 解析，guard 存入 AppState 持有，保证进程生命周期内文件写入线程存活。
+            let log_guard = logs::init_logging(&data_dir);
             tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
-            app.manage(state::AppState::new(data_dir));
+            app.manage(state::AppState::new(data_dir, log_guard));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -217,6 +219,10 @@ pub fn run() {
             #[cfg(target_os = "android")]
             commands::request_vpn_permission,
             commands::platform_info,
+            logs::get_logs,
+            logs::export_logs,
+            logs::clear_logs,
+            logs::log_frontend,
         ]);
 
     // Android 核心由 Kotlin 侧 libbox 驱动：`vpn` 插件 setup 中注册 VpnPlugin
