@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Badge, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
+import { Alert, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
 import {
   authorizeTun,
   deleteCore,
@@ -591,11 +591,6 @@ export default function Settings() {
                 </span>
                 <span className="truncate text-xs text-muted">{coreBinary || "未设置二进制路径"}</span>
               </div>
-              {activeCore && (
-                <Badge color="success" variant="soft" size="sm">
-                  <Badge.Label>使用中</Badge.Label>
-                </Badge>
-              )}
             </div>
           </div>
 

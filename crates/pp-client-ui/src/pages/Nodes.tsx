@@ -310,6 +310,9 @@ export default function Nodes() {
                               {sub.format === "ClashYaml" && clientCoreType === "singbox" && (
                                 <span className="text-xs text-warning">需 mihomo 核心</span>
                               )}
+                              {sub.format === "SingBoxJson" && clientCoreType === "mihomo" && (
+                                <span className="text-xs text-warning">需 sing-box 核心</span>
+                              )}
                             </div>
                           </Table.Cell>
                           <Table.Cell className="min-w-[180px]">

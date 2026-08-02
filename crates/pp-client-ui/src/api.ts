@@ -414,7 +414,7 @@ export function updateSubscription(
   profileId: string | null,
   userAgent?: string,
 ): Promise<SubscriptionView> {
-  return invoke<SubscriptionView>("update_subscription", { id, name, url, profile_id: profileId, userAgent });
+  return invoke<SubscriptionView>("update_subscription", { id, name, url, profileId, userAgent });
 }
 
 /** 核心来源：`downloaded`（已下载）/ `system`（系统探测）。 */
