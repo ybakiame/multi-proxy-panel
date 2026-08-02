@@ -944,7 +944,14 @@ rules:
                 { "type": "tun", "tag": "tun-in", "address": "10.0.0.1/24", "mtu": 1500, "auto_route": false, "stack": "system" },
                 { "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 17890 }
             ],
-            "experimental": { "clash_api": { "external_controller": "0.0.0.0:60000", "secret": "old" } },
+            "experimental": {
+                "clash_api": {
+                    "external_controller": "0.0.0.0:60000",
+                    "external_ui": "yacd-dir",
+                    "external_ui_download_url": "https://old.example/panel.zip",
+                    "secret": "old"
+                }
+            },
             "outbounds": [{ "type": "direct", "tag": "direct" }]
         });
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
@@ -957,12 +964,20 @@ rules:
         assert_eq!(tun[0]["mtu"], 9000);
         assert_eq!(tun[0]["stack"], "mixed");
 
-        // experimental.clash_api 整体替换，其余 experimental 字段（如有）保留。
+        // experimental.clash_api 整体替换：模板/复写自带的 external_ui 与下载地址
+        // 同样以设置值为准覆盖（external_ui=ui + 按选择的下载 URL），其余
+        // experimental 字段（如有）保留。
         assert_eq!(
             cfg["experimental"]["clash_api"]["external_controller"],
             "127.0.0.1:9090"
         );
         assert_eq!(cfg["experimental"]["clash_api"]["secret"], "sekret");
+        assert_eq!(cfg["experimental"]["clash_api"]["external_ui"], "ui");
+        assert_eq!(
+            cfg["experimental"]["clash_api"]["external_ui_download_url"],
+            "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+            "模板旧 external_ui / 下载地址应被设置值覆盖"
+        );
     }
 
     /// Android（libbox / VpnService 接管流量）的 tun 入站必须包含 libbox 兼容字段：

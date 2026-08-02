@@ -612,6 +612,9 @@ export default function Dashboard() {
                     打开面板
                   </Button>
                 </div>
+                <span className="text-xs text-muted">
+                  首次打开会自动下载面板资源，需网络可达；空白时检查网络或稍候重试
+                </span>
               </>
             )}
           </Card.Content>
