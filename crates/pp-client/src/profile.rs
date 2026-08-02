@@ -43,8 +43,7 @@ pub enum SubContent {
 
 /// Profile 复写配置：空串 = 未启用。
 ///
-/// 既作为旧版单文件存储 [`ProfileStore`] 的载荷，也作为多模板存储
-/// [`ProfileStoreV2::active_for`] 的返回（取启用模板的复写字段）。
+/// 作为旧版单文件存储 [`ProfileStore`] 的载荷（仅兼容遗留调用方）。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileOverrides {
     /// YAML 深合并复写（RFC 7386 式；空串 = 未启用）。
@@ -71,7 +70,8 @@ pub struct EffectiveOverrides {
     pub local_js: String,
 }
 
-/// 一个 Profile 模板：同一核心类型（[`CoreType`]）可维护多个，仅一条 `enabled`（排他）。
+/// 一个 Profile 模板（纯关联制）：同一核心类型（[`CoreType`]）可维护多个，
+/// 运行时使用的覆写 = 当前选中订阅关联的模板，模板本身不持有启用状态。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     /// 模板唯一标识（应用层生成的 Uuid v4）。
@@ -90,8 +90,6 @@ pub struct Profile {
     /// 远程 JS 复写 URL（http/https；启动时拉取，失败回退缓存；`None` = 未配置）。
     #[serde(default)]
     pub js_url: Option<String>,
-    /// 是否启用；同一核心类型下最多一条为 `true`。
-    pub enabled: bool,
 }
 
 /// Profile 存储（旧版单文件）：读写 `data_dir/profile.json` 中的 [`ProfileOverrides`]。
@@ -145,12 +143,12 @@ impl ProfileStore {
 
 /// 多模板 Profile 存储：读写 `data_dir/profiles.json` 中的 [`Profile`] 列表。
 ///
-/// 同一核心类型（[`CoreType`]）可维护多个模板，但仅一条 `enabled`（排他启用）；
-/// 启动时经 [`ProfileStoreV2::active_for`] 取启用模板的复写。
+/// 纯关联制：模板不持有启用状态，运行时使用的覆写 = 当前选中订阅关联的模板
+/// （见 `crate::state` 启动流程与订阅的 `profile_id`）。
 ///
 /// 旧版单文件 `data_dir/profile.json`（[`ProfileStore`]）在首次 [`ProfileStoreV2::load`]
-/// 时一次性迁移为 `Profile{name:"默认", core_type: SingBox, enabled:true}`（复写内容
-/// 原样保留）并删除旧文件；`profiles.json` 已存在时不做迁移。
+/// 时一次性迁移为 `Profile{name:"默认", core_type: SingBox}`（复写内容原样保留）
+/// 并删除旧文件；`profiles.json` 已存在时不做迁移。
 #[derive(Debug, Clone)]
 pub struct ProfileStoreV2 {
     data_dir: PathBuf,
@@ -223,7 +221,6 @@ impl ProfileStoreV2 {
                 js_override: overrides.js_override,
                 yaml_url: None,
                 js_url: None,
-                enabled: true,
             }];
             self.save(&profiles)?;
             if let Err(e) = std::fs::remove_file(&legacy) {
@@ -246,7 +243,7 @@ impl ProfileStoreV2 {
         Ok(())
     }
 
-    /// 新增模板：名称与已有模板重复时报错；该核心类型的首个模板自动启用。
+    /// 新增模板：名称与已有模板重复时报错。
     pub fn add(&self, name: &str, core_type: CoreType) -> PanelResult<Profile> {
         let mut profiles = self.load()?;
         if profiles.iter().any(|p| p.name == name) {
@@ -262,7 +259,6 @@ impl ProfileStoreV2 {
             js_override: String::new(),
             yaml_url: None,
             js_url: None,
-            enabled: !profiles.iter().any(|p| p.core_type == core_type),
         };
         profiles.push(profile.clone());
         self.save(&profiles)?;
@@ -270,8 +266,7 @@ impl ProfileStoreV2 {
     }
 
     /// 按 id 全量更新模板的可编辑字段（name / yaml_override / js_override /
-    /// yaml_url / js_url）；`core_type` 与 `enabled` 保持存储值（启用状态经
-    /// [`Self::set_enabled`] 切换，避免破坏排他不变式）。模板不存在时报错。
+    /// yaml_url / js_url）；`core_type` 保持存储值。模板不存在时报错。
     pub fn update(&self, profile: &Profile) -> PanelResult<()> {
         let mut profiles = self.load()?;
         let target = profiles
@@ -295,41 +290,6 @@ impl ProfileStoreV2 {
             return Err(PanelError::Client(format!("profile {id} not found")));
         }
         self.save(&profiles)
-    }
-
-    /// 设置模板启用状态：启用时同核心类型其他模板自动禁用（排他），不同核心类型
-    /// 的启用状态不受影响；禁用直接置 `false`。模板不存在时报错。
-    pub fn set_enabled(&self, id: Uuid, enabled: bool) -> PanelResult<()> {
-        let mut profiles = self.load()?;
-        let target = profiles
-            .iter()
-            .find(|p| p.id == id)
-            .cloned()
-            .ok_or_else(|| PanelError::Client(format!("profile {id} not found")))?;
-        for p in &mut profiles {
-            if p.core_type == target.core_type {
-                p.enabled = enabled && p.id == id;
-            }
-        }
-        self.save(&profiles)
-    }
-
-    /// 指定核心类型当前启用模板（无启用模板时返回 `None`）。
-    pub fn active_profile_for(&self, core_type: CoreType) -> PanelResult<Option<Profile>> {
-        Ok(self
-            .load()?
-            .into_iter()
-            .find(|p| p.core_type == core_type && p.enabled))
-    }
-
-    /// 指定核心类型当前启用模板的复写（无启用模板时返回 `None`）。
-    pub fn active_for(&self, core_type: CoreType) -> PanelResult<Option<ProfileOverrides>> {
-        Ok(self
-            .active_profile_for(core_type)?
-            .map(|p| ProfileOverrides {
-                yaml_override: p.yaml_override,
-                js_override: p.js_override,
-            }))
     }
 }
 
@@ -1461,7 +1421,6 @@ new-key:
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "默认");
         assert_eq!(profiles[0].core_type, CoreType::SingBox);
-        assert!(profiles[0].enabled);
         assert_eq!(profiles[0].yaml_override, "route:\n  final: direct\n");
         assert_eq!(profiles[0].js_override, "function main(c) { return c; }");
 
@@ -1485,76 +1444,32 @@ new-key:
         assert!(!dir.path().join("profile.json").exists());
     }
 
-    /// ② add：首个该 core_type 自动 enabled；第二个同 core_type 不自动；重名报错。
+    /// ② add：新模板不携带启用状态（纯关联制）；重名报错（跨核心也报错）。
     #[test]
-    fn profile_store_v2_add_first_auto_enabled_second_not() {
+    fn profile_store_v2_add_creates_profiles_without_enabled() {
         let dir = tempfile::tempdir().unwrap();
         let store = ProfileStoreV2::new(dir.path().to_path_buf());
 
         let a = store.add("A", CoreType::SingBox).unwrap();
-        assert!(a.enabled, "首个该 core_type 的模板应自动启用");
         assert!(!a.id.is_nil());
 
         let b = store.add("B", CoreType::SingBox).unwrap();
-        assert!(!b.enabled, "第二个同 core_type 模板不应自动启用");
+        assert_ne!(a.id, b.id);
 
-        // 不同 core_type 的首个模板自动启用，且不影响 SingBox 的启用状态。
         let c = store.add("C", CoreType::Mihomo).unwrap();
-        assert!(c.enabled);
+        assert_ne!(a.id, c.id);
 
         // 重名报错（跨核心也报错）。
         let err = store.add("A", CoreType::Mihomo).unwrap_err();
         assert!(matches!(err, PanelError::Client(_)));
 
-        // 磁盘状态与内存一致：SingBox 恰有一条 enabled。
+        // 磁盘状态与内存一致。
         let loaded = store.load().unwrap();
         assert_eq!(loaded.len(), 3);
-        assert_eq!(
-            loaded
-                .iter()
-                .filter(|p| p.core_type == CoreType::SingBox && p.enabled)
-                .count(),
-            1
-        );
     }
 
-    /// ③ set_enabled 排他：启用 B 后 A 自动禁用（同 core_type），跨 core_type 不受影响。
-    #[test]
-    fn profile_store_v2_set_enabled_exclusive() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = ProfileStoreV2::new(dir.path().to_path_buf());
-        let a = store.add("A", CoreType::SingBox).unwrap();
-        let b = store.add("B", CoreType::SingBox).unwrap();
-        let m = store.add("M", CoreType::Mihomo).unwrap();
-        assert!(a.enabled);
-        assert!(!b.enabled);
-        assert!(m.enabled);
-
-        // 启用 B → A 自动禁用、M（不同 core_type）保持启用。
-        store.set_enabled(b.id, true).unwrap();
-        let loaded = store.load().unwrap();
-        let by_id = |id: Uuid| loaded.iter().find(|p| p.id == id).unwrap();
-        assert!(!by_id(a.id).enabled);
-        assert!(by_id(b.id).enabled);
-        assert!(by_id(m.id).enabled);
-
-        // active_for 返回 B 的复写。
-        let active = store.active_for(CoreType::SingBox).unwrap();
-        assert!(active.is_some());
-        assert_eq!(active.as_ref().unwrap().yaml_override, "");
-
-        // 禁用 B → SingBox 无启用模板。
-        store.set_enabled(b.id, false).unwrap();
-        assert!(store.active_for(CoreType::SingBox).unwrap().is_none());
-        assert!(store.active_for(CoreType::Mihomo).unwrap().is_some());
-
-        // 不存在 id 报错。
-        let err = store.set_enabled(Uuid::new_v4(), true).unwrap_err();
-        assert!(matches!(err, PanelError::Client(_)));
-    }
-
-    /// ④ update/remove 语义：update 按 id 全量更新 name/yaml/js（enabled 保持），
-    /// remove 按 id 删除；均对不存在 id 报错。
+    /// ④ update/remove 语义：update 按 id 全量更新 name/yaml/js，remove 按 id 删除；
+    /// 均对不存在 id 报错。
     #[test]
     fn profile_store_v2_update_and_remove() {
         let dir = tempfile::tempdir().unwrap();
@@ -1566,7 +1481,6 @@ new-key:
         p.js_override = "function main(c) { return c; }".to_string();
         p.yaml_url = Some("https://example.com/r.yaml".to_string());
         p.js_url = Some("https://example.com/r.js".to_string());
-        p.enabled = false; // 传入无效，应保持存储值。
         store.update(&p).unwrap();
 
         let loaded = store.load().unwrap();
@@ -1582,7 +1496,6 @@ new-key:
             loaded[0].js_url.as_deref(),
             Some("https://example.com/r.js")
         );
-        assert!(loaded[0].enabled, "update 不改启用状态");
         assert_eq!(loaded[0].core_type, CoreType::SingBox);
 
         // 不存在 id 的 update 报错。
@@ -1606,24 +1519,6 @@ new-key:
         ));
     }
 
-    /// active_for 返回启用模板的复写字段（空串保留）。
-    #[test]
-    fn profile_store_v2_active_for_returns_overrides_of_enabled_profile() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = ProfileStoreV2::new(dir.path().to_path_buf());
-        let a = store.add("A", CoreType::SingBox).unwrap();
-        store
-            .update(&Profile {
-                yaml_override: "route:\n  final: direct\n".to_string(),
-                js_override: "function main(c) { return c; }".to_string(),
-                ..a.clone()
-            })
-            .unwrap();
-        let active = store.active_for(CoreType::SingBox).unwrap().unwrap();
-        assert_eq!(active.yaml_override, "route:\n  final: direct\n");
-        assert_eq!(active.js_override, "function main(c) { return c; }");
-    }
-
     // ---------- ⑩ 远程复写 URL：resolve_remote_overrides + 叠加 ----------
 
     /// 便捷构造 Profile（默认无远程 URL、空本地复写）。
@@ -1636,7 +1531,6 @@ new-key:
             js_override: String::new(),
             yaml_url,
             js_url,
-            enabled: true,
         }
     }
 

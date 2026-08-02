@@ -118,8 +118,13 @@ impl ClientState {
         self.scheduler.as_ref().map(|h| Arc::clone(&h.scheduler))
     }
 
-    /// 启动：订阅 → Profile（模板 + 本地复写 + 远程复写 URL 拉取/缓存回退）→ MITM →
+    /// 启动：订阅选择（active_subscription_id）→ 覆写解析（订阅关联模板）→ MITM →
     /// 合成配置（MITM 链路）→ 核心 → 系统代理，失败回滚。
+    ///
+    /// 运行模型（纯关联制）：首页选中的订阅（`active_subscription_id`）唯一生效，
+    /// 订阅 `enabled` 仅表示「可被首页选择」；运行时使用的覆写 = 当前生效订阅关联的
+    /// 覆写模板（订阅未关联 = 不使用覆写）。订阅选择与模板关联任一异常均返回明确
+    /// 错误不启动。未配置选中订阅时回退旧版 Hub 订阅路径（deprecated，无覆写）。
     ///
     /// 启动顺序：先拉取订阅并经 Profile 层生成基础配置（订阅只取节点 → 本地模板 →
     /// 远程 YAML → 本地 YAML → 远程 JS → 本地 JS 叠加复写，远程 URL 拉取失败回退
@@ -160,13 +165,32 @@ impl ClientState {
         tracing::info!("客户端启动：解析订阅");
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
 
-        // 订阅 → Profile 层：订阅内容只用于提取节点，本地模板生成分组/路由，
-        // YAML 与 JS 双复写（取 data_dir/profiles.json 中当前核心类型启用的模板）。
+        // 订阅选择（新模型）：首页选中的订阅（config.active_subscription_id）唯一生效。
+        // 选中订阅必须存在且 enabled（可被首页选择）；未配置选中订阅时回退旧版 Hub
+        // 订阅路径（hub_url/sub_token 非空，deprecated）。
         //
-        // 新路径：SubscriptionStore 取第一个 enabled 订阅，经 fetch_subscription
-        // 嗅探格式并转成双核心节点。subscriptions.json 为空且旧 hub_url/sub_token
-        // 非空时回退旧版 Hub 订阅路径（deprecated）。
-        let sub_content = if let Some(sub) = sub_store.load()?.into_iter().find(|s| s.enabled) {
+        // 订阅 → Profile 层：订阅内容只用于提取节点，本地模板生成分组/路由；覆写
+        // 模板按纯关联制取当前生效订阅的 `profile_id`（见下方覆写解析）。
+        let mut linked_profile_id = None;
+        let active_sub = match self.config.active_subscription_id {
+            Some(id) => Some(
+                sub_store
+                    .load()?
+                    .into_iter()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| {
+                        PanelError::Client("所选订阅不存在，请在首页重新选择".to_string())
+                    })?,
+            ),
+            None => None,
+        };
+        let sub_content = if let Some(sub) = active_sub {
+            if !sub.enabled {
+                return Err(PanelError::Client(
+                    "所选订阅已停用，请在订阅页启用或在首页重新选择".to_string(),
+                ));
+            }
+            linked_profile_id = sub.profile_id;
             let fetch =
                 subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                     .await?;
@@ -185,7 +209,7 @@ impl ClientState {
         } else if !self.config.hub_url.is_empty() && !self.config.sub_token.is_empty() {
             tracing::warn!(
                 hub_url = %self.config.hub_url,
-                "未配置通用订阅，回退到旧版 Hub 订阅路径（deprecated）"
+                "未配置选中订阅，回退到旧版 Hub 订阅路径（deprecated）"
             );
             let fetcher = subscription::SubscriptionFetcher::new();
             match self.config.core_type {
@@ -203,18 +227,30 @@ impl ClientState {
                 }
             }
         } else {
-            return Err(PanelError::Client(
-                "no enabled subscription and no legacy hub subscription configured".to_string(),
-            ));
+            return Err(PanelError::Client("请先在首页选择要使用的订阅".to_string()));
         };
         let store = profile::ProfileStoreV2::new(self.config.data_dir.clone());
-        // 取启用模板（不止复写，含远程复写 URL）→ 解析远程复写（拉取/缓存回退/
-        // 跳过）→ 远程为基底、本地叠加的 v2 构建流程。
-        let (effective, warnings) = match store.active_profile_for(self.config.core_type)? {
-            Some(active) => {
+        // 覆写解析（纯关联制）：运行时使用的覆写 = 当前生效订阅关联的覆写模板；
+        // 订阅未关联（或 legacy Hub 回退路径）不使用任何覆写。模板不存在或核心
+        // 类型不匹配时返回明确错误。匹配时解析远程复写（拉取/缓存回退/跳过）→
+        // 远程为基底、本地叠加的 v2 构建流程。
+        let (effective, warnings) = match linked_profile_id {
+            Some(pid) => {
+                let profiles = store.load()?;
+                let linked = profiles.iter().find(|p| p.id == pid).ok_or_else(|| {
+                    PanelError::Client("订阅关联的覆写模板不存在，请在订阅页重新关联".to_string())
+                })?;
+                if linked.core_type != self.config.core_type {
+                    return Err(PanelError::Client(format!(
+                        "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
+                        linked.name,
+                        core_type_display_name(linked.core_type),
+                        core_type_display_name(self.config.core_type),
+                    )));
+                }
                 profile::resolve_remote_overrides(
                     &self.config.data_dir.join("profile_cache"),
-                    &active,
+                    linked,
                 )
                 .await
             }
@@ -488,6 +524,14 @@ fn check_subscription_core_compat(
     Err(PanelError::Client(format!(
         "订阅格式为 {format_name}，仅支持 {supported_core} 核心，当前核心类型为 {core_type}，请在设置中切换核心类型"
     )))
+}
+
+/// 核心类型的用户可见展示名（`sing-box` / `mihomo`），用于覆写匹配错误信息。
+pub fn core_type_display_name(core_type: CoreType) -> &'static str {
+    match core_type {
+        CoreType::SingBox => "sing-box",
+        CoreType::Mihomo => "mihomo",
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -786,9 +830,10 @@ mod tests {
         const YAML: &str = "port: 7890\nproxies:\n  - name: n1\n    type: ss\n    server: example.com\n    port: 8388\n    cipher: aes-256-gcm\n    password: pw\nrules:\n  - MATCH,DIRECT\n";
         let addr = spawn_server(StatusCode::OK, YAML).await;
         let dir = tempfile::tempdir().unwrap();
-        // 通用订阅路径：subscriptions.json 指向本地 server（clash 格式）。
+        // 通用订阅路径：subscriptions.json 指向本地 server（clash 格式），
+        // client.json 选中该订阅（新模型：选中订阅唯一生效）。
         let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
-        store
+        let sub = store
             .add("clash-sub", &format!("http://{addr}/sub"), true, None)
             .unwrap();
 
@@ -799,6 +844,7 @@ mod tests {
             CoreType::SingBox,
             fake_core_script(&dir),
         );
+        cfg.active_subscription_id = Some(sub.id);
         cfg.mitm_enabled = false;
         cfg.system_proxy_enabled = true;
         cfg.save().unwrap();
@@ -843,9 +889,9 @@ mod tests {
         });
 
         let dir = tempfile::tempdir().unwrap();
-        // subscriptions.json 指向本地 server。
+        // subscriptions.json 指向本地 server，client.json 选中该订阅。
         let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
-        store
+        let sub = store
             .add("local", &format!("{base}/sub"), true, None)
             .unwrap();
 
@@ -856,6 +902,7 @@ mod tests {
             CoreType::SingBox,
             fake_core_script(&dir),
         );
+        cfg.active_subscription_id = Some(sub.id);
         cfg.mitm_enabled = false;
         cfg.save().unwrap();
 
@@ -965,8 +1012,8 @@ mod tests {
         assert!(!status.core_running);
     }
 
-    /// Profile 层集成：订阅（2 节点 + selector/direct 组）经模板分组、profiles.json
-    /// 中启用模板的 JS 复写生效，compose 正常注入 inbounds 与 MITM 链。
+    /// Profile 层集成：订阅（2 节点 + selector/direct 组）经模板分组、订阅关联的
+    /// 覆写模板 JS 复写生效，compose 正常注入 inbounds 与 MITM 链。
     #[tokio::test]
     async fn start_with_profile_applies_template_groups_and_js_override() {
         let body = r#"{
@@ -985,10 +1032,11 @@ mod tests {
         let addr = spawn_server(StatusCode::OK, body).await;
         let dir = tempfile::tempdir().unwrap();
 
-        // 预置 profiles.json：启用一个 SingBox 模板，其 js_override 修改 dns.strategy。
+        // 预置 profiles.json：一个 SingBox 模板，其 js_override 修改 dns.strategy。
+        let profile_id = uuid::Uuid::new_v4();
         profile::ProfileStoreV2::new(dir.path().to_path_buf())
             .save(&[profile::Profile {
-                id: uuid::Uuid::new_v4(),
+                id: profile_id,
                 name: "默认".to_string(),
                 core_type: pp_common::CoreType::SingBox,
                 yaml_override: String::new(),
@@ -996,19 +1044,27 @@ mod tests {
                     .to_string(),
                 yaml_url: None,
                 js_url: None,
-                enabled: true,
             }])
             .unwrap();
+
+        // 订阅关联该模板（纯关联制）：subscriptions.json 指向本地 server 并关联
+        // profile_id，client.json 选中该订阅。
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("local", &format!("http://{addr}/sub"), true, None)
+            .unwrap();
+        store.set_profile_id(sub.id, Some(profile_id)).unwrap();
 
         let capture = dir.path().join("core-config-capture.json");
         let core_bin = fake_core_capturing_args(&dir, &capture);
         let mut cfg = ClientConfig::new(
             dir.path().to_path_buf(),
-            format!("http://{addr}"),
-            "tok",
+            String::new(),
+            String::new(),
             CoreType::SingBox,
             core_bin,
         );
+        cfg.active_subscription_id = Some(sub.id);
         cfg.mitm_enabled = true;
         cfg.save().unwrap();
 
@@ -1061,7 +1117,7 @@ mod tests {
         state.stop().await;
     }
 
-    /// profiles.json 预置非法 JS 复写 → start 返回 Err；核心未启动、系统代理零调用。
+    /// 订阅关联的覆写模板预置非法 JS 复写 → start 返回 Err；核心未启动、系统代理零调用。
     #[tokio::test]
     async fn start_rolls_back_on_invalid_profile_js_override() {
         let body = r#"{
@@ -1074,21 +1130,33 @@ mod tests {
         let addr = spawn_server(StatusCode::OK, body).await;
         let dir = tempfile::tempdir().unwrap();
 
-        // 预置非法 JS 复写（括号未闭合）的启用模板。
+        // 预置非法 JS 复写（括号未闭合）的模板，并关联到选中订阅（纯关联制）。
+        let profile_id = uuid::Uuid::new_v4();
         profile::ProfileStoreV2::new(dir.path().to_path_buf())
             .save(&[profile::Profile {
-                id: uuid::Uuid::new_v4(),
+                id: profile_id,
                 name: "默认".to_string(),
                 core_type: pp_common::CoreType::SingBox,
                 yaml_override: String::new(),
                 js_override: "function main(c) { return c;".to_string(),
                 yaml_url: None,
                 js_url: None,
-                enabled: true,
             }])
             .unwrap();
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("local", &format!("http://{addr}/sub"), true, None)
+            .unwrap();
+        store.set_profile_id(sub.id, Some(profile_id)).unwrap();
 
-        let mut cfg = test_config(&dir, format!("http://{addr}"));
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.active_subscription_id = Some(sub.id);
         cfg.mitm_enabled = true;
         cfg.system_proxy_enabled = true;
         cfg.save().unwrap();
@@ -1102,6 +1170,101 @@ mod tests {
         let status = state.status().await;
         assert!(!status.core_running);
         assert!(status.mitm_addr.is_none());
+        assert_eq!(mock.calls(), vec![]);
+    }
+
+    /// 新模型：未选中订阅且无 legacy Hub 配置 → start 返回「请先在首页选择要使用的订阅」。
+    #[tokio::test]
+    async fn start_requires_active_subscription_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.mitm_enabled = false;
+        cfg.save().unwrap();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        let err = state.start().await.unwrap_err();
+        assert!(err.to_string().contains("请先在首页选择"), "{err}");
+        assert_eq!(mock.calls(), vec![]);
+    }
+
+    /// 新模型：active_subscription_id 指向已停用订阅 → 明确错误，核心不启动。
+    #[tokio::test]
+    async fn start_rejects_disabled_selected_subscription() {
+        let addr = spawn_server(StatusCode::OK, "{}").await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("off", &format!("http://{addr}/sub"), false, None)
+            .unwrap();
+
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.active_subscription_id = Some(sub.id);
+        cfg.mitm_enabled = false;
+        cfg.save().unwrap();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        let err = state.start().await.unwrap_err();
+        assert!(err.to_string().contains("已停用"), "{err}");
+        assert_eq!(mock.calls(), vec![]);
+    }
+
+    /// 新模型：订阅关联的覆写模板核心类型与当前核心不匹配 → 明确错误（含 sing-box /
+    /// mihomo 展示名），核心不启动。
+    #[tokio::test]
+    async fn start_rejects_profile_core_type_mismatch() {
+        let body = r#"{ "outbounds": [] }"#;
+        let addr = spawn_server(StatusCode::OK, body).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let profile_id = uuid::Uuid::new_v4();
+        profile::ProfileStoreV2::new(dir.path().to_path_buf())
+            .save(&[profile::Profile {
+                id: profile_id,
+                name: "mihomo 模板".to_string(),
+                core_type: pp_common::CoreType::Mihomo,
+                yaml_override: String::new(),
+                js_override: String::new(),
+                yaml_url: None,
+                js_url: None,
+            }])
+            .unwrap();
+        let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("local", &format!("http://{addr}/sub"), true, None)
+            .unwrap();
+        store.set_profile_id(sub.id, Some(profile_id)).unwrap();
+
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            fake_core_script(&dir),
+        );
+        cfg.active_subscription_id = Some(sub.id);
+        cfg.mitm_enabled = false;
+        cfg.save().unwrap();
+
+        let mock = Arc::new(MockSystemProxy::new());
+        let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+        let err = state.start().await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("不匹配"), "{msg}");
+        assert!(msg.contains("sing-box") && msg.contains("mihomo"), "{msg}");
         assert_eq!(mock.calls(), vec![]);
     }
 

@@ -67,6 +67,8 @@ pub struct ClientConfigView {
     pub data_dir: String,
     pub hub_url: String,
     pub sub_token: String,
+    /// 首页选中的生效订阅（`data_dir/subscriptions.json` 中的订阅 id；`null` = 未选中）。
+    pub active_subscription_id: Option<String>,
     /// 核心类型：`singbox` / `mihomo`（与 `pp_common::CoreType` 的 serde 表示一致）。
     pub core_type: String,
     pub core_binary: String,
@@ -102,6 +104,7 @@ impl Default for ClientConfigView {
             data_dir: String::new(),
             hub_url: String::new(),
             sub_token: String::new(),
+            active_subscription_id: None,
             core_type: "singbox".to_string(),
             core_binary: String::new(),
             mixed_port: 17890,
@@ -129,6 +132,7 @@ impl ClientConfigView {
             data_dir: cfg.data_dir.to_string_lossy().into_owned(),
             hub_url: cfg.hub_url.clone(),
             sub_token: cfg.sub_token.clone(),
+            active_subscription_id: cfg.active_subscription_id.map(|v| v.to_string()),
             core_type: serde_json::to_value(cfg.core_type)
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
@@ -160,6 +164,7 @@ impl ClientConfigView {
             "data_dir": data_dir,
             "hub_url": self.hub_url,
             "sub_token": self.sub_token,
+            "active_subscription_id": self.active_subscription_id,
             "core_type": self.core_type,
             "core_binary": self.core_binary,
             "mixed_port": self.mixed_port,
@@ -938,8 +943,6 @@ pub struct ProfileView {
     pub name: String,
     /// 核心类型：`singbox` / `mihomo`（与 `pp_common::CoreType` 的 serde 表示一致）。
     pub core_type: String,
-    /// 是否启用（同核心类型下最多一条为 `true`，排他由存储层保证）。
-    pub enabled: bool,
     /// YAML 复写字节数（列表展示用）。
     pub yaml_bytes: u64,
     /// JS 复写字节数（列表展示用）。
@@ -956,7 +959,6 @@ impl ProfileView {
             id: p.id.to_string(),
             name: p.name.clone(),
             core_type: core_type_str(p.core_type),
-            enabled: p.enabled,
             yaml_bytes: p.yaml_override.len() as u64,
             js_bytes: p.js_override.len() as u64,
             yaml_url: p.yaml_url.clone(),
@@ -971,7 +973,6 @@ pub struct ProfileDetailView {
     pub id: String,
     pub name: String,
     pub core_type: String,
-    pub enabled: bool,
     /// YAML 深合并复写（空串 = 未启用）。
     pub yaml_override: String,
     /// JS 复写（同步纯函数 `function main(config){...; return config}`；空串 = 未启用）。
@@ -988,7 +989,6 @@ impl ProfileDetailView {
             id: p.id.to_string(),
             name: p.name.clone(),
             core_type: core_type_str(p.core_type),
-            enabled: p.enabled,
             yaml_override: p.yaml_override.clone(),
             js_override: p.js_override.clone(),
             yaml_url: p.yaml_url.clone(),
@@ -1044,7 +1044,7 @@ pub fn get_profile(state: State<'_, AppState>, id: String) -> Result<ProfileDeta
     Ok(ProfileDetailView::from_profile(profile))
 }
 
-/// 更新复写模板的入参（`core_type` / `enabled` 保持存储值，启用经 `set_profile_enabled` 切换）。
+/// 更新复写模板的入参（`core_type` 保持存储值，运行时按订阅关联取用模板）。
 #[derive(Debug, Deserialize)]
 pub struct UpdateProfileInput {
     pub id: String,
@@ -1139,27 +1139,14 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
         .map_err(|e| format!("删除复写模板失败: {e}"))
 }
 
-/// 切换复写模板启用状态；启用时同核心类型其他模板自动禁用（排他语义由存储层保证）。
-#[tauri::command]
-pub fn set_profile_enabled(
-    state: State<'_, AppState>,
-    id: String,
-    enabled: bool,
-) -> Result<(), String> {
-    let id = parse_profile_id(&id)?;
-    let store = ProfileStoreV2::new(state.data_dir.clone());
-    store
-        .set_enabled(id, enabled)
-        .map_err(|e| format!("保存模板状态失败: {e}"))
-}
-
-/// 生成生效配置预览：拉取订阅 → 内置模板 → 启用模板的远程 + 本地复写叠加 → 核心合成（不含 MITM 链路）。
+/// 生成生效配置预览：拉取订阅 → 内置模板 → 订阅关联模板的远程 + 本地复写叠加 → 核心合成（不含 MITM 链路）。
 ///
 /// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
-/// 需要已保存的客户端配置（`data_dir/client.json`，含 hub_url / sub_token / core_type）。
-/// 复写取 `ProfileStoreV2::active_profile_for`（当前核心启用模板）：远程复写经
-/// `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录 `data_dir/profile_cache`），
-/// 与本地复写一起由 `build_core_config_v2` 合成（与启动实际配置一致）；无启用模板时预览裸模板。
+/// 需要已保存的客户端配置（`data_dir/client.json`）。订阅选择与覆写解析与启动路径
+/// （`state.rs`）一致：首页选中的订阅（`active_subscription_id`）唯一生效，其关联的
+/// 覆写模板经 `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录
+/// `data_dir/profile_cache`），与本地复写一起由 `build_core_config_v2` 合成；未选中
+/// 订阅时回退旧版 Hub 订阅路径（deprecated，无覆写）。
 #[tauri::command]
 pub async fn preview_core_config(state: State<'_, AppState>) -> Result<String, String> {
     preview_config_async(state.data_dir.clone()).await
@@ -1172,37 +1159,85 @@ async fn preview_config_async(data_dir: std::path::PathBuf) -> Result<String, St
         .map_err(|e| format!("未找到已保存的配置（{e}），请先在设置页保存配置"))?;
     // 远程复写缓存目录（与启动路径一致：`data_dir/profile_cache`）。
     let cache_dir = data_dir.join("profile_cache");
+
+    // 订阅选择（与启动路径一致）：首页选中的订阅唯一生效；未选中时回退旧版 Hub
+    // 订阅路径（deprecated，无覆写）。
+    let sub_store = SubscriptionStore::new(data_dir.clone());
+    let mut linked_profile_id = None;
+    let sub_content = match cfg.active_subscription_id {
+        Some(id) => {
+            let subs = sub_store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+            let sub = subs
+                .iter()
+                .find(|s| s.id == id)
+                .ok_or_else(|| "所选订阅不存在，请在首页重新选择".to_string())?;
+            if !sub.enabled {
+                return Err("所选订阅已停用，请在订阅页启用或在首页重新选择".to_string());
+            }
+            linked_profile_id = sub.profile_id;
+            let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+                .await
+                .map_err(|e| format!("拉取订阅失败: {e}"))?;
+            match cfg.core_type {
+                CoreType::SingBox => {
+                    SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
+                }
+                CoreType::Mihomo => {
+                    let yaml = serde_yaml::to_string(&serde_json::json!({
+                        "proxies": fetch.mihomo_nodes,
+                    }))
+                    .map_err(|e| format!("序列化配置失败: {e}"))?;
+                    SubContent::Mihomo(yaml)
+                }
+            }
+        }
+        None if !cfg.hub_url.is_empty() && !cfg.sub_token.is_empty() => {
+            let fetcher = SubscriptionFetcher::new();
+            match cfg.core_type {
+                CoreType::SingBox => {
+                    let (config, _) = fetcher
+                        .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
+                        .await
+                        .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                    SubContent::SingBox(config)
+                }
+                CoreType::Mihomo => {
+                    let (yaml, _) = fetcher
+                        .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
+                        .await
+                        .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                    SubContent::Mihomo(yaml)
+                }
+            }
+        }
+        _ => return Err("请先在首页选择要使用的订阅".to_string()),
+    };
+
+    // 覆写解析（纯关联制，与启动路径一致）：当前生效订阅关联的覆写模板；
+    // 订阅未关联（或 legacy Hub 回退路径）不使用任何覆写。
     let store = ProfileStoreV2::new(data_dir);
-    // 取启用模板（含远程复写 URL）→ 解析远程复写（拉取/缓存回退/跳过）→
-    // 远程为基底、本地覆盖的 v2 构建流程，与启动实际配置保持一致。
-    let (effective, warnings) = match store
-        .active_profile_for(cfg.core_type)
-        .map_err(|e| format!("读取复写模板失败: {e}"))?
-    {
-        Some(active) => resolve_remote_overrides(&cache_dir, &active).await,
+    let (effective, warnings) = match linked_profile_id {
+        Some(pid) => {
+            let profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
+            let linked = profiles
+                .iter()
+                .find(|p| p.id == pid)
+                .ok_or_else(|| "订阅关联的覆写模板不存在，请在订阅页重新关联".to_string())?;
+            if linked.core_type != cfg.core_type {
+                return Err(format!(
+                    "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
+                    linked.name,
+                    pp_client::core_type_display_name(linked.core_type),
+                    pp_client::core_type_display_name(cfg.core_type),
+                ));
+            }
+            resolve_remote_overrides(&cache_dir, linked).await
+        }
         None => (EffectiveOverrides::default(), Vec::new()),
     };
     for warning in &warnings {
         tracing::warn!(warning, "profile remote override");
     }
-
-    let fetcher = SubscriptionFetcher::new();
-    let sub_content = match cfg.core_type {
-        CoreType::SingBox => {
-            let (config, _) = fetcher
-                .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
-                .await
-                .map_err(|e| format!("拉取订阅失败: {e}"))?;
-            SubContent::SingBox(config)
-        }
-        CoreType::Mihomo => {
-            let (yaml, _) = fetcher
-                .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
-                .await
-                .map_err(|e| format!("拉取订阅失败: {e}"))?;
-            SubContent::Mihomo(yaml)
-        }
-    };
 
     let profile_cfg = build_core_config_v2(cfg.core_type, &sub_content, &effective)
         .await
@@ -1438,6 +1473,8 @@ pub struct SubscriptionView {
     pub name: String,
     pub url: String,
     pub enabled: bool,
+    /// 关联的覆写模板 id（`data_dir/profiles.json` 中的模板 id；`null` = 不使用覆写）。
+    pub profile_id: Option<String>,
     pub userinfo: Option<SubscriptionUserInfoView>,
     /// 最近一次 fetch 成功的节点数（sing-box 侧可用节点数）。
     pub node_count: u64,
@@ -1457,6 +1494,7 @@ impl SubscriptionView {
             name: sub.name.clone(),
             url: sub.url.clone(),
             enabled: sub.enabled,
+            profile_id: sub.profile_id.map(|v| v.to_string()),
             userinfo: sub
                 .userinfo
                 .as_ref()
@@ -1485,6 +1523,9 @@ pub struct AddSubscriptionInput {
     pub url: String,
     /// 请求 User-Agent；`None` / 空串使用默认 `clash.meta`。
     pub user_agent: Option<String>,
+    /// 关联的覆写模板 id（Uuid 字符串；`None` / 空串 = 不使用覆写）。
+    #[serde(default)]
+    pub profile_id: Option<String>,
 }
 
 /// 校验订阅 URL 必须为 http/https。
@@ -1499,6 +1540,14 @@ fn validate_subscription_url(url: &str) -> Result<(), String> {
 /// 解析订阅 ID 字符串为 `Uuid`。
 fn parse_subscription_id(id: &str) -> Result<Uuid, String> {
     Uuid::parse_str(id).map_err(|e| format!("无效的订阅 ID: {e}"))
+}
+
+/// 解析订阅关联的覆写模板 ID：`None` / 空串 = 未关联（不使用覆写）；非空必须是合法 Uuid。
+fn parse_profile_ref(profile_id: &Option<String>) -> Result<Option<Uuid>, String> {
+    match profile_id.as_deref() {
+        Some(s) if !s.trim().is_empty() => Ok(Some(parse_profile_id(s.trim())?)),
+        _ => Ok(None),
+    }
 }
 
 /// 把一次 fetch 结果合并进订阅（成功更新 userinfo / 节点数并清空 error；
@@ -1536,7 +1585,8 @@ pub async fn list_subscriptions(
     Ok(subs.iter().map(SubscriptionView::from_sub).collect())
 }
 
-/// 添加订阅：校验 URL → 落盘（默认启用）→ 立即 fetch 一次拿 userinfo + 节点数。
+/// 添加订阅：校验 URL → 落盘（默认启用）→ 写入关联的覆写模板 → 立即 fetch 一次
+/// 拿 userinfo + 节点数。
 ///
 /// fetch 失败不阻塞添加，错误记入返回视图的 `error` 字段。
 #[tauri::command]
@@ -1556,11 +1606,13 @@ pub async fn add_subscription(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let profile_id = parse_profile_ref(&input.profile_id)?;
 
     let store = SubscriptionStore::new(state.data_dir.clone());
     let mut sub = store
         .add(&name, &url, true, ua)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
+    sub.profile_id = profile_id;
     apply_fetch(&mut sub, &url).await;
     write_subscription(&store, &sub)?;
     Ok(SubscriptionView::from_sub(&sub))
@@ -1597,7 +1649,9 @@ pub async fn remove_subscription(state: State<'_, AppState>, id: String) -> Resu
     store.remove(id).map_err(|e| format!("删除订阅失败: {e}"))
 }
 
-/// 切换订阅启用状态（取第一个启用的订阅生效，重启代理应用后应用）。
+/// 切换订阅启用状态（`enabled` 表示「可被首页选择」；首页选中的订阅唯一生效）。
+///
+/// 停用当前选中的订阅（`client.json` 的 `active_subscription_id`）时自动清除选中。
 #[tauri::command]
 pub async fn set_subscription_enabled(
     state: State<'_, AppState>,
@@ -1605,16 +1659,85 @@ pub async fn set_subscription_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let id = parse_subscription_id(&id)?;
-    let store = SubscriptionStore::new(state.data_dir.clone());
-    store
-        .set_enabled(id, enabled)
-        .map_err(|e| format!("保存订阅失败: {e}"))
+    set_subscription_enabled_impl(&state.data_dir, id, enabled)
 }
 
-/// 更新订阅的 name / url / user_agent（替代「删除重加」）；订阅不存在时报错。
+/// `set_subscription_enabled` 的具体实现（命令层可测试的纯逻辑）。
+fn set_subscription_enabled_impl(
+    data_dir: &std::path::Path,
+    id: Uuid,
+    enabled: bool,
+) -> Result<(), String> {
+    let store = SubscriptionStore::new(data_dir.to_path_buf());
+    store
+        .set_enabled(id, enabled)
+        .map_err(|e| format!("保存订阅失败: {e}"))?;
+    if !enabled {
+        if let Ok(mut config) = ClientConfig::load(data_dir) {
+            if config.active_subscription_id == Some(id) {
+                config.active_subscription_id = None;
+                config
+                    .save()
+                    .map_err(|e| format!("保存配置失败: {e}"))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 设置首页选中的生效订阅（写入 `client.json` 的 `active_subscription_id`）。
+///
+/// `Some(id)`：校验订阅存在且 `enabled`（可被首页选择），不满足报错；`None`：清除选中。
+#[tauri::command]
+pub async fn set_active_subscription(
+    state: State<'_, AppState>,
+    id: Option<String>,
+) -> Result<(), String> {
+    set_active_subscription_impl(&state.data_dir, id)
+}
+
+/// `set_active_subscription` 的具体实现（命令层可测试的纯逻辑）。
+fn set_active_subscription_impl(
+    data_dir: &std::path::Path,
+    id: Option<String>,
+) -> Result<(), String> {
+    let mut config = match ClientConfig::load(data_dir) {
+        Ok(cfg) => cfg,
+        Err(_) => ClientConfig::new(
+            data_dir.to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        ),
+    };
+    match id {
+        Some(id) => {
+            let id = parse_subscription_id(&id)?;
+            let store = SubscriptionStore::new(data_dir.to_path_buf());
+            let subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
+            let sub = subs
+                .iter()
+                .find(|s| s.id == id)
+                .ok_or_else(|| "所选订阅不存在".to_string())?;
+            if !sub.enabled {
+                return Err("所选订阅已停用，请先在订阅页启用".to_string());
+            }
+            config.active_subscription_id = Some(id);
+        }
+        None => {
+            config.active_subscription_id = None;
+        }
+    }
+    config.save().map_err(|e| format!("保存配置失败: {e}"))
+}
+
+/// 更新订阅的 name / url / user_agent / 关联覆写模板（替代「删除重加」）；订阅不存在时报错。
 ///
 /// URL 变更时清空上次 fetch 的缓存（userinfo / 节点数）；URL 未变保留。URL 在落盘前
 /// 经 [`pp_client::normalize_resource_url`] 归一化（GitHub blob/raw → raw）。
+/// `profile_id` 语义：`Some(非空)` = 关联该覆写模板，`Some("")` / `None` = 取消关联
+/// （前端总是传当前表单值）。
 #[tauri::command]
 pub async fn update_subscription(
     state: State<'_, AppState>,
@@ -1622,6 +1745,7 @@ pub async fn update_subscription(
     name: String,
     url: String,
     user_agent: Option<String>,
+    profile_id: Option<String>,
 ) -> Result<SubscriptionView, String> {
     let id = parse_subscription_id(&id)?;
     let name = name.trim().to_string();
@@ -1635,10 +1759,14 @@ pub async fn update_subscription(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let profile_id = parse_profile_ref(&profile_id)?;
 
     let store = SubscriptionStore::new(state.data_dir.clone());
     store
         .update(id, &name, &url, ua)
+        .map_err(|e| format!("更新订阅失败: {e}"))?;
+    store
+        .set_profile_id(id, profile_id)
         .map_err(|e| format!("更新订阅失败: {e}"))?;
     let subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
     let sub = subs
@@ -1976,5 +2104,119 @@ mod tests {
         // 幂等：已存在时不重新生成，再次调用返回同一证书。
         let again = get_mitm_ca_impl(dir.path()).unwrap();
         assert_eq!(view.pem, again.pem);
+    }
+
+    // ---------- 活动订阅（首页选中）+ 订阅关联覆写 ----------
+
+    #[test]
+    fn set_active_subscription_validates_and_persists_selection() {
+        let dir = TestDir::new();
+        // 预置 client.json。
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        // 不存在的订阅报错。
+        let err = set_active_subscription_impl(dir.path(), Some(Uuid::new_v4().to_string()))
+            .unwrap_err();
+        assert!(err.contains("不存在"), "{err}");
+
+        // 已停用的订阅报错。
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let off = store
+            .add("off", "https://example.com/sub", false, None)
+            .unwrap();
+        let err = set_active_subscription_impl(dir.path(), Some(off.id.to_string())).unwrap_err();
+        assert!(err.contains("已停用"), "{err}");
+
+        // 选中启用的订阅 → 写入 client.json。
+        let on = store
+            .add("on", "https://example.com/sub2", true, None)
+            .unwrap();
+        set_active_subscription_impl(dir.path(), Some(on.id.to_string())).unwrap();
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.active_subscription_id, Some(on.id));
+
+        // None 清除选中。
+        set_active_subscription_impl(dir.path(), None).unwrap();
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.active_subscription_id, None);
+    }
+
+    #[test]
+    fn disabling_selected_subscription_clears_active_selection() {
+        let dir = TestDir::new();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("sub", "https://example.com/sub", true, None)
+            .unwrap();
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.active_subscription_id = Some(sub.id);
+        cfg.save().unwrap();
+
+        // 停用选中订阅 → 自动清除选中。
+        set_subscription_enabled_impl(dir.path(), sub.id, false).unwrap();
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.active_subscription_id, None);
+
+        // 重新启用不影响（无选中可清）。
+        set_subscription_enabled_impl(dir.path(), sub.id, true).unwrap();
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.active_subscription_id, None);
+
+        // 停用未选中的订阅不影响选中状态。
+        let other = store
+            .add("other", "https://example.com/other", false, None)
+            .unwrap();
+        let mut cfg = ClientConfig::load(dir.path()).unwrap();
+        cfg.active_subscription_id = Some(sub.id);
+        cfg.save().unwrap();
+        set_subscription_enabled_impl(dir.path(), other.id, false).unwrap();
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.active_subscription_id, Some(sub.id));
+    }
+
+    #[test]
+    fn parse_profile_ref_maps_empty_or_none_to_none_and_parses_uuid() {
+        assert_eq!(parse_profile_ref(&None).unwrap(), None);
+        assert_eq!(parse_profile_ref(&Some(String::new())).unwrap(), None);
+        assert_eq!(parse_profile_ref(&Some("  ".to_string())).unwrap(), None);
+        let id = Uuid::new_v4();
+        assert_eq!(parse_profile_ref(&Some(id.to_string())).unwrap(), Some(id));
+        assert!(parse_profile_ref(&Some("not-a-uuid".to_string())).is_err());
+    }
+
+    #[test]
+    fn subscription_view_exposes_profile_id() {
+        let sub = Subscription {
+            id: Uuid::new_v4(),
+            name: "sub".to_string(),
+            url: "https://example.com/sub".to_string(),
+            enabled: true,
+            userinfo: None,
+            node_count: 0,
+            error: None,
+            user_agent: None,
+            format: None,
+            profile_id: Some(Uuid::new_v4()),
+        };
+        let view = SubscriptionView::from_sub(&sub);
+        assert_eq!(view.profile_id, sub.profile_id.map(|v| v.to_string()));
+
+        let mut sub = sub;
+        sub.profile_id = None;
+        let view = SubscriptionView::from_sub(&sub);
+        assert_eq!(view.profile_id, None);
     }
 }

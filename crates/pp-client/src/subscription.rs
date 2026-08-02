@@ -60,9 +60,16 @@ pub struct Subscription {
     /// `#[serde(default)]` 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
     #[serde(default)]
     pub format: Option<SubFormat>,
+    /// 关联的覆写模板（`data_dir/profiles.json` 中的模板 id）；`None` = 不使用覆写。
+    ///
+    /// 纯关联制：运行时使用的覆写 = 当前选中订阅关联的模板。`#[serde(default)]`
+    /// 保证旧版 `subscriptions.json`（无此字段）可正常反序列化。
+    #[serde(default)]
+    pub profile_id: Option<Uuid>,
 }
 
-/// 订阅存储：读写 `data_dir/subscriptions.json`（load / save / add / remove / set_enabled）。
+/// 订阅存储：读写 `data_dir/subscriptions.json`（load / save / add / remove /
+/// set_enabled / set_profile_id）。
 #[derive(Debug, Clone)]
 pub struct SubscriptionStore {
     data_dir: PathBuf,
@@ -126,6 +133,7 @@ impl SubscriptionStore {
             error: None,
             user_agent: user_agent.map(str::to_string),
             format: None,
+            profile_id: None,
         };
         subs.push(sub.clone());
         self.save(&subs)?;
@@ -156,6 +164,17 @@ impl SubscriptionStore {
         if !found {
             return Ok(());
         }
+        self.save(&subs)
+    }
+
+    /// 按 id 设置订阅关联的覆写模板（`None` = 取消关联）并落盘；订阅不存在时报错。
+    pub fn set_profile_id(&self, id: Uuid, profile_id: Option<Uuid>) -> PanelResult<()> {
+        let mut subs = self.load()?;
+        let target = subs
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| PanelError::Client(format!("订阅不存在（id: {id}）")))?;
+        target.profile_id = profile_id;
         self.save(&subs)
     }
 
@@ -824,11 +843,35 @@ mod tests {
         let mut all = store.load().unwrap();
         assert_eq!(all.len(), 2);
         assert_ne!(sub1.id, sub2.id);
+        assert!(
+            all.iter().all(|s| s.profile_id.is_none()),
+            "新订阅默认不关联覆写"
+        );
 
         // set_enabled。
         store.set_enabled(sub1.id, false).unwrap();
         all = store.load().unwrap();
         assert!(!all.iter().find(|s| s.id == sub1.id).unwrap().enabled);
+
+        // set_profile_id：关联覆写模板并落盘；None 取消关联；不存在 id 报错。
+        let profile_id = Uuid::new_v4();
+        store.set_profile_id(sub1.id, Some(profile_id)).unwrap();
+        all = store.load().unwrap();
+        assert_eq!(
+            all.iter().find(|s| s.id == sub1.id).unwrap().profile_id,
+            Some(profile_id)
+        );
+        store.set_profile_id(sub1.id, None).unwrap();
+        all = store.load().unwrap();
+        assert_eq!(
+            all.iter().find(|s| s.id == sub1.id).unwrap().profile_id,
+            None
+        );
+        assert!(
+            store
+                .set_profile_id(Uuid::new_v4(), Some(profile_id))
+                .is_err()
+        );
 
         // remove。
         store.remove(sub1.id).unwrap();
@@ -863,7 +906,7 @@ mod tests {
         let loaded = store.load().unwrap();
         assert_eq!(loaded[0].user_agent.as_deref(), Some("sing-box"));
 
-        // 旧版文件无 user_agent 字段 → 反序列化为 None。
+        // 旧版文件无 user_agent / profile_id 字段 → 反序列化为 None。
         std::fs::write(
             store.file(),
             r#"[{"id":"00000000-0000-0000-0000-000000000001","name":"old","url":"https://x.com/sub","enabled":true,"node_count":0}]"#,
@@ -871,6 +914,7 @@ mod tests {
         .unwrap();
         let legacy = store.load().unwrap();
         assert_eq!(legacy[0].user_agent, None);
+        assert_eq!(legacy[0].profile_id, None);
     }
 
     /// ④.1 update：name / url / user_agent 更新落盘；URL 变更清空 userinfo 缓存，
@@ -882,6 +926,9 @@ mod tests {
         let sub = store
             .add("sub", "https://example.com/a", true, Some("ua"))
             .unwrap();
+        // 关联一个覆写模板（update 不应清掉该关联）。
+        let profile_id = Uuid::new_v4();
+        store.set_profile_id(sub.id, Some(profile_id)).unwrap();
         // 模拟一次成功 fetch：写入 userinfo 与 node_count。
         let mut subs = store.load().unwrap();
         let s = subs.iter_mut().find(|s| s.id == sub.id).unwrap();
@@ -905,6 +952,7 @@ mod tests {
         assert_eq!(s.user_agent.as_deref(), Some("new-ua"));
         assert_eq!(s.userinfo, None);
         assert_eq!(s.node_count, 0);
+        assert_eq!(s.profile_id, Some(profile_id), "update 不改订阅关联");
 
         // URL 未变 → 缓存保留（仅改名称）。
         store

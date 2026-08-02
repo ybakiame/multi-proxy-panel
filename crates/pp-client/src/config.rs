@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use pp_common::{CoreType, PanelResult};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// MITM 代理的客户端视图配置。
 ///
@@ -39,6 +40,13 @@ pub struct ClientConfig {
     pub hub_url: String,
     /// 订阅 token。
     pub sub_token: String,
+    /// 首页选中的生效订阅（`data_dir/subscriptions.json` 中的订阅 id）；`None` = 未选中。
+    ///
+    /// 运行模型：订阅 `enabled` 表示「可被首页选择」，此处为当前选中的生效订阅，
+    /// 唯一生效。`#[serde(default)]` 保证旧版 `client.json`（无此字段）可正常
+    /// 反序列化。
+    #[serde(default)]
+    pub active_subscription_id: Option<Uuid>,
     /// 使用的核心类型。
     pub core_type: CoreType,
     /// 核心二进制路径。
@@ -80,6 +88,7 @@ impl Default for ClientConfig {
             data_dir: PathBuf::new(),
             hub_url: String::new(),
             sub_token: String::new(),
+            active_subscription_id: None,
             core_type: CoreType::SingBox,
             core_binary: PathBuf::new(),
             mixed_port: 17890,
@@ -154,6 +163,7 @@ mod tests {
         assert!(cfg.mitm_enabled);
         assert!(!cfg.system_proxy_enabled);
         assert!(cfg.mitm.hostnames.is_empty());
+        assert!(cfg.active_subscription_id.is_none(), "默认不选中订阅");
         assert!(matches!(
             cfg.mitm.script_dialect,
             pp_script::ScriptDialect::Surge
@@ -201,6 +211,7 @@ mod tests {
         cfg.clash_api_ui = "metacubexd".to_string();
         cfg.github_proxy_prefix = "https://gh-proxy.com".to_string();
         cfg.fetch_via_local_proxy = true;
+        cfg.active_subscription_id = Some(uuid::Uuid::new_v4());
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ClientConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);
@@ -231,6 +242,8 @@ mod tests {
         // 旧 client.json 缺失 GitHub 访问字段时按默认值解析（直连、不代理）。
         assert!(cfg.github_proxy_prefix.is_empty());
         assert!(!cfg.fetch_via_local_proxy);
+        // 旧 client.json 缺失 active_subscription_id 时按默认值解析（未选中订阅）。
+        assert_eq!(cfg.active_subscription_id, None);
     }
 
     #[test]
