@@ -1,6 +1,7 @@
 //! 核心配置合成：将订阅配置合成为本地可用的核心启动配置。
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use pp_common::{PanelError, PanelResult};
 use serde_json::{Value, json};
@@ -228,30 +229,51 @@ fn normalized_rule_mode(mode: &str) -> &str {
 /// `no_proxy()` 直连；`secret` 非空时带 `Authorization: Bearer <secret>`。
 /// 连接失败 / 非 2xx 返回 `Err`。
 ///
-/// 调用方按 best-effort 处理（核心启动后、`set_rule_mode` 热切换时），失败仅记
-/// 日志不阻断：sing-box 无组合层 mode 字段，运行时模式切换完全依赖此 PATCH。
+/// 最多重试 3 次（间隔 500ms）：核心刚启动时 Clash API 可能尚未就绪（监听端口
+/// 未就绪导致连接拒绝等瞬时失败），重试即成功；每次失败记 debug 日志，全部失败
+/// 才返回 `Err`（调用方按 best-effort 记 warning，不阻断：sing-box 无组合层 mode
+/// 字段，运行时模式切换完全依赖此 PATCH）。
 pub async fn push_clash_mode(port: u16, secret: &str, mode: &str) -> PanelResult<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .no_proxy()
         .build()
         .map_err(|e| PanelError::Client(format!("构建 Clash API 客户端失败: {e}")))?;
-    let mut request = client
-        .patch(format!("http://127.0.0.1:{port}/configs"))
-        .json(&serde_json::json!({ "mode": mode }));
-    if !secret.is_empty() {
-        request = request.bearer_auth(secret);
+    let mut last_err: Option<PanelError> = None;
+    for attempt in 1..=3 {
+        let mut request = client
+            .patch(format!("http://127.0.0.1:{port}/configs"))
+            .json(&serde_json::json!({ "mode": mode }));
+        if !secret.is_empty() {
+            request = request.bearer_auth(secret);
+        }
+        match request.send().await {
+            Ok(resp) if resp.status().is_success() => return Ok(()),
+            Ok(resp) => {
+                last_err = Some(PanelError::Client(format!(
+                    "Clash API 推送规则模式失败（mode={mode}）: HTTP {}",
+                    resp.status()
+                )));
+            }
+            Err(e) => {
+                last_err = Some(PanelError::Client(format!(
+                    "Clash API 推送规则模式失败（mode={mode}）: {e}"
+                )));
+            }
+        }
+        if attempt < 3 {
+            tracing::debug!(
+                attempt,
+                mode,
+                error = %last_err.as_ref().expect("last_err set on failure"),
+                "Clash API 推送规则模式失败，将重试"
+            );
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
     }
-    let resp = request.send().await.map_err(|e| {
-        PanelError::Client(format!("Clash API 推送规则模式失败（mode={mode}）: {e}"))
-    })?;
-    if !resp.status().is_success() {
-        return Err(PanelError::Client(format!(
-            "Clash API 推送规则模式失败（mode={mode}）: HTTP {}",
-            resp.status()
-        )));
-    }
-    Ok(())
+    Err(last_err.unwrap_or_else(|| {
+        PanelError::Client(format!("Clash API 推送规则模式失败（mode={mode}）"))
+    }))
 }
 
 /// 将订阅配置合成为可直接传给 sing-box 的本地配置。
@@ -1185,6 +1207,63 @@ rules:
             axum::serve(listener, app3).await.unwrap();
         });
         assert!(push_clash_mode(addr3.port(), "", "direct").await.is_err());
+    }
+
+    /// 重试语义：核心刚启动时 Clash API 可能未就绪（前两次 500），第三次成功 →
+    /// 重试后返回 Ok，且请求次数 = 3。
+    #[tokio::test]
+    async fn push_clash_mode_retries_transient_failure_until_success() {
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let attempts_ref = std::sync::Arc::clone(&attempts);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(move || async move {
+                let n = attempts_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n < 2 {
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                } else {
+                    axum::http::StatusCode::NO_CONTENT
+                }
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        push_clash_mode(addr.port(), "", "global").await.unwrap();
+        assert_eq!(
+            attempts.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "前两次失败后第三次应重试成功"
+        );
+    }
+
+    /// 重试语义：全部 3 次失败 → Err（调用方 best-effort 记 warning 不阻断）。
+    #[tokio::test]
+    async fn push_clash_mode_returns_err_when_all_retries_fail() {
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let attempts_ref = std::sync::Arc::clone(&attempts);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/configs",
+            axum::routing::patch(move || async move {
+                attempts_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        assert!(push_clash_mode(addr.port(), "", "global").await.is_err());
+        assert_eq!(
+            attempts.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "全部失败时最多重试 3 次"
+        );
     }
 
     // ---------- Clash 面板 UI 选择（yacd / zashboard / metacubexd） ----------

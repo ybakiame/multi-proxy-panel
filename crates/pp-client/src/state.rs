@@ -459,6 +459,11 @@ impl ClientState {
     /// 回滚策略：核心启动失败则关闭 MITM 与调度器；系统代理启用失败则按逆序
     /// 关闭核心、MITM 与调度器，最后把错误向上传播。
     async fn start_services(&mut self, config_json: &serde_json::Value) -> PanelResult<()> {
+        // 核心启动日志：Android 核心为内置 libbox（由 Kotlin VpnPlugin 驱动），无独立
+        // 二进制；桌面为外部核心二进制，打印其路径。
+        #[cfg(target_os = "android")]
+        tracing::info!("启动核心（Android 内置 libbox）");
+        #[cfg(not(target_os = "android"))]
         tracing::info!(binary = %self.config.core_binary.display(), "启动核心");
         let core = CoreRunner::create(
             self.config.core_type,
