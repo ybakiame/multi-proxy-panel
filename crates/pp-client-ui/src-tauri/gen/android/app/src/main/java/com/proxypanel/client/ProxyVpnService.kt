@@ -30,6 +30,7 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import io.nekohasekai.libbox.Notification as LibboxNotification
+import java.io.File
 import java.net.InetAddress
 import java.util.NoSuchElementException
 
@@ -83,6 +84,25 @@ class ProxyVpnService : VpnService() {
     @Volatile
     var lastError: String? = null
       private set
+
+    /**
+     * libbox writeLog 环形缓冲（最近 200 行）：启动失败时附带进 lastError，
+     * 让前端 Alert 直接看到 Go 侧完整错误链（如 "query tun name" /
+     * "dup tun file descriptor" / "initialize inbound/tun" 前缀），定位异步失败。
+     */
+    private val libboxLogBuffer = ArrayDeque<String>(200)
+
+    /** `logs/libbox.log` 大小上限（字节），超限时删除重建写入最新缓冲。 */
+    private const val LIBBOX_LOG_MAX_BYTES = 1024 * 1024
+
+    /**
+     * Libbox.setup 每进程只调一次。重复 setup 会重置 Go 侧全局状态（日志、数据
+     * 路径、崩溃处理等），污染正在运行的核心，因此用 setupDone + 锁做一次保护。
+     */
+    private val setupLock = Any()
+
+    @Volatile
+    private var setupDone = false
   }
 
   private var boxService: BoxService? = null
@@ -224,12 +244,22 @@ class ProxyVpnService : VpnService() {
           ?: throw IllegalStateException(
             "android: 无法建立 VPN 隧道（授权可能已被系统撤销）"
           )
-      tunFd = pfd
-      return pfd.detachFd()
+      try {
+        tunFd = pfd
+        return pfd.detachFd()
+      } catch (e: Exception) {
+        // establish 已成功但后续步骤失败：回收半开 pfd 防 fd 泄漏。detachFd()
+        // 成功后 fd 所有权已归 libbox，Kotlin 不再 close（stopBox 对 detached
+        // 对象的 close 是无害的，保留原有清理路径）。
+        runCatching { pfd.close() }
+        throw e
+      }
     }
 
     override fun writeLog(message: String) {
       Log.i(TAG, message)
+      appendLibboxLog(message)
+      appendToLibboxLogFile(message)
     }
 
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
@@ -325,7 +355,10 @@ class ProxyVpnService : VpnService() {
       } catch (e: Exception) {
         Log.e(TAG, "failed to start libbox service", e)
         running = false
-        lastError = e.message ?: e.javaClass.simpleName
+        // openTun（establish 前后）与 startBox 失败都落到这里：附带 libbox 最近
+        // 日志，让前端 Alert 直接展示 Go 侧错误链（如 "query tun name" / "dup tun
+        // file descriptor"），便于定位真机 file already closed 的完整根因链。
+        lastError = withLibboxLogTail(e.message ?: e.javaClass.simpleName)
         stopSelf()
       }
     }.start()
@@ -414,7 +447,7 @@ class ProxyVpnService : VpnService() {
         isTVOS = false
         fixAndroidStack = true
       }
-    Libbox.setup(setup)
+    setupLibbox(setup)
 
     val service = Libbox.newService(config, platformInterface)
     // 注册与 start 放同一临界区：stopBox 的 synchronized 会等待 start() 完成再
@@ -424,6 +457,68 @@ class ProxyVpnService : VpnService() {
       boxService = service
       service.start()
     }
+  }
+
+  /**
+   * 每进程只调用一次 Libbox.setup：重复 setup 会重置 Go 侧全局状态（日志、数据
+   * 路径、崩溃处理等），可能污染正在运行的核心，已初始化则直接跳过。
+   */
+  private fun setupLibbox(setup: SetupOptions) {
+    if (setupDone) {
+      return
+    }
+    synchronized(setupLock) {
+      if (setupDone) {
+        return
+      }
+      Libbox.setup(setup)
+      setupDone = true
+    }
+  }
+
+  /** 追加一行 libbox 日志到环形缓冲，超出容量弹出最旧。 */
+  private fun appendLibboxLog(message: String) {
+    synchronized(libboxLogBuffer) {
+      libboxLogBuffer.addLast(message)
+      while (libboxLogBuffer.size > 200) {
+        libboxLogBuffer.removeFirst()
+      }
+    }
+  }
+
+  /** 取环形缓冲最近 `lines` 行（空缓冲时返回空串）。 */
+  private fun libboxLogTail(lines: Int): String {
+    synchronized(libboxLogBuffer) {
+      return libboxLogBuffer.takeLast(lines).joinToString("\n")
+    }
+  }
+
+  /**
+   * 追加 libbox 日志到 `<pkg>/logs/libbox.log`（与 Rust 的 data_dir/logs 同目录，
+   * 供日志导出排查 Go 侧错误链）。超过 1MB 时截断：删除重建写入最新缓冲。
+   * 任何写入异常一律静默，不得影响 VPN 主流程。
+   */
+  private fun appendToLibboxLogFile(message: String) {
+    try {
+      val logDir = File(filesDir.parentFile, "logs")
+      if (!logDir.isDirectory && !logDir.mkdirs()) {
+        return
+      }
+      val logFile = File(logDir, "libbox.log")
+      if (logFile.exists() && logFile.length() > LIBBOX_LOG_MAX_BYTES) {
+        logFile.delete()
+        logFile.writeText(libboxLogTail(200))
+      }
+      logFile.appendText(message + "\n")
+    } catch (_: Exception) {
+      // 静默：日志写入失败不影响 VPN 主流程。
+    }
+  }
+
+  /** 失败信息附带最近 15 行 libbox 日志，供前端 Alert 直接展示 Go 侧错误链。 */
+  private fun withLibboxLogTail(message: String): String {
+    val tail = libboxLogTail(15)
+    return if (tail.isEmpty()) message else "$message\n--- libbox 日志 ---\n$tail"
   }
 
   /** 后台线程执行的有序关闭（stopBox 阻塞 close，防主线程 ANR）。 */
