@@ -524,7 +524,11 @@ impl ClientState {
 
     async fn stop_core(&mut self) {
         if let Some(core) = self.core.take() {
-            let _ = core.stop().await;
+            if let Err(e) = core.stop().await {
+                // 停止失败不静默：Android 桥接 stop（VpnService 有序关闭）失败时记
+                // 警告，供问题定位；前端轮询仍按 is_running 反映真实运行状态。
+                tracing::warn!(error = %e, "停止核心失败");
+            }
         }
     }
 

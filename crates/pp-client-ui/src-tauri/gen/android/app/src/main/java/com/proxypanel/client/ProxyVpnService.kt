@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.net.IpPrefix
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.util.Log
@@ -54,11 +56,27 @@ class ProxyVpnService : VpnService() {
     const val EXTRA_CONFIG = "config"
 
     /**
+     * 显式停止 action：由 [VpnPlugin] 发送。onStartCommand 收到后有序关闭
+     * BoxService（后台线程）→ 退前台 → 自停 → 复位 running；裸 stopService 只
+     * 走 onDestroy，close 仍阻塞主线程且不记录 lastError。
+     */
+    const val ACTION_STOP = "com.proxypanel.client.action.STOP"
+
+    /**
      * 服务运行标记，由服务自身真实生命周期维护（startBox 成功后置 true，
      * 失败 / onDestroy / onRevoke 置 false）。VpnPlugin 不乐观设置。
      */
     @Volatile
     var running = false
+      private set
+
+    /**
+     * 服务实例存活标记（onCreate 置 true，onDestroy 置 false）：启动中的服务
+     * `running` 仍为 false 但实例已在前台，VpnPlugin 据此判断能否安全派发
+     * ACTION_STOP（避免启动中被 stop 漏关）。
+     */
+    @Volatile
+    var instanceAlive = false
       private set
 
     /** 最近一次启动失败原因（成功启动后清空；供插件 isRunning 命令与前端轮询读取）。 */
@@ -69,6 +87,12 @@ class ProxyVpnService : VpnService() {
 
   private var boxService: BoxService? = null
   private var tunFd: ParcelFileDescriptor? = null
+
+  /** 停止请求标记：startBox 在后台线程启动期间到达 stop 时，启动完成后立即有序关闭。 */
+  @Volatile
+  private var stopRequested = false
+
+  private val mainHandler = Handler(Looper.getMainLooper())
 
   /**
    * libbox 回调实现。除 openTun 外均为最小实现：
@@ -253,7 +277,17 @@ class ProxyVpnService : VpnService() {
     override fun localDNSTransport(): LocalDNSTransport? = null
   }
 
+  override fun onCreate() {
+    super.onCreate()
+    instanceAlive = true
+  }
+
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == ACTION_STOP) {
+      handleStop()
+      return Service.START_NOT_STICKY
+    }
+
     val config = intent?.getStringExtra(EXTRA_CONFIG)
     if (config.isNullOrBlank()) {
       Log.w(TAG, "start command without config, stopping")
@@ -272,13 +306,22 @@ class ProxyVpnService : VpnService() {
       return Service.START_NOT_STICKY
     }
 
+    // 新的启动序列开始，清除上一轮停止请求标记。
+    stopRequested = false
+
     // newService/start 为阻塞调用，放到后台线程执行。
     Thread {
       try {
         startBox(config)
-        running = true
-        lastError = null
-        Log.i(TAG, "libbox service started")
+        if (stopRequested) {
+          // 停止请求在启动期间到达：启动已完成但立即有序关闭，不置 running。
+          Log.i(TAG, "stop requested during startup, closing service")
+          stopBox()
+        } else {
+          running = true
+          lastError = null
+          Log.i(TAG, "libbox service started")
+        }
       } catch (e: Exception) {
         Log.e(TAG, "failed to start libbox service", e)
         running = false
@@ -290,14 +333,40 @@ class ProxyVpnService : VpnService() {
     return Service.START_NOT_STICKY
   }
 
+  /**
+   * 显式停止：在后台线程有序关闭 BoxService（`close()` 为阻塞调用，放主线程会
+   * ANR），完成后经主线程退前台、自停；`running` 立即复位供状态轮询读取。
+   */
+  private fun handleStop() {
+    stopRequested = true
+    running = false
+    Log.i(TAG, "stop requested")
+    Thread {
+      try {
+        stopBox()
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to stop libbox service", e)
+        lastError = e.message ?: e.javaClass.simpleName
+      } finally {
+        mainHandler.post {
+          stopForegroundCompat()
+          stopSelf()
+        }
+      }
+    }.start()
+  }
+
   override fun onDestroy() {
-    stopBox()
+    instanceAlive = false
+    // 有序关闭放后台线程（close 阻塞，避免主线程 ANR）；stopBox 幂等。
+    closeBoxInBackground()
     super.onDestroy()
   }
 
   override fun onRevoke() {
     // VPN 授权被撤销：停止核心并自杀。
-    stopBox()
+    stopRequested = true
+    closeBoxInBackground()
     stopSelf()
     super.onRevoke()
   }
@@ -348,21 +417,58 @@ class ProxyVpnService : VpnService() {
     Libbox.setup(setup)
 
     val service = Libbox.newService(config, platformInterface)
-    boxService = service
-    service.start()
+    // 注册与 start 放同一临界区：stopBox 的 synchronized 会等待 start() 完成再
+    // close，避免停止线程在启动期间 close 半启动的服务；start 抛异常时 boxService
+    // 已注册，onDestroy 仍能有序关闭释放资源。
+    synchronized(this) {
+      boxService = service
+      service.start()
+    }
   }
 
+  /** 后台线程执行的有序关闭（stopBox 阻塞 close，防主线程 ANR）。 */
+  private fun closeBoxInBackground() {
+    Thread {
+      try {
+        stopBox()
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to stop libbox service", e)
+        lastError = e.message ?: e.javaClass.simpleName
+      }
+    }.start()
+  }
+
+  /**
+   * 有序关闭核心与 TUN：复位 running → 关闭 BoxService → 关闭 tun fd。
+   * 幂等且加锁，避免 stop intent 与 onDestroy 并发双线程重复 close。
+   */
   private fun stopBox() {
-    running = false
-    val service = boxService ?: return
-    boxService = null
-    try {
-      service.close()
-    } catch (e: Exception) {
-      Log.e(TAG, "failed to close libbox service", e)
+    synchronized(this) {
+      running = false
+      val service = boxService ?: return
+      boxService = null
+      try {
+        service.close()
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to close libbox service", e)
+        lastError = e.message ?: e.javaClass.simpleName
+      }
+      try {
+        tunFd?.close()
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to close tun fd", e)
+        lastError = e.message ?: e.javaClass.simpleName
+      }
+      tunFd = null
     }
-    tunFd?.close()
-    tunFd = null
+  }
+
+  private fun stopForegroundCompat() {
+    try {
+      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+    } catch (e: Exception) {
+      Log.w(TAG, "stopForeground failed: ${e.message}")
+    }
   }
 
   private fun addExcludeRoute(builder: Builder, route: RoutePrefix) {

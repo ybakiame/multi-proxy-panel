@@ -3,6 +3,7 @@ package com.proxypanel.client
 import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
+import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.ActivityCallback
@@ -99,7 +100,27 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun stop(invoke: Invoke) {
-    activity.stopService(Intent(activity, ProxyVpnService::class.java))
+    // 显式 stop intent：服务 onStartCommand 处理 ACTION_STOP 时有序关闭
+    // BoxService（后台线程）→ 退前台 → 自停 → running 复位；裸 stopService 只走
+    // onDestroy，close 仍阻塞主线程且不记录 lastError。
+    //
+    // 实例存活（含启动中：running 尚为 false）即可安全派发 ACTION_STOP——服务在
+    // 前台，startForegroundService 不会重复创建，仅再次回调 onStartCommand。
+    if (ProxyVpnService.instanceAlive) {
+      val intent =
+        Intent(activity, ProxyVpnService::class.java)
+          .setAction(ProxyVpnService.ACTION_STOP)
+      try {
+        ContextCompat.startForegroundService(activity, intent)
+      } catch (e: Exception) {
+        // 服务已被系统销毁等异常情况，回退裸 stopService 兜底。
+        Log.w("VpnPlugin", "startForegroundService(stop) failed, fallback stopService: ${e.message}")
+        activity.stopService(intent)
+      }
+    } else {
+      // 实例已销毁：幂等清理（无副作用）。
+      activity.stopService(Intent(activity, ProxyVpnService::class.java))
+    }
     invoke.resolve()
   }
 
