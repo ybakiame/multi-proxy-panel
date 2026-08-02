@@ -7,15 +7,22 @@ mod state;
 
 /// WSL 软渲染下 WebKitGTK 黑屏兼容。
 ///
-/// WSL2 中运行 `LIBGL_ALWAYS_SOFTWARE=1` 时，Tauri v2 在 Linux 使用的 WebKitGTK
-/// 合成器（compositing）/ DMA-BUF 渲染路径会输出黑屏，这是上游已知问题，与前端
-/// 代码无关。通过注入以下环境变量可强制 WebKitGTK 走软件合成路径：
+/// WSL2 中 Tauri v2 在 Linux 使用的 WebKitGTK 存在两类导致页面全黑的上游已知
+/// 问题（与前端代码无关）：
 ///
-/// - `WEBKIT_DISABLE_DMABUF_RENDERER=1`：禁用 DMA-BUF 渲染器。
+/// 1. DMA-BUF 渲染路径在软渲染（如 `LIBGL_ALWAYS_SOFTWARE=1`）下输出黑屏，
+///    通过 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 禁用；
+/// 2. bubblewrap 沙箱在 WSL 中无法建立（WebKitGTK 2.52.5 实测），Web 内容进程
+///    启动即崩溃（日志 `NeedDebuggerBreak trap`、渲染的 `#root` 为空），页面全黑，
+///    通过 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` 禁用沙箱规避。
+///
+/// 安全性说明：`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS` 变量名本身即含
+/// DANGEROUS 警示——禁用后 Web 进程不再受 bubblewrap 沙箱隔离。本应用仅加载本地
+/// 打包的前端内容，不加载远程网页，故此处风险可接受。
 ///
 /// 注：实测 `WEBKIT_DISABLE_COMPOSITING_MODE=1` 在部分 WSLg/WebKitGTK 组合下反而
-/// 会导致页面完全不渲染，故本函数仅注入 DMA-BUF 禁用；需要禁用合成模式的用户可
-/// 自行显式设置该变量。
+/// 会导致页面完全不渲染，故本函数不注入该变量；需要禁用合成模式的用户可自行
+/// 显式设置。
 ///
 /// 仅在 Linux 且检测到 WSL 内核（`/proc/sys/kernel/osrelease` 内容忽略大小写包含
 /// `microsoft` 或 `wsl`）时注入；读取失败视为非 WSL，不注入。若用户已显式设置
@@ -36,14 +43,19 @@ fn configure_wsl_webkit_workaround() {
         return;
     }
 
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    for (name, value) in [
+        ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+        ("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1"),
+    ] {
+        if std::env::var_os(name).is_none() {
+            std::env::set_var(name, value);
+        }
     }
 
     // tracing 尚未初始化（见下方 subscriber 的创建），此处用 eprintln! 输出。
     eprintln!(
         "[pp-client-ui] WSL 检测到，已启用 WebKitGTK 兼容模式 \
-         (WEBKIT_DISABLE_DMABUF_RENDERER=1)"
+         (WEBKIT_DISABLE_DMABUF_RENDERER=1, WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1)"
     );
 }
 
