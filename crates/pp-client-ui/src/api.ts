@@ -329,9 +329,13 @@ export function deleteProfile(id: string): Promise<void> {
   return invoke<void>("delete_profile", { id });
 }
 
-/** 生成生效配置预览（按当前客户端核心类型；sing-box 为 JSON、mihomo 为 YAML 文本）。 */
-export function previewCoreConfig(): Promise<string> {
-  return invoke<string>("preview_core_config");
+/**
+ * 生成核心配置预览（按当前客户端核心类型；sing-box 为 JSON、mihomo 为 YAML 文本）。
+ * 传 `subscriptionId` 时按指定订阅预览（忽略 enabled 状态）；不传 / 传 `null` 时按当前生效订阅生成
+ * （未选中订阅时回退旧版 Hub 订阅路径，无覆写）。
+ */
+export function previewCoreConfig(subscriptionId?: string | null): Promise<string> {
+  return invoke<string>("preview_core_config", { subscriptionId: subscriptionId ?? null });
 }
 
 /** 订阅用户信息（与 Rust 侧 `SubscriptionUserInfoView` 对齐）。 */

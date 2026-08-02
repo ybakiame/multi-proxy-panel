@@ -11,6 +11,7 @@ import {
   toErrorMessage,
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
+import ConfigPreviewModal from "../components/ConfigPreviewModal";
 import { useAppStore } from "../store";
 import { toastError, toastSuccess, toastWarning } from "../toast";
 
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   /**
    * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
@@ -207,6 +209,9 @@ export default function Dashboard() {
 
   // 旧版 Hub 直连模式：未选择订阅但 hub_url 与 sub_token 均已配置时放行（deprecated）。
   const legacyHub = !activeSub && Boolean(config?.hub_url && config?.sub_token);
+
+  // 配置预览门禁：需存在生效订阅（或旧版 Hub 直连配置），否则无可预览的合成配置。
+  const canPreview = Boolean(activeSub || legacyHub);
 
   const gateMessages: string[] = [];
   if (!activeSub && !legacyHub) {
@@ -387,6 +392,9 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            <Button variant="secondary" size="lg" isDisabled={!canPreview} onPress={() => setPreviewOpen(true)}>
+              配置预览
+            </Button>
             {running ? (
               <Button
                 variant="danger"
@@ -527,6 +535,8 @@ export default function Dashboard() {
           </Card.Content>
         </Card>
       </div>
+
+      <ConfigPreviewModal isOpen={previewOpen} onClose={() => setPreviewOpen(false)} title="配置预览 — 当前生效配置" />
     </div>
   );
 }

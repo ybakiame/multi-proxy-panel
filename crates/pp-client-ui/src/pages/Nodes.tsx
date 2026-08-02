@@ -11,6 +11,7 @@ import {
   updateSubscription,
 } from "../api";
 import type { ProfileView, SubscriptionFormat, SubscriptionUserInfo, SubscriptionView } from "../api";
+import ConfigPreviewModal from "../components/ConfigPreviewModal";
 import { useAppStore } from "../store";
 
 /** 字节数格式化为 GB（保留两位小数）。 */
@@ -122,6 +123,9 @@ export default function Nodes() {
   const [editUa, setEditUa] = useState("");
   // 关联覆写模板 id（"" = 不关联）
   const [editProfileId, setEditProfileId] = useState("");
+
+  // 配置预览弹窗：按指定订阅生成合成配置（忽略 enabled 状态）。
+  const [previewSub, setPreviewSub] = useState<SubscriptionView | null>(null);
 
   // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示与关联覆写过滤。
   const clientCoreType = useAppStore((state) => state.config?.core_type);
@@ -359,6 +363,9 @@ export default function Nodes() {
                           </Table.Cell>
                           <Table.Cell>
                             <div className="flex items-center gap-2">
+                              <Button size="sm" variant="tertiary" isDisabled={busy} onPress={() => setPreviewSub(sub)}>
+                                预览
+                              </Button>
                               <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => openEdit(sub)}>
                                 编辑
                               </Button>
@@ -659,6 +666,13 @@ export default function Nodes() {
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+
+      <ConfigPreviewModal
+        isOpen={previewSub !== null}
+        onClose={() => setPreviewSub(null)}
+        title={previewSub ? `配置预览 — ${previewSub.name}` : ""}
+        subscriptionId={previewSub?.id}
+      />
     </div>
   );
 }

@@ -7,17 +7,8 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
 import { Alert, AlertDialog, Button, Card, Chip, Input, Label, ListBox, Modal, Select, Tabs } from "@heroui/react";
 import clsx from "clsx";
-import {
-  createProfile,
-  deleteProfile,
-  getProfile,
-  listProfiles,
-  previewCoreConfig,
-  toErrorMessage,
-  updateProfile,
-} from "../api";
+import { createProfile, deleteProfile, getProfile, listProfiles, toErrorMessage, updateProfile } from "../api";
 import type { CoreType, ProfileDetailView, ProfileView } from "../api";
-import { useAppStore } from "../store";
 
 const JS_PLACEHOLDER = `function main(config) {
   // 在这里修改最终生成的配置
@@ -91,7 +82,6 @@ function Editor({ value, onChange, language, placeholder, height = "320px", read
 }
 
 export default function Override() {
-  const clientCoreType = useAppStore((state) => state.config?.core_type);
   const [profiles, setProfiles] = useState<ProfileView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProfileDetailView | null>(null);
@@ -99,7 +89,6 @@ export default function Override() {
   const [jsValue, setJsValue] = useState("");
   const [yamlUrl, setYamlUrl] = useState("");
   const [jsUrl, setJsUrl] = useState("");
-  const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -113,7 +102,6 @@ export default function Override() {
   const [deleteTarget, setDeleteTarget] = useState<ProfileView | null>(null);
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
-  const previewLanguage: EditorLanguage = clientCoreType === "mihomo" ? "yaml" : "json";
 
   const refreshList = useCallback(async () => {
     try {
@@ -130,7 +118,6 @@ export default function Override() {
 
   const selectProfile = useCallback(async (id: string) => {
     setSelectedId(id);
-    setPreview(null);
     setError(null);
     setSuccess(null);
     try {
@@ -169,19 +156,6 @@ export default function Override() {
     }
   };
 
-  const handlePreview = async () => {
-    setBusy(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      setPreview(await previewCoreConfig());
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleCreate = async () => {
     setBusy(true);
     setError(null);
@@ -212,7 +186,6 @@ export default function Override() {
       if (selectedId === deleteTarget.id) {
         setSelectedId(null);
         setDetail(null);
-        setPreview(null);
       }
       setDeleteTarget(null);
       await refreshList();
@@ -227,7 +200,9 @@ export default function Override() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">覆写</h1>
-        <p className="text-sm text-muted">多模板管理：按核心类型维护覆写模板，在订阅页关联后随订阅生效</p>
+        <p className="text-sm text-muted">
+          多模板管理：按核心类型维护覆写模板，在订阅页关联后随订阅生效；合成配置预览已移至首页与订阅页
+        </p>
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -383,37 +358,9 @@ export default function Override() {
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
-
-              <Card className="border border-border/70 bg-surface-secondary/40">
-                <Card.Header>
-                  <Card.Title>生效配置预览</Card.Title>
-                  <Card.Description>
-                    按当前客户端核心类型拉取订阅并生成最终核心配置（不含 MITM 链路）；未关联覆写模板时预览裸配置
-                  </Card.Description>
-                </Card.Header>
-                <Card.Content>
-                  {preview === null ? (
-                    <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                      <span className="text-sm text-muted">尚未生成预览</span>
-                      <span className="text-xs text-muted/80">点击「生成预览」查看最终核心配置（只读）</span>
-                    </div>
-                  ) : (
-                    <Editor
-                      value={preview}
-                      onChange={() => undefined}
-                      language={previewLanguage}
-                      height="480px"
-                      readOnly
-                    />
-                  )}
-                </Card.Content>
-              </Card>
             </Card.Content>
             <Card.Footer>
               <div className="flex w-full items-center justify-end gap-3">
-                <Button variant="secondary" isPending={busy} onPress={() => void handlePreview()}>
-                  生成预览
-                </Button>
                 <Button variant="primary" isPending={busy} onPress={() => void handleSave()}>
                   保存
                 </Button>
