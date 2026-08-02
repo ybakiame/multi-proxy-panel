@@ -167,7 +167,7 @@ export default function Scripts() {
   // 已嗅探过的 URL：避免失焦与「嗅探」按钮同时触发时重复拉取。
   const lastDetectedUrlRef = useRef("");
 
-  // 已添加资源的编辑对话框（名称/描述/URL/类型/方言/更新间隔 + 模块参数）
+  // 已添加资源的编辑对话框（名称/描述/URL/类型/方言/更新间隔 + 模块参数 + 图标）
   const [editOpen, setEditOpen] = useState(false);
   const [editRemote, setEditRemote] = useState<RemoteResource | null>(null);
   const [editForm, setEditForm] = useState({
@@ -179,6 +179,11 @@ export default function Scripts() {
     interval: "86400",
   });
   const [editArgs, setEditArgs] = useState<ArgValueEdit[]>([]);
+  // 编辑对话框的重新嗅探状态：图标由嗅探结果覆盖，失败标记用于 img onError 回退。
+  const [editIcon, setEditIcon] = useState<string | null>(null);
+  const [editIconFailed, setEditIconFailed] = useState(false);
+  const [editDetecting, setEditDetecting] = useState(false);
+  const [editDetectInfo, setEditDetectInfo] = useState<string | null>(null);
 
   // 配置导入
   const [importText, setImportText] = useState("");
@@ -391,11 +396,86 @@ export default function Scripts() {
         return { ...arg, value: found?.[1] ?? "" };
       }),
     );
+    setEditIcon(remote.icon ?? null);
+    setEditIconFailed(false);
+    setEditDetecting(false);
+    setEditDetectInfo(null);
     setError(null);
     setEditOpen(true);
   };
 
-  /** 保存编辑：按 name 全量更新（`update_remote`），参数值仅提交非空项。 */
+  /** 编辑对话框的重新嗅探：覆盖类型/方言/描述/图标与参数声明（同 key 参数保留已填 value），名称不覆盖。 */
+  const handleEditDetect = useCallback(async () => {
+    const url = editForm.url.trim();
+    if (!url) {
+      return;
+    }
+    setEditDetecting(true);
+    setError(null);
+    setEditDetectInfo(null);
+    try {
+      const result: DetectRemoteView = await detectRemote(url);
+      const kind = normalizeKind(result.kind);
+      const dialect = normalizeDialect(result.dialect);
+      if (kind) {
+        setEditForm((prev) => ({ ...prev, kind }));
+      }
+      if (dialect) {
+        setEditForm((prev) => ({ ...prev, dialect }));
+      }
+      const metaDesc = result.meta?.desc?.trim();
+      if (metaDesc) {
+        setEditForm((prev) => ({ ...prev, description: metaDesc }));
+      }
+      if (result.meta?.icon) {
+        setEditIcon(result.meta.icon);
+        setEditIconFailed(false);
+      }
+      // 替换参数声明为新声明，按 key 保留 editArgs 中已填写的 value。
+      const newSpecs = result.meta?.arguments ?? [];
+      if (newSpecs.length > 0) {
+        setEditArgs((prev) =>
+          newSpecs.map((arg) => {
+            const found = prev.find((item) => item.key === arg.key);
+            return { ...arg, value: found?.value ?? "" };
+          }),
+        );
+      }
+      // 汇总识别结果提示（风格参考添加对话框）。
+      const parts: string[] = [];
+      if (kind) {
+        parts.push(kind);
+      }
+      if (dialect) {
+        parts.push(dialect);
+      }
+      if (newSpecs.length > 0) {
+        parts.push(`${newSpecs.length} 个模块参数`);
+      }
+      if (result.meta?.name) {
+        setEditDetectInfo(`已识别：${result.meta.name}${parts.length ? `（${parts.join(" / ")}）` : ""}`);
+      } else if (parts.length > 0) {
+        setEditDetectInfo(`已识别：${parts.join(" / ")}`);
+      } else {
+        setEditDetectInfo("未识别出类型与元数据");
+      }
+    } catch (err) {
+      setEditDetectInfo(null);
+      setError(toErrorMessage(err));
+    } finally {
+      setEditDetecting(false);
+    }
+  }, [editForm.url]);
+
+  /** 重置编辑对话框的嗅探/图标覆盖状态（取消或保存成功后调用）。 */
+  const resetEditDetectState = useCallback(() => {
+    setEditIcon(null);
+    setEditIconFailed(false);
+    setEditDetecting(false);
+    setEditDetectInfo(null);
+  }, []);
+
+  /** 保存编辑：按 name 全量更新（`update_remote`），参数值仅提交非空项，图标显式提交嗅探覆盖值。 */
   const handleEditSave = async () => {
     if (!editRemote) {
       return;
@@ -412,6 +492,7 @@ export default function Scripts() {
         kind: editForm.kind as RemoteResource["kind"],
         dialect: editForm.dialect,
         update_interval_secs: Number.isFinite(interval) && interval > 0 ? interval : 86400,
+        icon: editIcon,
         argument_values: editArgs
           .filter((arg) => arg.value.trim() !== "")
           .map((arg) => [arg.key, arg.value.trim()] as [string, string]),
@@ -419,6 +500,7 @@ export default function Scripts() {
       await updateRemote(next);
       setEditOpen(false);
       setEditRemote(null);
+      resetEditDetectState();
       await refreshRemotes();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -1021,13 +1103,36 @@ export default function Scripts() {
               </div>
               <div className="flex flex-col gap-1">
                 <Label htmlFor="remote-edit-url">URL</Label>
-                <Input
-                  id="remote-edit-url"
-                  aria-label="资源 URL"
-                  value={editForm.url}
-                  onChange={(event) => setEditForm({ ...editForm, url: event.target.value })}
-                  fullWidth
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="remote-edit-url"
+                    aria-label="资源 URL"
+                    value={editForm.url}
+                    onChange={(event) => setEditForm({ ...editForm, url: event.target.value })}
+                    placeholder="https://example.com/rules.conf"
+                    fullWidth
+                  />
+                  <Button
+                    variant="secondary"
+                    isPending={editDetecting}
+                    isDisabled={editForm.url.trim().length === 0}
+                    onPress={() => void handleEditDetect()}
+                  >
+                    嗅探
+                  </Button>
+                </div>
+                {editDetectInfo && <span className="text-xs text-muted">{editDetectInfo}</span>}
+                {editIcon && !editIconFailed && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <img
+                      src={editIcon}
+                      alt="资源图标"
+                      className="h-8 w-8 rounded object-contain"
+                      onError={() => setEditIconFailed(true)}
+                    />
+                    <span className="text-xs text-muted">已检测到图标</span>
+                  </div>
+                )}
               </div>
               <Select
                 className="w-full"
@@ -1161,7 +1266,14 @@ export default function Scripts() {
               )}
             </Modal.Body>
             <Modal.Footer>
-              <Button slot="close" variant="secondary" onPress={() => setEditOpen(false)}>
+              <Button
+                slot="close"
+                variant="secondary"
+                onPress={() => {
+                  resetEditDetectState();
+                  setEditOpen(false);
+                }}
+              >
                 取消
               </Button>
               <Button
