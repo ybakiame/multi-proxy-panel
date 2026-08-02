@@ -5,10 +5,10 @@
 mod commands;
 mod state;
 
-/// WSL 软渲染下 WebKitGTK 黑屏兼容。
+/// WSL 下 WebKitGTK 兼容与 GPU 处理。
 ///
-/// WSL2 中 Tauri v2 在 Linux 使用的 WebKitGTK 存在两类导致页面全黑的上游已知
-/// 问题（与前端代码无关）：
+/// WSL2 中 Tauri v2 在 Linux 使用的 WebKitGTK 存在导致页面全黑的上游已知问题
+/// （与前端代码无关）：
 ///
 /// 1. DMA-BUF 渲染路径在软渲染（如 `LIBGL_ALWAYS_SOFTWARE=1`）下输出黑屏，
 ///    通过 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 禁用；
@@ -24,10 +24,17 @@ mod state;
 /// 会导致页面完全不渲染，故本函数不注入该变量；需要禁用合成模式的用户可自行
 /// 显式设置。
 ///
+/// GPU 三级策略：
+/// - 有 WSLg GPU 直通（`/dev/dxg` 存在）时走硬件加速，不注入
+///   `LIBGL_ALWAYS_SOFTWARE`；注意 GPU 直通可用不代表渲染必然成功，此处只是
+///   不主动降级；
+/// - 无 GPU 直通（`/dev/dxg` 不存在）时，Mesa 硬件探测会输出一串 libEGL/ZINK
+///   失败警告后回退 llvmpipe，此时自动注入 `LIBGL_ALWAYS_SOFTWARE=1` 直接走软渲染，
+///   跳过无谓的探测；
+/// - 用户显式设置的环境变量始终优先，本函数仅在对应变量未设置时注入。
+///
 /// 仅在 Linux 且检测到 WSL 内核（`/proc/sys/kernel/osrelease` 内容忽略大小写包含
-/// `microsoft` 或 `wsl`）时注入；读取失败视为非 WSL，不注入。若用户已显式设置
-/// 同名环境变量，则以用户设置为准，本函数仅在变量未设置时注入，已设置的同名
-/// 环境变量优先。
+/// `microsoft` 或 `wsl`）时生效；读取失败视为非 WSL，不注入。
 ///
 /// 必须在任何 WebKit 相关初始化（Tauri 应用构建）之前调用。
 #[cfg(target_os = "linux")]
@@ -43,19 +50,42 @@ fn configure_wsl_webkit_workaround() {
         return;
     }
 
+    // 实际注入的变量列表（用户已显式设置的不会注入），日志按实际注入输出。
+    let mut injected: Vec<&str> = Vec::new();
+
     for (name, value) in [
         ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
         ("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1"),
     ] {
         if std::env::var_os(name).is_none() {
             std::env::set_var(name, value);
+            injected.push(name);
         }
     }
 
+    // WSLg GPU 半虚拟化设备：/dev/dxg 不存在即无硬件 GPU 直通，Mesa 硬件探测会
+    // 输出一串 libEGL/ZINK 失败警告后回退 llvmpipe。自动注入
+    // LIBGL_ALWAYS_SOFTWARE=1 直接走软渲染，跳过无谓的探测。
+    let has_dxg = std::path::Path::new("/dev/dxg").exists();
+    if !has_dxg && std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+        std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+        injected.push("LIBGL_ALWAYS_SOFTWARE");
+    }
+
     // tracing 尚未初始化（见下方 subscriber 的创建），此处用 eprintln! 输出。
+    let injected_log = if injected.is_empty() {
+        "无（均由用户显式设置）".to_string()
+    } else {
+        injected.join(", ")
+    };
     eprintln!(
-        "[pp-client-ui] WSL 检测到，已启用 WebKitGTK 兼容模式 \
-         (WEBKIT_DISABLE_DMABUF_RENDERER=1, WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1)"
+        "[pp-client-ui] WSL 检测到，GPU 直通{}，已注入：{}",
+        if has_dxg {
+            "可用"
+        } else {
+            "不可用（自动软渲染）"
+        },
+        injected_log,
     );
 }
 
