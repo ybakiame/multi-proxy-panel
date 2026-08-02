@@ -130,6 +130,11 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             exp.insert("clash_api".to_string(), Value::Object(clash_api));
         }
     }
+
+    // Android：VpnService（TUN）全量接管后系统 resolver 不可用，注入显式 DNS
+    // （remote 经主出站选择器走 DoH，local 直连）；桌面依赖系统 resolver，不注入。
+    #[cfg(target_os = "android")]
+    inject_android_dns(composed);
 }
 
 /// 构建 sing-box tun 入站 JSON（libbox 兼容字段集）。
@@ -158,6 +163,65 @@ pub fn build_singbox_tun_inbound(features: &PanelFeatures, is_android: bool) -> 
         tun.insert("strict_route".to_string(), json!(true));
     }
     Value::Object(tun)
+}
+
+/// 读取合成配置的主出站选择器 tag（Android DNS `remote` server 的 detour 目标）。
+///
+/// 优先取第一个 `type = selector` 出站的 tag（`singbox_template` 固定生成 `proxy`，
+/// 订阅自建组也多为 selector 组）；无 selector 时回退 `route.final`（仍是出站 tag）；
+/// 仍无法确定时返回 `None`（调用方跳过 DNS 注入，避免注入非法 detour）。
+fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) {
+        for outbound in outbounds {
+            if outbound.get("type").and_then(Value::as_str) == Some("selector") {
+                if let Some(tag) = outbound.get("tag").and_then(Value::as_str) {
+                    return Some(tag.to_string());
+                }
+            }
+        }
+    }
+    obj.get("route")
+        .and_then(|r| r.get("final"))
+        .and_then(Value::as_str)
+        .map(String::from)
+}
+
+/// Android 显式 DNS 注入（仅 Android：`cfg!(target_os = "android")` 时由
+/// [`apply_singbox_panel_features`] 调用；本地/桌面不注入）。
+///
+/// Android 由 VpnService（TUN）接管全量流量，系统 resolver 不可用（DNS 查询会被
+/// tun 回环或泄漏），必须显式声明 DNS 服务器并指明 detour 出站。注入的 `dns` 段：
+///
+/// - `remote`：DoH（1.1.1.1），经主出站选择器出站（`detour` 读合成配置实际
+///   selector tag，见 [`main_outbound_selector_tag`]，不硬编）；
+/// - `local`：UDP（223.5.5.5），经 `direct` 直连出站；
+/// - `rules` 空数组、`final = remote`、`strategy = prefer_ipv4`。
+///
+/// 服务器用新格式（`type` + `server`）声明：libbox（sing-box 1.12）原生解析，
+/// 真实 `sing-box check`（1.13+，legacy `address` 格式需设
+/// `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS`）无需环境变量即可通过。注入后补
+/// `route.default_domain_resolver`（sing-box 1.12+ 在 `dns.servers` 存在时须显式
+/// 声明，否则 `check` 拒绝，见 [`ensure_domain_resolver`]）。
+pub fn inject_android_dns(composed: &mut Value) {
+    let Some(obj) = composed.as_object_mut() else {
+        return;
+    };
+    let Some(detour) = main_outbound_selector_tag(obj) else {
+        return;
+    };
+    obj.insert(
+        "dns".to_string(),
+        json!({
+            "servers": [
+                { "tag": "remote", "type": "https", "server": "1.1.1.1", "server_port": 443, "detour": detour },
+                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53, "detour": "direct" }
+            ],
+            "rules": [],
+            "final": "remote",
+            "strategy": "prefer_ipv4"
+        }),
+    );
+    ensure_domain_resolver(obj);
 }
 
 /// mihomo 面板注入：
@@ -966,6 +1030,102 @@ rules:
         assert!(
             out.status.success(),
             "sing-box check failed (android tun field set): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // ---------- Android 显式 DNS 注入（VpnService 全量接管后系统 resolver 不可用） ----------
+
+    #[test]
+    fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["direct"], "default": "direct" },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        // remote 走实际 selector tag（不硬编），local 直连。
+        assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
+        assert_eq!(cfg["dns"]["servers"][0]["detour"], "proxy");
+        assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
+        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        assert_eq!(cfg["dns"]["rules"], json!([]));
+        assert_eq!(cfg["dns"]["final"], "remote");
+        assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
+        // sing-box 1.12+ 要求显式 default_domain_resolver（指向首个带 tag 的 server）。
+        assert_eq!(
+            cfg["route"]["default_domain_resolver"],
+            json!({ "server": "remote" })
+        );
+    }
+
+    /// 无 selector 时 detour 回退 route.final（仍是出站 tag），DNS 仍可注入。
+    #[test]
+    fn inject_android_dns_falls_back_to_route_final_when_no_selector() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "route": { "final": "direct" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        assert_eq!(cfg["dns"]["servers"][0]["detour"], "direct");
+        assert_eq!(
+            cfg["route"]["default_domain_resolver"],
+            json!({ "server": "remote" })
+        );
+    }
+
+    /// 既无 selector 也无 route.final：无法确定 detour → 跳过注入（不产出非法配置）。
+    #[test]
+    fn inject_android_dns_skips_when_no_outbound_hint() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        assert!(cfg.get("route").is_none(), "子配置无 route 无 final");
+        inject_android_dns(&mut cfg);
+
+        assert!(cfg.get("dns").is_none());
+    }
+
+    /// Android 合成配置（tun 入站 + 显式 DNS 注入）必须通过真实 `sing-box check`。
+    #[test]
+    fn android_config_with_injected_dns_passes_real_singbox_check() {
+        let Some(bin) = sing_box_binary() else {
+            return;
+        };
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["auto", "direct"], "default": "auto" },
+                { "type": "urltest", "tag": "auto", "outbounds": ["direct"], "url": "https://www.gstatic.com/generate_204", "interval": "5m" },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        // 模拟 Android 面板注入路径：tun 入站（Android 字段集）+ clash_api + 显式 DNS。
+        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+        inject_android_dns(&mut cfg);
+
+        // 合成配置的 main selector tag 为 `proxy`（singbox_template 固定组名）。
+        assert_eq!(cfg["dns"]["servers"][0]["detour"], "proxy");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+        let out = std::process::Command::new(&bin)
+            .args(["check", "-c"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "sing-box check failed (android dns injection): {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }

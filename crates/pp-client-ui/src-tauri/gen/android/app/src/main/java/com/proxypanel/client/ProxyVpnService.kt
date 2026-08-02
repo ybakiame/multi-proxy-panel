@@ -97,6 +97,14 @@ class ProxyVpnService : VpnService() {
         builder.setMetered(false)
       }
 
+      // 本应用必须排除在 VPN 之外：核心出站（代理连接 / DoH）由本进程发起，若被
+      // tun 回环会成环导致「有 VPN 图标但流量不通」。SFA 惯例始终排除自身。
+      try {
+        builder.addDisallowedApplication(packageName)
+      } catch (e: NameNotFoundException) {
+        Log.w(TAG, "addDisallowedApplication(self) failed: ${e.message}")
+      }
+
       val inet4Address = options.inet4Address
       while (inet4Address.hasNext()) {
         val address = inet4Address.next()
