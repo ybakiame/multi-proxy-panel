@@ -72,13 +72,39 @@ fn load_material(cert_path: &Path, key_path: &Path) -> PanelResult<CaMaterial> {
     Ok(CaMaterial { cert_pem, key_pem })
 }
 
+/// 构造自签 CA 的证书参数。
+///
+/// - SAN 留空（名称字符串曾误当 SAN 传入，导致生成出空 DN 的证书）
+/// - CN 经 distinguished_name 显式设置
+/// - `IsCa::Ca(Unconstrained)` + key usage 含 keyCertSign / cRLSign / digitalSignature
+/// - 显式有效期 10 年（not_before 回拨 1 天缓冲时钟偏差）
+fn ca_params() -> PanelResult<rcgen::CertificateParams> {
+    // rcgen 0.14：`CertificateParams::new` 的参数是 SAN 列表。
+    let mut params = rcgen::CertificateParams::new(Vec::<String>::new())
+        .map_err(|e| PanelError::Mitm(format!("init ca params: {e}")))?;
+    params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, "ProxyPanel MITM CA");
+    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    // 显式声明 CA 用途：keyCertSign / cRLSign / digitalSignature。
+    // 缺 keyCertSign 时 iOS/macOS 及部分 Android 严格校验会拒绝该 CA
+    // （TLS 握手 `CertificateUnknown`）。
+    params.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::CrlSign,
+        rcgen::KeyUsagePurpose::DigitalSignature,
+    ];
+    // 显式有效期：10 年，not_before 回拨 1 天缓冲客户端时钟偏差。
+    let now = time::OffsetDateTime::now_utc();
+    params.not_before = now - time::Duration::days(1);
+    params.not_after = now + time::Duration::days(3650);
+    Ok(params)
+}
+
 fn generate_ca_material() -> PanelResult<CaMaterial> {
     let key_pair = rcgen::KeyPair::generate()
         .map_err(|e| PanelError::Mitm(format!("generate ca key pair: {e}")))?;
-    let mut params = rcgen::CertificateParams::new(vec!["ProxyPanel MITM CA".to_string()])
-        .map_err(|e| PanelError::Mitm(format!("init ca params: {e}")))?;
-    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    let cert = params
+    let cert = ca_params()?
         .self_signed(&key_pair)
         .map_err(|e| PanelError::Mitm(format!("self sign ca: {e}")))?;
     Ok(CaMaterial {
@@ -132,5 +158,58 @@ mod tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600, "unexpected mode for {name}: {mode:o}");
         }
+    }
+
+    /// 生成的 CA 必须能通过 hudsucker 的 `Issuer::from_ca_cert_pem` 解析，并真实
+    /// 签发叶证书。这是 keyCertSign / is_ca 修正的回归测试：旧 CA（缺 key usage、
+    /// 空 DN）在严格客户端（iOS/macOS）TLS 握手中会被拒绝（CertificateUnknown）。
+    #[test]
+    fn generated_ca_parses_with_hudsucker_issuer_and_signs_leaf() {
+        let material = generate_ca_material().unwrap();
+        let key_pair = hudsucker::rcgen::KeyPair::from_pem(&material.key_pem).unwrap();
+        let issuer = hudsucker::rcgen::Issuer::from_ca_cert_pem(&material.cert_pem, key_pair)
+            .expect("CA 材料应能被 hudsucker Issuer 解析");
+
+        // 用该 CA 真实签发一个叶证书：解析 + 签发全链路通过即证明 CA 可用。
+        let leaf_key = hudsucker::rcgen::KeyPair::generate().unwrap();
+        let leaf =
+            hudsucker::rcgen::CertificateParams::new(vec!["example.com".to_string()]).unwrap();
+        leaf.signed_by(&leaf_key, &issuer)
+            .expect("CA 应能签发叶证书");
+    }
+
+    /// 生成的 CA 携带正确的 CN / key usage / CA 约束 / 有效期（本次修复的核心点）。
+    #[test]
+    fn ca_params_carry_cn_key_usage_and_validity() {
+        let params = ca_params().unwrap();
+        assert_eq!(
+            params.distinguished_name.get(&rcgen::DnType::CommonName),
+            Some(&rcgen::DnValue::Utf8String(
+                "ProxyPanel MITM CA".to_string()
+            ))
+        );
+        assert_eq!(
+            params.key_usages,
+            vec![
+                rcgen::KeyUsagePurpose::KeyCertSign,
+                rcgen::KeyUsagePurpose::CrlSign,
+                rcgen::KeyUsagePurpose::DigitalSignature,
+            ]
+        );
+        assert!(matches!(
+            params.is_ca,
+            rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained)
+        ));
+        // not_before 回拨 1 天（早于当前时间），有效期约 10 年（±2 天容差）。
+        assert!(
+            params.not_before < time::OffsetDateTime::now_utc(),
+            "not_before 应回拨到当前时间之前"
+        );
+        let span = params.not_after - params.not_before;
+        assert!(
+            span >= time::Duration::days(3649),
+            "有效期不足 10 年: {span:?}"
+        );
+        assert!(span <= time::Duration::days(3653), "有效期过长: {span:?}");
     }
 }

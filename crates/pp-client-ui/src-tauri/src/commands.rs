@@ -14,7 +14,7 @@ use pp_client::{
     RemoteResource, SubContent, SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
-use pp_mitm::TrafficRecorder;
+use pp_mitm::{CaStore, TrafficRecorder};
 use pp_script::{ScriptDialect, TaskScriptView};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -396,6 +396,34 @@ pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecor
     };
     let records = client.recorder().list();
     Ok(records.iter().map(TrafficRecordView::from_record).collect())
+}
+
+/// MITM CA 证书的对外视图（供客户端信任指引展示）。
+#[derive(Debug, Clone, Serialize)]
+pub struct MitmCaView {
+    /// `ca.crt` 的绝对路径（供用户导入系统/浏览器信任库）。
+    pub path: String,
+    /// PEM 格式的根证书内容。
+    pub pem: String,
+}
+
+/// 获取 MITM CA 证书（`data_dir/certs/ca.{crt,key}`；不存在时由
+/// [`pp_mitm::FileCaStore`] 生成并落盘，已存在时不重复生成）。
+#[tauri::command]
+pub fn get_mitm_ca(state: State<'_, AppState>) -> Result<MitmCaView, String> {
+    get_mitm_ca_impl(&state.data_dir)
+}
+
+/// `get_mitm_ca` 的具体实现（命令层可测试的纯逻辑）。
+fn get_mitm_ca_impl(data_dir: &std::path::Path) -> Result<MitmCaView, String> {
+    let store = pp_mitm::FileCaStore::new(data_dir.join("certs"));
+    let material = store
+        .load_or_generate()
+        .map_err(|e| format!("读取 MITM CA 失败: {e}"))?;
+    Ok(MitmCaView {
+        path: data_dir.join("certs").join("ca.crt").to_string_lossy().into_owned(),
+        pem: material.cert_pem,
+    })
 }
 
 /// 一条远程订阅资源的对外视图。
@@ -1921,5 +1949,32 @@ mod tests {
 
         // 无效 core_type 字符串报错。
         assert!(list_downloaded_versions_impl(dir.path(), "bogus".to_string()).is_err());
+    }
+
+    // ---------- MITM CA 证书命令 ----------
+
+    #[test]
+    fn get_mitm_ca_generates_and_reports_path() {
+        let dir = TestDir::new();
+        let view = get_mitm_ca_impl(dir.path()).unwrap();
+        assert!(
+            view.pem.contains("BEGIN CERTIFICATE"),
+            "pem 应包含证书块: {}",
+            view.pem
+        );
+        assert!(
+            view.path.ends_with("ca.crt"),
+            "path 应以 ca.crt 结尾: {}",
+            view.path
+        );
+        assert!(
+            std::path::Path::new(&view.path).is_file(),
+            "CA 证书应已落盘: {}",
+            view.path
+        );
+
+        // 幂等：已存在时不重新生成，再次调用返回同一证书。
+        let again = get_mitm_ca_impl(dir.path()).unwrap();
+        assert_eq!(view.pem, again.pem);
     }
 }

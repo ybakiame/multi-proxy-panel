@@ -21,6 +21,8 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 rcgen = "0.14"
+# rcgen 0.14 的 not_before / not_after 使用 time::OffsetDateTime（rcgen 不 re-export）。
+time = "0.3"
 hudsucker = { version = "0.25", features = ["rcgen-ca", "rustls-client", "http2", "decoder"] }
 http = "1"
 http-body-util = { workspace = true }

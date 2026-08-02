@@ -64,6 +64,14 @@ export interface TrafficRecord {
   duration_ms: number;
 }
 
+/** MITM CA 证书视图（与 Rust 侧 `MitmCaView` 对齐）。 */
+export interface MitmCaView {
+  /** `ca.crt` 的绝对路径（供用户导入系统/浏览器信任库）。 */
+  path: string;
+  /** PEM 格式的根证书内容。 */
+  pem: string;
+}
+
 /** 远程订阅资源（与 Rust 侧 `RemoteResourceView` 对齐）。 */
 export type RemoteKind = "Script" | "Snippet";
 
@@ -234,6 +242,11 @@ export function proxyStatus(): Promise<ClientStatus> {
 
 export function listTraffic(): Promise<TrafficRecord[]> {
   return invoke<TrafficRecord[]>("list_traffic");
+}
+
+/** 获取 MITM CA 证书（不存在时自动生成），供客户端信任指引展示。 */
+export function getMitmCa(): Promise<MitmCaView> {
+  return invoke<MitmCaView>("get_mitm_ca");
 }
 
 export function listRemotes(): Promise<RemoteResource[]> {

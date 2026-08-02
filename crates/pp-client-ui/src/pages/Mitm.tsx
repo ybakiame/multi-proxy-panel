@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
+import { getMitmCa, type MitmCaView } from "../api";
 import { useAppStore } from "../store";
 
 export default function Mitm() {
@@ -8,10 +9,15 @@ export default function Mitm() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mitmCa, setMitmCa] = useState<MitmCaView | null>(null);
+  const [caCopied, setCaCopied] = useState(false);
 
   useEffect(() => {
     void loadConfig();
     void refreshTraffic();
+    void getMitmCa()
+      .then(setMitmCa)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [loadConfig, refreshTraffic]);
 
   // 配置加载后同步白名单文本（每行一个 hostname）。
@@ -25,6 +31,16 @@ export default function Mitm() {
   const formatTime = (iso: string) => {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  };
+
+  // 复制 CA PEM 到剪贴板，成功后短暂提示。
+  const handleCopyCaPem = async () => {
+    if (!mitmCa) {
+      return;
+    }
+    await navigator.clipboard.writeText(mitmCa.pem);
+    setCaCopied(true);
+    window.setTimeout(() => setCaCopied(false), 2000);
   };
 
   const handleSave = async () => {
@@ -79,6 +95,40 @@ export default function Mitm() {
                   <dd>{config?.mitm_script_dialect ?? "-"}</dd>
                 </div>
               </dl>
+            </Card.Content>
+          </Card>
+
+          <Card>
+            <Card.Header>
+              <Card.Title>MITM CA 证书</Card.Title>
+              <Card.Description>解密 HTTPS 流量的根证书，需要被抓包的客户端信任</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <div className="flex flex-col gap-3 text-sm">
+                <dl className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted">证书路径</dt>
+                    <dd className="truncate font-mono text-xs">{mitmCa?.path ?? "-"}</dd>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button variant="secondary" onPress={() => void handleCopyCaPem()}>
+                      复制证书 PEM
+                    </Button>
+                    {caCopied && <span className="text-sm text-success">已复制到剪贴板</span>}
+                  </div>
+                </dl>
+                <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-muted">
+                  <li>桌面端：双击 ca.crt 导入系统/用户信任库；Firefox 使用自带证书管理器，需单独导入</li>
+                  <li>
+                    Android 7+：应用默认不信任用户证书，仅安装「用户证书」对多数 App 无效；需 root 后将 CA 写入
+                    /system/etc/security/cacerts/ 或目标 App 声明信任用户 CA
+                  </li>
+                  <li>
+                    iOS：安装描述文件后，必须到「设置 → 通用 → 关于本机 →
+                    证书信任设置」开启对该证书的完全信任，否则握手会被拒绝（CertificateUnknown）
+                  </li>
+                </ul>
+              </div>
             </Card.Content>
           </Card>
 
