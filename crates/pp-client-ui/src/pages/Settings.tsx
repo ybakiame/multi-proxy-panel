@@ -88,6 +88,9 @@ export default function Settings() {
   const [clashApiPort, setClashApiPort] = useState(9090);
   const [clashApiSecret, setClashApiSecret] = useState("");
   const [clashApiUi, setClashApiUi] = useState<string>("zashboard");
+  // GitHub 访问
+  const [githubProxyPrefix, setGithubProxyPrefix] = useState("");
+  const [fetchViaLocalProxy, setFetchViaLocalProxy] = useState(false);
   // 保存后的轻量反馈：后端非阻塞提示（SaveConfigView.warning）、失败回显、短暂「已保存」。
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -125,6 +128,8 @@ export default function Settings() {
     setClashApiPort(config.clash_api_port);
     setClashApiSecret(config.clash_api_secret);
     setClashApiUi(config.clash_api_ui || "zashboard");
+    setGithubProxyPrefix(config.github_proxy_prefix || "");
+    setFetchViaLocalProxy(config.fetch_via_local_proxy);
   }, [config]);
 
   const refreshCores = useCallback(async () => {
@@ -480,6 +485,50 @@ export default function Settings() {
             {justSaved && <span className="text-sm text-success">已保存</span>}
           </div>
         </Card.Footer>
+      </Card>
+
+      {/* GitHub 访问 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>GitHub 访问</Card.Title>
+          <Card.Description>中国大陆网络下远程资源拉取失败时的代理配置</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-surface p-4">
+            <Switch
+              isSelected={fetchViaLocalProxy}
+              onChange={(next) => {
+                setFetchViaLocalProxy(next);
+                void persist({ fetch_via_local_proxy: next });
+              }}
+            >
+              <Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                远程资源拉取走本地代理
+              </Switch.Content>
+            </Switch>
+            <span className="text-xs text-muted">经本机核心 mixed 端口转发拉取请求，需核心运行中</span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="settings-github-proxy-prefix">GitHub 代理前缀</Label>
+            <Input
+              id="settings-github-proxy-prefix"
+              value={githubProxyPrefix}
+              onChange={(event) => {
+                setGithubProxyPrefix(event.target.value);
+                persistDebounced({ github_proxy_prefix: event.target.value });
+              }}
+              placeholder="https://gh-proxy.com"
+              fullWidth
+            />
+            <span className="text-xs text-muted">
+              GitHub 链接将拼接前缀访问，例如 https://gh-proxy.com/https://raw.githubusercontent.com/…；留空则直连
+            </span>
+          </div>
+        </Card.Content>
       </Card>
 
       {/* TUN 模式 */}

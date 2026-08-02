@@ -74,9 +74,214 @@ pub fn normalize_resource_url(url: &str) -> String {
     }
 }
 
+/// GitHub 相关域名列表（含 `www.github.com` 与各类 `*.githubusercontent.com` 子域）。
+const GITHUB_HOSTS: [&str; 7] = [
+    "github.com",
+    "www.github.com",
+    "raw.githubusercontent.com",
+    "gist.github.com",
+    "gist.githubusercontent.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+];
+
+/// 判断 URL 的 host 是否属于 GitHub 域名（忽略 scheme，支持带端口）。
+///
+/// 用于远程资源拉取时决定是否应用 GitHub 代理前缀 / 失败时提示。
+pub fn is_github_url(url: &str) -> bool {
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.split(':').next().unwrap_or(host);
+    GITHUB_HOSTS.contains(&host)
+}
+
+/// 为 GitHub URL 拼接代理前缀：prefix 为空或非 GitHub URL 时原样返回；
+/// 否则返回 `{prefix}/{url}`（prefix 尾部的 `/` 会被去重）。
+pub fn apply_github_proxy_prefix(url: &str, prefix: &str) -> String {
+    let prefix = prefix.trim();
+    if prefix.is_empty() || !is_github_url(url) {
+        return url.to_string();
+    }
+    format!("{}/{}", prefix.trim_end_matches('/'), url)
+}
+
+/// 构建远程资源拉取客户端：`fetch_via_local_proxy` 时经
+/// `http://127.0.0.1:{mixed_port}` 本地核心 mixed 入站代理（构建失败回退无代理直连），
+/// 否则 `.no_proxy()` 直连。
+fn build_fetch_client(timeout: std::time::Duration, cfg: &config::ClientConfig) -> reqwest::Client {
+    let no_proxy_client = || {
+        reqwest::Client::builder()
+            .timeout(timeout)
+            .no_proxy()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    };
+    if cfg.fetch_via_local_proxy {
+        if let Ok(proxy) = reqwest::Proxy::all(format!("http://127.0.0.1:{}", cfg.mixed_port)) {
+            if let Ok(client) = reqwest::Client::builder()
+                .timeout(timeout)
+                .proxy(proxy)
+                .build()
+            {
+                return client;
+            }
+        }
+        // 本地代理客户端构建失败（非法地址等）→ 回退为无代理直连。
+    }
+    no_proxy_client()
+}
+
+/// 读取响应体；非 2xx 视为失败（沿用既有 fetch 语义）。
+async fn read_body(resp: reqwest::Response, url: &str) -> Result<String, String> {
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("remote fetch returned HTTP {status} ({url})"));
+    }
+    resp.text()
+        .await
+        .map_err(|e| format!("failed to read remote body ({url}): {e}"))
+}
+
+/// 拉取单个 URL 的文本内容；请求层错误（connect/timeout 等）重试一次，非 2xx 视为失败。
+async fn fetch_url_text_with_retry(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    match client.get(url).send().await {
+        Ok(resp) => read_body(resp, url).await,
+        // 请求层错误（connect/timeout 等）重试一次；仍失败以最后一次错误为准。
+        Err(_) => match client.get(url).send().await {
+            Ok(resp) => read_body(resp, url).await,
+            Err(e) => Err(format!("remote fetch failed ({url}): {e}")),
+        },
+    }
+}
+
+/// 远程资源拉取（Hub 订阅 / 脚本 / 嗅探共用入口）。
+///
+/// - 从 `data_dir/client.json` best-effort 读取 GitHub 访问设置（失败按默认值）
+/// - URL 先经 [`normalize_resource_url`] 归一化，GitHub URL 再经
+///   [`apply_github_proxy_prefix`] 拼接配置的代理前缀
+/// - `fetch_via_local_proxy` 时请求经本机核心 mixed 端口代理，否则 `no_proxy()` 直连
+/// - 请求层错误重试一次；最终失败且原始 URL 是 GitHub URL 时，错误信息追加
+///   「设置 → GitHub 访问」的处理提示
+pub async fn fetch_resource_text(
+    data_dir: &std::path::Path,
+    url: &str,
+    timeout: std::time::Duration,
+) -> pp_common::PanelResult<String> {
+    use pp_common::PanelError;
+
+    let is_github = is_github_url(url);
+    let cfg = config::ClientConfig::load(data_dir).unwrap_or_default();
+    let request_url =
+        apply_github_proxy_prefix(&normalize_resource_url(url), &cfg.github_proxy_prefix);
+    let client = build_fetch_client(timeout, &cfg);
+
+    match fetch_url_text_with_retry(&client, &request_url).await {
+        Ok(text) => Ok(text),
+        Err(e) => {
+            if is_github {
+                Err(PanelError::Client(format!(
+                    "{e}（GitHub 直连失败：可在「设置 → GitHub 访问」中配置代理前缀或开启「走本地代理」后重试）"
+                )))
+            } else {
+                Err(PanelError::Client(e))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalize_resource_url;
+    use super::{
+        apply_github_proxy_prefix, fetch_resource_text, is_github_url, normalize_resource_url,
+    };
+
+    #[test]
+    fn is_github_url_matches_known_github_hosts() {
+        assert!(is_github_url(
+            "https://raw.githubusercontent.com/owner/repo/main/x.js"
+        ));
+        assert!(is_github_url("https://github.com/owner/repo"));
+        assert!(is_github_url("http://www.github.com/owner/repo"));
+        assert!(is_github_url("https://gist.github.com/owner/abc123"));
+        assert!(is_github_url(
+            "https://gist.githubusercontent.com/owner/abc123/raw/x.js"
+        ));
+        assert!(is_github_url(
+            "https://codeload.github.com/owner/repo/zip/main"
+        ));
+        assert!(is_github_url(
+            "https://objects.githubusercontent.com/github-production/…"
+        ));
+        // 带端口 / query 仍识别 host。
+        assert!(is_github_url(
+            "https://raw.githubusercontent.com:443/o/r/main/x.js"
+        ));
+        // 非 GitHub 域名 / 无 scheme 判定为 false。
+        assert!(!is_github_url("https://example.com/raw/x.js"));
+        assert!(!is_github_url("https://github.com.evil.com/x"));
+        assert!(!is_github_url("github.com/owner/repo"));
+        assert!(!is_github_url(""));
+    }
+
+    #[test]
+    fn apply_github_proxy_prefix_only_wraps_github_urls() {
+        let prefix = "https://gh-proxy.com";
+        assert_eq!(
+            apply_github_proxy_prefix("https://raw.githubusercontent.com/o/r/main/x.js", prefix),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/o/r/main/x.js"
+        );
+        // prefix 尾部斜杠去重。
+        assert_eq!(
+            apply_github_proxy_prefix("https://github.com/o/r", "https://gh-proxy.com/"),
+            "https://gh-proxy.com/https://github.com/o/r"
+        );
+        // 非 GitHub URL 原样返回。
+        assert_eq!(
+            apply_github_proxy_prefix("https://example.com/x.js", prefix),
+            "https://example.com/x.js"
+        );
+        // 空 prefix 原样返回。
+        assert_eq!(
+            apply_github_proxy_prefix("https://github.com/o/r", ""),
+            "https://github.com/o/r"
+        );
+        assert_eq!(
+            apply_github_proxy_prefix("https://github.com/o/r", "   "),
+            "https://github.com/o/r"
+        );
+    }
+
+    /// 本地 axum 服务测试 fetch_resource_text：200 成功 / 404 失败（非 GitHub URL，
+    /// 不拼接代理前缀；默认配置直连）。
+    #[tokio::test]
+    async fn fetch_resource_text_succeeds_on_local_200_and_fails_on_404() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new()
+            .route("/ok", axum::routing::get(|| async { "hello" }))
+            .route(
+                "/missing",
+                axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
+            );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let timeout = std::time::Duration::from_secs(5);
+
+        let ok = fetch_resource_text(dir.path(), &format!("http://{addr}/ok"), timeout)
+            .await
+            .unwrap();
+        assert_eq!(ok, "hello");
+
+        let err = fetch_resource_text(dir.path(), &format!("http://{addr}/missing"), timeout)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("HTTP 404"), "{err}");
+    }
 
     #[test]
     fn normalizes_github_blob_and_raw_to_raw_githubusercontent() {

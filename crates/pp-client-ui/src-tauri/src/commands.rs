@@ -90,6 +90,10 @@ pub struct ClientConfigView {
     pub clash_api_secret: String,
     /// Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（默认 `zashboard`）。
     pub clash_api_ui: String,
+    /// GitHub 代理前缀（如 `https://gh-proxy.com`；空串 = 直连 GitHub）。
+    pub github_proxy_prefix: String,
+    /// 远程资源拉取是否经本地核心 mixed 端口代理。
+    pub fetch_via_local_proxy: bool,
 }
 
 impl Default for ClientConfigView {
@@ -112,6 +116,8 @@ impl Default for ClientConfigView {
             clash_api_port: 9090,
             clash_api_secret: String::new(),
             clash_api_ui: "zashboard".to_string(),
+            github_proxy_prefix: String::new(),
+            fetch_via_local_proxy: false,
         }
     }
 }
@@ -143,6 +149,8 @@ impl ClientConfigView {
             clash_api_port: cfg.clash_api_port,
             clash_api_secret: cfg.clash_api_secret.clone(),
             clash_api_ui: cfg.clash_api_ui.clone(),
+            github_proxy_prefix: cfg.github_proxy_prefix.clone(),
+            fetch_via_local_proxy: cfg.fetch_via_local_proxy,
         }
     }
 
@@ -169,6 +177,8 @@ impl ClientConfigView {
             "clash_api_port": self.clash_api_port,
             "clash_api_secret": self.clash_api_secret,
             "clash_api_ui": self.clash_api_ui,
+            "github_proxy_prefix": self.github_proxy_prefix,
+            "fetch_via_local_proxy": self.fetch_via_local_proxy,
         });
         serde_json::from_value::<ClientConfig>(value).map_err(|e| e.to_string())
     }
@@ -683,18 +693,14 @@ pub struct DetectRemoteView {
     pub meta: Option<ConfigMetaView>,
 }
 
-/// 拉取单个 URL 的文本内容（无系统代理，15 秒超时）用于元数据嗅探；任何失败返回 `None`。
-async fn fetch_detect_text(url: &str) -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .no_proxy()
-        .build()
-        .ok()?;
-    let resp = client.get(url).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    resp.text().await.ok()
+/// 拉取单个 URL 的文本内容（15 秒超时）用于元数据嗅探；任何失败返回 `None`。
+///
+/// 委托 [`pp_client::fetch_resource_text`]：GitHub 代理前缀与「走本地代理」设置生效，
+/// 拉取失败静默（detect 语义不变，meta 置 None）。
+async fn fetch_detect_text(data_dir: &std::path::Path, url: &str) -> Option<String> {
+    pp_client::fetch_resource_text(data_dir, url, std::time::Duration::from_secs(15))
+        .await
+        .ok()
 }
 
 /// 嗅探远端资源 URL：按后缀判定类型/方言；Snippet 且 URL 可访问时拉取内容解析配置头元数据。
@@ -704,7 +710,10 @@ async fn fetch_detect_text(url: &str) -> Option<String> {
 /// 拉取失败不报错：后缀判定结果（`kind` / `dialect`）照常返回，`meta` 置 `None`，
 /// 前端仅用返回字段预填添加表单。
 #[tauri::command]
-pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
+pub async fn detect_remote(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<DetectRemoteView, String> {
     let url = pp_client::normalize_resource_url(url.trim());
     let (kind, dialect) = match detect_resource_from_url(&url) {
         Some((kind, dialect)) => (
@@ -718,7 +727,7 @@ pub async fn detect_remote(url: String) -> Result<DetectRemoteView, String> {
     let meta = if kind.as_deref() == Some("Snippet")
         && (url.starts_with("http://") || url.starts_with("https://"))
     {
-        fetch_detect_text(&url)
+        fetch_detect_text(&state.data_dir, &url)
             .await
             .map(|text| {
                 let parsed = parse_config_meta(&text);
@@ -1653,6 +1662,8 @@ mod tests {
         view.clash_api_port = 9091;
         view.clash_api_secret = "sekret".to_string();
         view.clash_api_ui = "yacd".to_string();
+        view.github_proxy_prefix = "https://gh-proxy.com".to_string();
+        view.fetch_via_local_proxy = true;
 
         let result = with_empty_path(|| save_config_impl(dir.path(), view.clone()).unwrap());
         assert!(
@@ -1672,6 +1683,8 @@ mod tests {
         assert_eq!(saved.clash_api_port, 9091);
         assert_eq!(saved.clash_api_secret, "sekret");
         assert_eq!(saved.clash_api_ui, "yacd");
+        assert_eq!(saved.github_proxy_prefix, "https://gh-proxy.com");
+        assert!(saved.fetch_via_local_proxy);
 
         // load → from_config 往返保真（前端下次保存时的 payload 基础）。
         let view2 = ClientConfigView::from_config(&saved);
@@ -1683,6 +1696,8 @@ mod tests {
         assert!(view2.clash_api_enabled);
         assert_eq!(view2.clash_api_secret, "sekret");
         assert_eq!(view2.clash_api_ui, "yacd");
+        assert_eq!(view2.github_proxy_prefix, "https://gh-proxy.com");
+        assert!(view2.fetch_via_local_proxy);
     }
 
     #[test]
@@ -1703,6 +1718,10 @@ mod tests {
         });
         let view: ClientConfigView = serde_json::from_value(json).unwrap();
         assert_eq!(view.clash_api_ui, "zashboard", "缺失字段按默认值补齐");
+        assert!(
+            view.github_proxy_prefix.is_empty() && !view.fetch_via_local_proxy,
+            "旧前端缺失 GitHub 访问字段按默认值补齐"
+        );
         let result = with_empty_path(|| save_config_impl(dir.path(), view).unwrap());
 
         let saved = ClientConfig::load(dir.path()).unwrap();

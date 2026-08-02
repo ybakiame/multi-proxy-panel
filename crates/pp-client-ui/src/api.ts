@@ -39,6 +39,10 @@ export interface ClientConfig {
   clash_api_secret: string;
   /** Clash 面板 UI 选择：`yacd` / `zashboard` / `metacubexd`（默认 `zashboard`）。 */
   clash_api_ui: string;
+  /** GitHub 代理前缀（如 `https://gh-proxy.com`；空串 = 直连 GitHub）。 */
+  github_proxy_prefix: string;
+  /** 远程资源拉取是否经本地核心 mixed 端口（`http://127.0.0.1:{mixed_port}`）代理。 */
+  fetch_via_local_proxy: boolean;
 }
 
 export interface ClientStatus {

@@ -237,18 +237,12 @@ pub fn apply_argument_templates(
 #[derive(Debug, Clone)]
 pub struct RemoteManager {
     data_dir: PathBuf,
-    client: reqwest::Client,
 }
 
 impl RemoteManager {
-    /// 基于数据目录创建管理器（30 秒请求超时，禁用系统代理）。
+    /// 基于数据目录创建管理器。
     pub fn new(data_dir: PathBuf) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .no_proxy()
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-        Self { data_dir, client }
+        Self { data_dir }
     }
 
     /// 远程清单路径：`data_dir/remotes.json`。
@@ -484,24 +478,10 @@ impl RemoteManager {
 
     /// 拉取单个 URL 的文本内容；非 2xx 视为失败。
     ///
-    /// GitHub blob/raw 链接在进入请求前归一化为 `raw.githubusercontent.com`。
+    /// 委托 [`crate::fetch_resource_text`]：GitHub blob/raw 链接归一化、
+    /// GitHub 代理前缀拼接与「走本地代理」设置均在此统一处理（30 秒超时）。
     async fn fetch_text(&self, url: &str) -> PanelResult<String> {
-        let url = crate::normalize_resource_url(url);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| PanelError::Client(format!("remote fetch failed ({url}): {e}")))?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(PanelError::Client(format!(
-                "remote fetch returned HTTP {status} ({url})"
-            )));
-        }
-        resp.text()
-            .await
-            .map_err(|e| PanelError::Client(format!("failed to read remote body ({url}): {e}")))
+        crate::fetch_resource_text(&self.data_dir, url, std::time::Duration::from_secs(30)).await
     }
 
     /// 回填 Snippet 中脚本钩子 / 定时任务的远端源码。

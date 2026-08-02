@@ -67,6 +67,11 @@ pub struct ClientConfig {
     ///
     /// 未知值在配置合成（`core_config::apply_panel_features*`）时回退为 `zashboard`。
     pub clash_api_ui: String,
+    /// GitHub 代理前缀（如 `https://gh-proxy.com`）：GitHub 资源 URL 将拼接为该前缀代理；
+    /// 空串 = 直连 GitHub。
+    pub github_proxy_prefix: String,
+    /// 远程资源拉取是否经本地核心 mixed 端口（`http://127.0.0.1:{mixed_port}`）代理。
+    pub fetch_via_local_proxy: bool,
 }
 
 impl Default for ClientConfig {
@@ -88,6 +93,8 @@ impl Default for ClientConfig {
             clash_api_port: 9090,
             clash_api_secret: String::new(),
             clash_api_ui: "zashboard".to_string(),
+            github_proxy_prefix: String::new(),
+            fetch_via_local_proxy: false,
         }
     }
 }
@@ -159,6 +166,9 @@ mod tests {
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
         assert_eq!(cfg.clash_api_ui, "zashboard");
+        // GitHub 访问默认直连：无代理前缀、不走本地代理。
+        assert!(cfg.github_proxy_prefix.is_empty());
+        assert!(!cfg.fetch_via_local_proxy);
     }
 
     #[test]
@@ -189,6 +199,8 @@ mod tests {
         cfg.clash_api_port = 9091;
         cfg.clash_api_secret = "sekret".to_string();
         cfg.clash_api_ui = "metacubexd".to_string();
+        cfg.github_proxy_prefix = "https://gh-proxy.com".to_string();
+        cfg.fetch_via_local_proxy = true;
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ClientConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);
@@ -216,6 +228,9 @@ mod tests {
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
         assert_eq!(cfg.clash_api_ui, "zashboard");
+        // 旧 client.json 缺失 GitHub 访问字段时按默认值解析（直连、不代理）。
+        assert!(cfg.github_proxy_prefix.is_empty());
+        assert!(!cfg.fetch_via_local_proxy);
     }
 
     #[test]
