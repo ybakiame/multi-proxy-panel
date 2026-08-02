@@ -78,22 +78,26 @@ export default function App() {
     <HashRouter>
       <ThemeBootstrap />
       <ErrorBoundary>
-        <ToastProvider placement="bottom end" maxVisibleToasts={3}>
-          <div className="flex h-full min-h-screen bg-background text-foreground">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto p-6">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/nodes" element={<Nodes />} />
-                <Route path="/mitm" element={<Mitm />} />
-                <Route path="/scripts" element={<Scripts />} />
-                <Route path="/override" element={<Override />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </main>
-          </div>
-        </ToastProvider>
+        {/*
+          ToastProvider 必须独立挂载（不带 children）：HeroUI 3.2.2 会把 children 当作
+          react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region 返回
+          null，若用它包裹应用内容会导致整棵 UI 树渲染为空（整页白屏）。
+        */}
+        <ToastProvider placement="bottom end" maxVisibleToasts={3} />
+        <div className="flex h-full min-h-screen bg-background text-foreground">
+          <Sidebar />
+          <main className="flex-1 overflow-y-auto p-6">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/nodes" element={<Nodes />} />
+              <Route path="/mitm" element={<Mitm />} />
+              <Route path="/scripts" element={<Scripts />} />
+              <Route path="/override" element={<Override />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </ErrorBoundary>
     </HashRouter>
   );
