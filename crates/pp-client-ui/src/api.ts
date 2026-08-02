@@ -519,3 +519,8 @@ export function toErrorMessage(err: unknown): string {
   }
   return String(err);
 }
+
+/** 把前端日志（`target="frontend"`）写入后端 tracing 管道，供日志页与排查共用。 */
+export function logFrontend(level: string, message: string): Promise<void> {
+  return invoke<void>("log_frontend", { level, message });
+}
