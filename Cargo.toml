@@ -78,7 +78,9 @@ metrics-exporter-prometheus = "0.16"
 thiserror = "2.0"
 anyhow = "1.0"
 regex = "1"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+# 关闭 default-tls（native-tls/openssl）：统一 rustls-tls，避免 Android 等
+# 交叉编译 target 需要为 openssl-sys 准备 sysroot（pp-hub/pp-core 已如此声明）。
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sysinfo = "0.34"
 notify = { version = "8.0", default-features = false, features = ["macos_fsevent"] }
 

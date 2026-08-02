@@ -4,6 +4,7 @@
 //! + setuid / Windows 管理员令牌）。本模块提供权限检测（[`tun_auth_status`]）与
 //!   授权入口（[`authorize_tun`]），供启动流程前置检查与设置页授权按钮调用。
 use std::path::Path;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 
 use pp_common::{PanelError, PanelResult};
@@ -77,7 +78,13 @@ fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
     TunAuthStatus::NeedsAuth
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "android")]
+fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
+    // Android 的 TUN 通过 VpnService 系统授权，无需（也无法）对核心二进制提权。
+    TunAuthStatus::Unsupported("Android 使用 VpnService 授权".to_string())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
 fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
     TunAuthStatus::Unsupported("当前平台不支持 TUN".to_string())
 }
@@ -158,7 +165,14 @@ fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
     ))
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "android")]
+fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
+    Err(PanelError::Client(
+        "Android 使用 VpnService 授权 TUN，无需对核心二进制提权".to_string(),
+    ))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
 fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
     Err(PanelError::Client(
         "当前平台不支持 TUN 自动提权".to_string(),

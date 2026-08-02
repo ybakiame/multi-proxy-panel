@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
-use pp_common::PanelResult;
+use pp_common::{PanelError, PanelResult};
 
 /// 一条待执行的系统命令描述（仅描述，不执行）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,8 @@ pub enum TargetOs {
     Windows,
     /// Linux（`gsettings`，GNOME）。
     Linux,
+    /// Android（系统代理由 VpnService 控制，不支持 gsettings/reg 等桌面方案）。
+    Android,
 }
 
 impl TargetOs {
@@ -64,7 +66,11 @@ impl TargetOs {
         {
             Self::Windows
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(target_os = "android")]
+        {
+            Self::Android
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
         {
             Self::Linux
         }
@@ -176,6 +182,9 @@ impl PlatformSystemProxy {
                     &["set", "org.gnome.system.proxy.https", "port", &port],
                 ),
             ],
+            // Android 系统代理由 VpnService 控制，无桌面命令可构造；运行期
+            // `SystemProxy` 实现已对该平台直接返回错误，不会走到这里。
+            TargetOs::Android => vec![],
         }
     }
 
@@ -205,6 +214,8 @@ impl PlatformSystemProxy {
                 "gsettings",
                 &["set", "org.gnome.system.proxy", "mode", "none"],
             )],
+            // Android 无桌面禁用命令（见 [`TargetOs::Android`]）。
+            TargetOs::Android => vec![],
         }
     }
 
@@ -236,16 +247,29 @@ impl PlatformSystemProxy {
 #[async_trait]
 impl SystemProxy for PlatformSystemProxy {
     async fn enable(&self, http_proxy_addr: SocketAddr) -> PanelResult<()> {
+        if matches!(self.os, TargetOs::Android) {
+            return Err(PanelError::Client(
+                "当前平台（Android）不支持系统代理开关：请通过 VpnService 分流".to_string(),
+            ));
+        }
         let specs = self.build_commands(http_proxy_addr);
         Ok(self.run_specs(&specs)?)
     }
 
     async fn disable(&self) -> PanelResult<()> {
+        if matches!(self.os, TargetOs::Android) {
+            return Err(PanelError::Client(
+                "当前平台（Android）不支持系统代理开关：请通过 VpnService 分流".to_string(),
+            ));
+        }
         let specs = self.build_disable_commands();
         Ok(self.run_specs(&specs)?)
     }
 
     async fn is_enabled(&self) -> bool {
+        if matches!(self.os, TargetOs::Android) {
+            return false;
+        }
         match self.os {
             TargetOs::Linux => {
                 let out = Command::new("gsettings")
@@ -271,6 +295,8 @@ impl SystemProxy for PlatformSystemProxy {
                 out.map(|o| String::from_utf8_lossy(&o.stdout).contains("0x1"))
                     .unwrap_or(false)
             }
+            // 上方 guard 已提前返回，此分支不可达（补全穷尽匹配）。
+            TargetOs::Android => false,
         }
     }
 }

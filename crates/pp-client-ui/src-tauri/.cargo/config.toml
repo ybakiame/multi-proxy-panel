@@ -1,0 +1,32 @@
+# Android 交叉编译工具链配置（仅影响 Android target）。
+#
+# `tauri android build`（gradle rust 插件 → tauri CLI）会自行注入 NDK 工具链环境，
+# 不需要本配置。本配置仅为让裸 `cargo check --target aarch64-linux-android` /
+# `x86_64-linux-android`（验证 Android 平台隔离的编译可用性）可以直接编译：
+# cc-rs 编译 C 依赖（ring / rquickjs / aws-lc-sys 等）需要 CC/AR，构建脚本与
+# 最终链接阶段需要 linker。
+#
+# 注意：cargo 配置值不支持环境变量展开，此处按本机 NDK（minSdk 26，对应
+# `*-android26-clang`）写死绝对路径。NDK 路径变更时请同步修改本文件。
+# 如需换用环境变量方式，可显式设置（二选一即可）：
+#   NDK_HOME=$HOME/Android/Sdk/ndk/27.2.12479018
+#   export CC_aarch64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
+#   export AR_aarch64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+#   export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
+# 裸 cargo check 命令：
+#   ANDROID_HOME=$HOME/Android/Sdk cargo check --target aarch64-linux-android
+[env]
+CC_aarch64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+AR_aarch64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+CC_x86_64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
+AR_x86_64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+# rquickjs-sys 在 Android target 走 `bindgen` feature 生成 bindings：libclang 解析
+# 头文件需要指定 NDK sysroot，否则会误用 host 的 /usr/include。
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android = "--target=aarch64-linux-android26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android = "--target=x86_64-linux-android26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+
+[target.aarch64-linux-android]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+
+[target.x86_64-linux-android]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
