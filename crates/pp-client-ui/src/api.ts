@@ -480,6 +480,11 @@ export function authorizeTun(): Promise<string> {
   return invoke<string>("authorize_tun");
 }
 
+/** 是否具备 GPU 加速渲染能力（决定 toast 使用 HeroUI 原生动画还是自定义静态实现）。 */
+export function gpuAcceleration(): Promise<boolean> {
+  return invoke<boolean>("gpu_acceleration");
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {

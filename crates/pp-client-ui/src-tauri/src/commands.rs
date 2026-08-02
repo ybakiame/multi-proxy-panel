@@ -1983,6 +1983,48 @@ pub async fn update_subscription(
     Ok(SubscriptionView::from_sub(sub))
 }
 
+// ---------- 渲染能力检测 ----------
+
+/// 是否具备 GPU 加速渲染能力（决定前端使用 HeroUI 动画 toast 还是自定义静态
+/// toast）。
+///
+/// 检测规则：
+/// - 非 Linux（Windows / macOS）→ `true`（无 WebKitGTK 软渲染问题）；
+/// - Linux 且为 WSL（[`crate::is_wsl`]）：`/dev/dxg` 存在（WSLg GPU 直通）且
+///   `LIBGL_ALWAYS_SOFTWARE` 未设置或为 `"0"` → `true`，否则 `false`；
+/// - 原生 Linux：`LIBGL_ALWAYS_SOFTWARE=1` 时 `false`，否则 `true`（无法精确
+///   探测时保守认为有 GPU）。
+#[tauri::command]
+pub fn gpu_acceleration() -> bool {
+    let os_release = std::fs::read_to_string("/proc/sys/kernel/osrelease").ok();
+    let libgl_always_software = std::env::var("LIBGL_ALWAYS_SOFTWARE").ok();
+    gpu_acceleration_impl(
+        os_release.as_deref(),
+        std::path::Path::new("/dev/dxg").exists(),
+        libgl_always_software.as_deref(),
+    )
+}
+
+/// `gpu_acceleration` 的纯判定逻辑（按注入的 `(os_release 内容, dxg 存在性,
+/// env)` 参数化，便于命令层测试；平台是否为 Linux 由 `cfg!` 编译期决定）。
+fn gpu_acceleration_impl(
+    os_release: Option<&str>,
+    has_dxg: bool,
+    libgl_always_software: Option<&str>,
+) -> bool {
+    // 非 Linux（Windows / macOS）无 WSL 软渲染问题 → 有 GPU。
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    // WSL：无 GPU 直通或强制软渲染时判定为无 GPU（前端用自定义静态 toast 规避
+    // WebKitGTK view-transition 崩溃）。
+    if os_release.is_some_and(crate::is_wsl_osrelease) {
+        return has_dxg && libgl_always_software.is_none_or(|v| v == "0");
+    }
+    // 原生 Linux：仅显式强制软渲染时判定为无 GPU，否则保守认为有 GPU。
+    libgl_always_software.is_none_or(|v| v != "1")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2688,5 +2730,75 @@ mod tests {
         set_rule_mode_persist(dir.path(), "direct").unwrap();
         let view = idle_status_view(dir.path());
         assert_eq!(view.rule_mode, "direct");
+    }
+
+    // ---------- GPU 加速检测（gpu_acceleration） ----------
+
+    #[test]
+    fn gpu_acceleration_native_linux_has_gpu_unless_forced_software() {
+        // 原生 Linux（osrelease 无 WSL 标识）+ 未强制软渲染 → 有 GPU（保守）。
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            None,
+        ));
+        // dxg 存在与否不影响原生 Linux 判定。
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            Some("0"),
+        ));
+        // 原生 Linux + LIBGL_ALWAYS_SOFTWARE=1 → 无 GPU。
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            Some("1"),
+        ));
+        // osrelease 读取失败视为非 WSL → 按原生 Linux 保守判定有 GPU。
+        assert!(gpu_acceleration_impl(None, false, None));
+    }
+
+    #[test]
+    fn gpu_acceleration_wsl_requires_dxg_and_no_forced_software() {
+        // WSL + dxg 存在 + 未强制软渲染 → 有 GPU。
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            Some("0"),
+        ));
+        // WSL 无 dxg（无 WSLg GPU 直通）→ 无 GPU（软渲染兜底）。
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            false,
+            None,
+        ));
+        // WSL + dxg 但强制软渲染 → 无 GPU。
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            Some("1"),
+        ));
+    }
+
+    #[test]
+    fn gpu_acceleration_osrelease_matches_wsl_ignore_case() {
+        // osrelease 忽略大小写匹配 microsoft / wsl。
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-MICROSOFT-standard-WSL2"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(Some("microsoft"), true, None));
+        assert!(gpu_acceleration_impl(Some("  wsl2 kernel  "), true, None));
     }
 }

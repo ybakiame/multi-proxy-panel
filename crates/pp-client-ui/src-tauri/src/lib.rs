@@ -34,20 +34,40 @@ mod state;
 ///   跳过无谓的探测；
 /// - 用户显式设置的环境变量始终优先，本函数仅在对应变量未设置时注入。
 ///
+/// 判断 `/proc/sys/kernel/osrelease` 内容是否为 WSL 内核标识。
+///
+/// 规则：忽略大小写后包含 `microsoft` 或 `wsl` 即视为 WSL。`lib.rs`
+/// （WebKit 兼容注入）与 `commands.rs`（`gpu_acceleration` 检测）共用，避免两处
+/// 实现漂移。
+pub(crate) fn is_wsl_osrelease(osrelease: &str) -> bool {
+    let osrelease = osrelease.to_lowercase();
+    osrelease.contains("microsoft") || osrelease.contains("wsl")
+}
+
+/// 是否运行在 WSL（Linux 子系统）中。
+///
+/// 依据 `/proc/sys/kernel/osrelease`（见 [`is_wsl_osrelease`]）；非 Linux 平台或
+/// 读取失败时返回 `false`。
+pub(crate) fn is_wsl() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .map(|osrelease| is_wsl_osrelease(&osrelease))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// 仅在 Linux 且检测到 WSL 内核（`/proc/sys/kernel/osrelease` 内容忽略大小写包含
-/// `microsoft` 或 `wsl`）时生效；读取失败视为非 WSL，不注入。
+/// `microsoft` 或 `wsl`，见 [`is_wsl`]）时生效；读取失败视为非 WSL，不注入。
 ///
 /// 必须在任何 WebKit 相关初始化（Tauri 应用构建）之前调用。
 #[cfg(target_os = "linux")]
 fn configure_wsl_webkit_workaround() {
-    let is_wsl = std::fs::read_to_string("/proc/sys/kernel/osrelease")
-        .map(|osrelease| {
-            let osrelease = osrelease.to_lowercase();
-            osrelease.contains("microsoft") || osrelease.contains("wsl")
-        })
-        .unwrap_or(false);
-
-    if !is_wsl {
+    if !is_wsl() {
         return;
     }
 
@@ -150,6 +170,7 @@ pub fn run() {
             commands::set_active_core,
             commands::detect_system_cores,
             commands::delete_core,
+            commands::gpu_acceleration,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
