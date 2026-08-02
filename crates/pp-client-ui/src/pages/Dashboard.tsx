@@ -248,7 +248,8 @@ export default function Dashboard() {
   if (activeSub && !activeSub.enabled) {
     gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
-  if (!config?.core_binary || !activeCore) {
+  // Android 核心为内置 libbox（无「选择核心二进制」概念），核心门禁跳过。
+  if (!isAndroid && (!config?.core_binary || !activeCore)) {
     gateMessages.push("请先选择要使用的核心");
   }
   if (activeSub && activeSub.format === "ClashYaml" && config?.core_type === "singbox") {
@@ -362,35 +363,40 @@ export default function Dashboard() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="dashboard-core">核心</Label>
-              <Select
-                id="dashboard-core"
-                value={activeCore?.path ?? ""}
-                onChange={(key) => void handleSelectCore(String(key ?? ""))}
-                placeholder="请选择核心"
-                isDisabled={cores.length === 0}
-                fullWidth
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {cores.length === 0 ? (
-                      <ListBox.Item id="__empty" textValue="暂无可用核心">
-                        暂无可用核心
-                      </ListBox.Item>
-                    ) : (
-                      cores.map((core) => (
-                        <ListBox.Item key={core.path} id={core.path} textValue={coreLabel(core.core_type)}>
-                          {coreLabel(core.core_type)} {core.version}
-                          <ListBox.ItemIndicator />
+              {isAndroid ? (
+                // Android 核心为内置 libbox，无「选择核心二进制」概念，以静态行展示。
+                <span className="text-sm">内置 sing-box 核心（libbox）</span>
+              ) : (
+                <Select
+                  id="dashboard-core"
+                  value={activeCore?.path ?? ""}
+                  onChange={(key) => void handleSelectCore(String(key ?? ""))}
+                  placeholder="请选择核心"
+                  isDisabled={cores.length === 0}
+                  fullWidth
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {cores.length === 0 ? (
+                        <ListBox.Item id="__empty" textValue="暂无可用核心">
+                          暂无可用核心
                         </ListBox.Item>
-                      ))
-                    )}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
+                      ) : (
+                        cores.map((core) => (
+                          <ListBox.Item key={core.path} id={core.path} textValue={coreLabel(core.core_type)}>
+                            {coreLabel(core.core_type)} {core.version}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              )}
             </div>
           </div>
 
