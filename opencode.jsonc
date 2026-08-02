@@ -1,0 +1,63 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrator",
+  // opencode-go/kimi-k3 moonshot/kimi-k3
+  // deepseek/deepseek-v4-flash opencode-go/deepseek-v4-flash
+  // deepseek/deepseek-v4-pro opencode-go/deepseek-v4-pro
+  // 主模型配置（推荐强模型进行规划）
+  "agent": {
+    "orchestrator": {
+      "mode": "primary",
+      "model": "kimi-for-coding/k3",
+      "temperature": 0.15,
+      "steps": 50,
+      // allow ask deny
+      // bash edit
+      "permission": {
+        "*": "ask",
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "grep *": "allow",
+          "git status *": "allow",
+          "git log *": "allow",
+          "git diff *": "allow",
+          "git show *": "allow",
+          "rg *": "allow",
+        },
+        "task": {
+          "*": "deny",
+          "executor": "allow",
+          "reviewer": "allow",
+        },
+      },
+    },
+    // 编码执行模型配置（推荐次一档模型进行执行，速度更快）
+    "executor": {
+      "mode": "subagent",
+      "model": "deepseek/deepseek-v4-flash",
+      "temperature": 0.1,
+      "steps": 100, // 非ds或flash模型需要减少步骤数量
+      "hidden": true, // 用户不直接 @，只通过 Orchestrator 调用
+      "permission": {
+        // 改文件前询问（可改成 allow 更激进）
+        "edit": "allow",
+        "bash": "allow",
+        "task": "deny",
+      },
+    },
+    // 审查模型配置（推荐强模型进行审查）
+    "reviewer": {
+      "mode": "subagent",
+      "model": "kimi-for-coding/k3",
+      "temperature": 0.1,
+      "steps": 40,
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "task": "deny",
+      },
+    },
+  },
+}
