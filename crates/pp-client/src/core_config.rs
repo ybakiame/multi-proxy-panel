@@ -194,7 +194,9 @@ fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<St
 ///
 /// - `remote`：DoH（1.1.1.1），经主出站选择器出站（`detour` 读合成配置实际
 ///   selector tag，见 [`main_outbound_selector_tag`]，不硬编）；
-/// - `local`：UDP（223.5.5.5），经 `direct` 直连出站；
+/// - `local`：UDP（223.5.5.5），经 direct 直连出站（detour 指向 outbounds 中已有
+///   的 `type = direct` 出站，无则自动补建 `{"type": "direct", "tag": "direct"}`，
+///   见 [`direct_outbound_tag`]）；
 /// - `rules` 空数组、`final = remote`、`strategy = prefer_ipv4`。
 ///
 /// 服务器用新格式（`type` + `server`）声明：libbox（sing-box 1.12）原生解析，
@@ -209,12 +211,15 @@ pub fn inject_android_dns(composed: &mut Value) {
     let Some(detour) = main_outbound_selector_tag(obj) else {
         return;
     };
+    let Some(direct_tag) = direct_outbound_tag(obj) else {
+        return;
+    };
     obj.insert(
         "dns".to_string(),
         json!({
             "servers": [
                 { "tag": "remote", "type": "https", "server": "1.1.1.1", "server_port": 443, "detour": detour },
-                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53, "detour": "direct" }
+                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53, "detour": direct_tag }
             ],
             "rules": [],
             "final": "remote",
@@ -222,6 +227,35 @@ pub fn inject_android_dns(composed: &mut Value) {
         }),
     );
     ensure_domain_resolver(obj);
+}
+
+/// 查找 / 补建 direct 直连出站，返回其 tag（Android local DNS server 的 detour）。
+///
+/// 1. 优先复用 outbounds 中已有的 `type == "direct"` 出站：取第一个带 tag 的出站
+///    （tag 可能是自定义值，如 `DIRECT` / `dns-direct`），local DNS detour 指向它；
+/// 2. 不存在时追加 `{"type": "direct", "tag": "direct"}` 出站并返回 `"direct"`。
+///
+/// 注：sing-box 不允许 DNS server detour 到内建空 direct 出站（启动报错
+/// `detour to an empty direct outbound makes no sense`）——内建 direct 出站无法被
+/// 显式 detour 引用，且部分订阅模式下合成配置的 outbounds 根本没有 direct 出站，
+/// 因此必须指向显式声明的 direct 出站，缺则补建。
+fn direct_outbound_tag(obj: &mut serde_json::Map<String, Value>) -> Option<String> {
+    // 1. 复用已有 direct 出站（含非 "direct" tag）。
+    if let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) {
+        for outbound in outbounds {
+            if outbound.get("type").and_then(Value::as_str) == Some("direct") {
+                if let Some(tag) = outbound.get("tag").and_then(Value::as_str) {
+                    return Some(tag.to_string());
+                }
+            }
+        }
+    }
+    // 2. 无可用 direct 出站：追加一个（tag = "direct"），detour 用 "direct"。
+    obj.entry("outbounds")
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()?
+        .push(json!({ "type": "direct", "tag": "direct" }));
+    Some("direct".to_string())
 }
 
 /// mihomo 面板注入：
@@ -1095,6 +1129,57 @@ rules:
         );
     }
 
+    /// 订阅模式合成配置无 direct 出站时，local DNS 的 detour 不能硬编 `"direct"`
+    /// （sing-box 拒绝 detour 到内建空 direct 出站），应自动补建 direct 出站。
+    #[test]
+    fn inject_android_dns_appends_direct_outbound_when_missing() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["n1"], "default": "n1" },
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443 }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        // local DNS detour 指向自动补建的 direct 出站。
+        assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
+        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        let outbounds = cfg["outbounds"].as_array().unwrap();
+        let direct = outbounds
+            .iter()
+            .find(|o| o["type"] == "direct")
+            .expect("无 direct 出站时应自动补建");
+        assert_eq!(direct["tag"], "direct");
+    }
+
+    /// 已有 direct 出站（自定义 tag，如 `DIRECT` / `dns-direct`）时直接复用其 tag，
+    /// 不重复补建 `direct` 出站。
+    #[test]
+    fn inject_android_dns_reuses_existing_direct_with_custom_tag() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["dns-direct"], "default": "dns-direct" },
+                { "type": "direct", "tag": "dns-direct" }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        // local DNS detour 复用已有 direct 出站的 tag。
+        assert_eq!(cfg["dns"]["servers"][1]["detour"], "dns-direct");
+        // 不追加新的 direct 出站。
+        let direct_count = cfg["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|o| o["type"] == "direct")
+            .count();
+        assert_eq!(direct_count, 1, "已有 direct 出站时不应重复补建");
+    }
+
     /// 既无 selector 也无 route.final：无法确定 detour → 跳过注入（不产出非法配置）。
     #[test]
     fn inject_android_dns_skips_when_no_outbound_hint() {
@@ -1141,6 +1226,50 @@ rules:
         assert!(
             out.status.success(),
             "sing-box check failed (android dns injection): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// 订阅模式下合成配置完全没有 direct 出站：自动补建后必须通过真实
+    /// `sing-box check`（修复 `detour to an empty direct outbound makes no sense`）。
+    #[test]
+    fn android_config_without_direct_outbound_passes_real_singbox_check() {
+        let Some(bin) = sing_box_binary() else {
+            return;
+        };
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["auto"], "default": "auto" },
+                { "type": "urltest", "tag": "auto", "outbounds": ["n1"], "url": "https://www.gstatic.com/generate_204", "interval": "5m" },
+                { "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443 }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+        inject_android_dns(&mut cfg);
+
+        // 无 direct 出站 → local DNS detour 指向自动补建的 direct 出站。
+        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        assert!(
+            cfg["outbounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|o| o["type"] == "direct")
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+        let out = std::process::Command::new(&bin)
+            .args(["check", "-c"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "sing-box check failed (android dns injection, no direct outbound): {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }
