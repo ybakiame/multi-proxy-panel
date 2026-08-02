@@ -27,7 +27,12 @@ export function MobileNav() {
 
       <Drawer.Backdrop isOpen={isOpen} onOpenChange={setIsOpen}>
         <Drawer.Content placement="left">
-          <Drawer.Dialog>
+          <Drawer.Dialog
+            style={{
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+            }}
+          >
             <Drawer.CloseTrigger />
             <Drawer.Header>
               <Drawer.Heading>ProxyPanel</Drawer.Heading>
