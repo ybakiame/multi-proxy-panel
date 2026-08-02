@@ -38,3 +38,11 @@ pp-script = { path = "../../pp-script" }
 
 # 退出根 workspace，作为独立 cargo 项目构建（避免与根 workspace 冲突）。
 [workspace]
+
+# Android release 体积优化：strip 符号 + LTO + 单 codegen unit + size 优化。
+# 移动端 APK 中 lib/*.so 占 96%+ 体积，此配置对四 ABI 平均可再压缩约 30-40%。
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
