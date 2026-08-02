@@ -54,7 +54,7 @@ const CLASH_UI_OPTIONS = [
 
 export default function Settings() {
   const { config, error, loadConfig, saveConfig } = useAppStore();
-  // 运行平台（Android 由 VpnService 接管，网络设置隐藏 TUN 部分）。
+  // 运行平台（Android 恒由 VpnService 接管 TUN，展示静态说明并隐藏提权区域）。
   const [os, setOs] = useState<string | null>(null);
   const [mixedPort, setMixedPort] = useState(1080);
   // TUN 模式
@@ -268,7 +268,8 @@ export default function Settings() {
   const coreBinary = config?.core_binary ?? "";
   // `unsupported:<reason>` 状态中的不可用原因（仅展示用，无则保持 null）。
   const tunAuthReason = tunAuth?.startsWith("unsupported:") ? tunAuth.slice("unsupported:".length) : null;
-  // Android 由 VpnService 接管 TUN：网络设置卡片隐藏 TUN 部分（保留混合端口）。
+  // Android 由 VpnService（TUN）恒接管流量：显示 TUN 区但以静态说明替代开关，
+  // 且不展示提权相关区域；桌面保持开关与授权引导。
   const isAndroid = os === "android";
 
   return (
@@ -286,7 +287,9 @@ export default function Settings() {
       <Card>
         <Card.Header>
           <Card.Title>网络设置</Card.Title>
-          <Card.Description>{isAndroid ? "本地混合端口配置" : "本地混合端口与虚拟网卡（TUN）配置"}</Card.Description>
+          <Card.Description>
+            {isAndroid ? "本地混合端口与 VPN 服务（TUN）配置" : "本地混合端口与虚拟网卡（TUN）配置"}
+          </Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -307,137 +310,143 @@ export default function Settings() {
             />
           </div>
 
-          {/* TUN 为桌面专属设置：Android 由 VpnService 接管，隐藏 TUN 部分。 */}
-          {!isAndroid && (
-            <>
+          {/* TUN 区：桌面以开关启用并需提权授权；Android 由 VpnService（TUN）恒接管
+              全部流量，以静态说明替代开关且不展示提权相关区域。协议栈与自动路由两平台
+              均可编辑（持久化后参与合成 tun 入站）。 */}
+          {isAndroid ? (
+            <span className="text-sm text-muted">Android 始终通过 VPN 服务（TUN）接管全部流量</span>
+          ) : (
+            <Switch
+              isSelected={tunEnabled}
+              onChange={(next) => {
+                setTunEnabled(next);
+                void persist({ tun_enabled: next });
+              }}
+            >
+              <Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                启用 TUN 模式
+              </Switch.Content>
+            </Switch>
+          )}
+
+          {/* TUN 授权区仅桌面展示：Android 由 VpnService 系统授权，无提权语义。 */}
+          {!isAndroid && tunEnabled && (
+            <div className="flex flex-col gap-3">
+              {tunAuth === "authorized" && (
+                <div className="flex items-center gap-2">
+                  <Chip size="sm" variant="soft" color="success">
+                    已授权
+                  </Chip>
+                  <span className="text-xs text-muted">核心已具备 TUN 提权能力</span>
+                </div>
+              )}
+
+              {tunAuth === "needs_auth" && (
+                <Alert status="warning">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>TUN 需要系统授权</Alert.Title>
+                    <Alert.Description>
+                      当前核心未获得 TUN 提权，授权后才能接管全部流量（失败时按错误提示处理：Linux 安装 polkit、Windows
+                      以管理员身份重启应用）。
+                    </Alert.Description>
+                    <div className="mt-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isPending={tunAuthBusy}
+                        onPress={() => void handleAuthorizeTun()}
+                      >
+                        立即授权
+                      </Button>
+                    </div>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              {tunAuthReason && (
+                <Alert status="default">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>TUN 授权不可用</Alert.Title>
+                    <Alert.Description>{tunAuthReason}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              {tunAuthError && (
+                <Alert status="danger">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>授权失败</Alert.Title>
+                    <Alert.Description>{tunAuthError}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="settings-tun-stack">协议栈</Label>
+              <Select
+                id="settings-tun-stack"
+                value={tunStack}
+                onChange={(value) => {
+                  const next = String(value ?? "mixed");
+                  setTunStack(next);
+                  void persist({ tun_stack: next });
+                }}
+                fullWidth
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {TUN_STACK_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+            <div className="flex items-end">
               <Switch
-                isSelected={tunEnabled}
+                isSelected={tunAutoRoute}
                 onChange={(next) => {
-                  setTunEnabled(next);
-                  void persist({ tun_enabled: next });
+                  setTunAutoRoute(next);
+                  void persist({ tun_auto_route: next });
                 }}
               >
                 <Switch.Content>
                   <Switch.Control>
                     <Switch.Thumb />
                   </Switch.Control>
-                  启用 TUN 模式
+                  自动路由
                 </Switch.Content>
               </Switch>
+            </div>
+          </div>
 
-              {tunEnabled && (
-                <div className="flex flex-col gap-3">
-                  {tunAuth === "authorized" && (
-                    <div className="flex items-center gap-2">
-                      <Chip size="sm" variant="soft" color="success">
-                        已授权
-                      </Chip>
-                      <span className="text-xs text-muted">核心已具备 TUN 提权能力</span>
-                    </div>
-                  )}
-
-                  {tunAuth === "needs_auth" && (
-                    <Alert status="warning">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>TUN 需要系统授权</Alert.Title>
-                        <Alert.Description>
-                          当前核心未获得 TUN 提权，授权后才能接管全部流量（失败时按错误提示处理：Linux 安装
-                          polkit、Windows 以管理员身份重启应用）。
-                        </Alert.Description>
-                        <div className="mt-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            isPending={tunAuthBusy}
-                            onPress={() => void handleAuthorizeTun()}
-                          >
-                            立即授权
-                          </Button>
-                        </div>
-                      </Alert.Content>
-                    </Alert>
-                  )}
-
-                  {tunAuthReason && (
-                    <Alert status="default">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>TUN 授权不可用</Alert.Title>
-                        <Alert.Description>{tunAuthReason}</Alert.Description>
-                      </Alert.Content>
-                    </Alert>
-                  )}
-
-                  {tunAuthError && (
-                    <Alert status="danger">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>授权失败</Alert.Title>
-                        <Alert.Description>{tunAuthError}</Alert.Description>
-                      </Alert.Content>
-                    </Alert>
-                  )}
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="settings-tun-stack">协议栈</Label>
-                  <Select
-                    id="settings-tun-stack"
-                    value={tunStack}
-                    onChange={(value) => {
-                      const next = String(value ?? "mixed");
-                      setTunStack(next);
-                      void persist({ tun_stack: next });
-                    }}
-                    fullWidth
-                  >
-                    <Select.Trigger>
-                      <Select.Value />
-                      <Select.Indicator />
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {TUN_STACK_OPTIONS.map((option) => (
-                          <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
-                            {option.label}
-                            <ListBox.ItemIndicator />
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
-                </div>
-                <div className="flex items-end">
-                  <Switch
-                    isSelected={tunAutoRoute}
-                    onChange={(next) => {
-                      setTunAutoRoute(next);
-                      void persist({ tun_auto_route: next });
-                    }}
-                  >
-                    <Switch.Content>
-                      <Switch.Control>
-                        <Switch.Thumb />
-                      </Switch.Control>
-                      自动路由
-                    </Switch.Content>
-                  </Switch>
-                </div>
-              </div>
-
-              <Alert status="default">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>权限说明</Alert.Title>
-                  <Alert.Description>
-                    TUN 模式需要管理员 / root 权限；设置页的 TUN / Clash 面板配置优先级高于协议配置中的覆写
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </>
+          {/* 权限说明仅桌面展示：Android 无 TUN 提权概念。 */}
+          {!isAndroid && (
+            <Alert status="default">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>权限说明</Alert.Title>
+                <Alert.Description>
+                  TUN 模式需要管理员 / root 权限；设置页的 TUN / Clash 面板配置优先级高于协议配置中的覆写
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
           )}
         </Card.Content>
       </Card>
