@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { gpuAcceleration } from "./api";
 import { Toaster } from "./components/Toaster";
 import { setToastMode } from "./toast";
+import { MobileNav } from "./layout/MobileNav";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Mitm from "./pages/Mitm";
@@ -119,17 +120,20 @@ export default function App() {
         {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
         <div className="flex h-full min-h-screen bg-background text-foreground">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto p-6">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/nodes" element={<Nodes />} />
-              <Route path="/mitm" element={<Mitm />} />
-              <Route path="/scripts" element={<Scripts />} />
-              <Route path="/override" element={<Override />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <MobileNav />
+            <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/nodes" element={<Nodes />} />
+                <Route path="/mitm" element={<Mitm />} />
+                <Route path="/scripts" element={<Scripts />} />
+                <Route path="/override" element={<Override />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+          </div>
         </div>
       </ErrorBoundary>
     </HashRouter>
