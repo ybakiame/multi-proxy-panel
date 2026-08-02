@@ -729,6 +729,9 @@ enum CachedRewriteKind {
     Mock {
         status: u16,
         body: String,
+        /// 合成响应自定义响应头；旧缓存缺省为空列表。
+        #[serde(default)]
+        headers: Vec<(String, String)>,
     },
 }
 
@@ -748,9 +751,14 @@ impl From<&RewriteKind> for CachedRewriteKind {
                 replacement: replacement.clone(),
             },
             RewriteKind::Reject => CachedRewriteKind::Reject,
-            RewriteKind::Mock { status, body } => CachedRewriteKind::Mock {
+            RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => CachedRewriteKind::Mock {
                 status: *status,
                 body: body.clone(),
+                headers: headers.clone(),
             },
         }
     }
@@ -770,7 +778,15 @@ impl CachedRewriteKind {
                 replacement,
             },
             CachedRewriteKind::Reject => RewriteKind::Reject,
-            CachedRewriteKind::Mock { status, body } => RewriteKind::Mock { status, body },
+            CachedRewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            },
         })
     }
 }

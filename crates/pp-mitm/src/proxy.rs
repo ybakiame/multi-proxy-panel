@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::ca::CaMaterial;
 use crate::config::MitmConfig;
 use crate::recorder::{TrafficRecord, TrafficRecorder};
-use crate::rewrite::{RewriteAction, RewriteEngine};
+use crate::rewrite::{RewriteAction, RewriteEngine, apply_header};
 use crate::script_hook::ScriptHookEngine;
 use crate::upstream::{UpstreamConnector, UpstreamProxy};
 
@@ -216,10 +216,28 @@ impl HttpHandler for Handler {
                 *res.status_mut() = StatusCode::FORBIDDEN;
                 return res.into();
             }
-            RewriteAction::Mock { status, body } => {
+            RewriteAction::Mock {
+                status,
+                body,
+                headers,
+            } => {
                 let mut res = Response::new(Body::from(body));
                 *res.status_mut() =
                     StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                // 合成响应透传自定义响应头；非法头名/值跳过。
+                for (name, value) in headers {
+                    match (
+                        HeaderName::from_bytes(name.as_bytes()),
+                        HeaderValue::from_str(&value),
+                    ) {
+                        (Ok(name), Ok(value)) => {
+                            res.headers_mut().append(name, value);
+                        }
+                        _ => {
+                            tracing::warn!("mock response header invalid, skipped: {name}: {value}")
+                        }
+                    }
+                }
                 return res.into();
             }
             RewriteAction::Continue => {}
@@ -255,9 +273,17 @@ impl HttpHandler for Handler {
                 status = StatusCode::FORBIDDEN.as_u16();
                 body = Some("rejected".to_string());
             }
-            RewriteAction::Mock { status: s, body: b } => {
+            RewriteAction::Mock {
+                status: s,
+                body: b,
+                headers: mock_headers,
+            } => {
                 status = s;
                 body = Some(b);
+                // mock headers 按 apply_header 语义应用到响应头：先删同名再追加。
+                for (name, value) in mock_headers {
+                    apply_header(&mut headers, &name, &Some(value));
+                }
             }
             RewriteAction::Continue => {}
         }

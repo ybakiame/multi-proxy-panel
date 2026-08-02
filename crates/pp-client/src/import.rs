@@ -1051,9 +1051,15 @@ fn parse_surge_header_rewrite(cfg: &mut ImportedConfig, line: &str) {
     }
 }
 
-/// Surge / Loon `[Map Local]` 行解析：`pattern data="..." data-type=text status-code=200` → `Mock`。
+/// Surge / Loon `[Map Local]` 行解析：
+/// `pattern data="..." data-type=text status-code=200 header="Name:value"` → `Mock`。
 ///
-/// pp-mitm `Mock` 无 headers 字段，`data-type` / `mime-type` 无法表达，记偏差。
+/// `data-type` / `mime-type` 映射为 Content-Type 响应头（`text` → `text/plain`、
+/// `json` → `application/json`、`html` → `text/html`、`css` → `text/css`、
+/// `js`/`javascript` → `application/javascript`、`xml` → `application/xml`；
+/// 值本身含 `/` 时视为完整 Content-Type 原样保留）。`header="Name:value"` 可重复
+/// 出现，按第一个 `:` 拆分为响应头。仅当 `header=` 未显式指定 Content-Type 时才
+/// 追加 `data-type` 映射出的 Content-Type（显式优先）。
 fn parse_surge_map_local(cfg: &mut ImportedConfig, line: &str) {
     let tokens = split_tokens_keep_quoted(line);
     if tokens.len() < 2 {
@@ -1065,6 +1071,8 @@ fn parse_surge_map_local(cfg: &mut ImportedConfig, line: &str) {
     };
     let mut data: Option<String> = None;
     let mut status = 200u16;
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let mut data_type: Option<String> = None;
     for pair in &tokens[1..] {
         let Some(eq) = pair.find('=') else {
             cfg.warn("map local", line, &format!("unrecognized token '{pair}'"));
@@ -1080,12 +1088,20 @@ fn parse_surge_map_local(cfg: &mut ImportedConfig, line: &str) {
                     cfg.warn("map local", line, &format!("invalid status-code '{value}'"));
                 }
             }
-            "data-type" | "mime-type" => {
-                cfg.warn(
-                    "map local",
-                    line,
-                    &format!("{key} cannot be expressed (Mock has no headers), ignored"),
-                );
+            "data-type" | "mime-type" => data_type = Some(strip_quotes(value).to_string()),
+            "header" => {
+                let header = strip_quotes(value);
+                match header.split_once(':') {
+                    Some((name, value)) => {
+                        let (name, value) = (name.trim(), value.trim());
+                        if name.is_empty() {
+                            cfg.warn("map local", line, &format!("invalid header '{header}'"));
+                        } else {
+                            headers.push((name.to_string(), value.to_string()));
+                        }
+                    }
+                    None => cfg.warn("map local", line, &format!("invalid header '{header}'")),
+                }
             }
             other => cfg.warn(
                 "map local",
@@ -1094,14 +1110,47 @@ fn parse_surge_map_local(cfg: &mut ImportedConfig, line: &str) {
             ),
         }
     }
+    // `data-type` / `mime-type` → Content-Type；仅当 `header=` 未显式指定时才追加。
+    if let Some(dt) = data_type {
+        let has_explicit_content_type = headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("content-type"));
+        if !has_explicit_content_type {
+            match content_type_for_data_type(&dt) {
+                Some(ct) => headers.push(("Content-Type".to_string(), ct)),
+                None => cfg.warn("map local", line, &format!("unknown data-type '{dt}'")),
+            }
+        }
+    }
     let Some(body) = data else {
         cfg.warn("map local", line, "missing 'data' parameter");
         return;
     };
     cfg.rewrites.push(RewriteRule {
         pattern,
-        kind: RewriteKind::Mock { status, body },
+        kind: RewriteKind::Mock {
+            status,
+            body,
+            headers,
+        },
     });
+}
+
+/// 把 Surge/Loon `data-type` / `mime-type` 值映射为 HTTP Content-Type。
+///
+/// 已知别名返回标准 MIME；值本身含 `/` 时视为完整 Content-Type 原样返回；
+/// 其余未知名返回 `None`（由调用方记 warning）。
+fn content_type_for_data_type(data_type: &str) -> Option<String> {
+    match data_type.trim().to_ascii_lowercase().as_str() {
+        "text" => Some("text/plain".to_string()),
+        "json" => Some("application/json".to_string()),
+        "html" => Some("text/html".to_string()),
+        "css" => Some("text/css".to_string()),
+        "js" | "javascript" => Some("application/javascript".to_string()),
+        "xml" => Some("application/xml".to_string()),
+        other if other.contains('/') => Some(other.to_string()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1324,9 +1373,18 @@ hostname = %APPEND% *.example.com, -exclude.example.com
 
         // [Map Local] → Mock
         match &cfg.rewrites[4].kind {
-            RewriteKind::Mock { status, body } => {
+            RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => {
                 assert_eq!(*status, 200);
                 assert_eq!(body, "<h1>offline</h1>");
+                // data-type=text → Content-Type: text/plain（无显式 header= 时追加）
+                assert_eq!(
+                    headers,
+                    &vec![("Content-Type".to_string(), "text/plain".to_string())]
+                );
             }
             other => panic!("unexpected kind: {other:?}"),
         }
@@ -1339,6 +1397,99 @@ hostname = %APPEND% *.example.com, -exclude.example.com
                 .any(|w| w.contains("exclude.example.com"))
         );
         assert!(cfg.warnings.iter().any(|w| w.contains("request-header")));
+    }
+
+    /// 爱奇艺真实样例：`header="Content-Type:application/json"` 与 `data-type=text`
+    /// 并存时显式 header= 优先（不再产生 data-type / header 相关 warning）。
+    #[test]
+    fn map_local_iqiyi_sample_with_explicit_header() {
+        let content = r#"
+[Map Local]
+^https?:\/\/iface2\.iqiyi\.com\/control\/3\.0\/init_proxy\? data-type=text data="{}" status-code=200 header="Content-Type:application/json"
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        assert_eq!(cfg.rewrites.len(), 1);
+        match &cfg.rewrites[0].kind {
+            RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => {
+                assert_eq!(*status, 200);
+                assert_eq!(body, "{}");
+                assert_eq!(
+                    headers,
+                    &vec![("Content-Type".to_string(), "application/json".to_string())]
+                );
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        assert!(
+            cfg.warnings.is_empty(),
+            "不应产生 data-type/header 相关警告: {:?}",
+            cfg.warnings
+        );
+    }
+
+    /// `header=` 无冒号、`data-type` 未知名均记 warning；可重复 `header=` 依次收集；
+    /// `header=` 显式指定 Content-Type 时 `data-type` 映射不再追加（显式优先）。
+    #[test]
+    fn map_local_invalid_header_and_unknown_data_type_warn() {
+        let content = r#"
+[Map Local]
+^https?://example\.com/off data="x" data-type=text header="X-A:1" header="broken" header="Content-Type:text/html" status-code=418
+^https?://example\.com/unknown data="y" data-type=magic
+"#;
+        let cfg = parse_import(content, ScriptDialect::Surge).unwrap();
+
+        assert_eq!(cfg.rewrites.len(), 2);
+        match &cfg.rewrites[0].kind {
+            RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => {
+                assert_eq!(*status, 418);
+                assert_eq!(body, "x");
+                // header= 显式 Content-Type 优先：data-type=text 的 text/plain 不追加；
+                // 无冒号的 "broken" 被丢弃。
+                assert_eq!(
+                    headers,
+                    &vec![
+                        ("X-A".to_string(), "1".to_string()),
+                        ("Content-Type".to_string(), "text/html".to_string()),
+                    ]
+                );
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        match &cfg.rewrites[1].kind {
+            RewriteKind::Mock {
+                status,
+                body,
+                headers,
+            } => {
+                assert_eq!(*status, 200);
+                assert_eq!(body, "y");
+                assert!(headers.is_empty(), "未知 data-type 不应追加 Content-Type");
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        assert!(
+            cfg.warnings
+                .iter()
+                .any(|w| w.contains("invalid header 'broken'")),
+            "应记录无效 header 警告: {:?}",
+            cfg.warnings
+        );
+        assert!(
+            cfg.warnings
+                .iter()
+                .any(|w| w.contains("unknown data-type 'magic'")),
+            "应记录未知 data-type 警告: {:?}",
+            cfg.warnings
+        );
     }
 
     #[test]

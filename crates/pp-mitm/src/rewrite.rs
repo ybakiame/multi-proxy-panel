@@ -25,7 +25,11 @@ pub enum RewriteKind {
     /// 直接拒绝该请求。
     Reject,
     /// 直接返回合成响应。
-    Mock { status: u16, body: String },
+    Mock {
+        status: u16,
+        body: String,
+        headers: Vec<(String, String)>,
+    },
 }
 
 /// 单条重写规则：正则模式 + 动作。
@@ -40,7 +44,11 @@ pub struct RewriteRule {
 pub enum RewriteAction {
     Continue,
     Reject,
-    Mock { status: u16, body: String },
+    Mock {
+        status: u16,
+        body: String,
+        headers: Vec<(String, String)>,
+    },
 }
 
 /// 按顺序应用一组重写规则。
@@ -84,10 +92,12 @@ impl RewriteEngine {
                 RewriteKind::Mock {
                     status,
                     body: mock_body,
+                    headers,
                 } if rule.pattern.is_match(url) => {
                     return RewriteAction::Mock {
                         status: *status,
                         body: mock_body.clone(),
+                        headers: headers.clone(),
                     };
                 }
                 // 响应阶段规则留待 apply_response 处理。
@@ -128,10 +138,12 @@ impl RewriteEngine {
                 RewriteKind::Mock {
                     status,
                     body: mock_body,
+                    headers,
                 } if rule.pattern.is_match(url) => {
                     return RewriteAction::Mock {
                         status: *status,
                         body: mock_body.clone(),
+                        headers: headers.clone(),
                     };
                 }
                 // 请求阶段规则与 URL 重写在 apply_request 中处理。
@@ -143,7 +155,11 @@ impl RewriteEngine {
 }
 
 /// 改写指定请求头：先移除同名项，`value` 存在时追加新值，否则视为删除。
-fn apply_header(headers: &mut Vec<(String, String)>, name: &str, value: &Option<String>) {
+pub(crate) fn apply_header(
+    headers: &mut Vec<(String, String)>,
+    name: &str,
+    value: &Option<String>,
+) {
     headers.retain(|(n, _)| n.as_str() != name);
     if let Some(value) = value {
         headers.push((name.to_string(), value.clone()));
@@ -290,6 +306,7 @@ mod tests {
             kind: RewriteKind::Mock {
                 status: 403,
                 body: "forbidden".to_string(),
+                headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
             },
             pattern: Regex::new(".*").unwrap(),
         }]);
@@ -302,7 +319,43 @@ mod tests {
             RewriteAction::Mock {
                 status: 403,
                 body: "forbidden".to_string(),
+                headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
             }
         );
+    }
+
+    #[test]
+    fn mock_carries_headers_through_request_and_response() {
+        let e = engine(vec![RewriteRule {
+            kind: RewriteKind::Mock {
+                status: 200,
+                body: "{}".to_string(),
+                headers: vec![
+                    ("Content-Type".to_string(), "application/json".to_string()),
+                    ("X-Mock".to_string(), "yes".to_string()),
+                ],
+            },
+            pattern: Regex::new(".*").unwrap(),
+        }]);
+        let expected = RewriteAction::Mock {
+            status: 200,
+            body: "{}".to_string(),
+            headers: vec![
+                ("Content-Type".to_string(), "application/json".to_string()),
+                ("X-Mock".to_string(), "yes".to_string()),
+            ],
+        };
+
+        let mut url = "http://example.com/".to_string();
+        let mut headers = Vec::new();
+        let mut body: Option<String> = None;
+        let action = e.apply_request(&mut url, &mut headers, &mut body);
+        assert_eq!(action, expected);
+
+        let mut status = 200u16;
+        let mut headers = Vec::new();
+        let mut body: Option<String> = None;
+        let action = e.apply_response("http://example.com/", &mut status, &mut headers, &mut body);
+        assert_eq!(action, expected);
     }
 }
