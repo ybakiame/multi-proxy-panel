@@ -11,13 +11,16 @@ mod state;
 /// 合成器（compositing）/ DMA-BUF 渲染路径会输出黑屏，这是上游已知问题，与前端
 /// 代码无关。通过注入以下环境变量可强制 WebKitGTK 走软件合成路径：
 ///
-/// - `WEBKIT_DISABLE_COMPOSITING_MODE=1`：禁用 GPU 合成，改走软件合成；
 /// - `WEBKIT_DISABLE_DMABUF_RENDERER=1`：禁用 DMA-BUF 渲染器。
+///
+/// 注：实测 `WEBKIT_DISABLE_COMPOSITING_MODE=1` 在部分 WSLg/WebKitGTK 组合下反而
+/// 会导致页面完全不渲染，故本函数仅注入 DMA-BUF 禁用；需要禁用合成模式的用户可
+/// 自行显式设置该变量。
 ///
 /// 仅在 Linux 且检测到 WSL 内核（`/proc/sys/kernel/osrelease` 内容忽略大小写包含
 /// `microsoft` 或 `wsl`）时注入；读取失败视为非 WSL，不注入。若用户已显式设置
-/// 同名环境变量（例如 `WEBKIT_DISABLE_COMPOSITING_MODE=0`），则以用户设置为准，
-/// 本函数仅在变量未设置时注入，已设置的同名环境变量优先。
+/// 同名环境变量，则以用户设置为准，本函数仅在变量未设置时注入，已设置的同名
+/// 环境变量优先。
 ///
 /// 必须在任何 WebKit 相关初始化（Tauri 应用构建）之前调用。
 #[cfg(target_os = "linux")]
@@ -33,19 +36,14 @@ fn configure_wsl_webkit_workaround() {
         return;
     }
 
-    for (name, value) in [
-        ("WEBKIT_DISABLE_COMPOSITING_MODE", "1"),
-        ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
-    ] {
-        if std::env::var_os(name).is_none() {
-            std::env::set_var(name, value);
-        }
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
     // tracing 尚未初始化（见下方 subscriber 的创建），此处用 eprintln! 输出。
     eprintln!(
         "[pp-client-ui] WSL 检测到，已启用 WebKitGTK 兼容模式 \
-         (WEBKIT_DISABLE_COMPOSITING_MODE=1, WEBKIT_DISABLE_DMABUF_RENDERER=1)"
+         (WEBKIT_DISABLE_DMABUF_RENDERER=1)"
     );
 }
 
