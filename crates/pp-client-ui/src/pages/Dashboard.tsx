@@ -12,6 +12,7 @@ import {
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
 import { useAppStore } from "../store";
+import { toastSuccess, toastWarning } from "../toast";
 
 const CORE_LABELS: Record<CoreType, string> = {
   singbox: "sing-box",
@@ -40,11 +41,11 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [saveWarning, setSaveWarning] = useState<string | null>(null);
 
   /**
-   * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值），
-   * 成功返回后端 warning，失败时 store.error 由页面级 Alert 展示并 `loadConfig()` 回滚。
+   * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
+   * 保存结果通过全局 toast 反馈：有后端非阻塞提示走 warning，否则成功提示；
+   * 失败时 store.error 由页面级 Alert 展示并 `loadConfig()` 回滚。
    */
   const persistConfig = useCallback(
     async (patch: Partial<ClientConfig>) => {
@@ -52,10 +53,13 @@ export default function Dashboard() {
       if (!current) {
         return;
       }
-      setSaveWarning(null);
       try {
         const warning = await saveConfig({ ...current, ...patch });
-        setSaveWarning(warning);
+        if (warning) {
+          toastWarning(warning);
+        } else {
+          toastSuccess("设置已保存");
+        }
       } catch {
         await loadConfig();
       }
@@ -104,6 +108,7 @@ export default function Dashboard() {
     setBusy("start");
     try {
       await start();
+      toastSuccess("代理已启动");
     } finally {
       setBusy(null);
     }
@@ -113,6 +118,7 @@ export default function Dashboard() {
     setBusy("stop");
     try {
       await stop();
+      toastSuccess("代理已停止");
     } finally {
       setBusy(null);
     }
@@ -349,7 +355,6 @@ export default function Dashboard() {
               </Switch>
               <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
             </div>
-            {saveWarning && <span className="text-xs text-warning">{saveWarning}</span>}
           </div>
 
           <div className="flex items-center gap-4">

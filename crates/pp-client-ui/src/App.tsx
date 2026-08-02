@@ -1,5 +1,5 @@
 import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
-import { useTheme } from "@heroui/react";
+import { ToastProvider, useTheme } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -78,20 +78,22 @@ export default function App() {
     <HashRouter>
       <ThemeBootstrap />
       <ErrorBoundary>
-        <div className="flex h-full min-h-screen bg-background text-foreground">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto p-6">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/nodes" element={<Nodes />} />
-              <Route path="/mitm" element={<Mitm />} />
-              <Route path="/scripts" element={<Scripts />} />
-              <Route path="/override" element={<Override />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
+        <ToastProvider placement="bottom end" maxVisibleToasts={3}>
+          <div className="flex h-full min-h-screen bg-background text-foreground">
+            <Sidebar />
+            <main className="flex-1 overflow-y-auto p-6">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/nodes" element={<Nodes />} />
+                <Route path="/mitm" element={<Mitm />} />
+                <Route path="/scripts" element={<Scripts />} />
+                <Route path="/override" element={<Override />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+          </div>
+        </ToastProvider>
       </ErrorBoundary>
     </HashRouter>
   );

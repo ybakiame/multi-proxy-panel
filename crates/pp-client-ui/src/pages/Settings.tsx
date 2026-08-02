@@ -12,6 +12,7 @@ import {
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView } from "../api";
 import { useAppStore } from "../store";
+import { toastError, toastSuccess, toastWarning } from "../toast";
 
 /** 兼容任务描述中的 PascalCase 值（`SingBox`/`Mihomo`）与后端 serde 值（`singbox`/`mihomo`）。 */
 function normalizeCoreType(value: string): string {
@@ -69,12 +70,8 @@ export default function Settings() {
   // GitHub 访问
   const [githubProxyPrefix, setGithubProxyPrefix] = useState("");
   const [fetchViaLocalProxy, setFetchViaLocalProxy] = useState(false);
-  // 保存后的轻量反馈：后端非阻塞提示（SaveConfigView.warning）、失败回显、短暂「已保存」。
-  const [saveWarning, setSaveWarning] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [justSaved, setJustSaved] = useState(false);
+  // 输入类控件的防抖保存（500ms）。
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------- 核心管理 ----------
   const [cores, setCores] = useState<LocalCoreView[]>([]);
@@ -137,8 +134,8 @@ export default function Settings() {
    * 即改即存：以最新持久化配置为基底叠加补丁后调用 `save_config`。
    *
    * 读取 `useAppStore.getState().config` 而非闭包捕获，避免防抖保存时覆盖
-   * 期间其它控件的更新；失败时回滚控件值（重新 loadConfig 同步）并用本地
-   * `saveError` 回显错误（store.loadConfig 成功会清掉 store.error）。
+   * 期间其它控件的更新；失败时回滚控件值（重新 loadConfig 同步）。保存结果
+   * 通过全局 toast 反馈：有后端非阻塞提示走 warning，否则成功提示。
    */
   const persist = useCallback(
     async (patch: Partial<ClientConfig>) => {
@@ -146,19 +143,16 @@ export default function Settings() {
       if (!current) {
         return;
       }
-      setSaveWarning(null);
-      setSaveError(null);
       try {
         const warning = await saveConfig({ ...current, ...patch });
-        setSaveWarning(warning);
-        setJustSaved(true);
-        if (savedTimerRef.current) {
-          clearTimeout(savedTimerRef.current);
+        if (warning) {
+          toastWarning(warning);
+        } else {
+          toastSuccess("设置已保存");
         }
-        savedTimerRef.current = setTimeout(() => setJustSaved(false), 1500);
         await loadConfig();
       } catch (err) {
-        setSaveError(toErrorMessage(err));
+        toastError(toErrorMessage(err));
         await loadConfig();
       }
     },
@@ -274,19 +268,8 @@ export default function Settings() {
         <p className="text-sm text-muted">客户端连接与核心运行配置</p>
       </div>
 
-      {/* 页面级保存反馈：所有卡片的 persist 反馈共用 */}
-      {saveWarning && (
-        <Alert status="warning">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>已保存，但有提示</Alert.Title>
-            <Alert.Description>{saveWarning}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted">所有修改即时保存</span>
-        {justSaved && <span className="text-sm text-success">已保存</span>}
       </div>
 
       {/* 网络设置 */}
@@ -776,16 +759,6 @@ export default function Settings() {
           )}
         </Card.Content>
       </Card>
-
-      {saveError && (
-        <Alert status="danger">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>保存失败，已回滚</Alert.Title>
-            <Alert.Description>{saveError}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
 
       {error && (
         <Alert status="danger">
