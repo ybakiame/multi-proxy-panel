@@ -12,7 +12,7 @@ import {
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
 import { useAppStore } from "../store";
-import { toastSuccess, toastWarning } from "../toast";
+import { toastError, toastSuccess, toastWarning } from "../toast";
 
 const CORE_LABELS: Record<CoreType, string> = {
   singbox: "sing-box",
@@ -60,7 +60,9 @@ export default function Dashboard() {
         } else {
           toastSuccess("设置已保存");
         }
-      } catch {
+      } catch (err) {
+        // 保存失败仅落在 store.error（会被 Alert 展示但用户易忽略），补全局 toast 强化反馈。
+        toastError(toErrorMessage(err));
         await loadConfig();
       }
     },
@@ -109,6 +111,12 @@ export default function Dashboard() {
     try {
       await start();
       toastSuccess("代理已启动");
+    } catch (err) {
+      // store 已记录 error（由页面 Alert 展示）；`tun_auth_required` 走现有引导不重复 toast。
+      const message = toErrorMessage(err);
+      if (!message.includes("tun_auth_required")) {
+        toastError(message);
+      }
     } finally {
       setBusy(null);
     }
@@ -119,6 +127,11 @@ export default function Dashboard() {
     try {
       await stop();
       toastSuccess("代理已停止");
+    } catch (err) {
+      const message = toErrorMessage(err);
+      if (!message.includes("tun_auth_required")) {
+        toastError(message);
+      }
     } finally {
       setBusy(null);
     }
@@ -151,6 +164,8 @@ export default function Dashboard() {
       const next = await setRuleModeApi(mode);
       setStatus(next);
       setActionError(null);
+      // 同步 store.config，避免 persistConfig 用陈旧的 rule_mode 基底覆盖本次修改。
+      await loadConfig();
     } catch (err) {
       setActionError(toErrorMessage(err));
     } finally {
@@ -190,9 +205,15 @@ export default function Dashboard() {
   const activeSub = subs.find((sub) => sub.id === config?.active_subscription_id) ?? null;
   const activeCore = cores.find((core) => core.active) ?? null;
 
+  // 旧版 Hub 直连模式：未选择订阅但 hub_url 与 sub_token 均已配置时放行（deprecated）。
+  const legacyHub = !activeSub && Boolean(config?.hub_url && config?.sub_token);
+
   const gateMessages: string[] = [];
-  if (!activeSub) {
+  if (!activeSub && !legacyHub) {
     gateMessages.push("请先选择要使用的订阅");
+  }
+  if (activeSub && !activeSub.enabled) {
+    gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
   if (!config?.core_binary || !activeCore) {
     gateMessages.push("请先选择要使用的核心");
@@ -200,9 +221,14 @@ export default function Dashboard() {
   if (activeSub && activeSub.format === "ClashYaml" && config?.core_type === "singbox") {
     gateMessages.push("该订阅为 Clash 格式，需切换 mihomo 核心");
   }
+  if (activeSub && activeSub.format === "SingBoxJson" && config?.core_type === "mihomo") {
+    gateMessages.push("该订阅为 sing-box 格式，需切换 sing-box 核心");
+  }
   if (activeSub?.profile_id) {
     const profile = profiles.find((p) => p.id === activeSub.profile_id);
-    if (profile && config && profile.core_type !== config.core_type) {
+    if (!profile) {
+      gateMessages.push("关联的覆写模板已失效，请在订阅页重新关联");
+    } else if (config && profile.core_type !== config.core_type) {
       gateMessages.push(`关联覆写适用于 ${coreLabel(profile.core_type)}，与当前核心不匹配`);
     }
   }
@@ -323,6 +349,9 @@ export default function Dashboard() {
               {message}
             </span>
           ))}
+          {legacyHub && (
+            <span className="text-xs text-warning">使用旧版 Hub 订阅（deprecated），建议到「订阅」页添加订阅</span>
+          )}
 
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">

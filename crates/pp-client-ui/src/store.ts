@@ -34,6 +34,9 @@ interface AppStore {
   clearError: () => void;
 }
 
+/** `saveConfig` 串行化链：前一次保存完成后再执行下一个，避免两次保存交错时旧基底覆盖新修改。 */
+let saveChain: Promise<unknown> = Promise.resolve();
+
 export const useAppStore = create<AppStore>((set) => ({
   config: null,
   status: null,
@@ -53,7 +56,9 @@ export const useAppStore = create<AppStore>((set) => ({
   refreshStatus: async () => {
     try {
       const status = await proxyStatus();
-      set({ status, error: null });
+      // 注意：轮询成功不再清 error，避免吞掉 start/stop/saveConfig 等操作刚记录的错误；
+      // 错误由后续成功的 start/stop/saveConfig/loadConfig 清除。
+      set({ status });
     } catch (err) {
       set({ error: toErrorMessage(err) });
     }
@@ -71,17 +76,23 @@ export const useAppStore = create<AppStore>((set) => ({
   setStatus: (status) => set({ status }),
 
   saveConfig: async (cfg) => {
-    set({ loading: true });
-    try {
-      const view = await saveConfigApi(cfg);
-      set({ config: cfg, error: null });
-      return view.warning ?? null;
-    } catch (err) {
-      set({ error: toErrorMessage(err) });
-      throw err;
-    } finally {
-      set({ loading: false });
-    }
+    // 模块级 Promise 链串行化：前一次保存完成后才执行下一个，避免交错时旧基底覆盖新修改。
+    const run = saveChain.then(async () => {
+      set({ loading: true });
+      try {
+        const view = await saveConfigApi(cfg);
+        set({ config: cfg, error: null });
+        return view.warning ?? null;
+      } catch (err) {
+        set({ error: toErrorMessage(err) });
+        throw err;
+      } finally {
+        set({ loading: false });
+      }
+    });
+    // 链吞掉异常保证后续排队任务不被中断；返回值仍保留给调用方。
+    saveChain = run.catch(() => undefined);
+    return run;
   },
 
   start: async () => {

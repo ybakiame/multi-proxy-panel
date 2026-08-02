@@ -125,7 +125,6 @@ export default function Nodes() {
 
   // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示与关联覆写过滤。
   const clientCoreType = useAppStore((state) => state.config?.core_type);
-  const config = useAppStore((state) => state.config);
   const loadConfig = useAppStore((state) => state.loadConfig);
 
   const refreshSubs = useCallback(async () => {
@@ -200,10 +199,8 @@ export default function Nodes() {
     try {
       await setSubscriptionEnabled(sub.id, !sub.enabled);
       await refreshSubs();
-      // 停用的是当前生效订阅时，后端已自动清除选中；本地刷新配置保持首页一致。
-      if (sub.enabled && config?.active_subscription_id === sub.id) {
-        await loadConfig();
-      }
+      // 本地刷新配置，与首页选中的生效订阅保持同步（停用当前生效订阅时后端会清除选中）。
+      await loadConfig();
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
