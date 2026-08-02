@@ -1,0 +1,43 @@
+# Android 交叉编译工具链配置（cargo 沿「当前工作目录」向上发现配置）。
+#
+# 本配置放在 `crates/pp-client-ui/.cargo/`（而非 src-tauri/.cargo/）：`bunx tauri
+# android build` 由 tauri CLI 从本目录（前端项目根）调用 cargo，cargo 只沿 cwd
+# 向上查找 `.cargo/config.toml`，因此找不到 src-tauri 内的配置。src-tauri/.cargo/
+# 下的同名配置仍保留，仅供在 src-tauri 内裸 `cargo check --target *-android` 使用。
+#
+# 覆盖 gradle rust 插件默认构建的全部 4 个 ABI（arm64-v8a / armeabi-v7a / x86 /
+# x86_64）。tauri CLI 会自行注入 CARGO_TARGET_*_LINKER 与链接 RUSTFLAGS；但 cc-rs
+# 编译 C 依赖（ring / aws-lc-sys / lzma-sys 等）需要的 CC/AR，以及 rquickjs-sys
+# bindgen 生成绑定时需要的 NDK sysroot，都必须由本配置补齐。
+#
+# 注意：cargo 配置值不支持环境变量展开，此处按本机 NDK（minSdk 26，对应
+# `*-android26-clang`）写死绝对路径。NDK 路径变更时请同步修改本文件。
+[env]
+CC_aarch64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+AR_aarch64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+CC_armv7_linux_androideabi = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+AR_armv7_linux_androideabi = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+CC_i686_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android26-clang"
+AR_i686_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+CC_x86_64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
+AR_x86_64_linux_android = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+
+# rquickjs-sys 在 Android target 走 `bindgen` feature 生成 bindings：libclang 解析
+# 头文件需要指定 NDK sysroot，否则会误用 host 的 /usr/include（报
+# `gnu/stubs-32.h not found`）。
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android = "--target=aarch64-linux-android26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+BINDGEN_EXTRA_CLANG_ARGS_armv7_linux_androideabi = "--target=armv7-linux-androideabi26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+BINDGEN_EXTRA_CLANG_ARGS_i686_linux_android = "--target=i686-linux-android26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android = "--target=x86_64-linux-android26 --sysroot=/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem /home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+
+[target.aarch64-linux-android]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+
+[target.armv7-linux-androideabi]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+
+[target.i686-linux-android]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android26-clang"
+
+[target.x86_64-linux-android]
+linker = "/home/ybakiame/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
