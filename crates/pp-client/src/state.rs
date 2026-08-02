@@ -153,6 +153,14 @@ impl ClientState {
         loaded.data_dir = data_dir;
         self.config = loaded;
 
+        // Android 强制覆盖：libbox 内置核心只支持 sing-box 配置，桌面那套
+        // 「选择核心二进制」在 Android 不存在，持久化的 core_type 可能为 mihomo；
+        // MITM / 系统代理 / TUN 为桌面专属功能，在 Android 上无对应实现或会
+        // 误拦启动（TUN 提权检查、系统代理 stub）。于配置加载后立即归一，避免
+        // 按持久化的桌面配置启动失败。
+        #[cfg(target_os = "android")]
+        apply_android_overrides(&mut self.config);
+
         // TUN 模式前置提权检查：未授权则拒绝启动并返回明确错误（错误信息以
         // `tun_auth_required` 开头并含二进制路径，前端据此展示授权入口）。
         if self.config.tun_enabled {
@@ -538,6 +546,28 @@ impl ClientState {
             let _ = tokio::time::timeout(Duration::from_secs(5), handle.handle).await;
         }
     }
+}
+
+/// Android 启动强制覆盖：libbox 内置核心只支持 sing-box 配置，且桌面专属功能在
+/// Android 上无对应实现（或会破坏 VpnService 接管）。
+///
+/// 各强制项原因：
+/// - `core_type = SingBox`：Android 核心为内置 libbox，仅接受 sing-box 配置；
+///   持久化的 `core_type` 可能为 mihomo，强制回退避免按 mihomo 合成配置导致启动失败；
+/// - `mitm_enabled = false`：MITM 依赖 P3 特性，libbox 不支持，禁用避免链路注入；
+/// - `system_proxy_enabled = false`：Android 系统代理为 stub，调用会报错；
+/// - `tun_enabled = false`：Android 流量由 VpnService（即 TUN）接管，桌面 TUN
+///   提权检查会误拦启动。
+///
+/// 仅在 Android 构建时由 [`ClientState::start`] 调用；桌面构建编译该函数仅供
+/// 单元测试验证语义。
+#[cfg(any(test, target_os = "android"))]
+fn apply_android_overrides(config: &mut ClientConfig) {
+    config.core_type = CoreType::SingBox;
+    config.mitm_enabled = false;
+    config.system_proxy_enabled = false;
+    config.tun_enabled = false;
+    tracing::info!("Android 强制覆盖：核心类型 = sing-box（libbox），禁用 MITM / 系统代理 / TUN");
 }
 
 /// 订阅格式 ↔ 核心类型绑定校验。
@@ -1540,6 +1570,28 @@ mod tests {
         let status = state.status().await;
         assert!(!status.core_running);
         assert_eq!(mock.calls(), vec![]);
+    }
+
+    /// Android 语义：`apply_android_overrides` 强制 sing-box 核心并禁用桌面专属
+    /// 功能。桌面构建无法执行 Android 路径，故抽取纯函数后在桌面测试其语义。
+    #[test]
+    fn apply_android_overrides_forces_singbox_and_disables_desktop_features() {
+        let mut cfg = ClientConfig {
+            core_type: CoreType::Mihomo,
+            mitm_enabled: true,
+            system_proxy_enabled: true,
+            tun_enabled: true,
+            ..ClientConfig::default()
+        };
+        apply_android_overrides(&mut cfg);
+        assert_eq!(
+            cfg.core_type,
+            CoreType::SingBox,
+            "Android 强制 sing-box 核心"
+        );
+        assert!(!cfg.mitm_enabled, "Android 禁用 MITM");
+        assert!(!cfg.system_proxy_enabled, "Android 禁用系统代理");
+        assert!(!cfg.tun_enabled, "Android 禁用 TUN");
     }
 
     /// 项 2：`tun_enabled=true` 且已授权（注入 Authorized 检测）→ 注入 tun 入站。
