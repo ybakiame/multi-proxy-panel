@@ -1,8 +1,12 @@
 package com.proxypanel.client
 
 import android.app.Activity
+import android.content.ContentValues
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
@@ -13,6 +17,14 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /** start 命令参数：sing-box JSON 配置内容。 */
 @InvokeArg
@@ -21,7 +33,7 @@ class StartArgs {
 }
 
 /**
- * Tauri 移动插件 "vpn"：暴露 prepare/start/stop/isRunning 四条命令。
+ * Tauri 移动插件 "vpn"：暴露 prepare/start/stop/isRunning/exportLogs 五条命令。
  *
  * 插件注册由 Rust 侧（tauri::plugin::PluginApi::register_android_plugin）完成。
  * prepare 命令经 [VpnService.prepare] 的 Activity 跳转完成系统 VPN 授权，
@@ -131,5 +143,98 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     // lastError 为 null 时键被 JSONObject 移除，Rust 侧 `#[serde(default)]` 回退 None。
     result.put("last_error", ProxyVpnService.lastError)
     invoke.resolve(result)
+  }
+
+  /**
+   * 把 `<pkg>/logs/` 下全部 `.log` 文件打包 zip 导出到公共 `Download/ProxyPanel/`：
+   * - API 29+：经 [MediaStore.Downloads] 插入（`RELATIVE_PATH=Download/ProxyPanel/`，
+   *   无需任何权限）；
+   * - API 26-28：旧式直接写公共下载目录（依赖 manifest 中
+   *   WRITE_EXTERNAL_STORAGE，maxSdkVersion 28）。
+   *
+   * 写入成功 resolve `Download/ProxyPanel/<文件名>` 展示路径；无日志文件时
+   * reject「暂无可导出的日志」。任何失败 reject 具体原因（异常不抛给调用方）。
+   */
+  @Command
+  fun exportLogs(invoke: Invoke) {
+    try {
+      val logFiles = collectLogFiles()
+      if (logFiles.isEmpty()) {
+        invoke.reject("暂无可导出的日志")
+        return
+      }
+      val fileName = "ProxyPanel-logs-${timestampFileName()}.zip"
+      val displayPath =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          exportViaMediaStore(logFiles, fileName)
+        } else {
+          exportToLegacyPublicDir(logFiles, fileName)
+        }
+      invoke.resolveObject(displayPath)
+    } catch (e: Exception) {
+      Log.e("VpnPlugin", "exportLogs failed", e)
+      invoke.reject("导出日志失败: ${e.message ?: e.javaClass.simpleName}")
+    }
+  }
+
+  /** 收集 `<pkg>/logs/` 下全部 `.log` 文件（目录不存在 / 无日志时返回空数组）。 */
+  private fun collectLogFiles(): Array<File> {
+    val logsDir = File(activity.filesDir.parentFile, "logs")
+    return logsDir.listFiles { f -> f.isFile && f.name.endsWith(".log") } ?: emptyArray()
+  }
+
+  /** 导出文件名的分钟级时间戳（`yyyyMMdd-HHmmss`）。 */
+  private fun timestampFileName(): String =
+    SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+
+  /** API 29+：经 [MediaStore.Downloads] 写入 `Download/ProxyPanel/`，返回展示路径。 */
+  private fun exportViaMediaStore(logFiles: Array<File>, fileName: String): String {
+    val values =
+      ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+        put(MediaStore.MediaColumns.MIME_TYPE, "application/zip")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ProxyPanel/")
+      }
+    val resolver = activity.contentResolver
+    val uri =
+      resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        ?: throw IllegalStateException("MediaStore 插入失败")
+    try {
+      resolver.openOutputStream(uri)?.use { writeZip(logFiles, it) }
+        ?: throw IllegalStateException("无法打开 MediaStore 输出流")
+    } catch (e: Exception) {
+      // 写入失败时清理半成品 MediaStore 条目。
+      resolver.delete(uri, null, null)
+      throw e
+    }
+    return "Download/ProxyPanel/$fileName"
+  }
+
+  /**
+   * API 26-28：旧式直接写公共下载目录 `Download/ProxyPanel/`。
+   * `getExternalStoragePublicDirectory` 已废弃，用 `@Suppress` 抑制告警；
+   * 写入依赖 manifest 中的 WRITE_EXTERNAL_STORAGE（maxSdkVersion 28）。
+   */
+  @Suppress("DEPRECATION")
+  private fun exportToLegacyPublicDir(logFiles: Array<File>, fileName: String): String {
+    val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    val panelDir = File(downloadDir, "ProxyPanel")
+    if (!panelDir.isDirectory && !panelDir.mkdirs()) {
+      throw IllegalStateException("无法创建导出目录 ${panelDir.absolutePath}")
+    }
+    val target = File(panelDir, fileName)
+    FileOutputStream(target).use { writeZip(logFiles, it) }
+    return "Download/ProxyPanel/$fileName"
+  }
+
+  /** 把多个日志文件平铺写入 zip（ZipEntry 仅取文件名，不打目录前缀）。 */
+  private fun writeZip(logFiles: Array<File>, output: OutputStream) {
+    ZipOutputStream(output.buffered()).use { zip ->
+      for (file in logFiles) {
+        zip.putNextEntry(ZipEntry(file.name))
+        file.inputStream().use { it.copyTo(zip) }
+        zip.closeEntry()
+      }
+    }
   }
 }

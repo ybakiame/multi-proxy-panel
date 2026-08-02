@@ -49,8 +49,9 @@ impl AndroidCoreBridge {
 ///
 /// Kotlin 侧 `invoke.reject(msg, code)` 的拒绝会落到 `PluginInvokeError::InvokeRejected`，
 /// 其中 `code = "vpn_not_authorized"` 表示需要系统 VPN 授权，以可识别前缀
-/// `vpn_not_authorized: <message>` 上抛给前端；其余拒绝保留 `[code] message` 形态。
-fn plugin_error(err: PluginInvokeError) -> PanelError {
+/// `vpn_not_authorized: <message>` 上抛给前端；其余拒绝保留 `[code] message` 形态
+/// （无 code 时仅 message）。`pub(crate)` 供 [`crate::logs::export_logs`] 复用。
+pub(crate) fn plugin_error(err: PluginInvokeError) -> PanelError {
     match err {
         PluginInvokeError::InvokeRejected(resp) => {
             let message = resp

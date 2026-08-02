@@ -4,13 +4,17 @@
 //! - 滚动文件：`data_dir/logs/app.log.<YYYY-MM-DD>`（[`init_logging`] 每日滚动）
 //! - libbox 日志：`data_dir/logs/libbox.log`（Kotlin 侧 writeLog 写入，
 //!   每行 `[RFC3339] message`，[`get_logs`] 读取尾部合并展示）
-//! - 导出文件：`data_dir/logs/export-<YYYYMMDD-HHMMSS>.log`（[`export_logs`] 合并产物）
+//! - 导出文件：`data_dir/logs/export-<YYYYMMDD-HHMMSS>.log`（[`export_logs`]
+//!   桌面端合并产物；Android 经插件导出到公共 `Download/ProxyPanel/`）
 //!
 //! 环形缓冲把每条事件以 [`LogEntry`] 存入全局 [`OnceLock`]，容量 [`RING_CAPACITY`]，
 //! 超出弹出最旧；供前端日志页通过 [`get_logs`] 查询，避免日志页请求走磁盘。
 
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+// `PathBuf` 仅桌面端导出逻辑使用（Android 导出走 Kotlin 插件，相关函数被 cfg 排除）。
+#[cfg(not(target_os = "android"))]
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{DateTime, FixedOffset};
@@ -318,11 +322,28 @@ fn entry_sort_ts(entry: &LogEntry) -> Option<DateTime<FixedOffset>> {
 
 /// Tauri 命令：导出日志并返回导出产物路径。
 ///
-/// 桌面：把 `data_dir/logs/` 下全部滚动文件按时间序合并写入
-/// `logs/export-<YYYYMMDD-HHMMSS>.log` 并返回其路径。
+/// - 桌面：把 `data_dir/logs/` 下全部滚动文件按时间序合并写入
+///   `logs/export-<YYYYMMDD-HHMMSS>.log` 并返回其路径（行为不变）；
+/// - Android：经 `vpn` 插件 `exportLogs` 命令把 `<pkg>/logs/` 下全部 `.log`
+///   打包 zip 写入公共 `Download/ProxyPanel/`（MediaStore），直接返回展示路径，
+///   不再生成本地 export 文件。
 #[tauri::command]
-pub fn export_logs(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    write_export(&state.data_dir.join("logs")).map(|path| path.to_string_lossy().to_string())
+pub async fn export_logs(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = &state;
+        let handle = crate::core_bridge::vpn_plugin_handle()
+            .ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
+        handle
+            .run_mobile_plugin_async::<String>("exportLogs", ())
+            .await
+            .map_err(crate::core_bridge::plugin_error)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        write_export(&state.data_dir.join("logs")).map(|path| path.to_string_lossy().to_string())
+    }
 }
 
 /// Tauri 命令：清空内存环形缓冲（不删除滚动文件）。
@@ -351,6 +372,9 @@ pub fn log_frontend(level: String, message: String) {
 /// 并保留 `app.log.<YYYY-MM-DD>` 滚动文件（`tracing_appender` 以日期结尾命名，
 /// 不以 `.log` 结尾）；排除本功能导出的 `export-*.log` 合并产物，避免重复累加。
 /// 按文件名字典序排序——`*.log.<YYYY-MM-DD>` 日期零填充，字典序即时间序。
+///
+/// 仅桌面端使用（Android 导出走 Kotlin 插件，见 [`export_logs`]）。
+#[cfg(not(target_os = "android"))]
 fn list_daily_files(logs_dir: &Path) -> Result<Vec<PathBuf>, String> {
     if !logs_dir.is_dir() {
         return Ok(Vec::new());
@@ -374,6 +398,9 @@ fn list_daily_files(logs_dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// 把全部滚动文件按时间序合并写入 `logs_dir/export-<YYYYMMDD-HHMMSS>.log`。
+///
+/// 仅桌面端使用（Android 导出走 Kotlin 插件，见 [`export_logs`]）。
+#[cfg(not(target_os = "android"))]
 fn write_export(logs_dir: &Path) -> Result<PathBuf, String> {
     if !logs_dir.is_dir() {
         return Err(format!("日志目录不存在：{}", logs_dir.display()));
