@@ -2,6 +2,8 @@
 //!
 //! 布局（数据目录 `data_dir`）：
 //! - 滚动文件：`data_dir/logs/app.log.<YYYY-MM-DD>`（[`init_logging`] 每日滚动）
+//! - libbox 日志：`data_dir/logs/libbox.log`（Kotlin 侧 writeLog 写入，
+//!   每行 `[RFC3339] message`，[`get_logs`] 读取尾部合并展示）
 //! - 导出文件：`data_dir/logs/export-<YYYYMMDD-HHMMSS>.log`（[`export_logs`] 合并产物）
 //!
 //! 环形缓冲把每条事件以 [`LogEntry`] 存入全局 [`OnceLock`]，容量 [`RING_CAPACITY`]，
@@ -11,6 +13,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use tracing::field::Field;
 use tracing::{field, Event, Subscriber};
@@ -22,6 +25,9 @@ use crate::state::AppState;
 
 /// 环形缓冲容量：超出后弹出最旧的条目。
 pub const RING_CAPACITY: usize = 1000;
+
+/// `logs/libbox.log` 尾部最多读取的字节数（Kotlin 侧 libbox 日志，防大文件全量读盘）。
+const LIBBOX_LOG_MAX_TAIL_BYTES: usize = 256 * 1024;
 
 /// 未设置 `RUST_LOG` 时的默认过滤规则（本应用相关 crate 提级）。
 const DEFAULT_ENV_FILTER: &str = "info,pp_client=debug,pp_mitm=debug,pp_script=debug";
@@ -210,31 +216,110 @@ pub fn init_logging(data_dir: &Path) -> WorkerGuard {
     guard
 }
 
-/// Tauri 命令：从环形缓冲取日志（最新在前），可按数量截断、按最小级别过滤。
+/// Tauri 命令：取日志（最新在前），可按数量截断、按最小级别过滤。
+///
+/// 除环形缓冲外，合并读取 `data_dir/logs/libbox.log` 尾部（Kotlin 侧 libbox
+/// 日志，最多最后 [`LIBBOX_LOG_MAX_TAIL_BYTES`] 字节）按 `[ts] message` 解析
+/// 为 `target="libbox"` 条目；两条来源按 ts 排序后倒序返回。
 ///
 /// `min_level` 取 `error`/`warn`/`info`/`debug`/`trace`，过滤掉级别更低的条目；
-/// 非法值等同不设过滤。
+/// 非法值等同不设过滤。libbox 条目级别统一为 `INFO`（消息正文含原始级别）。
 #[tauri::command]
-pub fn get_logs(limit: Option<usize>, min_level: Option<String>) -> Vec<LogEntry> {
+pub fn get_logs(
+    state: tauri::State<'_, AppState>,
+    limit: Option<usize>,
+    min_level: Option<String>,
+) -> Vec<LogEntry> {
+    get_logs_impl(&state.data_dir.join("logs"), limit, min_level)
+}
+
+/// `get_logs` 的纯逻辑（测试可注入日志目录）：合并环形缓冲与 `libbox.log`
+/// 尾部条目，按 ts 排序后倒序（最新在前）。
+fn get_logs_impl(
+    logs_dir: &Path,
+    limit: Option<usize>,
+    min_level: Option<String>,
+) -> Vec<LogEntry> {
     let min_rank = min_level.as_deref().and_then(level_rank);
     let mut entries: Vec<LogEntry> = ring_buffer()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .iter()
-        .filter(|entry| match min_rank {
-            Some(min) => level_rank(&entry.level).is_some_and(|rank| rank >= min),
-            None => true,
-        })
-        .rev()
+        .filter(|entry| passes_level_filter(entry, min_rank))
         .cloned()
         .collect();
+    entries.extend(
+        read_libbox_entries(logs_dir)
+            .into_iter()
+            .filter(|entry| passes_level_filter(entry, min_rank)),
+    );
+    // 按 ts 排序后倒序：时间戳解析失败（None）的条目视为最旧，排到最末。
+    entries.sort_by_key(entry_sort_ts);
+    entries.reverse();
     if let Some(limit) = limit {
         entries.truncate(limit);
     }
     entries
 }
 
-/// Tauri 命令：把 `data_dir/logs/` 下全部滚动文件按时间序合并导出，返回导出文件路径。
+/// 条目是否通过最小级别过滤（`min_rank = None` 表示不过滤）。
+fn passes_level_filter(entry: &LogEntry, min_rank: Option<u8>) -> bool {
+    match min_rank {
+        Some(min) => level_rank(&entry.level).is_some_and(|rank| rank >= min),
+        None => true,
+    }
+}
+
+/// 读取 `logs_dir/libbox.log` 尾部（最多 [`LIBBOX_LOG_MAX_TAIL_BYTES`] 字节），
+/// 按行解析为 `target="libbox"` 条目。文件不存在 / 读取失败返回空列表；
+/// 解析失败的行跳过。
+fn read_libbox_entries(logs_dir: &Path) -> Vec<LogEntry> {
+    let bytes = match std::fs::read(logs_dir.join("libbox.log")) {
+        Ok(bytes) => bytes,
+        Err(_) => return Vec::new(),
+    };
+    // 只取尾部最多 LIBBOX_LOG_MAX_TAIL_BYTES 字节；仅在真正截断时推进到下一行首，
+    // 避免把被切断的半个 UTF-8 字符/半行正文当整行解析（未截断时读全文件）。
+    let tail = if bytes.len() > LIBBOX_LOG_MAX_TAIL_BYTES {
+        let start = bytes.len() - LIBBOX_LOG_MAX_TAIL_BYTES;
+        let line_start = bytes[start..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(start, |i| start + i + 1);
+        &bytes[line_start..]
+    } else {
+        &bytes[..]
+    };
+    String::from_utf8_lossy(tail)
+        .lines()
+        .filter_map(parse_libbox_line)
+        .collect()
+}
+
+/// 解析 `[ts] message` 行：`ts` 为 Kotlin `writeLog` 写入的 RFC3339 本地时间戳
+/// （如 `2026-08-02T22:12:30.123+08:00`）。无 `[ts] ` 前缀或时间戳非法返回 `None`。
+fn parse_libbox_line(line: &str) -> Option<LogEntry> {
+    let rest = line.trim_end().strip_prefix('[')?;
+    let (ts, message) = rest.split_once("] ")?;
+    // 时间戳非法则整行跳过（排序亦依赖可解析时间戳）。
+    DateTime::parse_from_rfc3339(ts).ok()?;
+    Some(LogEntry {
+        ts: ts.to_string(),
+        level: "INFO".to_string(),
+        target: "libbox".to_string(),
+        message: message.to_string(),
+    })
+}
+
+/// 解析条目时间戳用于排序；解析失败返回 `None`（排序时排到最末）。
+fn entry_sort_ts(entry: &LogEntry) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(&entry.ts).ok()
+}
+
+/// Tauri 命令：导出日志并返回导出产物路径。
+///
+/// 桌面：把 `data_dir/logs/` 下全部滚动文件按时间序合并写入
+/// `logs/export-<YYYYMMDD-HHMMSS>.log` 并返回其路径。
 #[tauri::command]
 pub fn export_logs(state: tauri::State<'_, AppState>) -> Result<String, String> {
     write_export(&state.data_dir.join("logs")).map(|path| path.to_string_lossy().to_string())
@@ -326,8 +411,25 @@ mod tests {
         entries.iter().map(|e| e.message.clone()).collect()
     }
 
+    /// 创建临时日志目录（libbox.log 由各测试自行写入）。
+    fn temp_logs_dir(tag: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("pp-log-{tag}-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        logs_dir
+    }
+
+    fn remove_temp_logs_dir(logs_dir: &Path) {
+        std::fs::remove_dir_all(logs_dir.parent().unwrap()).ok();
+    }
+
+    /// 串行化访问全局环形缓冲的测试：环形缓冲是全局静态 `OnceLock`，而
+    /// `cargo test` 默认多线程并发执行，需加锁避免测试间互相清空/污染。
+    static RING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn ring_buffer_rolls_capacity() {
+        let _guard = RING_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_ring_buffer();
         for id in 0..(RING_CAPACITY + 5) {
             push_entry(test_entry(id, "INFO"));
@@ -361,27 +463,101 @@ mod tests {
 
     #[test]
     fn get_logs_filters_reverses_and_limits() {
+        let _guard = RING_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_ring_buffer();
+        // libbox.log 不存在：仅返回环形缓冲条目（覆盖「libbox.log 不存在」）。
+        let logs_dir = temp_logs_dir("filter");
         push_entry(test_entry(0, "INFO"));
         push_entry(test_entry(1, "WARN"));
         push_entry(test_entry(2, "ERROR"));
         push_entry(test_entry(3, "DEBUG"));
 
         // 倒序取全部：3,2,1,0。
-        let all = get_logs(None, None);
+        let all = get_logs_impl(&logs_dir, None, None);
         assert_eq!(
             entry_messages(&all),
             vec!["message 3", "message 2", "message 1", "message 0"]
         );
+        // 无 libbox.log 时不产生 libbox 条目。
+        assert!(!all.iter().any(|e| e.target == "libbox"));
 
         // min_level=warn：只剩 ERROR/WARN，倒序。
-        let filtered = get_logs(None, Some("warn".to_string()));
+        let filtered = get_logs_impl(&logs_dir, None, Some("warn".to_string()));
         assert_eq!(entry_messages(&filtered), vec!["message 2", "message 1"]);
 
         // limit 截断。
-        let limited = get_logs(Some(2), None);
+        let limited = get_logs_impl(&logs_dir, Some(2), None);
         assert_eq!(entry_messages(&limited), vec!["message 3", "message 2"]);
         clear_ring_buffer();
+        remove_temp_logs_dir(&logs_dir);
+    }
+
+    #[test]
+    fn get_logs_merges_libbox_log_sorted_desc() {
+        let _guard = RING_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_ring_buffer();
+        let logs_dir = temp_logs_dir("merge");
+        // 环形缓冲两条 + libbox.log 三条（两条合法、一条非法时间戳），
+        // 验证跨来源按 ts 排序倒序与非法行跳过。
+        push_entry(LogEntry {
+            ts: "2026-08-02T22:12:29.000+08:00".to_string(),
+            level: "INFO".to_string(),
+            target: "test".to_string(),
+            message: "ring 1".to_string(),
+        });
+        push_entry(LogEntry {
+            ts: "2026-08-02T22:12:31.000+08:00".to_string(),
+            level: "INFO".to_string(),
+            target: "test".to_string(),
+            message: "ring 2".to_string(),
+        });
+        std::fs::write(
+            logs_dir.join("libbox.log"),
+            "[2026-08-02T22:12:30.123+08:00] box line 1\n\
+             [not-a-timestamp] skipped line\n\
+             [2026-08-02T22:12:32.456+08:00] box line 2\n",
+        )
+        .unwrap();
+
+        let all = get_logs_impl(&logs_dir, None, None);
+        // 合并后按 ts 倒序：32, 31, 30, 29；非法行不产生条目。
+        assert_eq!(
+            all.iter().map(|e| e.ts.as_str()).collect::<Vec<_>>(),
+            vec![
+                "2026-08-02T22:12:32.456+08:00",
+                "2026-08-02T22:12:31.000+08:00",
+                "2026-08-02T22:12:30.123+08:00",
+                "2026-08-02T22:12:29.000+08:00",
+            ]
+        );
+        // libbox 条目 target/level 正确，两条且倒序。
+        let box_entries: Vec<&LogEntry> = all.iter().filter(|e| e.target == "libbox").collect();
+        assert_eq!(box_entries.len(), 2);
+        assert_eq!(box_entries[0].message, "box line 2");
+        assert_eq!(box_entries[1].message, "box line 1");
+        assert_eq!(box_entries[0].level, "INFO");
+
+        clear_ring_buffer();
+        remove_temp_logs_dir(&logs_dir);
+    }
+
+    #[test]
+    fn parse_libbox_line_timestamps() {
+        // 合法行：解析出 ts/message，target=libbox、级别 INFO。
+        let entry = parse_libbox_line("[2026-08-02T22:12:30.123+08:00] hello world").unwrap();
+        assert_eq!(entry.ts, "2026-08-02T22:12:30.123+08:00");
+        assert_eq!(entry.message, "hello world");
+        assert_eq!(entry.target, "libbox");
+        assert_eq!(entry.level, "INFO");
+
+        // 无 [ts] 前缀 / 非法时间戳 / 空行 / 无 "] " 分隔 → None（跳过）。
+        assert!(parse_libbox_line("no timestamp prefix").is_none());
+        assert!(parse_libbox_line("[not-a-time] message").is_none());
+        assert!(parse_libbox_line("").is_none());
+        assert!(parse_libbox_line("[2026-08-02T22:12:30+08:00]").is_none());
+
+        // 带行尾换行也能解析；无小数秒的 RFC3339 同样合法。
+        assert!(parse_libbox_line("[2026-08-02T22:12:30+08:00] msg\n").is_some());
     }
 
     #[test]

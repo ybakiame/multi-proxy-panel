@@ -32,6 +32,8 @@ import io.nekohasekai.libbox.WIFIState
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import java.io.File
 import java.net.InetAddress
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import java.util.NoSuchElementException
 
 /**
@@ -89,11 +91,22 @@ class ProxyVpnService : VpnService() {
      * libbox writeLog 环形缓冲（最近 200 行）：启动失败时附带进 lastError，
      * 让前端 Alert 直接看到 Go 侧完整错误链（如 "query tun name" /
      * "dup tun file descriptor" / "initialize inbound/tun" 前缀），定位异步失败。
+     *
+     * 每行以 `[RFC3339] ` 时间戳前缀开头（[writeLog] 统一写入，与
+     * `logs/libbox.log` 同源），文件超限截断时重建内容仍为可解析的完整行。
      */
     private val libboxLogBuffer = ArrayDeque<String>(200)
 
     /** `logs/libbox.log` 大小上限（字节），超限时删除重建写入最新缓冲。 */
     private const val LIBBOX_LOG_MAX_BYTES = 1024 * 1024
+
+    /**
+     * RFC3339 本地时间格式（毫秒精度，如 `2026-08-02T22:12:30.123+08:00`）。
+     * 与 Rust 日志页 `LogEntry.ts` 对齐，供日志查看器 `get_logs` 解析排序。
+     * `java.time` 自 API 26 起可用（minSdk 26，无需 desugaring）。
+     */
+    private val LOG_TS_FORMATTER: DateTimeFormatter =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
 
     /**
      * Libbox.setup 每进程只调一次。重复 setup 会重置 Go 侧全局状态（日志、数据
@@ -257,9 +270,12 @@ class ProxyVpnService : VpnService() {
     }
 
     override fun writeLog(message: String) {
+      // 时间戳前缀与 Rust 日志页 `LogEntry.ts` 对齐：环形缓冲与 `logs/libbox.log`
+      // 统一存 `[RFC3339] message`，Rust `get_logs` 按行解析后合并展示。
+      val line = "[${timestampNow()}] $message"
       Log.i(TAG, message)
-      appendLibboxLog(message)
-      appendToLibboxLogFile(message)
+      appendLibboxLog(line)
+      appendToLibboxLogFile(line)
     }
 
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
@@ -492,6 +508,9 @@ class ProxyVpnService : VpnService() {
       return libboxLogBuffer.takeLast(lines).joinToString("\n")
     }
   }
+
+  /** 当前 RFC3339 本地时间戳（毫秒精度），与 [`LOG_TS_FORMATTER`] 对齐。 */
+  private fun timestampNow(): String = LOG_TS_FORMATTER.format(OffsetDateTime.now())
 
   /**
    * 追加 libbox 日志到 `<pkg>/logs/libbox.log`（与 Rust 的 data_dir/logs 同目录，

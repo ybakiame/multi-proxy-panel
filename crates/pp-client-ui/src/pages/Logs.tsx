@@ -29,8 +29,12 @@ const LEVEL_LABELS: Record<string, string> = {
   trace: "TRACE",
 };
 
-/** 级别行配色：error 红 / warn 黄 / 其余默认前景色。 */
-function levelClass(level: string): string {
+/** 级别行配色：libbox 源（Kotlin 侧 sing-box 日志）用 accent 区分；
+ *  其余按级别 error 红 / warn 黄 / 默认前景色。 */
+function levelClass(level: string, target: string): string {
+  if (target === "libbox") {
+    return "text-accent";
+  }
   const normalized = level.toLowerCase();
   if (normalized === "error") {
     return "text-danger";
@@ -196,7 +200,10 @@ export default function Logs() {
               <div className="overflow-x-auto">
                 <ul className="min-w-[640px] space-y-0.5 font-mono text-xs leading-5">
                   {entries.map((entry, index) => (
-                    <li key={`${entry.ts}-${index}`} className={`whitespace-nowrap ${levelClass(entry.level)}`}>
+                    <li
+                      key={`${entry.ts}-${index}`}
+                      className={`whitespace-nowrap ${levelClass(entry.level, entry.target)}`}
+                    >
                       <span className="text-muted">[{formatTime(entry.ts)}]</span>{" "}
                       <span className="font-semibold">{LEVEL_LABELS[entry.level.toLowerCase()] ?? entry.level}</span>{" "}
                       <span className="text-muted">{entry.target}</span>: {entry.message}
