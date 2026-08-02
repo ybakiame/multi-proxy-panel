@@ -260,10 +260,12 @@ pub fn log_frontend(level: String, message: String) {
     }
 }
 
-/// 列出 `logs_dir` 下全部滚动文件（文件名以 `app.log` 开头）。
+/// 列出 `logs_dir` 下全部日志文件。
 ///
-/// 按文件名字典序排序——`app.log.<YYYY-MM-DD>` 日期零填充，字典序即时间序；
-/// 此前导出的 `export-*.log` 不含前缀 `app.log`，天然排除。
+/// 规则：目录下所有以 `.log` 结尾的文件（覆盖 Kotlin 侧 `libbox.log`），
+/// 并保留 `app.log.<YYYY-MM-DD>` 滚动文件（`tracing_appender` 以日期结尾命名，
+/// 不以 `.log` 结尾）；排除本功能导出的 `export-*.log` 合并产物，避免重复累加。
+/// 按文件名字典序排序——`*.log.<YYYY-MM-DD>` 日期零填充，字典序即时间序。
 fn list_daily_files(logs_dir: &Path) -> Result<Vec<PathBuf>, String> {
     if !logs_dir.is_dir() {
         return Ok(Vec::new());
@@ -275,7 +277,10 @@ fn list_daily_files(logs_dir: &Path) -> Result<Vec<PathBuf>, String> {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .map(|name| name.starts_with("app.log"))
+                .map(|name| {
+                    !name.starts_with("export-")
+                        && (name.starts_with("app.log") || name.ends_with(".log"))
+                })
                 .unwrap_or(false)
         })
         .collect();
@@ -384,21 +389,47 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("pp-log-test-{}", std::process::id()));
         let logs_dir = tmp.join("logs");
         std::fs::create_dir_all(&logs_dir).unwrap();
-        // 乱序写入三个滚动文件，另放一个此前导出的文件验证被排除。
+        // 乱序写入三个滚动文件，另放一个此前导出的文件验证被排除，
+        // 再放 Kotlin 侧 libbox.log（固定文件名）验证纳入导出。
         std::fs::write(logs_dir.join("app.log.2026-08-02"), "day2\n").unwrap();
         std::fs::write(logs_dir.join("app.log.2026-08-01"), "day1\n").unwrap();
         std::fs::write(logs_dir.join("app.log.2026-07-31"), "day0\n").unwrap();
+        std::fs::write(logs_dir.join("libbox.log"), "box\n").unwrap();
         std::fs::write(logs_dir.join("export-20260101-000000.log"), "old export\n").unwrap();
 
         let export_path = write_export(&logs_dir).unwrap();
         let merged = std::fs::read_to_string(&export_path).unwrap();
-        assert_eq!(merged, "day0\nday1\nday2\n");
+        // 按文件名字典序：app.* 滚动文件按日期升序，随后 libbox.log。
+        assert_eq!(merged, "day0\nday1\nday2\nbox\n");
         assert!(export_path
             .file_name()
             .unwrap()
             .to_str()
             .unwrap()
             .starts_with("export-"));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn list_daily_files_collects_all_log_files() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-list-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::write(logs_dir.join("app.log"), "current\n").unwrap();
+        std::fs::write(logs_dir.join("app.log.2026-08-01"), "day1\n").unwrap();
+        std::fs::write(logs_dir.join("libbox.log"), "box\n").unwrap();
+        std::fs::write(logs_dir.join("export-20260101-000000.log"), "old\n").unwrap();
+        std::fs::write(logs_dir.join("README.txt"), "ignore\n").unwrap();
+
+        let files = list_daily_files(&logs_dir).unwrap();
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.file_name())
+            .filter_map(|n| n.to_str().map(String::from))
+            .collect();
+        // app.log 滚动（当前 + 历史）与 Kotlin 侧 libbox.log 均纳入，
+        // export-*.log 与无关文件被排除。
+        assert_eq!(names, vec!["app.log", "app.log.2026-08-01", "libbox.log"]);
         std::fs::remove_dir_all(&tmp).ok();
     }
 }
