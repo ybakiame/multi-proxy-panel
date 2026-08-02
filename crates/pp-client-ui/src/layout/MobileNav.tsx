@@ -15,7 +15,10 @@ export function MobileNav() {
 
   return (
     <>
-      <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-surface px-4 lg:hidden">
+      <div
+        className="sticky top-0 z-40 flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-surface px-4 lg:hidden"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <Button variant="ghost" isIconOnly aria-label="打开导航菜单" className="-ml-1" onPress={() => setIsOpen(true)}>
           <Bars3Icon className="size-6" />
         </Button>

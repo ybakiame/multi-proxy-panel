@@ -122,7 +122,10 @@ export default function App() {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <MobileNav />
-            <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+            <main
+              className="flex-1 overflow-y-auto p-4 lg:p-6"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            >
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/nodes" element={<Nodes />} />
