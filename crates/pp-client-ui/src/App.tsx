@@ -1,6 +1,7 @@
 import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
-import { ToastProvider, useTheme } from "@heroui/react";
+import { useTheme } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Toaster } from "./components/Toaster";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Mitm from "./pages/Mitm";
@@ -79,11 +80,12 @@ export default function App() {
       <ThemeBootstrap />
       <ErrorBoundary>
         {/*
-          ToastProvider 必须独立挂载（不带 children）：HeroUI 3.2.2 会把 children 当作
-          react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region 返回
-          null，若用它包裹应用内容会导致整棵 UI 树渲染为空（整页白屏）。
+          Toast 通知自实现（见 `./toast.ts` / `<Toaster />`）：HeroUI 3.2.2 的
+          `ToastProvider` 渲染 toast 时调用 `document.startViewTransition()`，
+          WebKitGTK 2.52.5 在 WSL 软渲染下会 SIGSEGV 直接退出进程，故弃用。
+          Toaster 为纯静态渲染，独立挂载在应用内容之外。
         */}
-        <ToastProvider placement="bottom end" maxVisibleToasts={3} />
+        <Toaster />
         <div className="flex h-full min-h-screen bg-background text-foreground">
           <Sidebar />
           <main className="flex-1 overflow-y-auto p-6">
