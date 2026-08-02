@@ -23,6 +23,7 @@ fn main() {
     let data_dir = state::AppState::default_data_dir();
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(state::AppState::new(data_dir))
         .invoke_handler(tauri::generate_handler![
             commands::get_config,

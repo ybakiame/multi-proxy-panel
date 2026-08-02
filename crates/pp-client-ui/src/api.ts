@@ -17,6 +17,8 @@ export interface ClientConfig {
   data_dir: string;
   hub_url: string;
   sub_token: string;
+  /** 首页选中的生效订阅 id（`null` = 未选中）。 */
+  active_subscription_id: string | null;
   /** `CoreType` 的 serde 表示：`singbox` / `mihomo`。 */
   core_type: string;
   core_binary: string;
@@ -43,12 +45,20 @@ export interface ClientConfig {
   github_proxy_prefix: string;
   /** 远程资源拉取是否经本地核心 mixed 端口（`http://127.0.0.1:{mixed_port}`）代理。 */
   fetch_via_local_proxy: boolean;
+  /** 规则模式：`rule` / `global` / `direct`（默认 `rule`）。 */
+  rule_mode: string;
 }
 
 export interface ClientStatus {
   core_running: boolean;
   mitm_addr: string | null;
   system_proxy: boolean;
+  /** 当前生效的规则模式：`rule` / `global` / `direct`。 */
+  rule_mode: string;
+  /** 本次合成配置的规则条数（未运行时为 0）。 */
+  rule_count: number;
+  /** Clash 面板 API 地址（核心运行中且已启用 Clash API 时，否则 `null`）。 */
+  clash_api_url: string | null;
 }
 
 export interface TrafficRecord {
@@ -240,6 +250,11 @@ export function proxyStatus(): Promise<ClientStatus> {
   return invoke<ClientStatus>("proxy_status");
 }
 
+/** 设置规则模式（`rule` / `global` / `direct`）：持久化到 client.json，核心运行中且 Clash API 开启时 best-effort 热切换。返回最新运行状态。 */
+export function setRuleMode(mode: string): Promise<ClientStatus> {
+  return invoke<ClientStatus>("set_rule_mode", { mode });
+}
+
 export function listTraffic(): Promise<TrafficRecord[]> {
   return invoke<TrafficRecord[]>("list_traffic");
 }
@@ -348,6 +363,8 @@ export interface SubscriptionView {
   name: string;
   url: string;
   enabled: boolean;
+  /** 关联的覆写模板 id（`null` = 不使用覆写）。 */
+  profile_id: string | null;
   userinfo: SubscriptionUserInfo | null;
   /** 最近一次 fetch 成功的节点数。 */
   node_count: number;
@@ -381,6 +398,11 @@ export function removeSubscription(id: string): Promise<void> {
 
 export function setSubscriptionEnabled(id: string, enabled: boolean): Promise<void> {
   return invoke<void>("set_subscription_enabled", { id, enabled });
+}
+
+/** 设置首页选中的生效订阅（`null` = 清除选中；选中已停用订阅会报错）。 */
+export function setActiveSubscription(id: string | null): Promise<void> {
+  return invoke<void>("set_active_subscription", { id });
 }
 
 export function refreshSubscription(id: string): Promise<SubscriptionView> {
@@ -434,6 +456,11 @@ export function downloadCore(coreType: string, version: string): Promise<LocalCo
 /** 将指定路径设为核心二进制（校验后写回 client.json）。 */
 export function setActiveCore(path: string): Promise<void> {
   return invoke<void>("set_active_core", { path });
+}
+
+/** 删除一个已下载核心（系统来源 / 当前使用中的核心不可删除）。 */
+export function deleteCore(path: string): Promise<void> {
+  return invoke<void>("delete_core", { path });
 }
 
 /** 手动刷新系统核心探测。 */

@@ -25,6 +25,8 @@ interface AppStore {
   loadConfig: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   refreshTraffic: () => Promise<void>;
+  /** 直接用返回值回写运行状态（供 `set_rule_mode` 等返回 status 的命令使用）。 */
+  setStatus: (status: ClientStatus) => void;
   /** 保存配置；返回后端 `SaveConfigView.warning`（非阻塞提示，无则为 null）。 */
   saveConfig: (cfg: ClientConfig) => Promise<string | null>;
   start: () => Promise<void>;
@@ -65,6 +67,8 @@ export const useAppStore = create<AppStore>((set) => ({
       set({ error: toErrorMessage(err) });
     }
   },
+
+  setStatus: (status) => set({ status }),
 
   saveConfig: async (cfg) => {
     set({ loading: true });
