@@ -5,6 +5,8 @@ import {
   listCores,
   listProfiles,
   listSubscriptions,
+  platformInfo,
+  requestVpnPermission,
   setActiveCore,
   setActiveSubscription,
   setRuleMode as setRuleModeApi,
@@ -43,6 +45,9 @@ export default function Dashboard() {
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // 运行平台（Android 由 VpnService 接管，隐藏桌面专属开关）。
+  const [os, setOs] = useState<string | null>(null);
+  const [vpnAuthBusy, setVpnAuthBusy] = useState(false);
 
   /**
    * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
@@ -101,6 +106,11 @@ export default function Dashboard() {
     void loadSubscriptions();
     void loadCores();
     void loadProfiles();
+    void platformInfo()
+      .then((info) => setOs(info.os))
+      .catch(() => {
+        // 命令失败保持未知平台（按桌面渲染）。
+      });
     // 状态轮询：每 2s 刷新一次运行状态。
     const timer = window.setInterval(() => {
       void refreshStatus();
@@ -114,9 +124,10 @@ export default function Dashboard() {
       await start();
       toastSuccess("代理已启动");
     } catch (err) {
-      // store 已记录 error（由页面 Alert 展示）；`tun_auth_required` 走现有引导不重复 toast。
+      // store 已记录 error（由页面 Alert 展示）；`tun_auth_required` / `vpn_not_authorized`
+      // 走现有引导（TUN 授权页 / VPN 授权按钮）不重复 toast。
       const message = toErrorMessage(err);
-      if (!message.includes("tun_auth_required")) {
+      if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
         toastError(message);
       }
     } finally {
@@ -131,11 +142,25 @@ export default function Dashboard() {
       toastSuccess("代理已停止");
     } catch (err) {
       const message = toErrorMessage(err);
-      if (!message.includes("tun_auth_required")) {
+      if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
         toastError(message);
       }
     } finally {
       setBusy(null);
+    }
+  };
+
+  /** 发起系统 VPN 授权（Android）：成功后引导重新启动代理。 */
+  const handleVpnAuth = async () => {
+    setVpnAuthBusy(true);
+    try {
+      await requestVpnPermission();
+      setActionError(null);
+      toastSuccess("VPN 授权成功，请重新启动代理");
+    } catch (err) {
+      toastError(toErrorMessage(err));
+    } finally {
+      setVpnAuthBusy(false);
     }
   };
 
@@ -200,6 +225,9 @@ export default function Dashboard() {
   const running = status?.core_running ?? false;
   // start_proxy 在 TUN 未授权时返回 `tun_auth_required` 错误，改为引导前往设置页授权。
   const tunAuthRequired = error?.includes("tun_auth_required") ?? false;
+  // Android 下 start_proxy 未获 VPN 授权时返回 `vpn_not_authorized` 前缀错误，改为引导「去授权」。
+  const vpnAuthRequired = error?.includes("vpn_not_authorized") ?? false;
+  const isAndroid = os === "android";
   const alertError = error ?? actionError;
 
   // 运行门禁：不满足时禁止启动并逐条提示。
@@ -255,7 +283,7 @@ export default function Dashboard() {
         <p className="text-sm text-muted">代理核心运行状态与启停控制</p>
       </div>
 
-      {alertError && !tunAuthRequired && (
+      {alertError && !tunAuthRequired && !vpnAuthRequired && (
         <Alert status="danger">
           <Alert.Indicator />
           <Alert.Content>
@@ -273,6 +301,23 @@ export default function Dashboard() {
             <Alert.Description>
               代理启动失败：TUN 模式未获得系统授权。请前往「设置 → TUN 模式」点击「立即授权」后重新启动代理。
             </Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {vpnAuthRequired && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>需要 VPN 授权</Alert.Title>
+            <Alert.Description>
+              代理启动失败：Android 系统尚未授权本应用创建 VPN。点击「去授权」完成系统授权后重新启动代理。
+            </Alert.Description>
+            <div className="mt-2">
+              <Button variant="secondary" size="sm" isPending={vpnAuthBusy} onPress={() => void handleVpnAuth()}>
+                去授权
+              </Button>
+            </div>
           </Alert.Content>
         </Alert>
       )}
@@ -358,38 +403,42 @@ export default function Dashboard() {
             <span className="text-xs text-warning">使用旧版 Hub 订阅（deprecated），建议到「订阅」页添加订阅</span>
           )}
 
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <Switch
-                isSelected={config?.mitm_enabled ?? false}
-                isDisabled={!config || loading || busy !== null}
-                onChange={(next) => void persistConfig({ mitm_enabled: next })}
-              >
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                  启用 MITM
-                </Switch.Content>
-              </Switch>
-              <span className="text-xs text-muted">拦截并解密 HTTPS 流量（重写/脚本钩子），重启代理生效</span>
+          {/* 系统代理 / MITM 为桌面专属开关：Android 由 VpnService 接管流量，
+              两个开关无效故隐藏（保留运行配置其余部分）。 */}
+          {!isAndroid && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <Switch
+                  isSelected={config?.mitm_enabled ?? false}
+                  isDisabled={!config || loading || busy !== null}
+                  onChange={(next) => void persistConfig({ mitm_enabled: next })}
+                >
+                  <Switch.Content>
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                    启用 MITM
+                  </Switch.Content>
+                </Switch>
+                <span className="text-xs text-muted">拦截并解密 HTTPS 流量（重写/脚本钩子），重启代理生效</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Switch
+                  isSelected={config?.system_proxy_enabled ?? false}
+                  isDisabled={!config || loading || busy !== null}
+                  onChange={(next) => void persistConfig({ system_proxy_enabled: next })}
+                >
+                  <Switch.Content>
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                    启用系统代理
+                  </Switch.Content>
+                </Switch>
+                <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <Switch
-                isSelected={config?.system_proxy_enabled ?? false}
-                isDisabled={!config || loading || busy !== null}
-                onChange={(next) => void persistConfig({ system_proxy_enabled: next })}
-              >
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                  启用系统代理
-                </Switch.Content>
-              </Switch>
-              <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
-            </div>
-          </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-4">
             <Button variant="secondary" size="lg" isDisabled={!canPreview} onPress={() => setPreviewOpen(true)}>

@@ -3,7 +3,9 @@ package com.proxypanel.client
 import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
+import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -18,25 +20,47 @@ class StartArgs {
 }
 
 /**
- * Tauri 移动插件 "vpn"：暴露 start/stop/isRunning 三条命令。
+ * Tauri 移动插件 "vpn"：暴露 prepare/start/stop/isRunning 四条命令。
  *
- * 插件注册由 Rust 侧（tauri::plugin::PluginApi::register_android_plugin）
- * 完成——本步 Rust 桥接尚未实现，仅保证 Kotlin 侧类可编译、
- * 构造签名（Activity）符合 tauri 2.11 反射实例化要求。
- *
- * 授权流程（VpnService.prepare 的 Activity 跳转）属 P1c-2，本步在需要
- * 授权时以固定错误码拒绝，由前端据此提示。
+ * 插件注册由 Rust 侧（tauri::plugin::PluginApi::register_android_plugin）完成。
+ * prepare 命令经 [VpnService.prepare] 的 Activity 跳转完成系统 VPN 授权，
+ * 授权结果由 [prepareCallback]（@ActivityCallback）在用户返回后 resolve/reject。
  */
 @TauriPlugin
 class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   companion object {
-    /** 需要用户授权 VPN（下一步跳转授权页）。 */
+    /** 需要用户授权 VPN（Rust 侧透传为 `vpn_not_authorized` 前缀错误）。 */
     const val ERROR_NOT_AUTHORIZED = "vpn_not_authorized"
     /** 缺少 config 参数。 */
     const val ERROR_MISSING_CONFIG = "vpn_missing_config"
     /** 启动服务失败。 */
     const val ERROR_START_FAILED = "vpn_start_failed"
+  }
+
+  /**
+   * 请求系统 VPN 授权：`VpnService.prepare` 返回非空 intent 时发起
+   * Activity 跳转（结果由 [prepareCallback] 处理）；已授权时直接 resolve。
+   */
+  @Command
+  fun prepare(invoke: Invoke) {
+    val prepareIntent = VpnService.prepare(activity)
+    if (prepareIntent == null) {
+      // 已授权，无需跳转。
+      invoke.resolve()
+      return
+    }
+    startActivityForResult(invoke, prepareIntent, "prepareCallback")
+  }
+
+  /** prepare 的 Activity 结果回调：RESULT_OK = 用户允许创建 VPN。 */
+  @ActivityCallback
+  fun prepareCallback(invoke: Invoke, result: ActivityResult) {
+    if (result.resultCode == Activity.RESULT_OK) {
+      invoke.resolve()
+    } else {
+      invoke.reject("user denied vpn authorization", ERROR_NOT_AUTHORIZED)
+    }
   }
 
   @Command
@@ -51,7 +75,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
     val prepareIntent = VpnService.prepare(activity)
     if (prepareIntent != null) {
-      // 授权流程（P1c-2）：以 startActivityForResult 发起 prepare intent。
+      // 未授权：拒绝并携带固定错误码，Rust 侧透传给前端引导先「去授权」。
       invoke.reject("vpn authorization required", ERROR_NOT_AUTHORIZED)
       return
     }

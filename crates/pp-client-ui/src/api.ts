@@ -485,6 +485,25 @@ export function gpuAcceleration(): Promise<boolean> {
   return invoke<boolean>("gpu_acceleration");
 }
 
+/** 运行平台信息（与 Rust 侧 `PlatformInfoView` 对齐）。 */
+export interface PlatformInfo {
+  /** 运行平台：`android` / `linux` / `windows` / `macos`。 */
+  os: string;
+}
+
+/** 查询运行平台（前端据此隐藏桌面专属开关：Android 由 VpnService 接管系统代理 / MITM / TUN）。 */
+export function platformInfo(): Promise<PlatformInfo> {
+  return invoke<PlatformInfo>("platform_info");
+}
+
+/**
+ * 请求系统 VPN 授权（仅 Android）：跳转 `VpnService.prepare` 授权页，
+ * 授权结果 resolve；用户拒绝时 reject（错误含 `vpn_not_authorized`）。
+ */
+export function requestVpnPermission(): Promise<void> {
+  return invoke<void>("request_vpn_permission");
+}
+
 /** 把 Tauri 命令的拒绝值规范为可读错误信息。 */
 export function toErrorMessage(err: unknown): string {
   if (err instanceof Error) {

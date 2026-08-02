@@ -122,17 +122,12 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     configure_wsl_webkit_workaround();
 
-    // Android 核心由 Kotlin 侧 libbox 驱动：启动时安装核心引擎桥（P1a 为占位
-    // 实现，P1c 接入真实通道），保证启动代理时报错清晰而非 spawn 失败乱码。
-    #[cfg(target_os = "android")]
-    core_bridge::install_android_core_bridge();
-
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let data_dir = state::AppState::default_data_dir();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(state::AppState::new(data_dir))
@@ -178,7 +173,17 @@ pub fn run() {
             commands::detect_system_cores,
             commands::delete_core,
             commands::gpu_acceleration,
-        ])
+            #[cfg(target_os = "android")]
+            commands::request_vpn_permission,
+            commands::platform_info,
+        ]);
+
+    // Android 核心由 Kotlin 侧 libbox 驱动：`vpn` 插件 setup 中注册 VpnPlugin
+    // 并安装真实核心引擎桥（P1c-2）。桌面端不注册插件，行为零变化。
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(core_bridge::vpn_plugin());
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

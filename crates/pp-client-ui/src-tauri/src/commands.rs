@@ -395,6 +395,38 @@ pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String>
     Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
 }
 
+/// 运行平台信息的对外视图。
+#[derive(Debug, Clone, Serialize)]
+pub struct PlatformInfoView {
+    /// 运行平台：`android` / `linux` / `windows` / `macos`。
+    pub os: String,
+}
+
+/// 查询运行平台（前端据此隐藏桌面专属开关：Android 由 VpnService 接管，
+/// 系统代理 / MITM / TUN 桌面开关无效）。
+#[tauri::command]
+pub fn platform_info() -> PlatformInfoView {
+    PlatformInfoView {
+        os: std::env::consts::OS.to_string(),
+    }
+}
+
+/// 请求系统 VPN 授权（仅 Android）：经 `vpn` 插件调用 Kotlin
+/// `VpnPlugin.prepare`（`VpnService.prepare` 的 Activity 跳转），授权结果以
+/// Promise resolve/reject 返回。桌面端无此命令（`generate_handler` 中
+/// `#[cfg(target_os = "android")]` 排除）。
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn request_vpn_permission() -> Result<(), String> {
+    let handle = crate::core_bridge::vpn_plugin_handle()
+        .ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
+    handle
+        .run_mobile_plugin_async::<serde_json::Value>("prepare", ())
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("VPN 授权失败: {e}"))
+}
+
 /// 查询代理运行状态。
 #[tauri::command]
 pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView, String> {
