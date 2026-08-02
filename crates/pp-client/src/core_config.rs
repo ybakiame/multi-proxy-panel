@@ -76,7 +76,8 @@ pub fn apply_panel_features(
 ///
 /// - `tun_enabled` → `inbounds` 追加 `{type: "tun", tag: "tun-in", address:
 ///   "172.19.0.1/30", mtu: 9000, auto_route, stack}`（模板/复写已含 tun 入站时
-///   整体替换为设置值，`tun-in` 只能有一个）；
+///   整体替换为设置值，`tun-in` 只能有一个）；Android 构建额外对齐 libbox/SFA
+///   范式注入 `strict_route`（见 [`build_singbox_tun_inbound`]）；
 /// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
 ///   "127.0.0.1:port", external_ui: "ui", external_ui_download_url: <按选择>}`，
 ///   `secret` 非空时追加（模板已含 `experimental.clash_api` 时整体替换）。
@@ -88,14 +89,7 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         let Some(obj) = composed.as_object_mut() else {
             return;
         };
-        let tun_inbound = json!({
-            "type": "tun",
-            "tag": "tun-in",
-            "address": "172.19.0.1/30",
-            "mtu": 9000,
-            "auto_route": features.tun_auto_route,
-            "stack": features.tun_stack,
-        });
+        let tun_inbound = build_singbox_tun_inbound(features, cfg!(target_os = "android"));
         let inbounds = obj
             .entry("inbounds")
             .or_insert_with(|| Value::Array(Vec::new()));
@@ -135,6 +129,34 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             exp.insert("clash_api".to_string(), Value::Object(clash_api));
         }
     }
+}
+
+/// 构建 sing-box tun 入站 JSON（libbox 兼容字段集）。
+///
+/// 基础字段（双平台一致）：`type = tun`、`tag = tun-in`、`address =
+/// "172.19.0.1/30"`、`mtu = 9000`、`auto_route`、`stack`。
+///
+/// Android（libbox / VpnService 接管流量）额外对齐 sing-box for Android 范式注入
+/// `strict_route = true`——libbox 只有在配置含 tun 入站时才回调 `openTun()` 建立
+/// VPN 接口，字段集必须在其兼容范围内；`interface_name` / `fd` 等桌面专属字段不
+/// 注入（libbox 经 `getTunnelName(fd)` 自行解析接口名，Android 上这些字段会有
+/// 问题）。桌面保留原字段集，避免改变桌面核心行为。
+///
+/// 注：sing-box 1.13.0 起移除入站级 `sniff` 遗留字段（`check -c` 直接拒绝），
+/// SFA 旧版配置里的 `sniff: true` 不再兼容，故不注入；域嗅探改用 route 规则动作
+/// `{"action": "sniff"}`（见路由配置）。
+pub fn build_singbox_tun_inbound(features: &PanelFeatures, is_android: bool) -> Value {
+    let mut tun = serde_json::Map::new();
+    tun.insert("type".to_string(), json!("tun"));
+    tun.insert("tag".to_string(), json!("tun-in"));
+    tun.insert("address".to_string(), json!("172.19.0.1/30"));
+    tun.insert("mtu".to_string(), json!(9000));
+    tun.insert("auto_route".to_string(), json!(features.tun_auto_route));
+    tun.insert("stack".to_string(), json!(features.tun_stack));
+    if is_android {
+        tun.insert("strict_route".to_string(), json!(true));
+    }
+    Value::Object(tun)
 }
 
 /// mihomo 面板注入：
@@ -855,6 +877,75 @@ rules:
             "127.0.0.1:9090"
         );
         assert_eq!(cfg["experimental"]["clash_api"]["secret"], "sekret");
+    }
+
+    /// Android（libbox / VpnService 接管流量）的 tun 入站必须包含 libbox 兼容字段：
+    /// type / tag / address / mtu / auto_route / stack / strict_route；不含桌面专属
+    /// 字段（interface_name / fd），也不含 sing-box 1.13 起移除的入站级 `sniff`
+    /// （`check -c` 会拒绝）。桌面保持原字段集。
+    #[test]
+    fn build_singbox_tun_inbound_matches_libbox_field_set_on_android() {
+        let android_tun = build_singbox_tun_inbound(&singbox_features(), true);
+        assert_eq!(android_tun["type"], "tun");
+        assert_eq!(android_tun["tag"], "tun-in");
+        assert_eq!(android_tun["address"], "172.19.0.1/30");
+        assert_eq!(android_tun["mtu"], 9000);
+        assert_eq!(android_tun["auto_route"], true);
+        assert_eq!(android_tun["stack"], "mixed");
+        assert_eq!(android_tun["strict_route"], true);
+        // 桌面专属字段不注入（libbox 经 getTunnelName(fd) 自行解析接口名）。
+        assert!(android_tun.get("interface_name").is_none());
+        assert!(android_tun.get("fd").is_none());
+        // sing-box 1.13+ 拒绝入站级 sniff 遗留字段。
+        assert!(android_tun.get("sniff").is_none());
+
+        let desktop_tun = build_singbox_tun_inbound(&singbox_features(), false);
+        assert_eq!(desktop_tun["type"], "tun");
+        assert_eq!(desktop_tun["stack"], "mixed");
+        assert!(
+            desktop_tun.get("strict_route").is_none(),
+            "桌面 tun 入站不应含 Android 专属 strict_route: {desktop_tun}"
+        );
+    }
+
+    /// Android 合成配置（tun_enabled=true 且含 libbox 字段集）必须通过真实
+    /// sing-box `check -c`（与 `singbox_tun_clash_api_passes_real_singbox_check`
+    /// 等价，但走 Android 字段集分支）。
+    #[test]
+    fn android_tun_inbound_passes_real_singbox_check() {
+        let Some(bin) = sing_box_binary() else {
+            return;
+        };
+        let sub = json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "direct" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        // 注入 clash_api（Android 前端同样可开启）；tun 单独处理走 Android 字段集。
+        let clash_only = PanelFeatures {
+            tun_enabled: false,
+            ..singbox_features()
+        };
+        apply_panel_features(&mut cfg, CoreType::SingBox, &clash_only);
+        // Android 字段集 tun 入站：strict_route。
+        let tun = build_singbox_tun_inbound(&singbox_features(), true);
+        cfg["inbounds"].as_array_mut().unwrap().push(tun);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+        let out = std::process::Command::new(&bin)
+            .args(["check", "-c"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "sing-box check failed (android tun field set): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     #[test]

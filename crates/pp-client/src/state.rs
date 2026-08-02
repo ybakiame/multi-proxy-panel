@@ -70,6 +70,11 @@ pub struct ClientState {
     /// 远程订阅 task 脚本调度器（MITM 就绪后启动，stop 时停止）。
     scheduler: Option<SchedulerHandle>,
     /// TUN 权限检测函数（默认 [`tun_auth_status`]；测试可注入覆盖以绕过真实权限检查）。
+    ///
+    /// 仅桌面构建读取（TUN 前置提权检查经 `#[cfg(not(target_os = "android"))]`
+    /// 门控，Android 授权走 VpnService 系统弹窗），Android 构建时字段仍保留
+    /// （供桌面测试编译与统一构造路径）并允许 dead_code。
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     tun_auth_check: Arc<dyn Fn(&Path) -> TunAuthStatus + Send + Sync>,
     /// 本次合成配置的规则条数（start 成功后写入，stop 清零；供 status() 返回）。
     rule_count: u64,
@@ -163,6 +168,10 @@ impl ClientState {
 
         // TUN 模式前置提权检查：未授权则拒绝启动并返回明确错误（错误信息以
         // `tun_auth_required` 开头并含二进制路径，前端据此展示授权入口）。
+        //
+        // Android 授权走 VpnService 系统弹窗（VpnPlugin.prepare），与桌面提权
+        // 无关，跳过桌面核心二进制的授权预检（且 Android 无 `core_binary`）。
+        #[cfg(not(target_os = "android"))]
         if self.config.tun_enabled {
             match (self.tun_auth_check)(&self.config.core_binary) {
                 TunAuthStatus::Authorized => {}
@@ -285,8 +294,17 @@ impl ClientState {
         let chain = self.start_mitm_chain().await?;
         // TUN / Clash 面板配置（设置页最高优先级）：在 compose（build_core_config +
         // 复写）之后强制注入，模板/复写中的同名字段以设置为准整体替换。
+        //
+        // Android 的 TUN 开关与桌面语义解耦：Android 流量由 VpnService（即 TUN）
+        // 接管，合成配置必须包含 tun 入站，否则 libbox 不会回调 `openTun()` 建立
+        // VPN 接口（核心显示运行中但无接口）。故 Android 恒强制 `tun_enabled=true`；
+        // 桌面按用户设置（`apply_android_overrides` 中 `tun_enabled=false` 只作用于
+        // 桌面预检与 UI 语义，见该函数注释）。
         let features = core_config::PanelFeatures {
-            tun_enabled: self.config.tun_enabled,
+            tun_enabled: panel_features_tun_enabled(
+                cfg!(target_os = "android"),
+                self.config.tun_enabled,
+            ),
             tun_stack: self.config.tun_stack.clone(),
             tun_auto_route: self.config.tun_auto_route,
             clash_api_enabled: self.config.clash_api_enabled,
@@ -556,8 +574,13 @@ impl ClientState {
 ///   持久化的 `core_type` 可能为 mihomo，强制回退避免按 mihomo 合成配置导致启动失败；
 /// - `mitm_enabled = false`：MITM 依赖 P3 特性，libbox 不支持，禁用避免链路注入；
 /// - `system_proxy_enabled = false`：Android 系统代理为 stub，调用会报错；
-/// - `tun_enabled = false`：Android 流量由 VpnService（即 TUN）接管，桌面 TUN
-///   提权检查会误拦启动。
+/// - `tun_enabled = false`：仅作用于本结构体，驱动桌面 TUN 前置提权检查
+///   （[`ClientState::start`] 中 `#[cfg(not(target_os = "android"))]` 门控）与设置页
+///   UI 语义；Android 流量由 VpnService（即 TUN）接管，合成配置时必须包含 tun 入站
+///   才能触发 libbox 的 `openTun()` 回调建立 VPN 接口，因此 [`ClientState::start`]
+///   构造 [`core_config::PanelFeatures`] 时在 Android 上经
+///   [`panel_features_tun_enabled`] 强制 `tun_enabled=true`（本处的 false 不参与
+///   合成配置）。
 ///
 /// 仅在 Android 构建时由 [`ClientState::start`] 调用；桌面构建编译该函数仅供
 /// 单元测试验证语义。
@@ -567,7 +590,15 @@ fn apply_android_overrides(config: &mut ClientConfig) {
     config.mitm_enabled = false;
     config.system_proxy_enabled = false;
     config.tun_enabled = false;
-    tracing::info!("Android 强制覆盖：核心类型 = sing-box（libbox），禁用 MITM / 系统代理 / TUN");
+    tracing::info!(
+        "Android 强制覆盖：核心类型 = sing-box（libbox），禁用 MITM / 系统代理 / TUN（仅桌面语义，合成配置仍强制 tun 入站）"
+    );
+}
+
+/// PanelFeatures 的 TUN 开关：Android 由 VpnService（libbox）接管流量，合成配置
+/// 必须恒含 tun 入站才能建立 VPN 接口；桌面按用户设置原样透传。
+fn panel_features_tun_enabled(is_android: bool, tun_enabled: bool) -> bool {
+    if is_android { true } else { tun_enabled }
 }
 
 /// 订阅格式 ↔ 核心类型绑定校验。
@@ -1574,6 +1605,9 @@ mod tests {
 
     /// Android 语义：`apply_android_overrides` 强制 sing-box 核心并禁用桌面专属
     /// 功能。桌面构建无法执行 Android 路径，故抽取纯函数后在桌面测试其语义。
+    ///
+    /// 注意 `tun_enabled = false` 只作用于桌面预检与 UI 语义：Android 合成配置经
+    /// `panel_features_tun_enabled` 恒强制 `tun_enabled=true`（见下测试），二者不冲突。
     #[test]
     fn apply_android_overrides_forces_singbox_and_disables_desktop_features() {
         let mut cfg = ClientConfig {
@@ -1591,7 +1625,26 @@ mod tests {
         );
         assert!(!cfg.mitm_enabled, "Android 禁用 MITM");
         assert!(!cfg.system_proxy_enabled, "Android 禁用系统代理");
-        assert!(!cfg.tun_enabled, "Android 禁用 TUN");
+        assert!(!cfg.tun_enabled, "Android 禁用 TUN（桌面语义）");
+    }
+
+    /// Android 合成配置的 TUN 开关恒为 true（libbox 需要 tun 入站才回调 openTun
+    /// 建立 VPN 接口）；桌面按用户设置原样透传。
+    #[test]
+    fn panel_features_tun_enabled_forces_true_on_android_only() {
+        assert!(
+            panel_features_tun_enabled(true, false),
+            "Android 恒开启 TUN"
+        );
+        assert!(panel_features_tun_enabled(true, true), "Android 恒开启 TUN");
+        assert!(
+            !panel_features_tun_enabled(false, false),
+            "桌面关闭 TUN 时保持关闭"
+        );
+        assert!(
+            panel_features_tun_enabled(false, true),
+            "桌面开启 TUN 时保持开启"
+        );
     }
 
     /// 项 2：`tun_enabled=true` 且已授权（注入 Authorized 检测）→ 注入 tun 入站。
