@@ -470,6 +470,37 @@ impl ClientState {
             &self.config.core_binary,
             &self.config.data_dir,
         )?;
+
+        // Android 启动前把最终发给 libbox 的核心配置脱敏落盘：uuid/password/server
+        // 打码为 "***" 后以 pretty JSON 写入 data_dir/logs/last_start_config.json，
+        // 该文件随日志导出 zip 带出，供排障确认到达 libbox 的真实配置。整个过程
+        // best-effort：任何 IO 失败只记警告，绝不影响启动流程。
+        #[cfg(target_os = "android")]
+        {
+            let logs_dir = self.config.data_dir.join("logs");
+            let result = (|| -> std::io::Result<std::path::PathBuf> {
+                std::fs::create_dir_all(&logs_dir)?;
+                let mut redacted = config_json.clone();
+                redact_config_credentials(&mut redacted);
+                let path = logs_dir.join("last_start_config.json");
+                let content =
+                    serde_json::to_string_pretty(&redacted).map_err(std::io::Error::other)?;
+                std::fs::write(&path, content)?;
+                Ok(path)
+            })();
+            match result {
+                Ok(path) => tracing::info!(
+                    path = %path.display(),
+                    "已把脱敏后的最终核心配置落盘（last_start_config.json，随日志导出 zip 带出）"
+                ),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    path = %logs_dir.display(),
+                    "脱敏核心配置落盘失败（不影响启动）"
+                ),
+            }
+        }
+
         if let Err(e) = core.start(config_json).await {
             self.rollback_mitm_started().await;
             return Err(e);
@@ -602,6 +633,30 @@ fn apply_android_overrides(config: &mut ClientConfig) {
     tracing::info!(
         "Android 强制覆盖：核心类型 = sing-box（libbox），禁用 MITM / 系统代理 / TUN（仅桌面语义，合成配置仍强制 tun 入站）"
     );
+}
+
+/// 递归脱敏配置中的凭据字段（Android 排障落盘用）：对象中键为
+/// "uuid" / "password" / "server" 且值为字符串时替换为 "***"，
+/// 其余结构（含 detour / dns 层级）原样保留。
+#[cfg(any(test, target_os = "android"))]
+fn redact_config_credentials(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                if matches!(key.as_str(), "uuid" | "password" | "server") && val.is_string() {
+                    *val = serde_json::Value::String("***".to_string());
+                } else {
+                    redact_config_credentials(val);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items.iter_mut() {
+                redact_config_credentials(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// PanelFeatures 的 TUN 开关：Android 由 VpnService（libbox）接管流量，合成配置
@@ -1654,6 +1709,121 @@ mod tests {
             panel_features_tun_enabled(false, true),
             "桌面开启 TUN 时保持开启"
         );
+    }
+
+    /// 脱敏：嵌套 outbound 中的 uuid/password/server 被替换为 "***"，
+    /// 非命中键（type / tag / server_name）原样保留。
+    #[test]
+    fn redact_config_credentials_masks_outbound_credentials() {
+        let mut cfg = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "n1",
+                    "server": "example.com",
+                    "uuid": "12345678-1234-1234-1234-123456789012",
+                    "tls": { "enabled": true, "server_name": "example.com" }
+                },
+                {
+                    "type": "hysteria2",
+                    "tag": "n2",
+                    "server": "example.org",
+                    "password": "pw"
+                }
+            ]
+        });
+        redact_config_credentials(&mut cfg);
+
+        let n1 = &cfg["outbounds"][0];
+        assert_eq!(n1["server"], "***");
+        assert_eq!(n1["uuid"], "***");
+        assert_eq!(n1["type"], "vless", "非命中键不受影响");
+        assert_eq!(n1["tag"], "n1", "非命中键不受影响");
+        assert_eq!(
+            n1["tls"]["server_name"], "example.com",
+            "server_name 非命中键不受影响"
+        );
+        let n2 = &cfg["outbounds"][1];
+        assert_eq!(n2["server"], "***");
+        assert_eq!(n2["password"], "***");
+    }
+
+    /// 脱敏：users 数组中的 password 被替换为 "***"。
+    #[test]
+    fn redact_config_credentials_masks_users_array_passwords() {
+        let mut cfg = serde_json::json!({
+            "inbounds": [
+                {
+                    "type": "shadowsocks",
+                    "tag": "in",
+                    "users": [
+                        { "username": "alice", "password": "secret1" },
+                        { "username": "bob", "password": "secret2" }
+                    ]
+                }
+            ]
+        });
+        redact_config_credentials(&mut cfg);
+
+        let users = &cfg["inbounds"][0]["users"];
+        assert_eq!(users[0]["password"], "***");
+        assert_eq!(users[1]["password"], "***");
+        assert_eq!(users[0]["username"], "alice", "username 非命中键不受影响");
+    }
+
+    /// 脱敏：dns servers 结构保留（detour 键原样存在），其中 server 值被打码。
+    #[test]
+    fn redact_config_credentials_preserves_dns_structure_but_masks_server() {
+        let mut cfg = serde_json::json!({
+            "dns": {
+                "servers": [
+                    { "tag": "dns-main", "server": "8.8.8.8" },
+                    { "tag": "dns-proxy", "server": "1.1.1.1", "detour": "proxy" }
+                ]
+            }
+        });
+        redact_config_credentials(&mut cfg);
+
+        let servers = &cfg["dns"]["servers"];
+        assert_eq!(servers.as_array().unwrap().len(), 2, "结构原样保留");
+        assert_eq!(servers[0]["server"], "***");
+        assert_eq!(servers[1]["server"], "***");
+        assert_eq!(servers[1]["detour"], "proxy", "detour 键原样保留");
+        assert_eq!(servers[0]["tag"], "dns-main");
+    }
+
+    /// 脱敏：非命中键与非字符串值不受影响；非字符串值仍递归其子结构。
+    #[test]
+    fn redact_config_credentials_keeps_unmatched_and_non_string_values() {
+        let mut cfg = serde_json::json!({
+            "log": { "level": "info" },
+            "route": { "final": "direct" },
+            "experimental": {
+                "server_port": 443,
+                "server_name": "keep.example.com",
+                "server": { "host": "deep.example.com" },
+                "uuid": 123
+            }
+        });
+        redact_config_credentials(&mut cfg);
+
+        assert_eq!(cfg["log"]["level"], "info");
+        assert_eq!(cfg["route"]["final"], "direct");
+        assert_eq!(
+            cfg["experimental"]["server_port"], 443,
+            "非字符串 server_port 不被替换"
+        );
+        assert_eq!(
+            cfg["experimental"]["server_name"], "keep.example.com",
+            "server_name 非命中键不受影响"
+        );
+        assert_eq!(cfg["experimental"]["uuid"], 123, "非字符串 uuid 不被替换");
+        // server 键值非字符串：不替换但仍递归其子结构。
+        assert!(
+            cfg["experimental"]["server"].is_object(),
+            "非字符串 server 保留为对象"
+        );
+        assert_eq!(cfg["experimental"]["server"]["host"], "deep.example.com");
     }
 
     /// 项 2：`tun_enabled=true` 且已授权（注入 Authorized 检测）→ 注入 tun 入站。
