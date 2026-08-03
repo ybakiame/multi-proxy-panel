@@ -100,6 +100,17 @@ function coreLabel(coreType: string | undefined): string {
   return coreType === "mihomo" ? "mihomo" : "sing-box";
 }
 
+/** 由订阅 format 推导适配核心；ShareLinks/空 返回 null（跟随全局核心）。 */
+function subCoreType(format: SubscriptionFormat | null | undefined): "singbox" | "mihomo" | null {
+  if (format === "ClashYaml") {
+    return "mihomo";
+  }
+  if (format === "SingBoxJson") {
+    return "singbox";
+  }
+  return null;
+}
+
 export default function Nodes() {
   const [subs, setSubs] = useState<SubscriptionView[]>([]);
   const [profiles, setProfiles] = useState<ProfileView[]>([]);
@@ -154,8 +165,13 @@ export default function Nodes() {
     void loadProfiles();
   }, [refreshSubs, loadProfiles]);
 
-  /** 当前客户端核心类型下可关联的覆写模板（带核心过滤）。 */
+  /** 当前客户端核心类型下可关联的覆写模板（带核心过滤；添加时订阅尚未拉取、无 format，跟随全局核心）。 */
   const coreProfiles = profiles.filter((profile) => profile.core_type === clientCoreType);
+
+  /** 编辑中的订阅按自身 format 推导适配核心（未拉取/ShareLinks 时跟随全局核心）。 */
+  const editCoreType = subCoreType(editSub?.format) ?? clientCoreType;
+  /** 编辑弹窗按推导核心过滤覆写候选。 */
+  const editCoreProfiles = profiles.filter((profile) => profile.core_type === editCoreType);
 
   const handleAdd = async () => {
     setBusy(true);
@@ -507,6 +523,7 @@ export default function Nodes() {
               </div>
               <div className="flex flex-col gap-1">
                 <Label htmlFor="sub-profile">关联覆写</Label>
+                {/* 添加时订阅尚未拉取（format 未知，无法推导核心），跟随全局核心过滤。 */}
                 {coreProfiles.length > 0 ? (
                   <Select
                     id="sub-profile"
@@ -615,7 +632,8 @@ export default function Nodes() {
               </div>
               <div className="flex flex-col gap-1">
                 <Label htmlFor="sub-edit-profile">关联覆写</Label>
-                {coreProfiles.length > 0 ? (
+                {/* 编辑时按订阅自身 format 推导的核心过滤（未拉取/ShareLinks 时跟随全局核心）。 */}
+                {editCoreProfiles.length > 0 ? (
                   <Select
                     id="sub-edit-profile"
                     aria-label="关联覆写"
@@ -634,7 +652,7 @@ export default function Nodes() {
                           不关联
                           <ListBox.ItemIndicator />
                         </ListBox.Item>
-                        {coreProfiles.map((profile) => (
+                        {editCoreProfiles.map((profile) => (
                           <ListBox.Item key={profile.id} id={profile.id} textValue={profile.name}>
                             {profile.name}
                             <ListBox.ItemIndicator />
@@ -645,7 +663,7 @@ export default function Nodes() {
                   </Select>
                 ) : (
                   <p className="text-xs text-warning">
-                    当前核心（{coreLabel(clientCoreType)}）暂无覆写模板，可到「覆写」页创建
+                    当前核心（{coreLabel(editCoreType)}）暂无覆写模板，可到「覆写」页创建
                   </p>
                 )}
               </div>
