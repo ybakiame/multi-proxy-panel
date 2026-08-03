@@ -775,6 +775,12 @@ class ProxyVpnService : VpnService() {
  * 依赖该推送学习默认出站接口；此前为空实现导致核心学不到任何接口，所有
  * 出站拨号报 `no available network interface`。
  *
+ * 除 libbox 接口推送外，另提供轻量 DNS 订阅钩子 [onDefaultNetworkChanged]：
+ * 默认网络变化时把新网络的 DNS 服务器列表回调给订阅方（mihomo 用
+ * `Mihomocore.updateDns` 刷新核心系统 DNS 与缓存，对齐 FlClash
+ * NetworkObserveModule.onUpdateNetwork）；网络丢失时回调空列表。钩子可独立于
+ * libbox 监听器工作（listener 传 null 仅订阅 DNS），不影响既有 libbox 语义。
+ *
  * 设计对齐 SFA（SagerNet/sing-box-for-android）DefaultNetworkMonitor：
  * - 注册按 API 分级（minSdk 26）：31+ 用 registerBestMatchingNetworkCallback，
  *   28–30 用 requestNetwork（REQUEST 模式；registerDefaultNetworkCallback 自
@@ -785,7 +791,7 @@ class ProxyVpnService : VpnService() {
  *   100ms）放到后台线程执行，避免阻塞回调线程（SFA 在回调里直接 sleep 是已知
  *   粗糙点，这里改为工作线程重试）。
  */
-private object DefaultInterfaceMonitor {
+internal object DefaultInterfaceMonitor {
 
   private const val TAG = "DefaultInterfaceMonitor"
   private const val MAX_RETRY = 10
@@ -798,6 +804,18 @@ private object DefaultInterfaceMonitor {
   private var listener: InterfaceUpdateListener? = null
   private var defaultNetwork: Network? = null
   private var registered = false
+
+  /**
+   * 轻量 DNS 订阅钩子（对齐 FlClash NetworkObserveModule.onUpdateNetwork）：
+   * 默认网络变化时回调新网络链路的 DNS 服务器列表（`hostAddress` 文本；网络
+   * 丢失回调空列表），供 mihomo 核心刷新系统 DNS 与缓存。
+   *
+   * 可独立于 libbox 监听器使用（`start(null, ...)` 仅订阅 DNS）；空列表用于
+   * 通知订阅方网络丢失，由订阅方决定是否跳过刷新。`@Volatile` 保证跨线程
+   * 可见：读取在 [lock] 临界区内进行，赋值由订阅方在自身生命周期锁内完成。
+   */
+  @Volatile
+  var onDefaultNetworkChanged: ((dnsServers: List<String>) -> Unit)? = null
 
   private val request =
     NetworkRequest.Builder()
@@ -829,7 +847,8 @@ private object DefaultInterfaceMonitor {
       }
     }
 
-  fun start(listener: InterfaceUpdateListener, connectivity: ConnectivityManager) {
+  /** 启动监控：注册网络回调并立即推送一次当前默认网络。listener 可为 null（仅订阅 DNS 钩子，见 [onDefaultNetworkChanged]）。 */
+  fun start(listener: InterfaceUpdateListener?, connectivity: ConnectivityManager) {
     synchronized(lock) {
       this.connectivity = connectivity
       this.listener = listener
@@ -844,7 +863,7 @@ private object DefaultInterfaceMonitor {
     push()
   }
 
-  fun close(listener: InterfaceUpdateListener) {
+  fun close(listener: InterfaceUpdateListener?) {
     synchronized(lock) {
       if (this.listener !== listener) {
         // 监听器已被新一轮 start 替换，迟到 close 不做任何事。
@@ -893,22 +912,33 @@ private object DefaultInterfaceMonitor {
   }
 
   private fun push() {
-    val listener = synchronized(lock) { listener } ?: return
-    val connectivity = synchronized(lock) { connectivity } ?: return
+    val listener = synchronized(lock) { listener }
+    val connectivity = synchronized(lock) { connectivity }
     val network = synchronized(lock) { defaultNetwork }
+    val dnsHook = synchronized(lock) { onDefaultNetworkChanged }
+    // 无 libbox 监听且无 DNS 订阅钩子时无需推送。
+    if (listener == null && dnsHook == null) {
+      return
+    }
+    if (connectivity == null) {
+      return
+    }
     // 取 LinkProperties / 接口 index 可能需重试（含 sleep），放后台线程，
     // 禁止阻塞回调线程（主线程 / ConnectivityThread）。
-    Thread { pushWorker(listener, connectivity, network) }.start()
+    Thread { pushWorker(listener, connectivity, network, dnsHook) }.start()
   }
 
   private fun pushWorker(
-    listener: InterfaceUpdateListener,
+    listener: InterfaceUpdateListener?,
     connectivity: ConnectivityManager,
     network: Network?,
+    dnsHook: ((List<String>) -> Unit)?,
   ) {
     if (network == null) {
-      // 默认网络丢失：上报空接口（index=-1），让核心感知默认接口消失。
-      listener.updateDefaultInterface("", -1, false, false)
+      // 默认网络丢失：上报空接口（index=-1），让核心感知默认接口消失；
+      // DNS 订阅回调空列表（订阅方按空列表跳过刷新）。
+      listener?.updateDefaultInterface("", -1, false, false)
+      dnsHook?.invoke(emptyList())
       return
     }
     for (attempt in 0 until MAX_RETRY) {
@@ -916,7 +946,8 @@ private object DefaultInterfaceMonitor {
       if (synchronized(lock) { defaultNetwork } !== network) {
         return
       }
-      val name = connectivity.getLinkProperties(network)?.interfaceName
+      val linkProperties = connectivity.getLinkProperties(network)
+      val name = linkProperties?.interfaceName
       val index =
         name?.let { runCatching { NetworkInterface.getByName(it).index }.getOrNull() }
       if (name.isNullOrEmpty() || index == null) {
@@ -926,7 +957,12 @@ private object DefaultInterfaceMonitor {
       // isExpensive/isConstrained：对齐 SFA 当前实现传 false（核心另有
       // getInterfaces 上报的 metered 属性），本参数仅影响默认接口的
       // expensive/constrained 标记规则匹配。
-      listener.updateDefaultInterface(name, index, false, false)
+      listener?.updateDefaultInterface(name, index, false, false)
+      // 对齐 FlClash NetworkObserveModule.onUpdateNetwork：默认网络切换时把新
+      // 网络的 DNS 服务器列表回调给订阅方（mihomo 用 updateDns 刷新核心系统
+      // DNS 与缓存；空列表说明无 DNS 服务器）。
+      val dnsServers = linkProperties.dnsServers.mapNotNull { it.hostAddress }
+      dnsHook?.invoke(dnsServers)
       return
     }
     // 重试耗尽仍取不到接口（罕见）：记录日志，等下一次网络回调再试。

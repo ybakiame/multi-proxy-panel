@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager.NameNotFoundException
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -32,12 +33,11 @@ import java.time.format.DateTimeFormatter
  *      回调并解析应用 mihomo YAML 配置（TUN 不由配置启用，由 StartTun 管理）
  *   2. `VpnService.Builder.establish()`：建立 TUN，取得 pfd 并保留所有权
  *      （同 sing-box 侧注释语义：不调用 detachFd()，stop 时关闭原始 fd）
- *   3. `Mihomocore.startTun(fd, "mixed", "172.19.0.1/30,fdfe:dcba:9876::1/126",
- *      "172.19.0.2,fdfe:dcba:9876::2")`：以 VpnService 提供的 fd 创建 sing_tun
- *      listener 并安装 Protect 钩子（stack/address/dns 与 wrapper 侧 Setup 对应；
- *      address/dns 均双栈，逗号分隔由 wrapper tun.go 拆分解析；dns 参数指向 tun
- *      网关地址，wrapper 拼为 `172.19.0.2:53` / `[fdfe:dcba:9876::2]:53` 的
- *      DNSHijack 规则，由核心 DNS 模块接管，对齐 FlClash 做法）
+ *   3. `Mihomocore.startTun(fd, "mixed", "172.19.0.1/30", "172.19.0.2")`：以
+ *      VpnService 提供的 fd 创建 sing_tun listener 并安装 Protect 钩子
+ *      （stack/address/dns 与 wrapper 侧 Setup 对应；dns 参数指向 tun 网关地址，
+ *      wrapper 拼为 `172.19.0.2:53` 的 DNSHijack 规则，由核心 DNS 模块接管，
+ *      对齐 FlClash 做法）
  *
  * 停止序列：`Mihomocore.stop()`（幂等，含 StopTun）→ 关闭 pfd → 复位 running。
  *
@@ -378,12 +378,10 @@ class MihomoVpnService : VpnService() {
       coreCallback = callback
 
       // 2. 建立 TUN：pfd 保留所有权（不调用 detachFd），stop 时关闭原始 fd。
-      //    双栈接入：固定地址段 172.19.0.1/30 + fdfe:dcba:9876::1/126（与
-      //    startTun 的 address 对应），v4/v6 全量路由均进 tun（IPv6 优先网络下
-      //    应用流量不再绕过 VPN）。系统 DNS 指向 tun 网关地址 172.19.0.2 /
-      //    fdfe:dcba:9876::2（与 startTun 的 dns 参数一致），DNS 包进 tun 后由
-      //    核心 DNSHijack 双栈接管：若按普通流量路由，UDP 53 会命中代理规则并经
-      //    不支持 UDP 转发的协议节点（如 anytls）发出导致 DNS 全灭，对齐
+      //    P1 固定地址段 172.19.0.1/30（与 startTun 的 address 对应）。系统 DNS
+      //    指向 tun 网关地址 172.19.0.2（与 startTun 的 dns 参数一致），DNS 包进
+      //    tun 后由核心 DNSHijack 接管：若按普通流量路由，UDP 53 会命中代理规则
+      //    并经不支持 UDP 转发的协议节点（如 anytls）发出导致 DNS 全灭，对齐
       //    FlClash 做法。
       val builder =
         Builder()
@@ -392,9 +390,6 @@ class MihomoVpnService : VpnService() {
           .addAddress("172.19.0.1", 30)
           .addRoute("0.0.0.0", 0)
           .addDnsServer("172.19.0.2")
-          .addAddress("fdfe:dcba:9876::1", 126)
-          .addRoute("::", 0)
-          .addDnsServer("fdfe:dcba:9876::2")
 
       // 本应用必须排除在 VPN 之外：核心出站（代理连接）由本进程发起，若被 tun
       // 回环会成环导致「有 VPN 图标但流量不通」。
@@ -410,17 +405,10 @@ class MihomoVpnService : VpnService() {
       tunFd = pfd
 
       // 3. startTun：以 VpnService 提供的 fd 创建 sing_tun listener（stack 为
-      //    "mixed"；address 与 Builder 地址段一致，双栈逗号分隔，wrapper tun.go
-      //    按逗号拆分解析；dns 指向 tun 网关 172.19.0.2 / fdfe:dcba:9876::2，
-      //    wrapper 拼为 "172.19.0.2:53" / "[fdfe:dcba:9876::2]:53" 的 DNSHijack
-      //    规则，由核心 DNS 模块双栈解析）。
+      //    "mixed"，address 与 Builder 地址段一致；dns 指向 tun 网关 172.19.0.2，
+      //    wrapper 拼为 "172.19.0.2:53" 的 DNSHijack 规则，由核心 DNS 模块解析）。
       try {
-        Mihomocore.startTun(
-          pfd.fd.toLong(),
-          "mixed",
-          "172.19.0.1/30,fdfe:dcba:9876::1/126",
-          "172.19.0.2,fdfe:dcba:9876::2",
-        )
+        Mihomocore.startTun(pfd.fd.toLong(), "mixed", "172.19.0.1/30", "172.19.0.2")
       } catch (e: Exception) {
         // 半启动清理：startTun 失败（可能 establish 已成功）时回收 tun pfd，
         // 防 fd 泄漏。
@@ -428,17 +416,33 @@ class MihomoVpnService : VpnService() {
         tunFd = null
         throw e
       }
+
+      // 4. 网络切换联动：订阅默认网络变化（对齐 FlClash NetworkObserveModule
+      //    .onUpdateNetwork）。默认网络切换 / DNS 变化时回调
+      //    `Mihomocore.updateDns` 刷新核心系统 DNS 与缓存；网络丢失回调空列表
+      //    （跳过刷新）。Monitor 仅作状态快照、推送在后台线程执行，不阻塞核心。
+      DefaultInterfaceMonitor.onDefaultNetworkChanged = { dnsServers ->
+        if (dnsServers.isNotEmpty()) {
+          runCatching { Mihomocore.updateDns(dnsServers.joinToString(",")) }
+            .onFailure { e -> Log.w(TAG, "updateDns failed: ${e.message}") }
+        }
+      }
+      DefaultInterfaceMonitor.start(null, getSystemService(ConnectivityManager::class.java))
     }
   }
 
   /**
    * 有序关闭核心与 TUN：复位 running → `Mihomocore.stop()`（幂等，含 StopTun
-   * 与回调清理）→ 关闭 tun pfd。幂等且加锁（跨实例共享 lifecycleLock），避免
-   * stop intent 与 onDestroy 并发双线程重复关闭。
+   * 与回调清理）→ 关闭 tun pfd → 注销网络切换联动。幂等且加锁（跨实例共享
+   * lifecycleLock），避免 stop intent 与 onDestroy 并发双线程重复关闭。
    */
   private fun stopBox() {
     synchronized(lifecycleLock) {
       running = false
+      // 注销网络切换联动：置空 DNS 回调并停止默认网络监听（幂等；listener 为
+      // null 时 close 仅解绑本实例注册的监控，不影响 libbox 侧 listener）。
+      DefaultInterfaceMonitor.onDefaultNetworkChanged = null
+      DefaultInterfaceMonitor.close(null)
       try {
         Mihomocore.stop()
       } catch (e: Exception) {
