@@ -22,19 +22,19 @@ import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import io.nekohasekai.libbox.BoxService
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.LocalDNSTransport
-import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.RoutePrefix
-import io.nekohasekai.libbox.SetupOptions
-import io.nekohasekai.libbox.StringIterator
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
-import io.nekohasekai.libbox.Notification as LibboxNotification
+import com.proxypanel.core.libbox.BoxService
+import com.proxypanel.core.libbox.InterfaceUpdateListener
+import com.proxypanel.core.libbox.Libbox
+import com.proxypanel.core.libbox.LocalDNSTransport
+import com.proxypanel.core.libbox.NetworkInterface as LibboxNetworkInterface
+import com.proxypanel.core.libbox.NetworkInterfaceIterator
+import com.proxypanel.core.libbox.PlatformInterface
+import com.proxypanel.core.libbox.RoutePrefix
+import com.proxypanel.core.libbox.SetupOptions
+import com.proxypanel.core.libbox.StringIterator
+import com.proxypanel.core.libbox.TunOptions
+import com.proxypanel.core.libbox.WIFIState
+import com.proxypanel.core.libbox.Notification as LibboxNotification
 import java.io.File
 import java.net.Inet6Address
 import java.net.InetAddress

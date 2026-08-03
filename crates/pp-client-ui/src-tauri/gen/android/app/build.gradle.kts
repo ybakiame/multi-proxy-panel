@@ -73,8 +73,10 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
-    // libbox（sing-box）Android 库，由 scripts/build-libbox.sh 构建产物，不入库。
-    implementation(files("libs/libbox.aar"))
+    // panelcore（合并核心）Android 库，由 scripts/build-panel-core.sh 合并构建，
+    // 同时含 sing-box libbox 与 mihomo 双核心绑定（gomobile 单库单运行时，
+    // 避免 libbox.aar + mihomo.aar 双 go.* 运行时冲突），本地构建产物，不入库。
+    implementation(files("libs/panelcore.aar"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
