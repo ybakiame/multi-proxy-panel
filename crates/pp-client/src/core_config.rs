@@ -209,6 +209,14 @@ fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<St
 /// `detour to an empty direct outbound makes no sense`，空 = DialerOptions 全
 /// 默认）。该限制针对任何空 direct 出站（含显式声明的），并非仅内建 direct；
 /// 带额外配置键的 direct 出站（如 `override_address`）可作为 detour 目标。
+///
+/// DNS 段注入后为每个含 `server` 字段的出站补充 `domain_resolver = {"server":
+/// "local"}`（见 [`ensure_outbound_domain_resolvers`]）。sing-box 1.12+ 中出站
+/// dialer 解析 `server` 域名（如代理服务器域名 `proxy-panel.ybakiame.net`）时
+/// 回退到 `route.default_domain_resolver`——即注入的 remote（DoH 经主代理出站），
+/// 而 remote 又要先连上代理 → 「经代理解析代理服务器域名」回环。显式
+/// `domain_resolver` 让代理服务器域名走 local UDP 直连解析、拨号直连，绕开回环
+/// （对齐 husi `ConfigBuilder.kt` 的参考做法）。
 pub fn inject_android_dns(composed: &mut Value) {
     let Some(obj) = composed.as_object_mut() else {
         return;
@@ -239,6 +247,8 @@ pub fn inject_android_dns(composed: &mut Value) {
         }),
     );
     ensure_domain_resolver(obj);
+    // 代理出站 server 域名经 local 直连解析，避免经 remote 回环（见函数文档）。
+    ensure_outbound_domain_resolvers(obj);
 }
 
 /// 判断 `tag` 指向的出站是否为「空 direct 出站」（DialerOptions 全默认，仅含
@@ -268,6 +278,36 @@ fn is_empty_direct_outbound(obj: &serde_json::Map<String, Value>, tag: &str) -> 
                 .all(|k| matches!(k.as_str(), "type" | "tag"));
     }
     false
+}
+
+/// 为含 `server` 字段的出站注入 `domain_resolver`，指向直连 DNS server `local`。
+///
+/// sing-box 1.12+ 中出站 dialer 解析 `server` 域名（如代理服务器域名）时回退到
+/// `route.default_domain_resolver`；Android 注入的默认 resolver 是 remote（DoH 经
+/// 主代理出站），导致代理服务器域名「经代理解析」→ DoH 又要先连代理 → 回环。
+/// 显式声明 `domain_resolver = {"server": "local"}` 让代理服务器域名走 local
+/// UDP 直连解析（local 无 detour = 直连拨号），绕开回环（对齐 husi
+/// `ConfigBuilder.kt` 参考做法）。
+///
+/// 仅处理含字符串 `server` 字段的出站（selector/urltest/direct/block 等无
+/// `server` 字段的不动）；已自带 `domain_resolver` 的出站不覆盖（尊重订阅/模板
+/// 显式配置）。
+fn ensure_outbound_domain_resolvers(obj: &mut serde_json::Map<String, Value>) {
+    let Some(outbounds) = obj.get_mut("outbounds").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for outbound in outbounds {
+        let Some(outbound_obj) = outbound.as_object_mut() else {
+            continue;
+        };
+        if outbound_obj.get("server").and_then(Value::as_str).is_none() {
+            continue;
+        }
+        if outbound_obj.contains_key("domain_resolver") {
+            continue;
+        }
+        outbound_obj.insert("domain_resolver".to_string(), json!({ "server": "local" }));
+    }
 }
 
 /// mihomo 面板注入：
@@ -1101,7 +1141,8 @@ rules:
     fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
         let sub = json!({
             "outbounds": [
-                { "type": "selector", "tag": "proxy", "outbounds": ["direct"], "default": "direct" },
+                { "type": "selector", "tag": "proxy", "outbounds": ["n1", "direct"], "default": "n1" },
+                { "type": "vless", "tag": "n1", "server": "proxy-panel.ybakiame.net", "server_port": 443 },
                 { "type": "direct", "tag": "direct" }
             ],
             "route": { "final": "proxy" }
@@ -1122,6 +1163,63 @@ rules:
             cfg["route"]["default_domain_resolver"],
             json!({ "server": "remote" })
         );
+        // 含 server 字段的出站注入 domain_resolver → local（代理服务器域名直连解析，
+        // 避免经 remote 回环）；selector 出站无 server 字段 → 不注入。
+        let outbounds = cfg["outbounds"].as_array().unwrap();
+        let vless = outbounds.iter().find(|o| o["tag"] == "n1").unwrap();
+        assert_eq!(vless["domain_resolver"], json!({ "server": "local" }));
+        let selector = outbounds.iter().find(|o| o["tag"] == "proxy").unwrap();
+        assert!(
+            selector.get("domain_resolver").is_none(),
+            "selector 出站不应注入 domain_resolver"
+        );
+    }
+
+    /// 出站已自带 `domain_resolver`（订阅/模板显式配置）时不被覆盖。
+    #[test]
+    fn inject_android_dns_keeps_existing_outbound_domain_resolver() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["n1"], "default": "n1" },
+                {
+                    "type": "vless", "tag": "n1", "server": "example.com", "server_port": 443,
+                    "domain_resolver": { "server": "custom" }
+                }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        let outbounds = cfg["outbounds"].as_array().unwrap();
+        let vless = outbounds.iter().find(|o| o["tag"] == "n1").unwrap();
+        assert_eq!(
+            vless["domain_resolver"],
+            json!({ "server": "custom" }),
+            "订阅/模板显式 domain_resolver 不被覆盖"
+        );
+    }
+
+    /// 无 `server` 字段的出站（selector/urltest/direct）不注入 domain_resolver。
+    #[test]
+    fn inject_android_dns_does_not_inject_domain_resolver_without_server() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "selector", "tag": "proxy", "outbounds": ["auto", "direct"], "default": "auto" },
+                { "type": "urltest", "tag": "auto", "outbounds": ["direct"], "url": "https://www.gstatic.com/generate_204", "interval": "5m" },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": { "final": "proxy" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        for outbound in cfg["outbounds"].as_array().unwrap() {
+            assert!(
+                outbound.get("domain_resolver").is_none(),
+                "无 server 字段的出站不应注入 domain_resolver: {outbound}"
+            );
+        }
     }
 
     /// 无 selector 时 detour 目标回退 route.final；route.final = "direct"（空 direct
