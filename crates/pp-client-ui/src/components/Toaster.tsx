@@ -27,7 +27,7 @@ export function Toaster() {
           className="pointer-events-auto flex items-stretch overflow-hidden rounded-lg border border-border/70 bg-surface shadow-lg"
         >
           <span className={`w-1 shrink-0 ${KIND_BAR[toast.kind]}`} aria-hidden="true" />
-          <p className="flex-1 px-3 py-2.5 text-sm leading-snug text-foreground">{toast.message}</p>
+          <p className="min-w-0 flex-1 break-words px-3 py-2.5 text-sm leading-snug text-foreground">{toast.message}</p>
           <button
             type="button"
             aria-label="关闭"

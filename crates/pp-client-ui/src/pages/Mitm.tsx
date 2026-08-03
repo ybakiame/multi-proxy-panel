@@ -87,8 +87,10 @@ export default function Mitm() {
                   <dd>{config?.mitm_enabled ? "已启用" : "未启用"}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <dt className="text-muted">CA 目录</dt>
-                  <dd className="truncate font-mono">{caDir}</dd>
+                  <dt className="shrink-0 text-muted">CA 目录</dt>
+                  <dd className="min-w-0 truncate font-mono" title={caDir}>
+                    {caDir}
+                  </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-muted">脚本方言</dt>
@@ -107,8 +109,10 @@ export default function Mitm() {
               <div className="flex flex-col gap-3 text-sm">
                 <dl className="flex flex-col gap-3">
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="text-muted">证书路径</dt>
-                    <dd className="truncate font-mono text-xs">{mitmCa?.path ?? "-"}</dd>
+                    <dt className="shrink-0 text-muted">证书路径</dt>
+                    <dd className="min-w-0 truncate font-mono text-xs" title={mitmCa?.path ?? "-"}>
+                      {mitmCa?.path ?? "-"}
+                    </dd>
                   </div>
                   <div className="flex items-center gap-3">
                     <Button variant="secondary" onPress={() => void handleCopyCaPem()}>
@@ -193,7 +197,9 @@ export default function Mitm() {
                         <Table.Row key={record.id}>
                           <Table.Cell>{formatTime(record.timestamp)}</Table.Cell>
                           <Table.Cell>{record.method}</Table.Cell>
-                          <Table.Cell>{record.url}</Table.Cell>
+                          <Table.Cell className="max-w-[240px] truncate">
+                            <span title={record.url}>{record.url}</span>
+                          </Table.Cell>
                           <Table.Cell>{record.response_status}</Table.Cell>
                           <Table.Cell>{record.duration_ms} ms</Table.Cell>
                         </Table.Row>
