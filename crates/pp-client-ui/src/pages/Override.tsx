@@ -225,7 +225,7 @@ export default function Override() {
                   <div
                     key={profile.id}
                     className={clsx(
-                      "flex items-center gap-3 rounded-lg border p-3 transition-colors",
+                      "flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors",
                       isSelected ? "border-accent/60 bg-accent/5" : "border-border/70 bg-surface-secondary/40",
                     )}
                   >
@@ -236,7 +236,7 @@ export default function Override() {
                     >
                       <span
                         className={clsx(
-                          "truncate text-sm",
+                          "max-w-full truncate text-sm",
                           isSelected ? "font-medium text-foreground" : "text-foreground/90",
                         )}
                         title={profile.name}
