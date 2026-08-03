@@ -1,9 +1,7 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
-import { ToastProvider, useTheme } from "@heroui/react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { useTheme } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
-import { gpuAcceleration } from "./api";
 import { Toaster } from "./components/Toaster";
-import { setToastMode } from "./toast";
 import { MobileNav } from "./layout/MobileNav";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -79,46 +77,25 @@ function ThemeBootstrap() {
 }
 
 /**
- * Toast 按渲染能力选择实现（详见 `./toast.ts`）：
+ * Toast 统一使用自实现静态实现（详见 `./toast.ts`），不再按 GPU 探测启用 HeroUI
+ * 原生 toast。
  *
- * - 有 GPU 加速（`gpu_acceleration` 命令返回 `true`）：挂载 HeroUI `ToastProvider`，
- *   用原生动画 toast。
- * - 无 GPU（WSL 无 WSLg 直通或强制软渲染）：挂载自实现 `<Toaster />`（fallback，
- *   保留不删）。背景：HeroUI 3.2.2 的 ToastProvider 渲染 toast 时调用
- *   `document.startViewTransition()`，WebKitGTK 2.52.5 在 WSL 软渲染下执行
- *   view-transition 会 SIGSEGV 直接退出进程。
+ * 背景：HeroUI 3.2.2 的 `ToastProvider` 渲染 toast 时调用
+ * `document.startViewTransition()`，WebKitGTK 2.52.5 在 WSL 软渲染下执行
+ * view-transition 会 SIGSEGV 直接退出进程。此前按 `gpu_acceleration` 探测结果
+ * 决定是否挂载 HeroUI `ToastProvider`，但 WSLg 有 GPU 时探测返回 `true` 仍会走
+ * HeroUI toast 而闪退，故统一走自实现 `<Toaster />`。
  *
- * 默认 `false`（自实现）为保守安全：命令返回前不挂载 HeroUI toast，命令失败
- * 时保持自实现路径。`ToastProvider` 独立挂载（不带 children）——HeroUI 3.2.2
- * 会把 children 当作 react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见
- * toast 时 region 返回 null，若用它包裹应用内容会导致整棵 UI 树渲染为空。
+ * 说明：`ToastProvider` 若需独立挂载（不带 children）——HeroUI 3.2.2 会把 children
+ * 当作 react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region
+ * 返回 null，若用它包裹应用内容会导致整棵 UI 树渲染为空。
  */
 export default function App() {
-  const [heroToastEnabled, setHeroToastEnabled] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    gpuAcceleration()
-      .then((hasGpu) => {
-        if (cancelled) {
-          return;
-        }
-        setHeroToastEnabled(hasGpu);
-        setToastMode(hasGpu);
-      })
-      .catch(() => {
-        // 命令失败保持默认：heroToastEnabled=false + heroMode=false（自实现路径）。
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
     <HashRouter>
       <ThemeBootstrap />
       <ErrorBoundary>
-        {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
+        <Toaster />
         <div className="flex h-full min-h-screen bg-background text-foreground">
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">

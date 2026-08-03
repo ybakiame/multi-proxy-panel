@@ -9,10 +9,11 @@ import { create } from "zustand";
  * WebKitGTK 2.52.5 在 WSL 软渲染下执行 view-transition 会 SIGSEGV 直接退出整个
  * 进程（dmesg 实证），每次 toast（保存成功/代理启停）应用即崩溃。
  *
- * 方案：双实现委托。桌面端挂载时经 `gpu_acceleration` 命令探测渲染能力——
- * 有 GPU 加速（`setToastMode(true)`）时用 HeroUI 原生 toast（带动画）；
- * 无 GPU / 命令返回前（`heroMode` 默认 `false`，保守安全）走自实现静态 toast：
- * 仅更新 zustand store，由 `<Toaster />` 消费渲染，零动画、零 HeroUI 依赖。
+ * 结论：统一走自实现静态 toast，不再按 GPU 探测启用 HeroUI 原生 toast。WSLg
+ * 有 GPU 时 `gpu_acceleration` 探测返回 `true`，此前据此启用 HeroUI toast 导致
+ * 桌面端闪退。`setToastMode` / `heroMode` 机制保留（默认 `false` 保守安全）仅作
+ * 防误启用护栏，无任何调用方会置 `true`，所有 toast 固定走 zustand store，由
+ * `<Toaster />` 消费渲染，零动画、零 view-transition。
  * 行为对齐：右下角堆叠、最多同屏 3 条、4 秒自动消失。
  */
 
