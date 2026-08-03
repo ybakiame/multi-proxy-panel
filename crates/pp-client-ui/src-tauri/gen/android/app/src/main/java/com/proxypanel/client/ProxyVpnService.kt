@@ -593,13 +593,13 @@ class ProxyVpnService : VpnService() {
   private fun timestampNow(): String = LOG_TS_FORMATTER.format(OffsetDateTime.now())
 
   /**
-   * 追加 libbox 日志到 `<pkg>/logs/libbox.log`（与 Rust 的 data_dir/logs 同目录，
+   * 追加 libbox 日志到 `filesDir/logs/libbox.log`（与 Rust 的 data_dir/logs 同目录，
    * 供日志导出排查 Go 侧错误链）。超过 1MB 时截断：删除重建写入最新缓冲。
    * 任何写入异常一律静默，不得影响 VPN 主流程。
    */
   private fun appendToLibboxLogFile(message: String) {
     try {
-      val logDir = File(filesDir.parentFile, "logs")
+      val logDir = File(filesDir, "logs")
       if (!logDir.isDirectory && !logDir.mkdirs()) {
         return
       }

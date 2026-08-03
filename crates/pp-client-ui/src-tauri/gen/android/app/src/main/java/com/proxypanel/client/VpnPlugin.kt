@@ -146,7 +146,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   /**
-   * 把 `<pkg>/logs/` 下全部 `.log` 文件打包 zip 导出到公共 `Download/ProxyPanel/`：
+   * 把 `filesDir/logs/` 下 `.log` 文件及 `app.log.*` 滚动文件打包 zip 导出到公共 `Download/ProxyPanel/`：
    * - API 29+：经 [MediaStore.Downloads] 插入（`RELATIVE_PATH=Download/ProxyPanel/`，
    *   无需任何权限）；
    * - API 26-28：旧式直接写公共下载目录（依赖 manifest 中
@@ -177,10 +177,12 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** 收集 `<pkg>/logs/` 下全部 `.log` 文件（目录不存在 / 无日志时返回空数组）。 */
+  /** 收集 `filesDir/logs/` 下 `.log` 文件及 `app.log.*` 滚动文件（目录不存在 / 无日志时返回空数组）。 */
   private fun collectLogFiles(): Array<File> {
-    val logsDir = File(activity.filesDir.parentFile, "logs")
-    return logsDir.listFiles { f -> f.isFile && f.name.endsWith(".log") } ?: emptyArray()
+    val logsDir = File(activity.filesDir, "logs")
+    return logsDir.listFiles { f ->
+      f.isFile && (f.name.endsWith(".log") || f.name.startsWith("app.log"))
+    } ?: emptyArray()
   }
 
   /** 导出文件名的分钟级时间戳（`yyyyMMdd-HHmmss`）。 */
