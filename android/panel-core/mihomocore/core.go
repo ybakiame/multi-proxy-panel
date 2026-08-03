@@ -13,6 +13,7 @@ import (
 	"github.com/metacubex/mihomo/dns"
 	"github.com/metacubex/mihomo/hub"
 	"github.com/metacubex/mihomo/hub/executor"
+	"github.com/metacubex/mihomo/hub/route"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel"
@@ -54,6 +55,14 @@ func Setup(homeDir string, configYAML []byte, cb Callback) error {
 	}
 
 	constant.SetHomeDir(homeDir)
+	// mihomo 在 `android && cmfa` 构建下默认 SetEmbedMode(true)
+	// （hub/route/patch_android.go），embed 模式会跳过注册
+	// configs/rules/upgrade 的写接口（PUT/PATCH /configs、PATCH
+	// /rules/disable 等），导致规则模式热切换（pp-client
+	// push_clash_mode，PATCH /configs）返回 405。此处关闭 embed 模式
+	// 恢复完整 Clash API；external-controller 仅监听 127.0.0.1 回环
+	// 地址（可选 secret 鉴权），风险面可控。
+	route.SetEmbedMode(false)
 	callback = cb
 	startLogForwarder(cb)
 
