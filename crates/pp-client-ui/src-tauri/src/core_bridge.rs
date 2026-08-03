@@ -1,11 +1,16 @@
-//! Android 核心引擎桥（真实实现：Rust ↔ Kotlin VpnPlugin/libbox 通道）。
+//! Android 核心引擎桥（真实实现：Rust ↔ Kotlin VpnPlugin/libbox + mihomo 通道）。
 //!
-//! Android 上核心由 Kotlin 侧 libbox（VpnService）驱动，Rust 侧无法 spawn
-//! 二进制。本模块在 `run()` 的 `vpn` 插件 setup 中经
-//! `tauri::plugin::PluginApi::register_android_plugin` 注册
-//! `com.proxypanel.client` 的 `VpnPlugin`，拿到 `PluginHandle` 后安装真实桥：
+//! Android 上核心由 Kotlin 侧 VpnPlugin 驱动（sing-box libbox / mihomo wrapper，
+//! 二者经 panelcore.aar 合并绑定），Rust 侧无法 spawn 二进制。本模块在 `run()`
+//! 的 `vpn` 插件 setup 中经 `tauri::plugin::PluginApi::register_android_plugin`
+//! 注册 `com.proxypanel.client` 的 `VpnPlugin`，拿到 `PluginHandle` 后安装真实桥：
 //! `start` / `stop` / `is_running` 通过 `run_mobile_plugin_async` 转发给
-//! Kotlin 插件，核心生命周期由 libbox 执行。
+//! Kotlin 插件，核心生命周期由 libbox / Mihomocore 执行。
+//!
+//! 双核心分派：`start` 按 `core_type` 映射到 Kotlin `StartArgs.core`
+//! （`"singbox"` / `"mihomo"`），由 VpnPlugin 分派到对应 VPN 服务；配置以
+//! JSON 文本经 `config` 字段传给 Kotlin（JSON 为合法 YAML 子集，mihomo 的
+//! `hub.Parse` 可直接解析，无需改序列化）。
 //!
 //! 错误透传：Kotlin 侧 `invoke.reject(..., "vpn_not_authorized")` 的拒绝
 //! 在 [`plugin_error`] 中被规范为可识别前缀 `vpn_not_authorized: ...` 上抛，
@@ -14,7 +19,7 @@
 use std::sync::Arc;
 
 use pp_client::core_engine::{install_core_engine_bridge, BoxFuture, CoreEngineBridge};
-use pp_common::{PanelError, PanelResult};
+use pp_common::{CoreType, PanelError, PanelResult};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::plugin::mobile::PluginInvokeError;
@@ -71,10 +76,20 @@ pub(crate) fn plugin_error(err: PluginInvokeError) -> PanelError {
 }
 
 impl CoreEngineBridge for AndroidCoreBridge {
-    fn start<'a>(&'a self, config_json: &'a Value) -> BoxFuture<'a, PanelResult<()>> {
+    fn start<'a>(
+        &'a self,
+        core_type: CoreType,
+        config_json: &'a Value,
+    ) -> BoxFuture<'a, PanelResult<()>> {
         Box::pin(async move {
-            // 与 Kotlin `StartArgs`（`config: String`）对齐：配置以 JSON 文本传递。
-            let payload = serde_json::json!({ "config": config_json.to_string() });
+            // 与 Kotlin `StartArgs`（`config: String` + `core: String?`）对齐：
+            // 配置以 JSON 文本传递，核心类型按桥收到的 `core_type` 分派
+            // （`"singbox"` 默认 / `"mihomo"` → MihomoVpnService）。
+            let core = match core_type {
+                CoreType::Mihomo => "mihomo",
+                _ => "singbox",
+            };
+            let payload = serde_json::json!({ "config": config_json.to_string(), "core": core });
             self.handle
                 .run_mobile_plugin_async::<Value>("start", payload)
                 .await
