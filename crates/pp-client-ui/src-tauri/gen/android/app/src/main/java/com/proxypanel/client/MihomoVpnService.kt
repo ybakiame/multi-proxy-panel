@@ -283,6 +283,61 @@ class MihomoVpnService : VpnService() {
   }
 
   /**
+   * 首启内置 GEO 数据复制：把 APK assets/geo/ 内的 GEO 数据三件套
+   * （geoip.metadb / geosite.dat / ASN.mmdb，由
+   * scripts/update-android-geodata.sh 生成）复制到 HomeDir（= filesDir），
+   * 保证配置含 GEOIP/GEOSITE/ASN 规则时 mihomo 启动无需联网下载 GEO 数据
+   * （首次无代理环境下载必败导致启动失败）。
+   *
+   * 语义：目标文件已存在则跳过不覆盖，为将来应用内更新留路（保留更新后的
+   * 新数据）；复制采用流式逐块拷贝（文件 10MB+，禁止 readBytes 全量入内存）。
+   * 单文件复制失败仅记 Warn 日志，不中断启动（mihomo 侧仍有下载兜底）。
+   *
+   * 在 [startBox] 内 `Mihomocore.setup(...)` 调用前执行。
+   */
+  private fun ensureGeoData() {
+    val assetDir = "geo"
+    val names =
+      try {
+        assets.list(assetDir)
+      } catch (e: Exception) {
+        Log.w(TAG, "failed to list assets/$assetDir: ${e.message}")
+        return
+      }
+      ?: return
+    for (name in names) {
+      if (name == "VERSION") {
+        // VERSION 仅为发布元数据，非 GEO 数据，跳过
+        continue
+      }
+      val target = File(filesDir, name)
+      if (target.exists()) {
+        // 已存在不覆盖：保留应用内更新后的新数据
+        continue
+      }
+      try {
+        assets.open("$assetDir/$name").use { input ->
+          target.outputStream().use { output ->
+            input.copyTo(output, bufferSize = 64 * 1024)
+          }
+        }
+        Log.i(TAG, "copied GEO asset $name -> ${target.absolutePath}")
+      } catch (e: Exception) {
+        logWarn("failed to copy GEO asset $name: ${e.message ?: e.javaClass.simpleName}")
+        runCatching { target.delete() }
+      }
+    }
+  }
+
+  /** 写一条 Warn 级日志：Log.w + 本文件日志通道（环形缓冲 + mihomo.log，格式对齐 [callback] writeLog）。 */
+  private fun logWarn(message: String) {
+    Log.w(TAG, message)
+    val line = "[${timestampNow()}] $message"
+    appendMihomoLog(line)
+    appendToMihomoLogFile(line)
+  }
+
+  /**
    * 启动序列（锁内执行，跨实例共享 lifecycleLock）：
    *   1. 先 `Mihomocore.stop()` 关闭上一轮实例残留的核心/TUN（幂等），再
    *      setup 应用新配置 —— 重启时避免两个核心并发；
@@ -313,6 +368,9 @@ class MihomoVpnService : VpnService() {
       }
 
       // 1. setup：设置 HomeDir、保存回调、解析并应用 mihomo YAML 配置。
+      //    先确保 GEO 数据就位（配置含 GEOIP/GEOSITE/ASN 规则时启动需加载，
+      //    缺失则 mihomo 尝试联网下载，首次无代理环境必败）。
+      ensureGeoData()
       Mihomocore.setup(filesDir.absolutePath, config.toByteArray(Charsets.UTF_8), callback)
       coreCallback = callback
 
