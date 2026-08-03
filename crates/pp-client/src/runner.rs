@@ -77,11 +77,18 @@ mod tests {
     #[derive(Default)]
     struct MockBridge {
         running: Mutex<bool>,
+        /// 最近一次 `start` 收到的核心类型（供转发断言）。
+        received_core_type: Mutex<Option<CoreType>>,
     }
 
     impl CoreEngineBridge for MockBridge {
-        fn start<'a>(&'a self, config_json: &'a Value) -> BoxFuture<'a, PanelResult<()>> {
+        fn start<'a>(
+            &'a self,
+            core_type: CoreType,
+            config_json: &'a Value,
+        ) -> BoxFuture<'a, PanelResult<()>> {
             Box::pin(async move {
+                *self.received_core_type.lock().unwrap() = Some(core_type);
                 assert_eq!(config_json, &serde_json::json!({"tag": "mock-config"}));
                 *self.running.lock().unwrap() = true;
                 Ok(())
@@ -124,6 +131,12 @@ mod tests {
         runner.start(&config).await.unwrap();
         assert!(runner.is_running().await);
         assert!(mock.is_running().await);
+        // 桥收到的 core_type 应为构造运行器时传入的 SingBox（转发断言）。
+        assert_eq!(
+            *mock.received_core_type.lock().unwrap(),
+            Some(CoreType::SingBox),
+            "桥 start 应收到构造运行器时的核心类型"
+        );
         runner.stop().await.unwrap();
         assert!(!runner.is_running().await);
         assert!(!mock.is_running().await);

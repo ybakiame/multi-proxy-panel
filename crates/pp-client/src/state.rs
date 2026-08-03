@@ -158,11 +158,10 @@ impl ClientState {
         loaded.data_dir = data_dir;
         self.config = loaded;
 
-        // Android 强制覆盖：libbox 内置核心只支持 sing-box 配置，桌面那套
-        // 「选择核心二进制」在 Android 不存在，持久化的 core_type 可能为 mihomo；
-        // MITM / 系统代理 / TUN 为桌面专属功能，在 Android 上无对应实现或会
-        // 误拦启动（TUN 提权检查、系统代理 stub）。于配置加载后立即归一，避免
-        // 按持久化的桌面配置启动失败。
+        // Android 强制覆盖：Android 已支持双核心（panelcore.aar 合并绑定
+        // sing-box libbox + mihomo），core_type 尊重用户配置；MITM / 系统代理 /
+        // TUN 为桌面专属功能，在 Android 上无对应实现或会误拦启动（TUN 提权检查、
+        // 系统代理 stub）。于配置加载后立即归一，避免按持久化的桌面配置启动失败。
         #[cfg(target_os = "android")]
         apply_android_overrides(&mut self.config);
 
@@ -296,13 +295,15 @@ impl ClientState {
         // 复写）之后强制注入，模板/复写中的同名字段以设置为准整体替换。
         //
         // Android 的 TUN 开关与桌面语义解耦：Android 流量由 VpnService（即 TUN）
-        // 接管，合成配置必须包含 tun 入站，否则 libbox 不会回调 `openTun()` 建立
-        // VPN 接口（核心显示运行中但无接口）。故 Android 恒强制 `tun_enabled=true`；
-        // 桌面按用户设置（`apply_android_overrides` 中 `tun_enabled=false` 只作用于
-        // 桌面预检与 UI 语义，见该函数注释）。
+        // 接管，按核心类型区分注入策略——sing-box 需配置层注入 tun 入站才能触发
+        // libbox 回调 `openTun()` 建立 VPN 接口（核心显示运行中但无接口），故
+        // Android + sing-box 恒强制 `tun_enabled=true`；mihomo 在 Android 由 wrapper
+        // 以 fd 驱动 TUN（wrapper Setup 已强制 `Tun.Enable=false`），配置层不注入
+        // tun 段，故 Android + mihomo 恒为 false。桌面按用户设置原样透传。
         let features = core_config::PanelFeatures {
             tun_enabled: panel_features_tun_enabled(
                 cfg!(target_os = "android"),
+                self.config.core_type,
                 self.config.tun_enabled,
             ),
             tun_stack: self.config.tun_stack.clone(),
@@ -606,32 +607,33 @@ impl ClientState {
     }
 }
 
-/// Android 启动强制覆盖：libbox 内置核心只支持 sing-box 配置，且桌面专属功能在
-/// Android 上无对应实现（或会破坏 VpnService 接管）。
+/// Android 启动强制覆盖：桌面专属功能在 Android 上无对应实现（或会破坏
+/// VpnService 接管）。
+///
+/// Android 已支持双核心（panelcore.aar 合并绑定 sing-box libbox + mihomo），
+/// `core_type` 尊重用户配置，不再强制回退 sing-box。
 ///
 /// 各强制项原因：
-/// - `core_type = SingBox`：Android 核心为内置 libbox，仅接受 sing-box 配置；
-///   持久化的 `core_type` 可能为 mihomo，强制回退避免按 mihomo 合成配置导致启动失败；
 /// - `mitm_enabled = false`：MITM 依赖 P3 特性，libbox 不支持，禁用避免链路注入；
 /// - `system_proxy_enabled = false`：Android 系统代理为 stub，调用会报错；
 /// - `tun_enabled = false`：仅作用于本结构体，驱动桌面 TUN 前置提权检查
 ///   （[`ClientState::start`] 中 `#[cfg(not(target_os = "android"))]` 门控）与设置页
-///   UI 语义；Android 流量由 VpnService（即 TUN）接管，合成配置时必须包含 tun 入站
-///   才能触发 libbox 的 `openTun()` 回调建立 VPN 接口，因此 [`ClientState::start`]
-///   构造 [`core_config::PanelFeatures`] 时在 Android 上经
-///   [`panel_features_tun_enabled`] 强制 `tun_enabled=true`（本处的 false 不参与
-///   合成配置）。
+///   UI 语义；Android 流量由 VpnService（即 TUN）接管，合成配置按核心类型区分：
+///   sing-box 必须注入 tun 入站才能触发 libbox 的 `openTun()` 回调建立 VPN 接口，
+///   mihomo 由 wrapper 以 fd 驱动 TUN（wrapper 已强制 `Tun.Enable=false`），配置层
+///   不注入 tun 段，因此 [`ClientState::start`] 构造 [`core_config::PanelFeatures`]
+///   时在 Android 上经 [`panel_features_tun_enabled`] 按核心类型取
+///   `tun_enabled`（本处的 false 不参与合成配置）。
 ///
 /// 仅在 Android 构建时由 [`ClientState::start`] 调用；桌面构建编译该函数仅供
 /// 单元测试验证语义。
 #[cfg(any(test, target_os = "android"))]
 fn apply_android_overrides(config: &mut ClientConfig) {
-    config.core_type = CoreType::SingBox;
     config.mitm_enabled = false;
     config.system_proxy_enabled = false;
     config.tun_enabled = false;
     tracing::info!(
-        "Android 强制覆盖：核心类型 = sing-box（libbox），禁用 MITM / 系统代理 / TUN（仅桌面语义，合成配置仍强制 tun 入站）"
+        "Android 强制覆盖：核心类型保持用户配置（sing-box / mihomo 双核心），禁用 MITM / 系统代理 / TUN（仅桌面语义，合成配置按核心类型注入 tun）"
     );
 }
 
@@ -659,10 +661,16 @@ fn redact_config_credentials(value: &mut serde_json::Value) {
     }
 }
 
-/// PanelFeatures 的 TUN 开关：Android 由 VpnService（libbox）接管流量，合成配置
-/// 必须恒含 tun 入站才能建立 VPN 接口；桌面按用户设置原样透传。
-fn panel_features_tun_enabled(is_android: bool, tun_enabled: bool) -> bool {
-    if is_android { true } else { tun_enabled }
+/// PanelFeatures 的 TUN 开关：Android 流量由 VpnService 接管，按核心类型区分——
+/// sing-box 需配置层注入 tun 入站才能触发 libbox 回调 `openTun()` 建立 VPN 接口
+/// （恒 true）；mihomo 在 Android 由 wrapper 以 fd 驱动 TUN（wrapper Setup 已强制
+/// `Tun.Enable=false`），配置层不注入 tun 段（恒 false）。桌面按用户设置原样透传。
+fn panel_features_tun_enabled(is_android: bool, core_type: CoreType, tun_enabled: bool) -> bool {
+    if is_android {
+        matches!(core_type, CoreType::SingBox)
+    } else {
+        tun_enabled
+    }
 }
 
 /// 订阅格式 ↔ 核心类型绑定校验。
@@ -1667,13 +1675,14 @@ mod tests {
         assert_eq!(mock.calls(), vec![]);
     }
 
-    /// Android 语义：`apply_android_overrides` 强制 sing-box 核心并禁用桌面专属
-    /// 功能。桌面构建无法执行 Android 路径，故抽取纯函数后在桌面测试其语义。
+    /// Android 语义：`apply_android_overrides` 禁用桌面专属功能但保持 `core_type`
+    /// 为用户配置（Android 已支持 sing-box / mihomo 双核心，不再强制 sing-box）。
+    /// 桌面构建无法执行 Android 路径，故抽取纯函数后在桌面测试其语义。
     ///
     /// 注意 `tun_enabled = false` 只作用于桌面预检与 UI 语义：Android 合成配置经
-    /// `panel_features_tun_enabled` 恒强制 `tun_enabled=true`（见下测试），二者不冲突。
+    /// `panel_features_tun_enabled` 按核心类型取 TUN 开关（见下测试），二者不冲突。
     #[test]
-    fn apply_android_overrides_forces_singbox_and_disables_desktop_features() {
+    fn apply_android_overrides_disables_desktop_features_but_keeps_core_type() {
         let mut cfg = ClientConfig {
             core_type: CoreType::Mihomo,
             mitm_enabled: true,
@@ -1684,29 +1693,45 @@ mod tests {
         apply_android_overrides(&mut cfg);
         assert_eq!(
             cfg.core_type,
-            CoreType::SingBox,
-            "Android 强制 sing-box 核心"
+            CoreType::Mihomo,
+            "Android 保持用户配置的 mihomo 核心"
         );
         assert!(!cfg.mitm_enabled, "Android 禁用 MITM");
         assert!(!cfg.system_proxy_enabled, "Android 禁用系统代理");
         assert!(!cfg.tun_enabled, "Android 禁用 TUN（桌面语义）");
     }
 
-    /// Android 合成配置的 TUN 开关恒为 true（libbox 需要 tun 入站才回调 openTun
-    /// 建立 VPN 接口）；桌面按用户设置原样透传。
+    /// Android 合成配置的 TUN 开关按核心类型区分：sing-box 需要 tun 入站才回调
+    /// openTun 建立 VPN 接口（恒 true）；mihomo 在 Android 由 wrapper 以 fd 驱动
+    /// TUN（wrapper 已强制 `Tun.Enable=false`），配置层不注入 tun 段（恒 false）；
+    /// 桌面按用户设置原样透传。
     #[test]
-    fn panel_features_tun_enabled_forces_true_on_android_only() {
+    fn panel_features_tun_enabled_android_and_desktop_semantics() {
+        // Android + sing-box → true（需要 tun 入站触发 openTun）。
         assert!(
-            panel_features_tun_enabled(true, false),
-            "Android 恒开启 TUN"
+            panel_features_tun_enabled(true, CoreType::SingBox, false),
+            "Android + sing-box 恒开启 TUN"
         );
-        assert!(panel_features_tun_enabled(true, true), "Android 恒开启 TUN");
         assert!(
-            !panel_features_tun_enabled(false, false),
+            panel_features_tun_enabled(true, CoreType::SingBox, true),
+            "Android + sing-box 恒开启 TUN"
+        );
+        // Android + mihomo → false（TUN 由 wrapper 以 fd 驱动，配置不注入 tun 段）。
+        assert!(
+            !panel_features_tun_enabled(true, CoreType::Mihomo, false),
+            "Android + mihomo 不注入 TUN"
+        );
+        assert!(
+            !panel_features_tun_enabled(true, CoreType::Mihomo, true),
+            "Android + mihomo 不注入 TUN（忽略用户设置）"
+        );
+        // 桌面按用户设置原样透传（与核心类型无关）。
+        assert!(
+            !panel_features_tun_enabled(false, CoreType::SingBox, false),
             "桌面关闭 TUN 时保持关闭"
         );
         assert!(
-            panel_features_tun_enabled(false, true),
+            panel_features_tun_enabled(false, CoreType::Mihomo, true),
             "桌面开启 TUN 时保持开启"
         );
     }

@@ -1,10 +1,10 @@
-//! 核心引擎桥接抽象（Android libbox 接入预留）。
+//! 核心引擎桥接抽象（Android VpnPlugin 接入）。
 //!
 //! 桌面端核心由 `pp-core` 的 [`pp_core::CoreManager`] 直接 spawn 二进制进程驱动；
-//! Android 上无法 spawn 进程，核心将由 Kotlin 侧 libbox（VpnService）驱动。
-//! Rust 侧需要一个「插件桥」占位：src-tauri 在 Android 启动时安装桥实现，
-//! [`CoreRunner`] 在 Android 下委托给该桥（P1c 实现真正的 Kotlin 通道，
-//! 本模块只建抽象与接线）。
+//! Android 上无法 spawn 进程，核心将由 Kotlin 侧 VpnPlugin（sing-box libbox /
+//! mihomo wrapper，经 panelcore.aar 合并绑定）驱动。Rust 侧需要一个「插件桥」：
+//! src-tauri 在 Android 启动时安装桥实现，[`CoreRunner`] 在 Android 下委托给该桥
+//! （本模块建抽象与接线，真正 Kotlin 通道在 src-tauri 的 core_bridge 实现）。
 //!
 //! 桥的生命周期接口（start / stop / is_running）与 `pp-core` 的
 //! [`pp_core::CoreManager`] 异步签名兼容；全局注册表用 [`OnceLock`] 保证
@@ -21,10 +21,17 @@ use serde_json::Value;
 /// 桥接方法返回的盒化 future（手写对象安全异步签名，避免引入额外 crate）。
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// 核心引擎桥：把核心生命周期委托给平台侧实现（Android 下为 Kotlin libbox）。
+/// 核心引擎桥：把核心生命周期委托给平台侧实现（Android 下为 Kotlin VpnPlugin）。
 pub trait CoreEngineBridge: Send + Sync {
-    /// 启动核心（`config_json` 为 sing-box/mihomo 配置 JSON）。
-    fn start<'a>(&'a self, config_json: &'a Value) -> BoxFuture<'a, PanelResult<()>>;
+    /// 启动核心。
+    ///
+    /// `core_type` 供 Android 桥向 Kotlin 插件分派核心类型（`"singbox"` /
+    /// `"mihomo"`），桌面实现忽略；`config_json` 为 sing-box/mihomo 配置 JSON。
+    fn start<'a>(
+        &'a self,
+        core_type: CoreType,
+        config_json: &'a Value,
+    ) -> BoxFuture<'a, PanelResult<()>>;
 
     /// 停止核心。
     fn stop<'a>(&'a self) -> BoxFuture<'a, PanelResult<()>>;
@@ -71,7 +78,7 @@ impl CoreManager for CoreEngineBridgeAdapter {
     }
 
     async fn start(&self, config: &Value) -> PanelResult<()> {
-        self.bridge.start(config).await
+        self.bridge.start(self.core_type, config).await
     }
 
     async fn stop(&self) -> PanelResult<()> {
