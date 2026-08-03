@@ -1633,7 +1633,35 @@ pub async fn list_downloaded_versions(
     list_downloaded_versions_impl(&state.data_dir, core_type)
 }
 
+/// 下载成功后自动选中当前核心的纯逻辑（无网络）：下载的核心类型与
+/// `client.json` 中当前 `core_type` 一致时，把 `core_binary` 写为刚下载的路径
+/// 并保存（下载即所用，免去手动回首页再选）；类型不匹配或配置缺失/损坏时
+/// 不动当前选择，避免制造核心/二进制不匹配。仅桌面端生效：Android 核心为
+/// 内置 panelcore 合并绑定，无本地二进制管理语义（与 `save_config_impl` 的
+/// core_type 联动保持一致）。
+#[cfg(not(target_os = "android"))]
+fn auto_select_downloaded_core(
+    data_dir: &std::path::Path,
+    core_type: CoreType,
+    core_path: &std::path::Path,
+) {
+    let Ok(mut config) = pp_client::ClientConfig::load(data_dir) else {
+        return;
+    };
+    if config.core_type != core_type {
+        return;
+    }
+    config.core_binary = core_path.to_path_buf();
+    if let Err(e) = config.save() {
+        tracing::warn!("保存自动选中核心配置失败: {e}");
+    }
+}
+
 /// 下载指定版本核心并返回其视图。
+///
+/// 下载成功后若核心类型与当前配置 `core_type` 一致，自动将其设为当前
+/// `core_binary`（下载即所用，免去手动回首页再选）；类型不匹配时不动当前
+/// 选择。返回视图的 `active` 反映更新后的当前核心。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn download_core(
     state: State<'_, AppState>,
@@ -1646,6 +1674,10 @@ pub async fn download_core(
         .download(ct, &version)
         .await
         .map_err(|e| format!("下载核心失败: {e}"))?;
+    // 下载类型匹配当前 core_type 时自动选中（写回 core_binary），免去手动
+    // 回首页再选；类型不匹配不动当前选择，避免制造核心/二进制不匹配。
+    #[cfg(not(target_os = "android"))]
+    auto_select_downloaded_core(&state.data_dir, ct, &core.path);
     let active = active_binary(&state.data_dir);
     Ok(LocalCoreView::from_core(&core, &active))
 }
@@ -2465,6 +2497,74 @@ mod tests {
 
         // 无效 core_type 字符串报错。
         assert!(list_downloaded_versions_impl(dir.path(), "bogus".to_string()).is_err());
+    }
+
+    // ---------- 项 2.1.1：download_core 下载后自动选中（决策逻辑，无网络） ----------
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn auto_select_downloaded_core_matching_type_updates_core_binary() {
+        let dir = TestDir::new();
+        let prev = ClientConfig::new(
+            dir.path().to_path_buf(),
+            "http://127.0.0.1:50052",
+            "tok",
+            CoreType::SingBox,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+        );
+        prev.save().unwrap();
+
+        // 下载类型（singbox）与当前 core_type 一致 → 自动写回 core_binary。
+        let downloaded = dir.path().join("cores/sing-box/1.14.0/sing-box");
+        auto_select_downloaded_core(dir.path(), CoreType::SingBox, &downloaded);
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(saved.core_type, CoreType::SingBox);
+        assert_eq!(
+            saved.core_binary, downloaded,
+            "下载类型匹配当前 core_type 时应自动选中刚下载的路径"
+        );
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn auto_select_downloaded_core_mismatched_type_keeps_binary_untouched() {
+        let dir = TestDir::new();
+        let prev = ClientConfig::new(
+            dir.path().to_path_buf(),
+            "http://127.0.0.1:50052",
+            "tok",
+            CoreType::SingBox,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+        );
+        prev.save().unwrap();
+
+        // 下载类型（mihomo）与当前 core_type（singbox）不一致 → 不动当前选择。
+        let downloaded = dir.path().join("cores/mihomo/1.19.29/mihomo");
+        auto_select_downloaded_core(dir.path(), CoreType::Mihomo, &downloaded);
+
+        let saved = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(
+            saved.core_binary,
+            dir.path().join("cores/sing-box/1.13.15/sing-box"),
+            "类型不匹配时不应改动当前 core_binary"
+        );
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn auto_select_downloaded_core_without_config_does_not_create_one() {
+        let dir = TestDir::new();
+        // 尚无 client.json（全新环境）：不自动创建配置。
+        auto_select_downloaded_core(
+            dir.path(),
+            CoreType::SingBox,
+            &dir.path().join("cores/sing-box/1.14.0/sing-box"),
+        );
+        assert!(
+            !dir.path().join("client.json").exists(),
+            "无现有配置时不应新建 client.json"
+        );
     }
 
     // ---------- 项 2.1：delete_core 命令层 ----------
