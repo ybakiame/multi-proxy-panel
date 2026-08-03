@@ -7,13 +7,18 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager.NameNotFoundException
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.IpPrefix
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -21,7 +26,7 @@ import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
-import io.nekohasekai.libbox.NetworkInterface
+import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.RoutePrefix
@@ -31,10 +36,12 @@ import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import java.io.File
+import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InterfaceAddress
+import java.net.NetworkInterface
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
-import java.util.NoSuchElementException
 
 /**
  * TUN/VPN 前台服务：通过 libbox（sing-box）驱动，由 [VpnPlugin] 的
@@ -161,8 +168,8 @@ class ProxyVpnService : VpnService() {
   private val mainHandler = Handler(Looper.getMainLooper())
 
   /**
-   * libbox 回调实现。除 openTun 外均为最小实现：
-   * 本步只保证启动链路可用，接口监控/连接归属/证书等功能后续按需补齐。
+   * libbox 回调实现。openTun / 默认接口监控 / 接口枚举已为真实实现；
+   * 连接归属 / 证书等功能保持最小实现，后续按需补齐。
    */
   private val platformInterface = object : PlatformInterface {
 
@@ -325,14 +332,68 @@ class ProxyVpnService : VpnService() {
       if (packageName == this@ProxyVpnService.packageName) Process.myUid() else -1
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
-      // 无默认接口监控（最小实现）。
+      // 默认网络接口监控：把物理接口 name/index 推给核心，供
+      // route.auto_detect_interface 学习默认出站接口（修复出站拨号
+      // no available network interface）。注册/推送逻辑见 [DefaultInterfaceMonitor]。
+      DefaultInterfaceMonitor.start(listener, getSystemService(ConnectivityManager::class.java))
     }
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
-      // 无默认接口监控（最小实现）。
+      DefaultInterfaceMonitor.close(listener)
     }
 
-    override fun getInterfaces(): NetworkInterfaceIterator = EmptyNetworkInterfaceIterator
+    override fun getInterfaces(): NetworkInterfaceIterator {
+      // 枚举全部已接入网络，组装 libbox NetworkInterface 列表（供核心学习
+      // 全部物理接口及 type/flags/metered 等属性）；单个网络失败跳过不中断。
+      val connectivity = getSystemService(ConnectivityManager::class.java)
+      val networks = connectivity.allNetworks
+      val networkInterfaces =
+        runCatching { NetworkInterface.getNetworkInterfaces().toList() }.getOrDefault(emptyList())
+      val interfaces = mutableListOf<LibboxNetworkInterface>()
+      for (network in networks) {
+        val boxInterface = LibboxNetworkInterface()
+        val linkProperties = connectivity.getLinkProperties(network) ?: continue
+        val networkCapabilities = connectivity.getNetworkCapabilities(network) ?: continue
+        boxInterface.name = linkProperties.interfaceName
+        val networkInterface = networkInterfaces.find { it.name == boxInterface.name } ?: continue
+        boxInterface.dnsServer = StringArray(
+          linkProperties.dnsServers.mapNotNull { it.hostAddress }.iterator()
+        )
+        boxInterface.type =
+          when {
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ->
+              Libbox.InterfaceTypeWIFI
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ->
+              Libbox.InterfaceTypeCellular
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ->
+              Libbox.InterfaceTypeEthernet
+            else -> Libbox.InterfaceTypeOther
+          }
+        boxInterface.index = networkInterface.index
+        runCatching { boxInterface.mtu = networkInterface.mtu }
+        boxInterface.addresses = StringArray(
+          networkInterface.interfaceAddresses.map { it.toPrefix() }.iterator()
+        )
+        var dumpFlags = 0
+        if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+          dumpFlags = OsConstants.IFF_UP or OsConstants.IFF_RUNNING
+        }
+        if (networkInterface.isLoopback) {
+          dumpFlags = dumpFlags or OsConstants.IFF_LOOPBACK
+        }
+        if (networkInterface.isPointToPoint) {
+          dumpFlags = dumpFlags or OsConstants.IFF_POINTOPOINT
+        }
+        if (networkInterface.supportsMulticast()) {
+          dumpFlags = dumpFlags or OsConstants.IFF_MULTICAST
+        }
+        boxInterface.flags = dumpFlags
+        boxInterface.metered =
+          !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        interfaces.add(boxInterface)
+      }
+      return InterfaceArray(interfaces.iterator())
+    }
 
     override fun underNetworkExtension(): Boolean = false
 
@@ -706,9 +767,192 @@ class ProxyVpnService : VpnService() {
     override fun next(): String = ""
     override fun len(): Int = 0
   }
+}
 
-  private object EmptyNetworkInterfaceIterator : NetworkInterfaceIterator {
-    override fun hasNext(): Boolean = false
-    override fun next(): NetworkInterface = throw NoSuchElementException("empty iterator")
+/**
+ * 默认网络接口监控：跟踪系统默认网络并把其物理接口（name/index）推送给
+ * libbox 的 [InterfaceUpdateListener]，sing-box `route.auto_detect_interface`
+ * 依赖该推送学习默认出站接口；此前为空实现导致核心学不到任何接口，所有
+ * 出站拨号报 `no available network interface`。
+ *
+ * 设计对齐 SFA（SagerNet/sing-box-for-android）DefaultNetworkMonitor：
+ * - 注册按 API 分级（minSdk 26）：31+ 用 registerBestMatchingNetworkCallback，
+ *   28–30 用 requestNetwork（REQUEST 模式；registerDefaultNetworkCallback 自
+ *   Android P 起会把 VPN 网络自身报为默认），26–27 用 registerDefaultNetworkCallback；
+ * - 防御性过滤：capabilities 含 TRANSPORT_VPN 的网络（含本服务 tun）绝不上报
+ *   为默认接口；
+ * - 回调只更新状态快照，取 LinkProperties / 接口 index（最多重试 10 次、间隔
+ *   100ms）放到后台线程执行，避免阻塞回调线程（SFA 在回调里直接 sleep 是已知
+ *   粗糙点，这里改为工作线程重试）。
+ */
+private object DefaultInterfaceMonitor {
+
+  private const val TAG = "DefaultInterfaceMonitor"
+  private const val MAX_RETRY = 10
+  private const val RETRY_INTERVAL_MS = 100L
+
+  private val lock = Any()
+  private val mainHandler = Handler(Looper.getMainLooper())
+
+  private var connectivity: ConnectivityManager? = null
+  private var listener: InterfaceUpdateListener? = null
+  private var defaultNetwork: Network? = null
+  private var registered = false
+
+  private val request =
+    NetworkRequest.Builder()
+      .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+      .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+      .build()
+
+  /** 网络回调（运行在主线程）：只更新状态快照，推送交给后台线程。 */
+  private val callback =
+    object : ConnectivityManager.NetworkCallback() {
+      override fun onAvailable(network: Network) {
+        setNetwork(network)
+      }
+
+      override fun onCapabilitiesChanged(
+        network: Network,
+        networkCapabilities: NetworkCapabilities,
+      ) {
+        if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+          // 防御性过滤：VPN 隧道网络（含本服务 tun）绝不作为默认接口推送。
+          clearNetwork(network)
+        } else {
+          setNetwork(network)
+        }
+      }
+
+      override fun onLost(network: Network) {
+        clearNetwork(network)
+      }
+    }
+
+  fun start(listener: InterfaceUpdateListener, connectivity: ConnectivityManager) {
+    synchronized(lock) {
+      this.connectivity = connectivity
+      this.listener = listener
+      if (!registered) {
+        register(connectivity)
+        registered = true
+      }
+      // 立即推送一次当前默认网络；若当前默认恰为 VPN 网络则留空，等待回调纠正。
+      val active = connectivity.activeNetwork
+      defaultNetwork = if (active != null && isVpnNetwork(connectivity, active)) null else active
+    }
+    push()
+  }
+
+  fun close(listener: InterfaceUpdateListener) {
+    synchronized(lock) {
+      if (this.listener !== listener) {
+        // 监听器已被新一轮 start 替换，迟到 close 不做任何事。
+        return
+      }
+      this.listener = null
+      defaultNetwork = null
+      if (registered) {
+        runCatching { connectivity?.unregisterNetworkCallback(callback) }
+        registered = false
+      }
+    }
+  }
+
+  private fun setNetwork(network: Network) {
+    synchronized(lock) {
+      defaultNetwork = network
+    }
+    push()
+  }
+
+  private fun clearNetwork(network: Network) {
+    synchronized(lock) {
+      if (network == defaultNetwork) {
+        defaultNetwork = null
+      }
+    }
+    push()
+  }
+
+  private fun isVpnNetwork(connectivity: ConnectivityManager, network: Network): Boolean =
+    connectivity.getNetworkCapabilities(network)
+      ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+
+  private fun register(connectivity: ConnectivityManager) {
+    when {
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        connectivity.registerBestMatchingNetworkCallback(request, callback, mainHandler)
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
+        // REQUEST 模式：只报告默认网络，避免 P+ registerDefaultNetworkCallback
+        // 把 VPN 网络自身报为默认（需 CHANGE_NETWORK_STATE 权限）。
+        connectivity.requestNetwork(request, callback, mainHandler)
+      else ->
+        connectivity.registerDefaultNetworkCallback(callback, mainHandler)
+    }
+  }
+
+  private fun push() {
+    val listener = synchronized(lock) { listener } ?: return
+    val connectivity = synchronized(lock) { connectivity } ?: return
+    val network = synchronized(lock) { defaultNetwork }
+    // 取 LinkProperties / 接口 index 可能需重试（含 sleep），放后台线程，
+    // 禁止阻塞回调线程（主线程 / ConnectivityThread）。
+    Thread { pushWorker(listener, connectivity, network) }.start()
+  }
+
+  private fun pushWorker(
+    listener: InterfaceUpdateListener,
+    connectivity: ConnectivityManager,
+    network: Network?,
+  ) {
+    if (network == null) {
+      // 默认网络丢失：上报空接口（index=-1），让核心感知默认接口消失。
+      listener.updateDefaultInterface("", -1, false, false)
+      return
+    }
+    for (attempt in 0 until MAX_RETRY) {
+      // 等待期间默认网络已切换/丢失：放弃本轮，新回调会再触发推送。
+      if (synchronized(lock) { defaultNetwork } !== network) {
+        return
+      }
+      val name = connectivity.getLinkProperties(network)?.interfaceName
+      val index =
+        name?.let { runCatching { NetworkInterface.getByName(it).index }.getOrNull() }
+      if (name.isNullOrEmpty() || index == null) {
+        Thread.sleep(RETRY_INTERVAL_MS)
+        continue
+      }
+      // isExpensive/isConstrained：对齐 SFA 当前实现传 false（核心另有
+      // getInterfaces 上报的 metered 属性），本参数仅影响默认接口的
+      // expensive/constrained 标记规则匹配。
+      listener.updateDefaultInterface(name, index, false, false)
+      return
+    }
+    // 重试耗尽仍取不到接口（罕见）：记录日志，等下一次网络回调再试。
+    Log.w(TAG, "failed to resolve default interface after $MAX_RETRY attempts")
   }
 }
+
+/** [StringIterator] 实现：适配 Kotlin [Iterator]（`len` 核心不使用，返回 0）。 */
+private class StringArray(private val iterator: Iterator<String>) : StringIterator {
+  override fun len(): Int = 0
+  override fun hasNext(): Boolean = iterator.hasNext()
+  override fun next(): String = iterator.next()
+}
+
+/** [NetworkInterfaceIterator] 实现：适配 Kotlin [Iterator]。 */
+private class InterfaceArray(
+  private val iterator: Iterator<LibboxNetworkInterface>,
+) : NetworkInterfaceIterator {
+  override fun hasNext(): Boolean = iterator.hasNext()
+  override fun next(): LibboxNetworkInterface = iterator.next()
+}
+
+/** [InterfaceAddress] → `ip/prefix` 文本（IPv6 去掉 scope id 后拼接）。 */
+private fun InterfaceAddress.toPrefix(): String =
+  if (address is Inet6Address) {
+    "${Inet6Address.getByAddress(address.address).hostAddress}/$networkPrefixLength"
+  } else {
+    "${address.hostAddress}/$networkPrefixLength"
+  }
