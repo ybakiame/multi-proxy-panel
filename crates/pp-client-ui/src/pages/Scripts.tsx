@@ -615,8 +615,12 @@ export default function Scripts() {
                                 </Avatar.Fallback>
                               </Avatar>
                             </Table.Cell>
-                            <Table.Cell>{remote.name}</Table.Cell>
-                            <Table.Cell className="max-w-[200px] truncate">{remote.description ?? "-"}</Table.Cell>
+                            <Table.Cell className="max-w-[180px] truncate">
+                              <span title={remote.name}>{remote.name}</span>
+                            </Table.Cell>
+                            <Table.Cell className="max-w-[200px] truncate">
+                              <span title={remote.description ?? "-"}>{remote.description ?? "-"}</span>
+                            </Table.Cell>
                             <Table.Cell>
                               {remote.kind === "Script"
                                 ? "脚本"
@@ -700,7 +704,7 @@ export default function Scripts() {
                   {fetchResult.warnings.length > 0 && `，警告 ${fetchResult.warnings.length} 条`}
                 </Alert.Description>
                 {fetchResult.warnings.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                  <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
                     {fetchResult.warnings.map((w) => (
                       <li key={w}>{w}</li>
                     ))}
@@ -738,11 +742,15 @@ export default function Scripts() {
                       <Table.Body>
                         {tasks.map((task) => (
                           <Table.Row key={task.name}>
-                            <Table.Cell>{task.name}</Table.Cell>
+                            <Table.Cell className="max-w-[180px] truncate">
+                              <span title={task.name}>{task.name}</span>
+                            </Table.Cell>
                             <Table.Cell className="font-mono text-xs">{task.cron_expr}</Table.Cell>
                             <Table.Cell>{formatTime(task.next_run)}</Table.Cell>
                             <Table.Cell>{formatTime(task.last_run)}</Table.Cell>
-                            <Table.Cell className="max-w-[200px] truncate">{task.last_error ?? "-"}</Table.Cell>
+                            <Table.Cell className="max-w-[200px] truncate">
+                              <span title={task.last_error ?? "-"}>{task.last_error ?? "-"}</span>
+                            </Table.Cell>
                             <Table.Cell>
                               <Button
                                 size="sm"
@@ -844,13 +852,13 @@ export default function Scripts() {
                   {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
                 </Alert.Description>
                 {importResult.meta?.name && (
-                  <div className="mt-2 text-sm">
+                  <div className="mt-2 break-words text-sm">
                     识别为：{importResult.meta.name}
                     {importResult.meta.desc ? ` — ${importResult.meta.desc}` : ""}
                   </div>
                 )}
                 {importResult.warnings.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                  <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
                     {importResult.warnings.map((w) => (
                       <li key={w}>{w}</li>
                     ))}
@@ -923,7 +931,7 @@ export default function Scripts() {
                     嗅探
                   </Button>
                 </div>
-                {detectInfo && <span className="text-xs text-muted">{detectInfo}</span>}
+                {detectInfo && <span className="break-words text-xs text-muted">{detectInfo}</span>}
                 {newIcon && !newIconFailed && (
                   <div className="mt-1 flex items-center gap-2">
                     <img
@@ -1008,7 +1016,11 @@ export default function Scripts() {
                         <div key={arg.key} className="flex flex-col gap-1">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-xs font-medium">{arg.key}</span>
-                            {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
+                            {arg.description && (
+                              <span className="min-w-0 truncate text-xs text-muted" title={arg.description}>
+                                {arg.description}
+                              </span>
+                            )}
                           </div>
                           {arg.kind === "Select" ? (
                             <Select
@@ -1121,7 +1133,7 @@ export default function Scripts() {
                     嗅探
                   </Button>
                 </div>
-                {editDetectInfo && <span className="text-xs text-muted">{editDetectInfo}</span>}
+                {editDetectInfo && <span className="break-words text-xs text-muted">{editDetectInfo}</span>}
                 {editIcon && !editIconFailed && (
                   <div className="mt-1 flex items-center gap-2">
                     <img
@@ -1206,7 +1218,11 @@ export default function Scripts() {
                         <div key={arg.key} className="flex flex-col gap-1">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-xs font-medium">{arg.key}</span>
-                            {arg.description && <span className="truncate text-xs text-muted">{arg.description}</span>}
+                            {arg.description && (
+                              <span className="min-w-0 truncate text-xs text-muted" title={arg.description}>
+                                {arg.description}
+                              </span>
+                            )}
                           </div>
                           {arg.kind === "Select" ? (
                             <Select

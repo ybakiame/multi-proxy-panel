@@ -296,6 +296,7 @@ export default function Settings() {
             <Label htmlFor="settings-mixed-port">混合端口</Label>
             <Input
               id="settings-mixed-port"
+              aria-label="混合端口"
               type="number"
               min={1}
               max={65535}
@@ -394,6 +395,7 @@ export default function Settings() {
               <Label htmlFor="settings-tun-stack">协议栈</Label>
               <Select
                 id="settings-tun-stack"
+                aria-label="协议栈"
                 value={tunStack}
                 onChange={(value) => {
                   const next = String(value ?? "mixed");
@@ -480,6 +482,7 @@ export default function Settings() {
             <Label htmlFor="settings-github-proxy-prefix">GitHub 代理前缀</Label>
             <Input
               id="settings-github-proxy-prefix"
+              aria-label="GitHub 代理前缀"
               value={githubProxyPrefix}
               onChange={(event) => {
                 setGithubProxyPrefix(event.target.value);
@@ -488,7 +491,7 @@ export default function Settings() {
               placeholder="https://gh-proxy.com"
               fullWidth
             />
-            <span className="text-xs text-muted">
+            <span className="break-words text-xs text-muted">
               GitHub 链接将拼接前缀访问，例如 https://gh-proxy.com/https://raw.githubusercontent.com/…；留空则直连
             </span>
           </div>
@@ -522,6 +525,7 @@ export default function Settings() {
               <Label htmlFor="settings-clash-port">端口</Label>
               <Input
                 id="settings-clash-port"
+                aria-label="端口"
                 type="number"
                 min={1}
                 max={65535}
@@ -539,6 +543,7 @@ export default function Settings() {
               <Label htmlFor="settings-clash-secret">密钥（可选）</Label>
               <Input
                 id="settings-clash-secret"
+                aria-label="密钥（可选）"
                 type="password"
                 value={clashApiSecret}
                 onChange={(event) => {
@@ -555,6 +560,7 @@ export default function Settings() {
             <Label htmlFor="settings-clash-ui">面板 UI</Label>
             <Select
               id="settings-clash-ui"
+              aria-label="面板 UI"
               value={clashApiUi}
               onChange={(value) => {
                 const next = String(value ?? "zashboard");
@@ -616,14 +622,16 @@ export default function Settings() {
                       </Chip>
                     )}
                   </span>
-                  <span className="truncate text-xs text-muted">{coreBinary || "未设置二进制路径"}</span>
+                  <span className="truncate text-xs text-muted" title={coreBinary || "未设置二进制路径"}>
+                    {coreBinary || "未设置二进制路径"}
+                  </span>
                 </div>
               </div>
             </div>
 
             {/* 已安装核心 */}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b border-border/60 text-left text-xs text-muted">
                     <th className="py-2 pr-3 font-normal">类型</th>
@@ -655,13 +663,17 @@ export default function Settings() {
                               )}
                             </span>
                           </td>
-                          <td className="py-2 pr-3">{core.version}</td>
+                          <td className="max-w-[160px] truncate py-2 pr-3">
+                            <span title={core.version}>{core.version}</span>
+                          </td>
                           <td className="py-2 pr-3">
                             <Chip size="sm" variant="soft" color={core.source === "downloaded" ? "accent" : "warning"}>
                               {core.source === "downloaded" ? "下载" : "系统"}
                             </Chip>
                           </td>
-                          <td className="max-w-[180px] truncate py-2 pr-3 text-xs text-muted">{core.path}</td>
+                          <td className="max-w-[180px] truncate py-2 pr-3 text-xs text-muted">
+                            <span title={core.path}>{core.path}</span>
+                          </td>
                           <td className="py-2 text-right">
                             <Button
                               size="sm"

@@ -239,6 +239,7 @@ export default function Override() {
                           "truncate text-sm",
                           isSelected ? "font-medium text-foreground" : "text-foreground/90",
                         )}
+                        title={profile.name}
                       >
                         {profile.name}
                       </span>
@@ -278,7 +279,7 @@ export default function Override() {
           <Card key={selectedProfile.id} className="min-w-0 flex-1">
             <Card.Header>
               <div className="flex flex-wrap items-center gap-2">
-                <Card.Title>{selectedProfile.name}</Card.Title>
+                <Card.Title className="min-w-0 break-words">{selectedProfile.name}</Card.Title>
                 <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[selectedProfile.core_type]}>
                   {CORE_LABELS[selectedProfile.core_type]}
                 </Chip>
@@ -477,7 +478,7 @@ export default function Override() {
               <AlertDialog.Heading>删除模板</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
-              <p>确定删除模板「{deleteTarget?.name}」吗？该操作不可撤销。</p>
+              <p className="break-words">确定删除模板「{deleteTarget?.name}」吗？该操作不可撤销。</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
               <Button slot="close" variant="tertiary" onPress={() => setDeleteTarget(null)}>
