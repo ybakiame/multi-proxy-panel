@@ -315,8 +315,12 @@ export default function Nodes() {
                       const linkedProfile = sub.profile_id ? profiles.find((p) => p.id === sub.profile_id) : undefined;
                       return (
                         <Table.Row key={sub.id}>
-                          <Table.Cell>{sub.name}</Table.Cell>
-                          <Table.Cell className="max-w-[240px] truncate font-mono text-xs">{sub.url}</Table.Cell>
+                          <Table.Cell className="max-w-[200px] truncate">
+                            <span title={sub.name}>{sub.name}</span>
+                          </Table.Cell>
+                          <Table.Cell className="max-w-[240px] truncate font-mono text-xs">
+                            <span title={sub.url}>{sub.url}</span>
+                          </Table.Cell>
                           <Table.Cell>{sub.node_count > 0 ? sub.node_count : "-"}</Table.Cell>
                           <Table.Cell>
                             <div className="flex flex-wrap items-center gap-1">
@@ -354,7 +358,9 @@ export default function Nodes() {
                           <Table.Cell>
                             {sub.profile_id ? (
                               linkedProfile ? (
-                                <span className="text-xs">{linkedProfile.name}</span>
+                                <span className="block max-w-[140px] truncate text-xs" title={linkedProfile.name}>
+                                  {linkedProfile.name}
+                                </span>
                               ) : (
                                 <span className="text-xs text-warning">已失效</span>
                               )
@@ -448,7 +454,7 @@ export default function Nodes() {
                   ? "刷新失败，已保留上次数据"
                   : "订阅已更新"}
             </Alert.Title>
-            <Alert.Description>
+            <Alert.Description className="break-all">
               {result.sub.error
                 ? `「${result.sub.name}」${result.sub.error}`
                 : `「${result.sub.name}」共 ${result.sub.node_count} 个节点`}
@@ -462,7 +468,7 @@ export default function Nodes() {
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>操作失败</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
+            <Alert.Description className="break-all">{error}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}

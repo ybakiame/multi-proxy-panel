@@ -34,15 +34,17 @@ function coreLabel(value: string): string {
   return CORE_LABELS[(value === "SingBox" ? "singbox" : value === "Mihomo" ? "mihomo" : value) as CoreType] ?? value;
 }
 
-/** 核心类型原始值（兼容 `singbox` / `mihomo` 小写 serde 值与 PascalCase 值，回退 singbox）。 */
-function coreTypeValue(value: string | undefined): string {
-  if (value === "Mihomo") {
+/** 核心类型归一化（兼容 serde PascalCase `SingBox`/`Mihomo` 与小写 `singbox`/`mihomo`，未知回退 singbox）。 */
+function coreTypeOf(value: string | undefined): "singbox" | "mihomo" {
+  if (value === "Mihomo" || value === "mihomo") {
     return "mihomo";
   }
-  if (value === "SingBox") {
-    return "singbox";
-  }
-  return value ?? "singbox";
+  return "singbox";
+}
+
+/** 核心类型原始值（兼容 `singbox` / `mihomo` 小写 serde 值与 PascalCase 值，回退 singbox）。 */
+function coreTypeValue(value: string | undefined): string {
+  return coreTypeOf(value);
 }
 
 /** 由订阅 format 推导适配核心；ShareLinks/空 返回 null（跟随全局核心）。 */
@@ -324,6 +326,12 @@ export default function Dashboard() {
   const activeSub = subs.find((sub) => sub.id === config?.active_subscription_id) ?? null;
   const activeCore = cores.find((core) => core.active) ?? null;
 
+  // 桌面分支：核心二进制按当前 core_type 过滤（core_type 与二进制分属两个概念，
+  // 切换核心类型后需重新选择匹配的二进制；active 二进制不属于当前类型时 Select
+  // 显示 placeholder 不强行展示旧值，gate「请先选择要使用的核心」届时引导重新选择）。
+  const desktopCores = cores.filter((core) => coreTypeOf(core.core_type) === coreTypeOf(config?.core_type));
+  const desktopActiveCore = activeCore && desktopCores.includes(activeCore) ? activeCore : null;
+
   // 旧版 Hub 直连模式：未选择订阅但 hub_url 与 sub_token 均已配置时放行（deprecated）。
   const legacyHub = !activeSub && Boolean(config?.hub_url && config?.sub_token);
 
@@ -419,7 +427,7 @@ export default function Dashboard() {
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>VPN 启动失败</Alert.Title>
-            <Alert.Description>{vpnError}</Alert.Description>
+            <Alert.Description className="break-all">{vpnError}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
@@ -439,6 +447,7 @@ export default function Dashboard() {
               ) : (
                 <Select
                   id="dashboard-subscription"
+                  aria-label="生效订阅"
                   value={config?.active_subscription_id ?? ""}
                   onChange={(key) => void handleSelectSubscription(String(key ?? ""))}
                   placeholder="请选择订阅"
@@ -475,6 +484,7 @@ export default function Dashboard() {
                 <Select
                   key="core-android"
                   id="dashboard-core"
+                  aria-label="核心类型"
                   value={coreTypeValue(config?.core_type)}
                   onChange={(key) => void persistConfig({ core_type: String(key ?? "singbox") })}
                   placeholder="请选择核心类型"
@@ -498,13 +508,17 @@ export default function Dashboard() {
                   </Select.Popover>
                 </Select>
               ) : (
+                // 桌面分支：items 按当前 core_type 过滤；active 二进制不属于当前
+                // 类型时显示 placeholder（不强行展示旧值），提示核心类型切换后需
+                // 重新选择匹配的二进制。
                 <Select
                   key="core-desktop"
                   id="dashboard-core"
-                  value={activeCore?.path ?? ""}
+                  aria-label="核心二进制"
+                  value={desktopActiveCore?.path ?? ""}
                   onChange={(key) => void handleSelectCore(String(key ?? ""))}
                   placeholder="请选择核心"
-                  isDisabled={cores.length === 0}
+                  isDisabled={desktopCores.length === 0}
                   fullWidth
                 >
                   <Select.Trigger>
@@ -513,12 +527,12 @@ export default function Dashboard() {
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      {cores.length === 0 ? (
+                      {desktopCores.length === 0 ? (
                         <ListBox.Item key="__empty" id="__empty" textValue="暂无可用核心">
                           暂无可用核心
                         </ListBox.Item>
                       ) : (
-                        cores.map((core) => (
+                        desktopCores.map((core) => (
                           <ListBox.Item key={core.path} id={core.path} textValue={coreLabel(core.core_type)}>
                             {coreLabel(core.core_type)} {core.version}
                             <ListBox.ItemIndicator />
@@ -708,7 +722,9 @@ export default function Dashboard() {
                     <Chip color="danger">未运行</Chip>
                   )}
                 </div>
-                <span className="font-mono text-xs text-muted">http://127.0.0.1:{config.clash_api_port}/ui</span>
+                <span className="break-all font-mono text-xs text-muted">
+                  http://127.0.0.1:{config.clash_api_port}/ui
+                </span>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="secondary" onPress={() => void handleCopyLink()}>
                     {linkCopied ? "已复制" : "复制链接"}

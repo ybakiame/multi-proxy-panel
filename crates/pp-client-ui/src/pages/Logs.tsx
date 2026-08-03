@@ -137,7 +137,12 @@ export default function Logs() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="logs-level">级别</Label>
-              <Select id="logs-level" value={minLevel} onChange={(value) => setMinLevel(String(value ?? "info"))}>
+              <Select
+                id="logs-level"
+                aria-label="日志级别"
+                value={minLevel}
+                onChange={(value) => setMinLevel(String(value ?? "info"))}
+              >
                 <Select.Trigger>
                   <Select.Value />
                   <Select.Indicator />
@@ -157,7 +162,12 @@ export default function Logs() {
 
             <div className="flex flex-col gap-1">
               <Label htmlFor="logs-limit">条数</Label>
-              <Select id="logs-limit" value={String(limit)} onChange={(value) => setLimit(Number(value ?? 500))}>
+              <Select
+                id="logs-limit"
+                aria-label="日志条数"
+                value={String(limit)}
+                onChange={(value) => setLimit(Number(value ?? 500))}
+              >
                 <Select.Trigger>
                   <Select.Value />
                   <Select.Indicator />
@@ -225,7 +235,9 @@ export default function Logs() {
           </div>
           {exportPath && (
             <div className="flex min-w-0 items-center gap-2 text-xs">
-              <span className="truncate font-mono text-muted">{exportPath}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={exportPath}>
+                {exportPath}
+              </span>
               <Button size="sm" variant="tertiary" onPress={() => void handleCopyPath()}>
                 {exportCopied ? "已复制" : "复制"}
               </Button>
@@ -239,7 +251,7 @@ export default function Logs() {
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>日志加载失败</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
+            <Alert.Description className="break-all">{error}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
