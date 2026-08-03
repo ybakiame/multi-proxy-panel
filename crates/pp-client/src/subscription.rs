@@ -202,8 +202,76 @@ impl SubscriptionStore {
             target.userinfo = None;
             target.node_count = 0;
             target.format = None;
+            // URL 变更意味着旧 URL 拉取的内容缓存也失效，一并删除。
+            self.clear_cached_content(id);
         }
         self.save(&subs)
+    }
+
+    /// `data_dir/subscription_cache/<id>.json`。
+    pub fn cache_file(&self, id: Uuid) -> PathBuf {
+        self.data_dir
+            .join("subscription_cache")
+            .join(format!("{id}.json"))
+    }
+
+    /// 写入订阅内容缓存到 `data_dir/subscription_cache/<id>.json`。
+    pub fn write_cached_content(
+        &self,
+        id: Uuid,
+        content: &CachedSubscriptionContent,
+    ) -> PanelResult<()> {
+        let dir = self.data_dir.join("subscription_cache");
+        std::fs::create_dir_all(&dir)?;
+        let text = serde_json::to_string_pretty(content)?;
+        std::fs::write(dir.join(format!("{id}.json")), text)?;
+        Ok(())
+    }
+
+    /// 读取订阅内容缓存；文件缺失 / 不可读 / 损坏时返回 `None`（记 debug / warn
+    /// 日志，不向调用方报错，由调用方回退远程拉取）。
+    pub fn load_cached_content(&self, id: Uuid) -> Option<CachedSubscriptionContent> {
+        let path = self.cache_file(id);
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::debug!(path = %path.display(), "subscription cache missing");
+                return None;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "subscription cache unreadable, ignore"
+                );
+                return None;
+            }
+        };
+        match serde_json::from_str(&text) {
+            Ok(content) => Some(content),
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "subscription cache corrupted, ignore"
+                );
+                None
+            }
+        }
+    }
+
+    /// 删除订阅内容缓存文件（URL 变更等场景）；文件不存在时静默。
+    pub fn clear_cached_content(&self, id: Uuid) {
+        let path = self.cache_file(id);
+        match std::fs::remove_file(&path) {
+            Ok(()) => tracing::debug!(path = %path.display(), "subscription cache cleared"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "failed to clear subscription cache"
+            ),
+        }
     }
 }
 
@@ -218,6 +286,13 @@ pub enum SubFormat {
     SingBoxJson,
 }
 
+impl Default for SubFormat {
+    /// 缺省格式取分享链接（双核心皆可，作为旧缓存缺 `format` 字段时的兼容回退）。
+    fn default() -> Self {
+        Self::ShareLinks
+    }
+}
+
 /// 订阅拉取结果：嗅探出的格式 + 双核心节点 + 用户信息 + 行级 warning。
 #[derive(Debug, Clone)]
 pub struct FetchResult {
@@ -226,6 +301,24 @@ pub struct FetchResult {
     pub mihomo_nodes: Vec<Value>,
     pub userinfo: Option<SubscriptionInfo>,
     pub warnings: Vec<String>,
+}
+
+/// 订阅内容缓存：刷新成功时落盘（`data_dir/subscription_cache/<id>.json`）的
+/// 双核心节点 + 嗅探格式。
+///
+/// 供配置预览等场景优先本地组装、避免每次远程拉取。所有字段带
+/// `#[serde(default)]`，保证字段缺失的旧缓存文件可兼容反序列化。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CachedSubscriptionContent {
+    /// 嗅探出的订阅格式（与 [`Subscription::format`] 一致）。
+    #[serde(default)]
+    pub format: SubFormat,
+    /// sing-box 侧可用节点（`outbounds` 数组元素）。
+    #[serde(default)]
+    pub singbox_nodes: Vec<Value>,
+    /// mihomo 侧节点（`proxies` 数组元素）。
+    #[serde(default)]
+    pub mihomo_nodes: Vec<Value>,
 }
 
 /// 订阅拉取器。
@@ -975,5 +1068,106 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("不存在"));
         assert!(store.load().unwrap().is_empty());
+    }
+
+    // ---------- ⑤ 订阅内容缓存（data_dir/subscription_cache/<id>.json） ----------
+
+    /// 写读往返：未写入 → None；写入后原样读回；文件路径符合约定；字段缺失的
+    /// 旧缓存（`{}`）反序列化为默认值。
+    #[test]
+    fn subscription_cache_write_read_roundtrip_and_legacy() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("sub", "https://example.com/sub", true, None)
+            .unwrap();
+
+        // 未写入 → None。
+        assert!(store.load_cached_content(sub.id).is_none());
+
+        let cached = CachedSubscriptionContent {
+            format: SubFormat::ShareLinks,
+            singbox_nodes: vec![serde_json::json!({ "tag": "n1", "type": "vless" })],
+            mihomo_nodes: vec![serde_json::json!({ "name": "n1", "type": "vless" })],
+        };
+        store.write_cached_content(sub.id, &cached).unwrap();
+        assert_eq!(store.load_cached_content(sub.id), Some(cached));
+
+        // 文件路径符合约定：data_dir/subscription_cache/<id>.json。
+        let path = store.cache_file(sub.id);
+        assert!(path.starts_with(dir.path()));
+        assert!(path.ends_with(format!("{}.json", sub.id)));
+        assert!(path.exists());
+
+        // 字段缺失的旧缓存 → `#[serde(default)]` 兼容，不报错。
+        let dir2 = tempfile::tempdir().unwrap();
+        let store2 = SubscriptionStore::new(dir2.path().to_path_buf());
+        let sub2 = store2
+            .add("sub2", "https://example.com/sub2", true, None)
+            .unwrap();
+        let legacy_path = store2.cache_file(sub2.id);
+        std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        std::fs::write(&legacy_path, "{}").unwrap();
+        let legacy = store2.load_cached_content(sub2.id).unwrap();
+        assert_eq!(legacy.format, SubFormat::ShareLinks);
+        assert!(legacy.singbox_nodes.is_empty());
+        assert!(legacy.mihomo_nodes.is_empty());
+    }
+
+    /// 损坏的缓存文件 → `None`（记 warn，不报错、不 panic）。
+    #[test]
+    fn subscription_cache_corrupted_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("sub", "https://example.com/sub", true, None)
+            .unwrap();
+        let path = store.cache_file(sub.id);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{ not json").unwrap();
+        assert!(store.load_cached_content(sub.id).is_none());
+    }
+
+    /// URL 变更 → 缓存文件删除；URL 未变（仅改名称）→ 缓存保留。
+    #[test]
+    fn subscription_cache_cleared_on_url_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("sub", "https://example.com/a", true, None)
+            .unwrap();
+        store
+            .write_cached_content(
+                sub.id,
+                &CachedSubscriptionContent {
+                    format: SubFormat::SingBoxJson,
+                    singbox_nodes: vec![serde_json::json!({ "tag": "n1" })],
+                    mihomo_nodes: Vec::new(),
+                },
+            )
+            .unwrap();
+        assert!(store.load_cached_content(sub.id).is_some());
+
+        // URL 变更 → 缓存删除。
+        store
+            .update(sub.id, "sub", "https://example.com/b", None)
+            .unwrap();
+        assert!(store.load_cached_content(sub.id).is_none());
+
+        // URL 未变（仅改名称）→ 缓存保留。
+        store
+            .write_cached_content(
+                sub.id,
+                &CachedSubscriptionContent {
+                    format: SubFormat::SingBoxJson,
+                    singbox_nodes: vec![serde_json::json!({ "tag": "n1" })],
+                    mihomo_nodes: Vec::new(),
+                },
+            )
+            .unwrap();
+        store
+            .update(sub.id, "renamed", "https://example.com/b", None)
+            .unwrap();
+        assert!(store.load_cached_content(sub.id).is_some());
     }
 }
