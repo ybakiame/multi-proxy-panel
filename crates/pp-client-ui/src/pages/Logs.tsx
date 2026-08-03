@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
-import { clearLogs, exportLogs, getLogs, toErrorMessage } from "../api";
+import {
+  clearLogs,
+  exportLogs,
+  getLogs,
+  listLogFiles,
+  openExportDir,
+  platformInfo,
+  readLogFileTail,
+  toErrorMessage,
+} from "../api";
 import type { LogEntry } from "../api";
 import { toastError, toastSuccess } from "../toast";
 
@@ -51,6 +60,15 @@ function formatTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
+/**
+ * Android 应用数据目录路径美化：`/data/user/0/` 是 Android 多用户符号链接
+ * （`0` = 主用户），与 `/data/data/` 指向同一目录；展示为更通用、用户更熟悉的
+ * `/data/data/` 等价形式。非 Android 路径原样返回。
+ */
+function beautifyAndroidPath(path: string): string {
+  return path.replace(/^\/data\/user\/0\//, "/data/data/");
+}
+
 export default function Logs() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [minLevel, setMinLevel] = useState<string>("info");
@@ -60,6 +78,14 @@ export default function Logs() {
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [exportCopied, setExportCopied] = useState(false);
+  const [os, setOs] = useState<string | null>(null);
+  const [logFiles, setLogFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+
+  const isAndroid = os === "android";
 
   /** 拉取日志（自动刷新静默调用，不闪烁按钮状态）。 */
   const refresh = useCallback(async () => {
@@ -82,6 +108,33 @@ export default function Logs() {
     }, 2000);
     return () => window.clearInterval(timer);
   }, [refresh, autoRefresh]);
+
+  // 平台探测（Android 显示「打开下载目录」引导；失败按桌面渲染）。
+  useEffect(() => {
+    void platformInfo()
+      .then((info) => setOs(info.os))
+      .catch(() => {
+        // 命令失败保持未知平台（按桌面渲染）。
+      });
+  }, []);
+
+  // 历史日志文件列表初始加载。
+  const refreshLogFiles = useCallback(async () => {
+    setLogFiles(await listLogFiles());
+    setFilesError(null);
+  }, []);
+
+  useEffect(() => {
+    void refreshLogFiles().catch((err) => setFilesError(toErrorMessage(err)));
+  }, [refreshLogFiles]);
+
+  // 当前选中文件被日志滚动清理/移除时，同步清空选择与内容。
+  useEffect(() => {
+    if (selectedFile && !logFiles.includes(selectedFile)) {
+      setSelectedFile(null);
+      setFileContent(null);
+    }
+  }, [logFiles, selectedFile]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -116,6 +169,42 @@ export default function Logs() {
       await clearLogs();
       toastSuccess("日志已清空");
       await refresh();
+    } catch (err) {
+      toastError(toErrorMessage(err));
+    }
+  };
+
+  const handleRefreshFiles = async () => {
+    setFilesLoading(true);
+    try {
+      await refreshLogFiles();
+    } catch (err) {
+      setFilesError(toErrorMessage(err));
+    } finally {
+      setFilesLoading(false);
+    }
+  };
+
+  const handleSelectFile = async (name: string) => {
+    if (!name) {
+      setSelectedFile(null);
+      setFileContent(null);
+      return;
+    }
+    setSelectedFile(name);
+    setFileContent(null);
+    setFilesError(null);
+    try {
+      setFileContent(await readLogFileTail(name, 1000));
+    } catch (err) {
+      setFilesError(toErrorMessage(err));
+      setFileContent(null);
+    }
+  };
+
+  const handleOpenDownloads = async () => {
+    try {
+      await openExportDir();
     } catch (err) {
       toastError(toErrorMessage(err));
     }
@@ -235,15 +324,89 @@ export default function Logs() {
           </div>
           {exportPath && (
             <div className="flex min-w-0 items-center gap-2 text-xs">
-              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={exportPath}>
-                {exportPath}
+              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={beautifyAndroidPath(exportPath)}>
+                {beautifyAndroidPath(exportPath)}
               </span>
+              {isAndroid && (
+                <Button size="sm" variant="secondary" onPress={() => void handleOpenDownloads()}>
+                  打开下载目录
+                </Button>
+              )}
               <Button size="sm" variant="tertiary" onPress={() => void handleCopyPath()}>
                 {exportCopied ? "已复制" : "复制"}
               </Button>
             </div>
           )}
         </Card.Footer>
+      </Card>
+
+      <Card>
+        <Card.Header>
+          <Card.Title>历史日志</Card.Title>
+          <Card.Description>按文件查看 `data_dir/logs` 下的滚动/固定日志文件，最多 1000 行</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex min-w-64 flex-1 flex-col gap-1">
+              {logFiles.length === 0 ? (
+                <p className="text-xs text-warning">暂无日志文件，点击「刷新文件」重试</p>
+              ) : (
+                <>
+                  <Label htmlFor="logs-history-file">文件</Label>
+                  <Select
+                    id="logs-history-file"
+                    aria-label="历史日志文件"
+                    placeholder="选择文件"
+                    value={selectedFile ?? ""}
+                    onChange={(value) => void handleSelectFile(String(value ?? ""))}
+                    fullWidth
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {logFiles.map((file) => (
+                          <ListBox.Item key={file} id={file} textValue={file}>
+                            {file}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </>
+              )}
+            </div>
+            <Button variant="secondary" isPending={filesLoading} onPress={() => void handleRefreshFiles()}>
+              刷新文件
+            </Button>
+          </div>
+
+          {filesError && (
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>历史日志读取失败</Alert.Title>
+                <Alert.Description className="break-all">{filesError}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-muted">按文件查看，最多 1000 行</span>
+            <div className="max-h-96 overflow-auto rounded-medium border border-border bg-default-50 p-3">
+              {fileContent === null ? (
+                <p className="text-xs text-muted">选择左侧文件后显示其尾部内容</p>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+                  {fileContent || "(空文件)"}
+                </pre>
+              )}
+            </div>
+          </div>
+        </Card.Content>
       </Card>
 
       {error && (

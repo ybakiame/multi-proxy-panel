@@ -225,6 +225,9 @@ pub fn run() {
             commands::platform_info,
             logs::get_logs,
             logs::export_logs,
+            logs::open_export_dir,
+            logs::list_log_files,
+            logs::read_log_file_tail,
             logs::clear_logs,
             logs::log_frontend,
         ]);

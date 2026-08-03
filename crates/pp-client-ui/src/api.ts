@@ -564,3 +564,18 @@ export function clearLogs(): Promise<void> {
 export function logFrontend(level: string, message: string): Promise<void> {
   return invoke<void>("log_frontend", { level, message });
 }
+
+/** 打开日志导出产物所在目录（Android 打开系统「下载」目录；桌面打开 `data_dir/logs`）。 */
+export function openExportDir(): Promise<void> {
+  return invoke<void>("open_export_dir");
+}
+
+/** 列出 `data_dir/logs` 下日志文件名（`app.log*` 滚动文件 / `libbox.log` / `mihomo.log`），按名称倒序（新在前）。 */
+export function listLogFiles(): Promise<string[]> {
+  return invoke<string[]>("list_log_files");
+}
+
+/** 读取指定日志文件尾部内容（`maxLines` 默认/上限 1000 行；大文件只读尾部字节，避免全量读入）。 */
+export function readLogFileTail(name: string, maxLines?: number): Promise<string> {
+  return invoke<string>("read_log_file_tail", { name, maxLines: maxLines ?? null });
+}

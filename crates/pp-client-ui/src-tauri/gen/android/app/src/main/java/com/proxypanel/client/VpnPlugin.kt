@@ -279,4 +279,19 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       }
     }
   }
+
+  /**
+   * 打开系统「下载」目录：导出日志 zip 写入公共 `Download/ProxyPanel/` 后，经
+   * `DownloadManager.ACTION_VIEW_DOWNLOADS` 直接打开下载目录方便用户取用。
+   * 打开失败（无对应 Activity 等）时 reject 具体原因，异常不抛给调用方。
+   */
+  @Command
+  fun openLogsDir(invoke: Invoke) {
+    try {
+      activity.startActivity(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("无法打开下载目录: ${e.message ?: e.javaClass.simpleName}")
+    }
+  }
 }

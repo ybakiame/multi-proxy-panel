@@ -33,6 +33,13 @@ pub const RING_CAPACITY: usize = 1000;
 /// `logs/libbox.log` 尾部最多读取的字节数（Kotlin 侧 libbox 日志，防大文件全量读盘）。
 const LIBBOX_LOG_MAX_TAIL_BYTES: usize = 256 * 1024;
 
+/// [`read_log_file_tail`] 单文件最多读取的字节数（超出时按字节 seek 读尾部，避免全量读盘）。
+const LOG_TAIL_MAX_BYTES: u64 = 2 * 1024 * 1024;
+/// [`read_log_file_tail`] 未指定行数时默认返回的行数。
+const LOG_TAIL_DEFAULT_LINES: u32 = 1000;
+/// [`read_log_file_tail`] 单次最多返回的行数（上限）。
+const LOG_TAIL_MAX_LINES: u32 = 1000;
+
 /// 未设置 `RUST_LOG` 时的默认过滤规则（本应用相关 crate 提级）。
 const DEFAULT_ENV_FILTER: &str = "info,pp_client=debug,pp_mitm=debug,pp_script=debug";
 
@@ -346,6 +353,67 @@ pub async fn export_logs(state: tauri::State<'_, AppState>) -> Result<String, St
     }
 }
 
+/// Tauri 命令：打开日志导出产物所在目录，方便用户直接取用。
+///
+/// - Android：经 `vpn` 插件 `openLogsDir` 命令打开系统「下载」目录（导出 zip
+///   写入公共 `Download/ProxyPanel/`，见 [`export_logs`]）；
+/// - 桌面：项目已注册 `tauri-plugin-opener`，用系统默认方式打开 `data_dir/logs`。
+#[tauri::command]
+pub async fn open_export_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = &app;
+        let _ = &state;
+        let handle = crate::core_bridge::vpn_plugin_handle()
+            .ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
+        handle
+            .run_mobile_plugin_async::<serde_json::Value>("openLogsDir", ())
+            .await
+            .map(|_| ())
+            .map_err(crate::core_bridge::plugin_error)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(
+                state.data_dir.join("logs").to_string_lossy().into_owned(),
+                None::<&str>,
+            )
+            .map_err(|e| format!("打开日志目录失败：{e}"))
+    }
+}
+
+/// Tauri 命令：列出 `data_dir/logs` 下可查看的日志文件名。
+///
+/// 覆盖滚动文件（`app.log` 前缀）与 Kotlin 侧固定文件名（`libbox.log` /
+/// `mihomo.log`）；按名称倒序返回（滚动文件日期零填充，倒序即最新在前）。
+/// 目录不存在时返回空列表。
+#[tauri::command]
+pub fn list_log_files(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    list_log_files_impl(&state.data_dir.join("logs"))
+}
+
+/// Tauri 命令：读取 `data_dir/logs` 下指定日志文件的尾部（按行）。
+///
+/// 安全校验：文件名须经 [`validate_log_file_name`]（拒绝路径分隔符与 `..`，
+/// 且匹配 `app.log` 前缀或恰为 `libbox.log` / `mihomo.log` /
+/// `last_start_config.json`），否则报错不读盘。返回最后 `max_lines` 行
+/// （默认与上限均为 [`LOG_TAIL_DEFAULT_LINES`] / [`LOG_TAIL_MAX_LINES`]）；
+/// 文件超过 [`LOG_TAIL_MAX_BYTES`] 时只读尾部字节后按行截断，避免大文件全量读入。
+#[tauri::command]
+pub fn read_log_file_tail(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    max_lines: Option<u32>,
+) -> Result<String, String> {
+    read_log_file_tail_impl(&state.data_dir.join("logs"), &name, max_lines)
+}
+
 /// Tauri 命令：清空内存环形缓冲（不删除滚动文件）。
 #[tauri::command]
 pub fn clear_logs() {
@@ -418,6 +486,81 @@ fn write_export(logs_dir: &Path) -> Result<PathBuf, String> {
             .map_err(|e| format!("写入导出文件失败：{e}"))?;
     }
     Ok(export_path)
+}
+
+/// `list_log_files` 的纯逻辑（测试可注入日志目录）。
+fn list_log_files_impl(logs_dir: &Path) -> Result<Vec<String>, String> {
+    if !logs_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut names: Vec<String> = std::fs::read_dir(logs_dir)
+        .map_err(|e| format!("读取日志目录失败：{e}"))?
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            name.starts_with("app.log") || name == "libbox.log" || name == "mihomo.log"
+        })
+        .collect();
+    // 名称倒序：`app.log.<YYYY-MM-DD>` 日期零填充，倒序即最新在前。
+    names.sort();
+    names.reverse();
+    Ok(names)
+}
+
+/// `read_log_file_tail` 的纯逻辑（测试可注入日志目录）。
+fn read_log_file_tail_impl(
+    logs_dir: &Path,
+    name: &str,
+    max_lines: Option<u32>,
+) -> Result<String, String> {
+    validate_log_file_name(name)?;
+    let path = logs_dir.join(name);
+    let max_lines = max_lines
+        .unwrap_or(LOG_TAIL_DEFAULT_LINES)
+        .clamp(1, LOG_TAIL_MAX_LINES) as usize;
+    let bytes = read_tail_bytes(&path)?;
+    let content = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    Ok(lines[start..].join("\n"))
+}
+
+/// 文件名安全校验：拒绝空名、路径分隔符（`/`、`\`）与 `..`，且须匹配 `app.log`
+/// 前缀（滚动文件）或恰为 `libbox.log` / `mihomo.log` / `last_start_config.json`。
+fn validate_log_file_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("非法的日志文件名".to_string());
+    }
+    if name.starts_with("app.log")
+        || name == "libbox.log"
+        || name == "mihomo.log"
+        || name == "last_start_config.json"
+    {
+        Ok(())
+    } else {
+        Err(format!("非法的日志文件名：{name}"))
+    }
+}
+
+/// 读取文件内容；超过 [`LOG_TAIL_MAX_BYTES`] 时只读尾部（按字节 seek 后推进到
+/// 下一行行首，避免把被切断的半行/半个 UTF-8 字符当整行返回）。
+fn read_tail_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("读取日志文件失败：{e}"))?
+        .len();
+    if size <= LOG_TAIL_MAX_BYTES {
+        return std::fs::read(path).map_err(|e| format!("读取日志文件失败：{e}"));
+    }
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).map_err(|e| format!("读取日志文件失败：{e}"))?;
+    file.seek(SeekFrom::End(-(LOG_TAIL_MAX_BYTES as i64)))
+        .map_err(|e| format!("读取日志文件失败：{e}"))?;
+    let mut buf = vec![0u8; LOG_TAIL_MAX_BYTES as usize];
+    file.read_exact(&mut buf)
+        .map_err(|e| format!("读取日志文件失败：{e}"))?;
+    let line_start = buf.iter().position(|&b| b == b'\n').map_or(0, |i| i + 1);
+    buf.drain(..line_start);
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -633,6 +776,120 @@ mod tests {
         // app.log 滚动（当前 + 历史）与 Kotlin 侧 libbox.log 均纳入，
         // export-*.log 与无关文件被排除。
         assert_eq!(names, vec!["app.log", "app.log.2026-08-01", "libbox.log"]);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn list_log_files_sorts_desc_and_filters() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-listfiles-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::write(logs_dir.join("app.log"), "current\n").unwrap();
+        std::fs::write(logs_dir.join("app.log.2026-08-01"), "day1\n").unwrap();
+        std::fs::write(logs_dir.join("app.log.2026-08-02"), "day2\n").unwrap();
+        std::fs::write(logs_dir.join("libbox.log"), "box\n").unwrap();
+        std::fs::write(logs_dir.join("mihomo.log"), "mihomo\n").unwrap();
+        std::fs::write(logs_dir.join("export-20260101-000000.log"), "old\n").unwrap();
+        std::fs::write(logs_dir.join("README.txt"), "ignore\n").unwrap();
+
+        // 名称倒序：mihomo.log / libbox.log 排最前（m > l），随后 app.log.<date>
+        // 倒序（最新在前），export-*.log 与无关文件被排除。
+        let names = list_log_files_impl(&logs_dir).unwrap();
+        assert_eq!(
+            names,
+            vec![
+                "mihomo.log",
+                "libbox.log",
+                "app.log.2026-08-02",
+                "app.log.2026-08-01",
+                "app.log",
+            ]
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn list_log_files_missing_dir_returns_empty() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-nodir-{}", std::process::id()));
+        // 目录不存在：返回空列表（不报错）。
+        let logs_dir = tmp.join("logs");
+        assert_eq!(list_log_files_impl(&logs_dir).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn read_log_file_tail_returns_last_lines() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-tail-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        let content: String = (0..10).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(logs_dir.join("app.log"), &content).unwrap();
+
+        // 取最后 3 行。
+        assert_eq!(
+            read_log_file_tail_impl(&logs_dir, "app.log", Some(3)).unwrap(),
+            "line 7\nline 8\nline 9"
+        );
+        // 行数超过文件行数时全量返回。
+        assert_eq!(
+            read_log_file_tail_impl(&logs_dir, "app.log", Some(100)).unwrap(),
+            content.trim_end()
+        );
+        // 未指定行数：默认 1000，文件仅 10 行时全量返回。
+        assert_eq!(
+            read_log_file_tail_impl(&logs_dir, "app.log", None).unwrap(),
+            content.trim_end()
+        );
+        // 上限钳制：超上限按 1000 行截断（文件不足 1000 行则全量返回）。
+        assert_eq!(
+            read_log_file_tail_impl(&logs_dir, "app.log", Some(5000)).unwrap(),
+            content.trim_end()
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn read_log_file_tail_validates_name() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-valid-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::write(logs_dir.join("app.log"), "x\n").unwrap();
+
+        // 允许白名单文件名（文件不存在时报读取错误，非校验错误）。
+        assert!(validate_log_file_name("app.log").is_ok());
+        assert!(validate_log_file_name("app.log.2026-08-01").is_ok());
+        assert!(validate_log_file_name("libbox.log").is_ok());
+        assert!(validate_log_file_name("mihomo.log").is_ok());
+        assert!(validate_log_file_name("last_start_config.json").is_ok());
+
+        // 拒绝：路径分隔符 / `..` / 空名 / 不在白名单的文件名。
+        assert!(validate_log_file_name("").is_err());
+        assert!(validate_log_file_name("../app.log").is_err());
+        assert!(validate_log_file_name("a/../app.log").is_err());
+        assert!(validate_log_file_name("..\\app.log").is_err());
+        assert!(validate_log_file_name("app.log\\evil").is_err());
+        assert!(validate_log_file_name("app.log/evil").is_err());
+        assert!(validate_log_file_name("evil.log").is_err());
+
+        // 命令入口整体拒绝非法名（不读盘、不越权访问）。
+        assert!(read_log_file_tail_impl(&logs_dir, "../app.log", None).is_err());
+        assert!(read_log_file_tail_impl(&logs_dir, "evil.log", None).is_err());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn read_log_file_tail_large_file_reads_tail_only() {
+        let tmp = std::env::temp_dir().join(format!("pp-log-large-{}", std::process::id()));
+        let logs_dir = tmp.join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        // 构造 >2MB 文件：开头埋唯一标记，验证大文件只读尾部（标记不在返回内容）。
+        let mut content = String::with_capacity(LOG_TAIL_MAX_BYTES as usize + 32);
+        content.push_str("UNIQUE_HEAD_MARKER\n");
+        content.push_str(&"x".repeat(LOG_TAIL_MAX_BYTES as usize));
+        std::fs::write(logs_dir.join("mihomo.log"), &content).unwrap();
+
+        let tail = read_log_file_tail_impl(&logs_dir, "mihomo.log", None).unwrap();
+        assert!(!tail.contains("UNIQUE_HEAD_MARKER"));
+        assert!(!tail.is_empty());
         std::fs::remove_dir_all(&tmp).ok();
     }
 }
