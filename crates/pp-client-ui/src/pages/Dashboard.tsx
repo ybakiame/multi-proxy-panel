@@ -8,12 +8,11 @@ import {
   platformInfo,
   requestVpnPermission,
   setActiveCore,
-  setActiveSubscription,
   setRuleMode as setRuleModeApi,
   toErrorMessage,
   vpnLastError,
 } from "../api";
-import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionView } from "../api";
+import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionFormat, SubscriptionView } from "../api";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
 import { useAppStore } from "../store";
 import { toastError, toastSuccess, toastWarning } from "../toast";
@@ -44,6 +43,17 @@ function coreTypeValue(value: string | undefined): string {
     return "singbox";
   }
   return value ?? "singbox";
+}
+
+/** 由订阅 format 推导适配核心；ShareLinks/空 返回 null（跟随全局核心）。 */
+function subCoreType(format: SubscriptionFormat | null | undefined): "singbox" | "mihomo" | null {
+  if (format === "ClashYaml") {
+    return "mihomo";
+  }
+  if (format === "SingBoxJson") {
+    return "singbox";
+  }
+  return null;
 }
 
 /** 等待指定毫秒数（Android 启动确认轮询窗口用）。 */
@@ -231,11 +241,23 @@ export default function Dashboard() {
     }
   };
 
+  /** 选择生效订阅：订阅自身格式推导的核心与当前核心不一致时，同一次持久化联动切换。 */
   const handleSelectSubscription = async (id: string) => {
+    const sub = subs.find((item) => item.id === id);
+    const derivedCore = sub ? subCoreType(sub.format) : null;
+    // 一次 persistConfig 同时写入 active_subscription_id 与 core_type（避免两次保存与
+    // 「已启动后动态切换核心」）；推导为 null 或与当前核心一致时只写订阅。
+    const patch: Partial<ClientConfig> = { active_subscription_id: id };
+    if (derivedCore && derivedCore !== config?.core_type) {
+      patch.core_type = derivedCore;
+    }
     try {
-      await setActiveSubscription(id);
+      await persistConfig(patch);
       setActionError(null);
       await loadConfig();
+      if (patch.core_type) {
+        toastWarning(`已按订阅格式切换至 ${coreLabel(patch.core_type)} 核心`);
+      }
     } catch (err) {
       setActionError(toErrorMessage(err));
     }
