@@ -46,6 +46,11 @@ function coreTypeValue(value: string | undefined): string {
   return value ?? "singbox";
 }
 
+/** 等待指定毫秒数（Android 启动确认轮询窗口用）。 */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function Dashboard() {
   const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
     useAppStore();
@@ -143,13 +148,48 @@ export default function Dashboard() {
     return () => window.clearInterval(timer);
   }, [loadConfig, refreshStatus, loadSubscriptions, loadCores, loadProfiles]);
 
+  /**
+   * Android 启动确认：Kotlin 核心在后台线程异步启动，`start_proxy` resolve 不代表启动成功
+   * （真正失败仅写入 lastError）。每 500ms 轮询 `vpn_last_error` 与运行状态，3s 窗口内判定：
+   * 有错误 → toastError（不显示成功）；running → toastSuccess；窗口耗尽 → toastWarning（不误报）。
+   * 仅在 Android 分支调用（`vpn_last_error` 命令桌面不存在，调用会失败）。
+   */
+  const confirmAndroidStart = async () => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await sleep(500);
+      let lastError: string | null = null;
+      try {
+        lastError = await vpnLastError();
+      } catch {
+        // 命令失败保持当前展示（非致命，避免轮询抖动）。
+      }
+      if (lastError) {
+        setVpnError(lastError);
+        toastError(lastError);
+        await refreshStatus();
+        return;
+      }
+      await refreshStatus();
+      if (useAppStore.getState().status?.core_running) {
+        toastSuccess("代理已启动");
+        return;
+      }
+    }
+    toastWarning("代理正在后台启动…");
+  };
+
   const handleStart = async () => {
     setBusy("start");
     // 新一次启动尝试先清掉上一次的失败展示（服务侧 lastError 成功启动后也会清空）。
     setVpnError(null);
     try {
       await start();
-      toastSuccess("代理已启动");
+      if (osRef.current === "android") {
+        // Android：核心异步启动，轮询确认后再提示，避免「启动失败却提示成功」。
+        await confirmAndroidStart();
+      } else {
+        toastSuccess("代理已启动");
+      }
     } catch (err) {
       // store 已记录 error（由页面 Alert 展示）；`tun_auth_required` / `vpn_not_authorized`
       // 走现有引导（TUN 授权页 / VPN 授权按钮）不重复 toast。
