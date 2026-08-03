@@ -26,10 +26,13 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** start 命令参数：sing-box JSON 配置内容。 */
+/** start 命令参数：核心配置内容（sing-box JSON / mihomo YAML）与核心类型。 */
 @InvokeArg
 class StartArgs {
   var config: String? = null
+
+  /** 核心类型：`mihomo` 时走 [MihomoVpnService]，默认/其他值走 [ProxyVpnService]。 */
+  var core: String? = null
 }
 
 /**
@@ -78,13 +81,21 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun start(invoke: Invoke) {
-    val config =
-      runCatching { invoke.parseArgs(StartArgs::class.java).config }.getOrNull()
+    val args = runCatching { invoke.parseArgs(StartArgs::class.java) }.getOrNull()
+    val config = args?.config
 
     if (config.isNullOrBlank()) {
       invoke.reject("missing vpn config", ERROR_MISSING_CONFIG)
       return
     }
+
+    // 核心分派：`core == "mihomo"` 走 MihomoVpnService，默认/其他值走
+    // ProxyVpnService（sing-box）。（config 非空校验后 args 已 smart-cast）
+    val useMihomo = args.core == "mihomo"
+    val serviceClass: Class<*> =
+      if (useMihomo) MihomoVpnService::class.java else ProxyVpnService::class.java
+    val extraConfig =
+      if (useMihomo) MihomoVpnService.EXTRA_CONFIG else ProxyVpnService.EXTRA_CONFIG
 
     val prepareIntent = VpnService.prepare(activity)
     if (prepareIntent != null) {
@@ -93,15 +104,16 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
-    // 服务已在运行时先停掉旧实例，避免新旧 libbox 并发启动（running 由服务
-    // 真实生命周期维护，此处仅读取判断）。
+    // 两服务互斥 + 重启：启动前先停掉已运行的服务（自身重启 / 切换核心），
+    // 避免两个核心并发启动（running 由服务真实生命周期维护，此处仅读取判断）。
     if (ProxyVpnService.running) {
       activity.stopService(Intent(activity, ProxyVpnService::class.java))
     }
+    if (MihomoVpnService.running) {
+      activity.stopService(Intent(activity, MihomoVpnService::class.java))
+    }
 
-    val intent =
-      Intent(activity, ProxyVpnService::class.java)
-        .putExtra(ProxyVpnService.EXTRA_CONFIG, config)
+    val intent = Intent(activity, serviceClass).putExtra(extraConfig, config)
     try {
       ContextCompat.startForegroundService(activity, intent)
       invoke.resolve()
@@ -112,16 +124,29 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun stop(invoke: Invoke) {
-    // 显式 stop intent：服务 onStartCommand 处理 ACTION_STOP 时有序关闭
-    // BoxService（后台线程）→ 退前台 → 自停 → running 复位；裸 stopService 只走
-    // onDestroy，close 仍阻塞主线程且不记录 lastError。
-    //
-    // 实例存活（含启动中：running 尚为 false）即可安全派发 ACTION_STOP——服务在
-    // 前台，startForegroundService 不会重复创建，仅再次回调 onStartCommand。
-    if (ProxyVpnService.instanceAlive) {
-      val intent =
-        Intent(activity, ProxyVpnService::class.java)
-          .setAction(ProxyVpnService.ACTION_STOP)
+    // 两个服务都处理：谁在运行停谁（幂等——实例已销毁时 stopService 无副作用）。
+    stopServiceIfAlive(
+      ProxyVpnService::class.java,
+      ProxyVpnService.instanceAlive,
+      ProxyVpnService.ACTION_STOP,
+    )
+    stopServiceIfAlive(
+      MihomoVpnService::class.java,
+      MihomoVpnService.instanceAlive,
+      MihomoVpnService.ACTION_STOP,
+    )
+    invoke.resolve()
+  }
+
+  /**
+   * 对指定 VPN 服务派发显式 stop：实例存活（含启动中）时发 ACTION_STOP intent，
+   * 服务 onStartCommand 处理时有序关闭核心（后台线程）→ 退前台 → 自停 →
+   * running 复位；裸 stopService 只走 onDestroy，close 仍阻塞主线程且不记录
+   * lastError。实例已销毁时回退裸 stopService 兜底幂等清理。
+   */
+  private fun stopServiceIfAlive(serviceClass: Class<*>, alive: Boolean, stopAction: String) {
+    if (alive) {
+      val intent = Intent(activity, serviceClass).setAction(stopAction)
       try {
         ContextCompat.startForegroundService(activity, intent)
       } catch (e: Exception) {
@@ -130,18 +155,28 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         activity.stopService(intent)
       }
     } else {
-      // 实例已销毁：幂等清理（无副作用）。
-      activity.stopService(Intent(activity, ProxyVpnService::class.java))
+      activity.stopService(Intent(activity, serviceClass))
     }
-    invoke.resolve()
   }
 
   @Command
   fun isRunning(invoke: Invoke) {
     val result = JSObject()
-    result.put("running", ProxyVpnService.running)
-    // lastError 为 null 时键被 JSONObject 移除，Rust 侧 `#[serde(default)]` 回退 None。
-    result.put("last_error", ProxyVpnService.lastError)
+    result.put("running", ProxyVpnService.running || MihomoVpnService.running)
+    // last_error：以「当前非 running 且有错误的一方」为准（最近失败方优先）；
+    // 两者都无错误时取非空者，顺序与 ProxyVpnService.lastError ?:
+    // MihomoVpnService.lastError 反向（mihomo 优先）——P1 阶段 mihomo 是新接入
+    // 核心，其错误更值得展示。为 null 时键被 JSONObject 移除，Rust 侧
+    // `#[serde(default)]` 回退 None。
+    val lastError =
+      when {
+        !MihomoVpnService.running && MihomoVpnService.lastError != null ->
+          MihomoVpnService.lastError
+        !ProxyVpnService.running && ProxyVpnService.lastError != null ->
+          ProxyVpnService.lastError
+        else -> MihomoVpnService.lastError ?: ProxyVpnService.lastError
+      }
+    result.put("last_error", lastError)
     invoke.resolve(result)
   }
 
