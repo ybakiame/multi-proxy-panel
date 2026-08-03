@@ -217,6 +217,7 @@ pub fn run() {
             commands::detect_system_cores,
             commands::delete_core,
             commands::gpu_acceleration,
+            commands::toast_mode_override,
             #[cfg(target_os = "android")]
             commands::request_vpn_permission,
             #[cfg(target_os = "android")]

@@ -485,6 +485,11 @@ export function gpuAcceleration(): Promise<boolean> {
   return invoke<boolean>("gpu_acceleration");
 }
 
+/** 读取 toast 渲染模式环境变量覆盖（`PP_TOAST_MODE`）：`hero` 启用 HeroUI 原生 toast，其他值 / 未设置返回 `null`（默认自实现静态 toast）。 */
+export function toastModeOverride(): Promise<string | null> {
+  return invoke<string | null>("toast_mode_override");
+}
+
 /**
  * 探测 GitHub 访问链路可用性：按真实拉取管线（GitHub 代理前缀 / 走本地代理）
  * 请求 `https://api.github.com/zen`，返回 `OK（xxx ms）` 风格字符串；失败 reject 并透传错误。

@@ -2097,6 +2097,14 @@ fn gpu_acceleration_impl(
     libgl_always_software.is_none_or(|v| v != "1")
 }
 
+/// 读取 toast 渲染模式环境变量覆盖（`PP_TOAST_MODE`）：`hero` 启用 HeroUI 原生
+/// toast（WebKitGTK/WSL 有 SIGSEGV 风险，仅 GPU 正常桌面环境使用）；其他值 /
+/// 未设置返回 None（默认自实现静态 toast）。
+#[tauri::command]
+pub fn toast_mode_override() -> Option<String> {
+    std::env::var("PP_TOAST_MODE").ok().filter(|v| !v.trim().is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

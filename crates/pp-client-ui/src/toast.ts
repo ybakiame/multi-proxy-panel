@@ -9,11 +9,11 @@ import { create } from "zustand";
  * WebKitGTK 2.52.5 在 WSL 软渲染下执行 view-transition 会 SIGSEGV 直接退出整个
  * 进程（dmesg 实证），每次 toast（保存成功/代理启停）应用即崩溃。
  *
- * 结论：统一走自实现静态 toast，不再按 GPU 探测启用 HeroUI 原生 toast。WSLg
- * 有 GPU 时 `gpu_acceleration` 探测返回 `true`，此前据此启用 HeroUI toast 导致
- * 桌面端闪退。`setToastMode` / `heroMode` 机制保留（默认 `false` 保守安全）仅作
- * 防误启用护栏，无任何调用方会置 `true`，所有 toast 固定走 zustand store，由
- * `<Toaster />` 消费渲染，零动画、零 view-transition。
+ * 方案：双态保留，默认自实现静态 toast。`PP_TOAST_MODE=hero` 环境变量（经
+ * `toast_mode_override` 命令读取）可强制启用 HeroUI 原生 toast——仅供 GPU 正常
+ * 的桌面环境使用（WebKitGTK/WSL 下会 SIGSEGV 退出进程，见上方背景）。其余情况
+ * （未设置 / 其他值 / 命令失败）保持 `heroMode=false`，所有 toast 走 zustand
+ * store，由 `<Toaster />` 消费渲染，零动画、零 view-transition。
  * 行为对齐：右下角堆叠、最多同屏 3 条、4 秒自动消失。
  */
 
@@ -32,7 +32,7 @@ const TOAST_DURATION_MS = 4000;
 
 let nextId = 0;
 
-/** 是否使用 HeroUI 原生 toast（有 GPU 加速时为 `true`）；默认 `false` 走自实现。 */
+/** 是否使用 HeroUI 原生 toast（`PP_TOAST_MODE=hero` 环境变量强制开启）；默认 `false` 走自实现。 */
 let heroMode = false;
 
 /** 设置 toast 渲染模式：`hero=true` 用 HeroUI 原生 toast，`false` 走 zustand store。 */
