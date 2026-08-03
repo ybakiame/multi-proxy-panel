@@ -37,3 +37,4 @@ id_rsa*
 
 # Temp files
 deploy/sing-box-sub-temp.json
+/.reference/
