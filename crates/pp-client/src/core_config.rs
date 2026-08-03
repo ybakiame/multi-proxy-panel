@@ -193,10 +193,10 @@ fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<St
 /// tun 回环或泄漏），必须显式声明 DNS 服务器并指明 detour 出站。注入的 `dns` 段：
 ///
 /// - `remote`：DoH（1.1.1.1），经主出站选择器出站（`detour` 读合成配置实际
-///   selector tag，见 [`main_outbound_selector_tag`]，不硬编）；
-/// - `local`：UDP（223.5.5.5），经 direct 直连出站（detour 指向 outbounds 中已有
-///   的 `type = direct` 出站，无则自动补建 `{"type": "direct", "tag": "direct"}`，
-///   见 [`direct_outbound_tag`]）；
+///   selector tag，见 [`main_outbound_selector_tag`]，不硬编）；detour 目标为
+///   「空 direct 出站」时省略 `detour` 字段（见 [`is_empty_direct_outbound`]）；
+/// - `local`：UDP（223.5.5.5），无 `detour` 字段——省略即默认 direct 拨号，
+///   语义等价且永远合法；
 /// - `rules` 空数组、`final = remote`、`strategy = prefer_ipv4`。
 ///
 /// 服务器用新格式（`type` + `server`）声明：libbox（sing-box 1.12）原生解析，
@@ -204,6 +204,11 @@ fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<St
 /// `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS`）无需环境变量即可通过。注入后补
 /// `route.default_domain_resolver`（sing-box 1.12+ 在 `dns.servers` 存在时须显式
 /// 声明，否则 `check` 拒绝，见 [`ensure_domain_resolver`]）。
+///
+/// 注：sing-box 在启动阶段拒绝 DNS server detour 到「空 direct 出站」（报错
+/// `detour to an empty direct outbound makes no sense`，空 = DialerOptions 全
+/// 默认）。该限制针对任何空 direct 出站（含显式声明的），并非仅内建 direct；
+/// 带额外配置键的 direct 出站（如 `override_address`）可作为 detour 目标。
 pub fn inject_android_dns(composed: &mut Value) {
     let Some(obj) = composed.as_object_mut() else {
         return;
@@ -211,15 +216,22 @@ pub fn inject_android_dns(composed: &mut Value) {
     let Some(detour) = main_outbound_selector_tag(obj) else {
         return;
     };
-    let Some(direct_tag) = direct_outbound_tag(obj) else {
-        return;
-    };
+    // remote server 按条件决定是否带 detour：目标为空 direct 出站时省略
+    // （sing-box 启动阶段拒绝），否则保留。
+    let mut remote = serde_json::Map::new();
+    remote.insert("tag".to_string(), json!("remote"));
+    remote.insert("type".to_string(), json!("https"));
+    remote.insert("server".to_string(), json!("1.1.1.1"));
+    remote.insert("server_port".to_string(), json!(443));
+    if !is_empty_direct_outbound(obj, &detour) {
+        remote.insert("detour".to_string(), json!(detour));
+    }
     obj.insert(
         "dns".to_string(),
         json!({
             "servers": [
-                { "tag": "remote", "type": "https", "server": "1.1.1.1", "server_port": 443, "detour": detour },
-                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53, "detour": direct_tag }
+                Value::Object(remote),
+                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }
             ],
             "rules": [],
             "final": "remote",
@@ -229,33 +241,33 @@ pub fn inject_android_dns(composed: &mut Value) {
     ensure_domain_resolver(obj);
 }
 
-/// 查找 / 补建 direct 直连出站，返回其 tag（Android local DNS server 的 detour）。
+/// 判断 `tag` 指向的出站是否为「空 direct 出站」（DialerOptions 全默认，仅含
+/// `type` / `tag` 两个键）。
 ///
-/// 1. 优先复用 outbounds 中已有的 `type == "direct"` 出站：取第一个带 tag 的出站
-///    （tag 可能是自定义值，如 `DIRECT` / `dns-direct`），local DNS detour 指向它；
-/// 2. 不存在时追加 `{"type": "direct", "tag": "direct"}` 出站并返回 `"direct"`。
+/// sing-box 在启动阶段拒绝 DNS server detour 到空 direct 出站（报错
+/// `detour to an empty direct outbound makes no sense`）——该限制针对任何空 direct
+/// 出站（含显式声明的），并非仅内建；带额外配置键的 direct 出站可作为 detour
+/// 目标。因此 remote DNS server 的 detour 目标为「空 direct 出站」时须省略。
 ///
-/// 注：sing-box 不允许 DNS server detour 到内建空 direct 出站（启动报错
-/// `detour to an empty direct outbound makes no sense`）——内建 direct 出站无法被
-/// 显式 detour 引用，且部分订阅模式下合成配置的 outbounds 根本没有 direct 出站，
-/// 因此必须指向显式声明的 direct 出站，缺则补建。
-fn direct_outbound_tag(obj: &mut serde_json::Map<String, Value>) -> Option<String> {
-    // 1. 复用已有 direct 出站（含非 "direct" tag）。
-    if let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) {
-        for outbound in outbounds {
-            if outbound.get("type").and_then(Value::as_str) == Some("direct") {
-                if let Some(tag) = outbound.get("tag").and_then(Value::as_str) {
-                    return Some(tag.to_string());
-                }
-            }
+/// 返回 `false` 的情况：出站未找到、非 `direct` 类型、或 direct 带额外配置键。
+fn is_empty_direct_outbound(obj: &serde_json::Map<String, Value>, tag: &str) -> bool {
+    let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) else {
+        return false;
+    };
+    for outbound in outbounds {
+        let Some(outbound_obj) = outbound.as_object() else {
+            continue;
+        };
+        if outbound_obj.get("tag").and_then(Value::as_str) != Some(tag) {
+            continue;
         }
+        let is_direct = outbound_obj.get("type").and_then(Value::as_str) == Some("direct");
+        return is_direct
+            && outbound_obj
+                .keys()
+                .all(|k| matches!(k.as_str(), "type" | "tag"));
     }
-    // 2. 无可用 direct 出站：追加一个（tag = "direct"），detour 用 "direct"。
-    obj.entry("outbounds")
-        .or_insert_with(|| Value::Array(Vec::new()))
-        .as_array_mut()?
-        .push(json!({ "type": "direct", "tag": "direct" }));
-    Some("direct".to_string())
+    false
 }
 
 /// mihomo 面板注入：
@@ -1097,11 +1109,11 @@ rules:
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
         inject_android_dns(&mut cfg);
 
-        // remote 走实际 selector tag（不硬编），local 直连。
+        // remote 走实际 selector tag（不硬编），local 无 detour（默认直连）。
         assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
         assert_eq!(cfg["dns"]["servers"][0]["detour"], "proxy");
         assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        assert!(cfg["dns"]["servers"][1].get("detour").is_none());
         assert_eq!(cfg["dns"]["rules"], json!([]));
         assert_eq!(cfg["dns"]["final"], "remote");
         assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
@@ -1112,7 +1124,9 @@ rules:
         );
     }
 
-    /// 无 selector 时 detour 回退 route.final（仍是出站 tag），DNS 仍可注入。
+    /// 无 selector 时 detour 目标回退 route.final；route.final = "direct"（空 direct
+    /// 出站）→ remote detour 省略（sing-box 拒绝 detour 到空 direct 出站），DNS
+    /// 仍可注入。
     #[test]
     fn inject_android_dns_falls_back_to_route_final_when_no_selector() {
         let sub = json!({
@@ -1122,17 +1136,21 @@ rules:
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
         inject_android_dns(&mut cfg);
 
-        assert_eq!(cfg["dns"]["servers"][0]["detour"], "direct");
+        assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
+        assert!(
+            cfg["dns"]["servers"][0].get("detour").is_none(),
+            "route.final 指向空 direct 出站时 remote 应省略 detour"
+        );
         assert_eq!(
             cfg["route"]["default_domain_resolver"],
             json!({ "server": "remote" })
         );
     }
 
-    /// 订阅模式合成配置无 direct 出站时，local DNS 的 detour 不能硬编 `"direct"`
-    /// （sing-box 拒绝 detour 到内建空 direct 出站），应自动补建 direct 出站。
+    /// 订阅模式合成配置无 direct 出站：local DNS 无 detour（省略即默认直连），
+    /// 不再补建 direct 出站，outbounds 保持原样。
     #[test]
-    fn inject_android_dns_appends_direct_outbound_when_missing() {
+    fn inject_android_dns_leaves_outbounds_untouched_when_no_direct() {
         let sub = json!({
             "outbounds": [
                 { "type": "selector", "tag": "proxy", "outbounds": ["n1"], "default": "n1" },
@@ -1143,21 +1161,20 @@ rules:
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
         inject_android_dns(&mut cfg);
 
-        // local DNS detour 指向自动补建的 direct 出站。
+        // local DNS server 无 detour（默认直连），且不补建 direct 出站。
         assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        assert!(cfg["dns"]["servers"][1].get("detour").is_none());
         let outbounds = cfg["outbounds"].as_array().unwrap();
-        let direct = outbounds
-            .iter()
-            .find(|o| o["type"] == "direct")
-            .expect("无 direct 出站时应自动补建");
-        assert_eq!(direct["tag"], "direct");
+        assert!(
+            outbounds.iter().all(|o| o["type"] != "direct"),
+            "无 direct 出站时不应补建"
+        );
     }
 
-    /// 已有 direct 出站（自定义 tag，如 `DIRECT` / `dns-direct`）时直接复用其 tag，
-    /// 不重复补建 `direct` 出站。
+    /// 已有自定义 tag 的 direct 出站：local 仍无 detour（不引用任何 direct 出站），
+    /// outbounds 不改动。
     #[test]
-    fn inject_android_dns_reuses_existing_direct_with_custom_tag() {
+    fn inject_android_dns_leaves_existing_direct_outbound_untouched() {
         let sub = json!({
             "outbounds": [
                 { "type": "selector", "tag": "proxy", "outbounds": ["dns-direct"], "default": "dns-direct" },
@@ -1168,16 +1185,36 @@ rules:
         let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
         inject_android_dns(&mut cfg);
 
-        // local DNS detour 复用已有 direct 出站的 tag。
-        assert_eq!(cfg["dns"]["servers"][1]["detour"], "dns-direct");
-        // 不追加新的 direct 出站。
+        // local 无 detour，不引用/不改动已有 direct 出站。
+        assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
+        assert!(cfg["dns"]["servers"][1].get("detour").is_none());
         let direct_count = cfg["outbounds"]
             .as_array()
             .unwrap()
             .iter()
             .filter(|o| o["type"] == "direct")
             .count();
-        assert_eq!(direct_count, 1, "已有 direct 出站时不应重复补建");
+        assert_eq!(direct_count, 1, "不改动已有 direct 出站");
+    }
+
+    /// route.final 指向带额外配置键的 direct 出站（非空 direct）时，可作为 detour
+    /// 目标：无 selector 场景下 remote detour 保留为 route.final 的 tag。
+    #[test]
+    fn inject_android_dns_keeps_detour_for_non_empty_direct() {
+        let sub = json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct", "override_address": "1.2.3.4" }
+            ],
+            "route": { "final": "direct" }
+        });
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        inject_android_dns(&mut cfg);
+
+        assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
+        assert_eq!(
+            cfg["dns"]["servers"][0]["detour"], "direct",
+            "带额外配置键的 direct 出站是合法 detour 目标，应保留 detour"
+        );
     }
 
     /// 既无 selector 也无 route.final：无法确定 detour → 跳过注入（不产出非法配置）。
@@ -1230,8 +1267,11 @@ rules:
         );
     }
 
-    /// 订阅模式下合成配置完全没有 direct 出站：自动补建后必须通过真实
-    /// `sing-box check`（修复 `detour to an empty direct outbound makes no sense`）。
+    /// 订阅模式下合成配置完全没有 direct 出站：local DNS 省略 detour（默认直连），
+    /// 不补建 direct 出站，配置必须通过真实 `sing-box check`。
+    ///
+    /// 注：`detour to an empty direct outbound makes no sense` 是启动阶段错误，
+    /// `sing-box check`（静态校验）无法覆盖，本地断言是主要防线。
     #[test]
     fn android_config_without_direct_outbound_passes_real_singbox_check() {
         let Some(bin) = sing_box_binary() else {
@@ -1249,14 +1289,16 @@ rules:
         apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
         inject_android_dns(&mut cfg);
 
-        // 无 direct 出站 → local DNS detour 指向自动补建的 direct 出站。
-        assert_eq!(cfg["dns"]["servers"][1]["detour"], "direct");
+        // 无 direct 出站 → local DNS 无 detour，且 outbounds 不含补建的 direct 出站。
+        assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
+        assert!(cfg["dns"]["servers"][1].get("detour").is_none());
         assert!(
-            cfg["outbounds"]
+            !cfg["outbounds"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|o| o["type"] == "direct")
+                .any(|o| o["type"] == "direct"),
+            "不应补建 direct 出站"
         );
 
         let dir = tempfile::tempdir().unwrap();
