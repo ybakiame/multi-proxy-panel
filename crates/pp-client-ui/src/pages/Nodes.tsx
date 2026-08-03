@@ -323,21 +323,13 @@ export default function Nodes() {
                           </Table.Cell>
                           <Table.Cell>{sub.node_count > 0 ? sub.node_count : "-"}</Table.Cell>
                           <Table.Cell>
-                            <div className="flex flex-wrap items-center gap-1">
-                              {sub.format ? (
-                                <Chip size="sm" variant="soft" color={formatColor(sub.format)}>
-                                  {formatLabel(sub.format)}
-                                </Chip>
-                              ) : (
-                                <span className="text-muted">-</span>
-                              )}
-                              {/* 核心类型随首页选择订阅自动联动切换（见 Dashboard handleSelectSubscription），此处仅中性展示。 */}
-                              {subCoreType(sub.format) && (
-                                <span className="text-xs text-muted">
-                                  {coreLabel(subCoreType(sub.format) ?? undefined)}
-                                </span>
-                              )}
-                            </div>
+                            {sub.format ? (
+                              <Chip size="sm" variant="soft" color={formatColor(sub.format)}>
+                                {formatLabel(sub.format)}
+                              </Chip>
+                            ) : (
+                              <span className="text-muted">-</span>
+                            )}
                           </Table.Cell>
                           <Table.Cell className="min-w-[180px]">
                             <Meter
