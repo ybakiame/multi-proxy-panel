@@ -138,7 +138,7 @@ export default function Nodes() {
   // 配置预览弹窗：按指定订阅生成合成配置（忽略 enabled 状态）。
   const [previewSub, setPreviewSub] = useState<SubscriptionView | null>(null);
 
-  // 当前客户端核心类型（来自全局 store 的设置页配置），用于格式不匹配提示与关联覆写过滤。
+  // 当前客户端核心类型（来自全局 store 的设置页配置），用于关联覆写过滤。
   const clientCoreType = useAppStore((state) => state.config?.core_type);
   const loadConfig = useAppStore((state) => state.loadConfig);
 
@@ -331,11 +331,11 @@ export default function Nodes() {
                               ) : (
                                 <span className="text-muted">-</span>
                               )}
-                              {sub.format === "ClashYaml" && clientCoreType === "singbox" && (
-                                <span className="text-xs text-warning">需 mihomo 核心</span>
-                              )}
-                              {sub.format === "SingBoxJson" && clientCoreType === "mihomo" && (
-                                <span className="text-xs text-warning">需 sing-box 核心</span>
+                              {/* 核心类型随首页选择订阅自动联动切换（见 Dashboard handleSelectSubscription），此处仅中性展示。 */}
+                              {subCoreType(sub.format) && (
+                                <span className="text-xs text-muted">
+                                  {coreLabel(subCoreType(sub.format) ?? undefined)}
+                                </span>
                               )}
                             </div>
                           </Table.Cell>
