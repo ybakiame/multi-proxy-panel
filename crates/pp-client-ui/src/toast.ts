@@ -2,18 +2,20 @@ import { toast as heroToast } from "@heroui/react";
 import { create } from "zustand";
 
 /**
- * 轻量 toast 通知（自实现兜底，规避 HeroUI toast 在 WSL 软渲染 WebKitGTK 下的崩溃）。
+ * 轻量 toast 通知（自实现静态兜底，作为特殊环境逃生门）。
+ *
+ * 默认启用 HeroUI 原生 toast；`PP_TOAST_MODE=static`（兼容 `safe`）环境变量
+ * （经 `toast_mode_override` 命令读取）强制自实现静态 toast。
  *
  * 背景：HeroUI 3.2.2 的 `ToastProvider` 渲染 toast 时调用
  * `document.startViewTransition()`（`@heroui/react` 的 toast-queue 实现），
  * WebKitGTK 2.52.5 在 WSL 软渲染下执行 view-transition 会 SIGSEGV 直接退出整个
  * 进程（dmesg 实证），每次 toast（保存成功/代理启停）应用即崩溃。
  *
- * 方案：双态保留，默认自实现静态 toast。`PP_TOAST_MODE=hero` 环境变量（经
- * `toast_mode_override` 命令读取）可强制启用 HeroUI 原生 toast——仅供 GPU 正常
- * 的桌面环境使用（WebKitGTK/WSL 下会 SIGSEGV 退出进程，见上方背景）。其余情况
- * （未设置 / 其他值 / 命令失败）保持 `heroMode=false`，所有 toast 走 zustand
- * store，由 `<Toaster />` 消费渲染，零动画、零 view-transition。
+ * 方案：双态保留，默认 `heroMode=true` 走 HeroUI 原生 toast；仅 WSL/WebKitGTK
+ * 等特殊环境通过 `PP_TOAST_MODE=static`/`safe` 强制关闭（`heroMode=false`），
+ * 所有 toast 走 zustand store，由 `<Toaster />` 消费渲染，零动画、零
+ * view-transition（见上方背景）。
  * 行为对齐：右下角堆叠、最多同屏 3 条、4 秒自动消失。
  */
 
@@ -32,10 +34,10 @@ const TOAST_DURATION_MS = 4000;
 
 let nextId = 0;
 
-/** 是否使用 HeroUI 原生 toast（`PP_TOAST_MODE=hero` 环境变量强制开启）；默认 `false` 走自实现。 */
-let heroMode = false;
+/** 是否使用 HeroUI 原生 toast（默认启用；`PP_TOAST_MODE=static`/`safe` 强制关闭，走自实现）。 */
+let heroMode = true;
 
-/** 设置 toast 渲染模式：`hero=true` 用 HeroUI 原生 toast，`false` 走 zustand store。 */
+/** 设置 toast 渲染模式：`hero=true` 用 HeroUI 原生 toast（默认），`false` 走 zustand store。 */
 export function setToastMode(hero: boolean): void {
   heroMode = hero;
 }

@@ -81,19 +81,20 @@ function ThemeBootstrap() {
 /**
  * Toast 双态实现（详见 `./toast.ts`）：
  *
- * - 默认自实现静态 `<Toaster />`：HeroUI 3.2.2 的 `ToastProvider` 渲染 toast 时
- *   调用 `document.startViewTransition()`，WebKitGTK 2.52.5 在 WSL 软渲染下执行
- *   view-transition 会 SIGSEGV 直接退出进程，故默认保守走静态 toast。
- * - `PP_TOAST_MODE=hero` 环境变量强制启用 HeroUI 原生 toast：仅供 GPU 正常的
- *   桌面环境使用（WebKitGTK/WSL 下会 SIGSEGV，见 toast.ts 背景注释）。
+ * - 默认 HeroUI 原生 toast：`ToastProvider` 渲染 toast 时调用
+ *   `document.startViewTransition()`，在 GPU 正常的桌面环境无问题。
+ * - `PP_TOAST_MODE=static`（兼容 `safe`）环境变量强制保持自实现静态
+ *   `<Toaster />`：仅供 WSL/WebKitGTK 等特殊环境使用——HeroUI 3.2.2 的
+ *   view-transition 在 WebKitGTK 2.52.5 WSL 软渲染下会 SIGSEGV 直接退出进程
+ *   （`startViewTransition` 风险详见 toast.ts 背景注释）。
  *
- * 命令返回前 / 命令失败 / 值非 `hero` 均保持默认（自实现路径）。`ToastProvider`
- * 独立挂载（不带 children）——HeroUI 3.2.2 会把 children 当作 react-aria
- * UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region 返回 null，
- * 若用它包裹应用内容会导致整棵 UI 树渲染为空。
+ * 命令返回前 / 命令失败 / 值非 `static`/`safe` 均保持默认（HeroUI 原生路径）。
+ * `ToastProvider` 独立挂载（不带 children）——HeroUI 3.2.2 会把 children 当作
+ * react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region
+ * 返回 null，若用它包裹应用内容会导致整棵 UI 树渲染为空。
  */
 export default function App() {
-  const [heroToastEnabled, setHeroToastEnabled] = useState(false);
+  const [heroToastEnabled, setHeroToastEnabled] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,12 +103,13 @@ export default function App() {
         if (cancelled) {
           return;
         }
-        const hero = (mode ?? "").trim().toLowerCase() === "hero";
-        setHeroToastEnabled(hero);
-        setToastMode(hero);
+        const staticMode =
+          (mode ?? "").trim().toLowerCase() === "static" || (mode ?? "").trim().toLowerCase() === "safe";
+        setHeroToastEnabled(!staticMode);
+        setToastMode(!staticMode);
       })
       .catch(() => {
-        // 命令失败保持默认：heroToastEnabled=false + heroMode=false（自实现路径）。
+        // 命令失败保持默认：heroToastEnabled=true + heroMode=true（HeroUI 原生路径）。
       });
     return () => {
       cancelled = true;
