@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use pp_client::{
     apply_panel_features, build_core_config_v2, compose_mihomo_config, compose_singbox_config,
-    detect_resource_from_url, fetch_subscription_with_ua, infer_core_type, parse_config_meta,
-    resolve_remote_overrides, ClientConfig, ClientCoreInventory, ClientState, ConfigMeta,
-    EffectiveOverrides, PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager,
-    RemoteResource, SubContent, SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
+    detect_resource_from_url, fetch_subscription_with_ua, parse_config_meta,
+    resolve_remote_overrides, ClientConfig, ClientState, ConfigMeta, EffectiveOverrides,
+    PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager, RemoteResource, SubContent,
+    SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::{CaStore, TrafficRecorder};
@@ -288,27 +288,36 @@ pub struct SaveConfigView {
 ///   兼容，不再校验空值，也不产生缺失提示）；
 /// - **core_type 联动本地核心**：`core_type` 变更且当前 `core_binary` 不属于该
 ///   类型时自动填入该类型首选本地核心（版本最高已下载 → 系统探测）；
-///   找不到时保留原路径并返回 `warning` 提示去核心管理下载。
+///   找不到时保留原路径并返回 `warning` 提示去核心管理下载。仅桌面端生效，
+///   Android 核心为内置 panelcore 合并绑定，跳过该联动（无本地二进制管理）。
 fn save_config_impl(
     data_dir: &std::path::Path,
     cfg: ClientConfigView,
 ) -> Result<SaveConfigView, String> {
+    // Android 下联动块整体被编译排除，`config` / `warnings` 不再被就地修改。
+    #[cfg_attr(target_os = "android", allow(unused_mut))]
     let mut config = cfg.into_config(data_dir)?;
+    #[cfg_attr(target_os = "android", allow(unused_mut))]
     let mut warnings: Vec<String> = Vec::new();
 
-    // core_type 联动本地核心二进制。
-    let prev_core_type = ClientConfig::load(data_dir).ok().map(|c| c.core_type);
-    if prev_core_type != Some(config.core_type) {
-        let belongs = !config.core_binary.as_os_str().is_empty()
-            && infer_core_type(&config.core_binary) == Some(config.core_type);
-        if !belongs {
-            let inv = ClientCoreInventory::new(data_dir.to_path_buf());
-            match inv.preferred_binary(config.core_type) {
-                Some(path) => config.core_binary = path,
-                None => warnings.push(format!(
-                    "核心类型已切换为 {}，但未找到该类型的本地核心，请到核心管理下载",
-                    config.core_type
-                )),
+    // core_type 联动本地核心二进制（仅桌面/非 Android：Android 核心为内置
+    // panelcore 合并绑定，无本地二进制下载管理语义，跳过以避免误导性
+    // “未找到本地核心”警告）。
+    #[cfg(not(target_os = "android"))]
+    {
+        let prev_core_type = ClientConfig::load(data_dir).ok().map(|c| c.core_type);
+        if prev_core_type != Some(config.core_type) {
+            let belongs = !config.core_binary.as_os_str().is_empty()
+                && pp_client::infer_core_type(&config.core_binary) == Some(config.core_type);
+            if !belongs {
+                let inv = pp_client::ClientCoreInventory::new(data_dir.to_path_buf());
+                match inv.preferred_binary(config.core_type) {
+                    Some(path) => config.core_binary = path,
+                    None => warnings.push(format!(
+                        "核心类型已切换为 {}，但未找到该类型的本地核心，请到核心管理下载",
+                        config.core_type
+                    )),
+                }
             }
         }
     }
