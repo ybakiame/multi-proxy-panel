@@ -485,6 +485,14 @@ export function gpuAcceleration(): Promise<boolean> {
   return invoke<boolean>("gpu_acceleration");
 }
 
+/**
+ * 探测 GitHub 访问链路可用性：按真实拉取管线（GitHub 代理前缀 / 走本地代理）
+ * 请求 `https://api.github.com/zen`，返回 `OK（xxx ms）` 风格字符串；失败 reject 并透传错误。
+ */
+export function testGithubProxy(): Promise<string> {
+  return invoke<string>("test_github_proxy");
+}
+
 /** 运行平台信息（与 Rust 侧 `PlatformInfoView` 对齐）。 */
 export interface PlatformInfo {
   /** 运行平台：`android` / `linux` / `windows` / `macos`。 */

@@ -8,6 +8,7 @@ import {
   listCores,
   listRemoteCoreVersions,
   platformInfo,
+  testGithubProxy,
   toErrorMessage,
   tunAuthStatus,
 } from "../api";
@@ -73,6 +74,10 @@ export default function Settings() {
   // GitHub 访问
   const [githubProxyPrefix, setGithubProxyPrefix] = useState("");
   const [fetchViaLocalProxy, setFetchViaLocalProxy] = useState(false);
+  // GitHub 代理连通性探测
+  const [proxyTestPending, setProxyTestPending] = useState(false);
+  const [proxyTestResult, setProxyTestResult] = useState<string | null>(null);
+  const [proxyTestError, setProxyTestError] = useState<string | null>(null);
   // 输入类控件的防抖保存（500ms）。
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -177,6 +182,23 @@ export default function Settings() {
     },
     [persist],
   );
+
+  /** 测试 GitHub 代理链路连通性（按真实拉取管线请求 api.github.com/zen）。 */
+  const runProxyTest = useCallback(async () => {
+    setProxyTestPending(true);
+    setProxyTestResult(null);
+    setProxyTestError(null);
+    try {
+      const result = await testGithubProxy();
+      // 后端返回 "OK（xxx ms）" 风格字符串，映射为「代理可用（xxx ms）」。
+      const ms = result.match(/（(\d+) ms）/)?.[1];
+      setProxyTestResult(ms ? `代理可用（${ms} ms）` : result);
+    } catch (err) {
+      setProxyTestError(toErrorMessage(err));
+    } finally {
+      setProxyTestPending(false);
+    }
+  }, []);
 
   const handleDownload = async () => {
     if (!downloadVersion) {
@@ -494,6 +516,13 @@ export default function Settings() {
             <span className="break-words text-xs text-muted">
               GitHub 链接将拼接前缀访问，例如 https://gh-proxy.com/https://raw.githubusercontent.com/…；留空则直连
             </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="secondary" size="sm" isPending={proxyTestPending} onPress={() => void runProxyTest()}>
+                测试连通性
+              </Button>
+              {proxyTestResult && <span className="break-words text-sm text-success">{proxyTestResult}</span>}
+              {proxyTestError && <span className="break-words text-sm text-warning">{proxyTestError}</span>}
+            </div>
           </div>
         </Card.Content>
       </Card>

@@ -988,6 +988,20 @@ pub async fn fetch_remotes(state: State<'_, AppState>) -> Result<FetchReportView
     })
 }
 
+/// 探测 GitHub 访问链路可用性：按真实拉取管线（GitHub 代理前缀 / 走本地代理）
+/// 请求轻量 GitHub URL，返回耗时毫秒；失败上抛错误信息。
+#[tauri::command]
+pub async fn test_github_proxy(state: State<'_, AppState>) -> Result<String, String> {
+    // 轻量、纯文本：用于链路连通性探测。
+    let url = "https://api.github.com/zen";
+    let started = std::time::Instant::now();
+    pp_client::fetch_resource_text(&state.data_dir, url, std::time::Duration::from_secs(10))
+        .await
+        .map_err(|e| e.to_string())?;
+    let elapsed_ms = started.elapsed().as_millis();
+    Ok(format!("OK（{elapsed_ms} ms）"))
+}
+
 /// 列出定时任务；客户端未启动或调度器未就绪时返回空列表。
 #[tauri::command]
 pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView>, String> {

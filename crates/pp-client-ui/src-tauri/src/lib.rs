@@ -192,6 +192,7 @@ pub fn run() {
             commands::detect_remote,
             commands::remove_remote,
             commands::fetch_remotes,
+            commands::test_github_proxy,
             commands::list_tasks,
             commands::run_task,
             commands::import_config,
