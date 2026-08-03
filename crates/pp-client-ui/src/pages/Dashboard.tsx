@@ -406,7 +406,12 @@ export default function Dashboard() {
                 // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，经
                 // panelcore.aar 合并绑定）：无「选择核心二进制」概念，改为直接选择
                 // 核心类型（持久化 core_type，Kotlin 侧按 core 字段分派 VPN 服务）。
+                // key 区分平台分支：platformInfo 异步返回前 os=null 走桌面分支，返回
+                // android 后切换本分支，分支级 key 强制重挂载，避免 react-aria 复用
+                // fiber 导致集合节点 key 从 __empty 变为 singbox 而触发
+                // "Cannot change the id of an item" 渲染崩溃。
                 <Select
+                  key="core-android"
                   id="dashboard-core"
                   value={coreTypeValue(config?.core_type)}
                   onChange={(key) => void persistConfig({ core_type: String(key ?? "singbox") })}
@@ -419,11 +424,11 @@ export default function Dashboard() {
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      <ListBox.Item id="singbox" textValue="sing-box">
+                      <ListBox.Item key="singbox" id="singbox" textValue="sing-box">
                         sing-box
                         <ListBox.ItemIndicator />
                       </ListBox.Item>
-                      <ListBox.Item id="mihomo" textValue="mihomo">
+                      <ListBox.Item key="mihomo" id="mihomo" textValue="mihomo">
                         mihomo
                         <ListBox.ItemIndicator />
                       </ListBox.Item>
@@ -432,6 +437,7 @@ export default function Dashboard() {
                 </Select>
               ) : (
                 <Select
+                  key="core-desktop"
                   id="dashboard-core"
                   value={activeCore?.path ?? ""}
                   onChange={(key) => void handleSelectCore(String(key ?? ""))}
@@ -446,7 +452,7 @@ export default function Dashboard() {
                   <Select.Popover>
                     <ListBox>
                       {cores.length === 0 ? (
-                        <ListBox.Item id="__empty" textValue="暂无可用核心">
+                        <ListBox.Item key="__empty" id="__empty" textValue="暂无可用核心">
                           暂无可用核心
                         </ListBox.Item>
                       ) : (
