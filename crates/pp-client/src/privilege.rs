@@ -84,7 +84,12 @@ fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
     TunAuthStatus::Unsupported("Android 使用 VpnService 授权".to_string())
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "android"
+)))]
 fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
     TunAuthStatus::Unsupported("当前平台不支持 TUN".to_string())
 }
@@ -172,7 +177,12 @@ fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
     ))
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "android"
+)))]
 fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
     Err(PanelError::Client(
         "当前平台不支持 TUN 自动提权".to_string(),
