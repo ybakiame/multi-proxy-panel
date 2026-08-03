@@ -320,7 +320,26 @@ fn ensure_outbound_domain_resolvers(obj: &mut serde_json::Map<String, Value>) {
 /// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，
 ///   `external-ui: ui` + `external-ui-url: <按选择>`，`secret` 非空时写 `secret`
 ///   键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
+///
+/// **平台差异（Android）**：`external-ui` / `external-ui-url` 会让 mihomo 在
+/// ApplyConfig 路径**同步下载**面板 zip（数 MB，首次需经代理/GitHub），阻塞
+/// setup → startTun 迟迟不执行 → Android 启动非常慢。本应用自带前端 UI，面板
+/// 无价值，故 Android 分支只写 `external-controller`（Clash API，规则模式热切换
+/// [`push_clash_mode`] 依赖）与 `secret`（非空时），不写 `external-ui` /
+/// `external-ui-url`，并移除模板/复写自带的 `external-ui` / `external-ui-url` /
+/// `external-ui-name` 键（防止订阅模板自带面板 URL 同样触发下载）。桌面行为不变。
 pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeatures) {
+    apply_mihomo_panel_features_impl(composed, features, cfg!(target_os = "android"));
+}
+
+/// [`apply_mihomo_panel_features`] 的私有实现，`is_android` 为平台判断参数
+/// （生产路径由 [`apply_mihomo_panel_features`] 传 `cfg!(target_os = "android")`；
+/// 测试可直接传 `true` / `false` 覆盖两端分支，见文件内 `#[cfg(test)]`）。
+fn apply_mihomo_panel_features_impl(
+    composed: &mut Value,
+    features: &PanelFeatures,
+    is_android: bool,
+) {
     let Some(obj) = composed.as_object_mut() else {
         return;
     };
@@ -349,11 +368,22 @@ pub fn apply_mihomo_panel_features(composed: &mut Value, features: &PanelFeature
             "external-controller".to_string(),
             Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
         );
-        obj.insert("external-ui".to_string(), Value::String("ui".to_string()));
-        obj.insert(
-            "external-ui-url".to_string(),
-            Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
-        );
+        if is_android {
+            // Android：不写 external-ui / external-ui-url，并移除模板/复写自带的
+            // 面板 UI 键（external-ui / external-ui-url / external-ui-name）——
+            // external-ui 在 ApplyConfig 路径同步下载面板 zip，阻塞 setup 拖慢
+            // 启动；本应用自带 UI，面板无价值。external-controller 保留供
+            // Clash API 使用（规则模式热切换 push_clash_mode 依赖）。
+            for key in ["external-ui", "external-ui-url", "external-ui-name"] {
+                obj.remove(key);
+            }
+        } else {
+            obj.insert("external-ui".to_string(), Value::String("ui".to_string()));
+            obj.insert(
+                "external-ui-url".to_string(),
+                Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
+            );
+        }
         if features.clash_api_secret.is_empty() {
             obj.remove("secret");
         } else {
@@ -1779,6 +1809,68 @@ rules:
             assert_eq!(cfg["external-ui"], "ui", "UI 选择 {ui}");
             assert_eq!(cfg["external-ui-url"], url, "UI 选择 {ui}");
         }
+    }
+
+    /// Android（`is_android=true`）：mihomo 在 ApplyConfig 路径同步下载
+    /// external-ui 面板 zip，阻塞 setup 拖慢启动；本应用自带 UI 面板无价值。
+    /// Android 分支只写 external-controller + secret，不写 external-ui /
+    /// external-ui-url，并移除模板/复写自带的三个面板 UI 键（含
+    /// external-ui-name）。桌面行为由既有测试覆盖，不受影响。
+    #[test]
+    fn apply_mihomo_panel_features_android_omits_external_ui_and_keeps_controller() {
+        let yaml = r#"
+mixed-port: 17890
+external-controller: 0.0.0.0:60000
+external-ui: ui
+external-ui-url: https://github.com/haishanh/yacd/archive/gh-pages.zip
+external-ui-name: yacd
+proxies:
+  - name: n1
+    type: direct
+rules:
+  - MATCH,DIRECT
+"#;
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        let features = PanelFeatures {
+            clash_api_secret: "sekret".to_string(),
+            ..singbox_features()
+        };
+        apply_mihomo_panel_features_impl(&mut cfg, &features, true);
+
+        // external-controller / secret 保留（Clash API 规则模式热切换依赖）。
+        assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
+        assert_eq!(cfg["secret"], "sekret");
+        // 不写 external-ui / external-ui-url；模板/复写自带的面板 UI 键被移除。
+        assert!(
+            cfg.get("external-ui").is_none(),
+            "Android 不应写 external-ui: {cfg}"
+        );
+        assert!(
+            cfg.get("external-ui-url").is_none(),
+            "Android 不应写 external-ui-url: {cfg}"
+        );
+        assert!(
+            cfg.get("external-ui-name").is_none(),
+            "模板自带 external-ui-name 应被移除: {cfg}"
+        );
+    }
+
+    /// Android（`is_android=true`）+ 空 secret：external-controller 保留、secret
+    /// 省略、模板自带面板 UI 键移除。
+    #[test]
+    fn apply_mihomo_panel_features_android_omits_empty_secret_and_template_ui() {
+        let yaml = "mixed-port: 17890\nexternal-ui: ui\nexternal-ui-url: https://old.example/panel.zip\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
+        let features = PanelFeatures {
+            clash_api_secret: String::new(), // 空 secret → 省略该键
+            ..singbox_features()
+        };
+        apply_mihomo_panel_features_impl(&mut cfg, &features, true);
+
+        assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
+        assert!(cfg.get("secret").is_none());
+        assert!(cfg.get("external-ui").is_none());
+        assert!(cfg.get("external-ui-url").is_none());
     }
 
     /// 未知值 / 空串回退 zashboard（映射函数 + 两核心注入路径）。
