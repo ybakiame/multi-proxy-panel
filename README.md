@@ -179,11 +179,14 @@ bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/�
 
 **环境要求**
 
-- JDK 17（Android Gradle 插件要求）
+- JDK 17+：AGP 8.11 最低要求 17，推荐 21 LTS；Gradle 8.14 不支持在 JDK 25+ 上运行，请勿使用 25/26
+  - Arch Linux：`sudo pacman -S jdk21-openjdk`；多版本共存时用 `archlinux-java status` 查看、`sudo archlinux-java set java-21-openjdk` 切换默认（参见 [Arch Wiki: Java](https://wiki.archlinux.org.cn/title/Java)）
+  - Debian / Ubuntu：`sudo apt install openjdk-21-jdk`；多版本用 `sudo update-alternatives --config java` 切换
+  - Fedora：`sudo dnf install java-21-openjdk-devel`；多版本用 `sudo alternatives --config java` 切换
 - Android SDK：compileSdk 为 36，需安装 `platforms;android-36`（`sdkmanager "platforms;android-36"`）
 - Android NDK：`*-android26-clang` 工具链（minSdk 26 对应），路径见下方配置
 - Rust Android targets（`rustup target add ...`）：`aarch64-linux-android`、`armv7-linux-androideabi`、`i686-linux-android`、`x86_64-linux-android`
-- 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`
+- 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`。`JAVA_HOME`：Gradle 默认使用 `archlinux-java`/系统默认 JDK，也可用 `JAVA_HOME` 显式指定（如 `/usr/lib/jvm/java-21-openjdk`）；多 JDK 共存但不想改系统默认时，构建命令前内联 `JAVA_HOME=...` 即可
 - 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `crates/pp-client-ui/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
 
 **构建命令**
