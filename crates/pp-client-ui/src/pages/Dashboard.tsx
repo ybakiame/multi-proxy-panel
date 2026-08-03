@@ -6,6 +6,7 @@ import {
   listProfiles,
   listSubscriptions,
   platformInfo,
+  refreshSubscription,
   requestVpnPermission,
   setActiveCore,
   setRuleMode as setRuleModeApi,
@@ -67,6 +68,8 @@ export default function Dashboard() {
   const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
     useAppStore();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
+  // 选中订阅后嗅探 format 期间置忙：禁用订阅 Select 避免重复触发。
+  const [refreshingSub, setRefreshingSub] = useState(false);
   const [subs, setSubs] = useState<SubscriptionView[]>([]);
   const [cores, setCores] = useState<LocalCoreView[]>([]);
   const [profiles, setProfiles] = useState<ProfileView[]>([]);
@@ -243,10 +246,35 @@ export default function Dashboard() {
     }
   };
 
-  /** 选择生效订阅：订阅自身格式推导的核心与当前核心不一致时，同一次持久化联动切换。 */
+  /** 选择生效订阅：订阅自身格式推导的核心与当前核心不一致时，同一次持久化联动切换。
+   *  存量订阅未嗅探过 format（null/undefined）时先刷新拉取嗅探，拿到格式后再推导联动。 */
   const handleSelectSubscription = async (id: string) => {
     const sub = subs.find((item) => item.id === id);
-    const derivedCore = sub ? subCoreType(sub.format) : null;
+    // 存量订阅 format 未知（嗅探功能上线前添加、未刷新过）→ 先刷新重新拉取并嗅探 format
+    // 落盘，再推导联动；ShareLinks 等已有 format 的路径保持原逻辑不动。
+    const needSniff = sub != null && sub.format == null;
+    let derivedCore = sub ? subCoreType(sub.format) : null;
+
+    if (needSniff) {
+      setRefreshingSub(true);
+      try {
+        // 刷新会重新拉取内容并嗅探 format（后端 refresh_subscription 单订阅刷新）。
+        const sniffed = await refreshSubscription(id);
+        // 局部更新订阅列表（format / 节点数 / userinfo 已重拉）并重新推导。
+        setSubs((prev) => prev.map((item) => (item.id === sniffed.id ? sniffed : item)));
+        derivedCore = subCoreType(sniffed.format);
+      } catch {
+        // 刷新失败：保持现状行为，仅写 active_subscription_id。
+        setActionError(null);
+        await persistConfig({ active_subscription_id: id });
+        toastWarning("订阅格式未知，未联动切换核心");
+        await loadConfig();
+        return;
+      } finally {
+        setRefreshingSub(false);
+      }
+    }
+
     // 一次 persistConfig 同时写入 active_subscription_id 与 core_type（避免两次保存与
     // 「已启动后动态切换核心」）；推导为 null 或与当前核心一致时只写订阅。
     const patch: Partial<ClientConfig> = { active_subscription_id: id };
@@ -259,6 +287,9 @@ export default function Dashboard() {
       await loadConfig();
       if (patch.core_type) {
         toastWarning(`已按订阅格式切换至 ${coreLabel(patch.core_type)} 核心`);
+      } else if (needSniff && derivedCore === null) {
+        // 刷新成功但格式仍未知（嗅探失败/非标准格式）：只写订阅，提示未联动。
+        toastWarning("订阅格式未知，未联动切换核心");
       }
     } catch (err) {
       setActionError(toErrorMessage(err));
@@ -451,6 +482,7 @@ export default function Dashboard() {
                   value={config?.active_subscription_id ?? ""}
                   onChange={(key) => void handleSelectSubscription(String(key ?? ""))}
                   placeholder="请选择订阅"
+                  isDisabled={refreshingSub}
                   fullWidth
                 >
                   <Select.Trigger>
