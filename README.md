@@ -185,7 +185,7 @@ bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/�
   - Fedora：`sudo dnf install java-21-openjdk-devel`；多版本用 `sudo alternatives --config java` 切换
 - Android SDK：compileSdk 为 36，需安装 `platforms;android-36`（`sdkmanager "platforms;android-36"`）
 - Android NDK：`*-android26-clang` 工具链（minSdk 26 对应），路径见下方配置
-- Rust Android targets（`rustup target add ...`）：`aarch64-linux-android`、`armv7-linux-androideabi`、`i686-linux-android`、`x86_64-linux-android`
+- Rust Android targets（`rustup target add ...`）：ABI 裁剪后只需 `aarch64-linux-android`、`x86_64-linux-android` 两个 target（保留全部 4 个 target 也无害，未裁剪 ABI 对应的 target 产物不会进入 APK）
 - 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`。`JAVA_HOME`：Gradle 默认使用 `archlinux-java`/系统默认 JDK，也可用 `JAVA_HOME` 显式指定（如 `/usr/lib/jvm/java-21-openjdk`）；多 JDK 共存但不想改系统默认时，构建命令前内联 `JAVA_HOME=...` 即可
 - 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `crates/pp-client-ui/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
 
@@ -193,10 +193,14 @@ bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/�
 
 ```bash
 cd crates/pp-client-ui
-bunx tauri android build --debug --apk
+# Debug APK（--target 为 tauri CLI 的 ABI 别名，可重复传参；对应 Rust target
+# aarch64-linux-android / x86_64-linux-android）
+bunx tauri android build --debug --apk --target aarch64 --target x86_64
+# Release APK
+bunx tauri android build --apk --target aarch64 --target x86_64
 ```
 
-`beforeBuildCommand` 会先执行 `bun run build` 构建前端，随后 gradle 为全部 4 个 ABI（arm64-v8a / armeabi-v7a / x86 / x86_64）编译 Rust 动态库并打包。
+`beforeBuildCommand` 会先执行 `bun run build` 构建前端，随后 gradle 仅为 arm64-v8a 与 x86_64 两个 ABI 编译 Rust 动态库并打包（配合 `build.gradle.kts` 中 `abiFilters` 剔除 AAR 内多余 ABI 的 `.so`）。
 
 **产物位置**
 
@@ -204,7 +208,7 @@ bunx tauri android build --debug --apk
 src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
-APK 为 universal flavor（含全部 ABI），包名 `com.proxypanel.client`，`minSdk=26`、`targetSdk=36`。该目录（`gen/android` 下）已被内部 `.gitignore` 覆盖，构建产物不会进入版本库。
+APK 为 universal flavor，仅含 `arm64-v8a` 与 `x86_64` 两个 ABI，包名 `com.proxypanel.client`，`minSdk=26`、`targetSdk=36`。该目录（`gen/android` 下）已被内部 `.gitignore` 覆盖，构建产物不会进入版本库。
 
 ## 项目结构
 
