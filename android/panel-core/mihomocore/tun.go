@@ -91,6 +91,14 @@ func StartTun(fd int, stack string, address string, dns string) error {
 func StopTun() {
 	tunMux.Lock()
 	defer tunMux.Unlock()
+
+	// sing_tun close 存在 panic 风险，recover 兜底只记日志、不 abort 进程。
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("[mihomocore] StopTun panic: %v", r)
+		}
+	}()
+
 	if tunListner != nil {
 		_ = tunListner.Close()
 		tunListner = nil

@@ -31,6 +31,10 @@ var (
 //
 // TUN 不通过配置启用（由 StartTun 以 VpnService 提供的 fd 创建），
 // 外部控制器 HTTP API 在 Android 上默认关闭。
+//
+// 锁粒度：Setup 全程持有 stateMux（含 hub.ApplyConfig），期间并发调用
+// Stop 会阻塞等待；剥离 external-ui 后 ApplyConfig 不再同步下载面板，
+// 该阻塞窗口已消失。
 func Setup(homeDir string, configYAML []byte, cb Callback) error {
 	stateMux.Lock()
 	defer stateMux.Unlock()
@@ -62,6 +66,13 @@ func Setup(homeDir string, configYAML []byte, cb Callback) error {
 	cfg.Controller.ExternalControllerUnix = ""
 	cfg.Controller.ExternalControllerPipe = ""
 
+	// 无条件剥离 external-ui：external-ui-url 会在 ApplyConfig 路径
+	// （updateUpdater → AutoDownloadUI）同步下载面板 zip，首次经代理/
+	// 无代理时阻塞 setup 数十秒至超时；本应用自带 UI，无需 mihomo 面板。
+	cfg.Controller.ExternalUI = ""
+	cfg.Controller.ExternalUIURL = ""
+	cfg.Controller.ExternalUIName = ""
+
 	hub.ApplyConfig(cfg)
 
 	lastConfig = cfg
@@ -72,15 +83,31 @@ func Setup(homeDir string, configYAML []byte, cb Callback) error {
 }
 
 // Stop 停止 tun listener 与 mihomo（幂等）。
+//
+// 锁粒度：Stop 全程持有 stateMux；Setup 持锁期间调用 Stop 会阻塞等待
+// （剥离 external-ui 后 Setup 不再有网络下载的长时间窗口，该阻塞已消失）。
 func Stop() {
 	stateMux.Lock()
 	defer stateMux.Unlock()
+
+	// 全程 recover 防御：任何 Go panic 只记日志、不 abort 进程
+	// （gomobile 下 panic = SIGABRT = App 闪退，Kotlin try/catch 接不住）。
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("[mihomocore] stop panic: %v", r)
+		}
+	}()
 
 	stopLogForwarder()
 	StopTun()
 
 	if lastConfig != nil {
 		// 零化端口以关闭所有 inbounds，然后重放配置。
+		// 必须保留：executor.Shutdown() 只关闭 tun listener
+		// （listener.Cleanup），并不关闭 HTTP/SOCKS/Redir/TProxy/Mixed
+		// 等配置 inbounds；零化重放中的 ReCreateXXX(0)/PatchInboundListeners
+		// 才是关闭它们的路径。运行期中重放会重新初始化组件，已由上方
+		// recover 兜底。
 		g := lastConfig.General
 		g.Port = 0
 		g.SocksPort = 0
