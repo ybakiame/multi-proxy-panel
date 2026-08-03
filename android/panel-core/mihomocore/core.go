@@ -29,8 +29,12 @@ var (
 
 // Setup 设置 mihomo HomeDir、保存回调、解析并应用配置。
 //
-// TUN 不通过配置启用（由 StartTun 以 VpnService 提供的 fd 创建），
-// 外部控制器 HTTP API 在 Android 上默认关闭。
+// TUN 不通过配置启用（由 StartTun 以 VpnService 提供的 fd 创建）。
+// 外部控制器按配置保留：合成配置仅在用户开启 Clash 面板时写入
+// `external-controller: 127.0.0.1:port`（见 pp-client core_config.rs
+// apply_mihomo_panel_features），Clash 面板 API 与规则模式热切换
+// （push_clash_mode）依赖该监听。external-controller 仅监听 127.0.0.1
+// 回环地址，不接受外部连接。TLS / Unix / Pipe 变体本应用不用，统一清空。
 //
 // 锁粒度：Setup 全程持有 stateMux（含 hub.ApplyConfig），期间并发调用
 // Stop 会阻塞等待；剥离 external-ui 后 ApplyConfig 不再同步下载面板，
@@ -61,7 +65,9 @@ func Setup(homeDir string, configYAML []byte, cb Callback) error {
 
 	// 避免 mihomo 自行创建 tun 设备，TUN 由 StartTun(fd, ...) 管理。
 	cfg.General.Tun.Enable = false
-	cfg.Controller.ExternalController = ""
+	// 保留 ExternalController：配置里的 external-controller 仅在用户开启
+	// Clash 面板时由合成配置注入（127.0.0.1 回环，安全）；本应用不使用
+	// TLS / Unix / Pipe 变体，统一清空。
 	cfg.Controller.ExternalControllerTLS = ""
 	cfg.Controller.ExternalControllerUnix = ""
 	cfg.Controller.ExternalControllerPipe = ""
