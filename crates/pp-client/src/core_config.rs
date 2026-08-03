@@ -46,13 +46,26 @@ pub struct PanelFeatures {
     pub rule_mode: String,
 }
 
+/// Clash 面板 UI 选择归一化：`yacd` / `zashboard` / `metacubexd` 原样返回，
+/// 其余（含空串）回退默认面板 `zashboard`。
+///
+/// 两个核心的 `external_ui` 目录名（`ui-<choice>`）与下载地址都基于归一化结果
+/// 生成（见 [`apply_singbox_panel_features`] / [`apply_mihomo_panel_features_impl`]）。
+fn normalized_clash_api_ui(ui: &str) -> &'static str {
+    match ui {
+        "yacd" => "yacd",
+        "zashboard" => "zashboard",
+        "metacubexd" => "metacubexd",
+        _ => "zashboard",
+    }
+}
+
 /// Clash 面板 UI 下载地址映射（公开约定，见 Task R 项 1）。
 ///
 /// 未知值回退为默认面板 `zashboard`。
 pub fn clash_api_ui_download_url(ui: &str) -> &'static str {
-    match ui {
+    match normalized_clash_api_ui(ui) {
         "yacd" => "https://github.com/haishanh/yacd/archive/gh-pages.zip",
-        "zashboard" => "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
         "metacubexd" => "https://github.com/MetaCubeX/metacubexd/archive/gh-pages.zip",
         _ => "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
     }
@@ -80,8 +93,14 @@ pub fn apply_panel_features(
 ///   整体替换为设置值，`tun-in` 只能有一个）；Android 构建额外对齐 libbox/SFA
 ///   范式注入 `strict_route`（见 [`build_singbox_tun_inbound`]）；
 /// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
-///   "127.0.0.1:port", external_ui: "ui", external_ui_download_url: <按选择>}`，
-///   `secret` 非空时追加（模板已含 `experimental.clash_api` 时整体替换）。
+///   "127.0.0.1:port", external_ui: "ui-<choice>", external_ui_download_url:
+///   <按选择>}`，`secret` 非空时追加（模板已含 `experimental.clash_api` 时整体替换）。
+///
+/// `external_ui` 目录名按选择区分（`ui-yacd` / `ui-zashboard` / `ui-metacubexd`）：
+/// sing-box 仅在 `external_ui` 目录不存在时下载面板 zip（`external_ui_download_url`），
+/// 固定目录 `ui` 时切换选择只会改下载地址，目录里已有的旧面板永远不会被替换——
+/// 重启后仍是旧面板。目录按选择区分后，切换选择走新目录触发重新下载，旧目录残留
+/// 不影响新面板。URL 路径仍为 `/ui`，Dashboard 打开链接无需改。
 ///
 /// 注：sing-box 无组合层 `mode` 字段，规则模式不写入配置，运行时经 Clash API
 /// （[`push_clash_mode`]）热切换。
@@ -110,8 +129,13 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             "external_controller".to_string(),
             Value::String(format!("127.0.0.1:{}", features.clash_api_port)),
         );
-        // 面板 UI：固定挂载目录 `ui` + 按选择回填下载地址（未知值回退 zashboard）。
-        clash_api.insert("external_ui".to_string(), Value::String("ui".to_string()));
+        // 面板 UI：目录名按选择区分（`ui-<choice>`，未知值回退 zashboard）+ 按选择
+        // 回填下载地址。目录区分是切换生效的关键：核心仅在目录不存在时下载面板
+        // zip，固定 `ui` 目录切换选择后下载 URL 变了但目录已有旧面板，永远不会再
+        // 下载（重启后仍显示旧面板）；目录区分后新选择走新目录重新下载，旧目录
+        // 残留不影响。URL 路径仍为 `/ui`。
+        let ui_dir = format!("ui-{}", normalized_clash_api_ui(&features.clash_api_ui));
+        clash_api.insert("external_ui".to_string(), Value::String(ui_dir));
         clash_api.insert(
             "external_ui_download_url".to_string(),
             Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
@@ -318,8 +342,14 @@ fn ensure_outbound_domain_resolvers(obj: &mut serde_json::Map<String, Value>) {
 /// - `tun_enabled` → `tun = {enable: true, stack, auto-route, auto-detect-interface:
 ///   true, dns-hijack: ["any:53"]}`（模板已含 `tun` 键时整体替换）；
 /// - `clash_api_enabled` → `external-controller: 127.0.0.1:port`，
-///   `external-ui: ui` + `external-ui-url: <按选择>`，`secret` 非空时写 `secret`
-///   键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
+///   `external-ui: ui-<choice>` + `external-ui-url: <按选择>`，`secret` 非空时写
+///   `secret` 键（空串省略；模板已含 `external-controller` 时以设置为准替换）。
+///
+///   `external-ui` 目录名按选择区分（`ui-yacd` / `ui-zashboard` /
+///   `ui-metacubexd`），原因与 sing-box 相同：mihomo 仅在 `external-ui` 目录不存在
+///   时下载面板 zip（`external-ui-url`），固定 `ui` 目录切换选择不会触发重新下载，
+///   重启后仍是旧面板；目录区分后切换选择走新目录重新下载，旧目录残留不影响。
+///   URL 路径仍为 `/ui`。
 ///
 /// **平台差异（Android）**：`external-ui` / `external-ui-url` 会让 mihomo 在
 /// ApplyConfig 路径**同步下载**面板 zip（数 MB，首次需经代理/GitHub），阻塞
@@ -378,7 +408,18 @@ fn apply_mihomo_panel_features_impl(
                 obj.remove(key);
             }
         } else {
-            obj.insert("external-ui".to_string(), Value::String("ui".to_string()));
+            // 桌面：external-ui 目录名按选择区分（`ui-<choice>`，未知值回退
+            // zashboard）。mihomo 仅在 external-ui 目录不存在时下载面板 zip
+            // （external-ui-url），固定 `ui` 目录切换选择不会触发重新下载，重启
+            // 后仍是旧面板；目录区分后切换选择走新目录重新下载，旧目录残留不影响。
+            // URL 路径仍为 `/ui`。
+            obj.insert(
+                "external-ui".to_string(),
+                Value::String(format!(
+                    "ui-{}",
+                    normalized_clash_api_ui(&features.clash_api_ui)
+                )),
+            );
             obj.insert(
                 "external-ui-url".to_string(),
                 Value::String(clash_api_ui_download_url(&features.clash_api_ui).to_string()),
@@ -1081,14 +1122,17 @@ rules:
         assert_eq!(tun[0]["stack"], "mixed");
 
         // experimental.clash_api 整体替换：模板/复写自带的 external_ui 与下载地址
-        // 同样以设置值为准覆盖（external_ui=ui + 按选择的下载 URL），其余
+        // 同样以设置值为准覆盖（external_ui=ui-zashboard + 按选择的下载 URL），其余
         // experimental 字段（如有）保留。
         assert_eq!(
             cfg["experimental"]["clash_api"]["external_controller"],
             "127.0.0.1:9090"
         );
         assert_eq!(cfg["experimental"]["clash_api"]["secret"], "sekret");
-        assert_eq!(cfg["experimental"]["clash_api"]["external_ui"], "ui");
+        assert_eq!(
+            cfg["experimental"]["clash_api"]["external_ui"],
+            "ui-zashboard"
+        );
         assert_eq!(
             cfg["experimental"]["clash_api"]["external_ui_download_url"],
             "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
@@ -1774,7 +1818,8 @@ rules:
             apply_panel_features(&mut cfg, CoreType::SingBox, &features_with_ui(ui));
 
             assert_eq!(
-                cfg["experimental"]["clash_api"]["external_ui"], "ui",
+                cfg["experimental"]["clash_api"]["external_ui"],
+                format!("ui-{}", normalized_clash_api_ui(ui)),
                 "UI 选择 {ui}"
             );
             assert_eq!(
@@ -1806,7 +1851,11 @@ rules:
             let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
             apply_panel_features(&mut cfg, CoreType::Mihomo, &features_with_ui(ui));
 
-            assert_eq!(cfg["external-ui"], "ui", "UI 选择 {ui}");
+            assert_eq!(
+                cfg["external-ui"],
+                format!("ui-{}", normalized_clash_api_ui(ui)),
+                "UI 选择 {ui}"
+            );
             assert_eq!(cfg["external-ui-url"], url, "UI 选择 {ui}");
         }
     }
@@ -1898,6 +1947,10 @@ rules:
             sb["experimental"]["clash_api"]["external_ui_download_url"],
             "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
         );
+        assert_eq!(
+            sb["experimental"]["clash_api"]["external_ui"], "ui-zashboard",
+            "未知值回退 zashboard 时目录名同步回退"
+        );
 
         let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
         let mut mh = compose_mihomo_config(yaml, 17890, None).unwrap();
@@ -1905,6 +1958,63 @@ rules:
         assert_eq!(
             mh["external-ui-url"],
             "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+        );
+        assert_eq!(
+            mh["external-ui"], "ui-zashboard",
+            "未知值回退 zashboard 时目录名同步回退"
+        );
+    }
+
+    /// 切换选择后 external_ui 目录名不同——这是切换生效的关键：核心仅在目录不存在
+    /// 时下载面板 zip，固定 `ui` 目录时切换选择只改下载 URL，目录已有旧面板永远
+    /// 不会重新下载（重启后仍是旧面板）。目录按选择区分后，新选择走新目录触发
+    /// 重新下载，旧目录残留不影响。两核心一致。
+    #[test]
+    fn switching_ui_choice_changes_external_ui_dir_for_both_cores() {
+        let sub = json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }]
+        });
+        let mut sb_yacd = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut sb_yacd, CoreType::SingBox, &features_with_ui("yacd"));
+        let mut sb_zash = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(
+            &mut sb_zash,
+            CoreType::SingBox,
+            &features_with_ui("zashboard"),
+        );
+
+        assert_eq!(
+            sb_yacd["experimental"]["clash_api"]["external_ui"], "ui-yacd",
+            "sing-box yacd 目录"
+        );
+        assert_eq!(
+            sb_zash["experimental"]["clash_api"]["external_ui"], "ui-zashboard",
+            "sing-box zashboard 目录"
+        );
+        assert_ne!(
+            sb_yacd["experimental"]["clash_api"]["external_ui"],
+            sb_zash["experimental"]["clash_api"]["external_ui"],
+            "sing-box 切换选择后 external_ui 目录必须不同"
+        );
+
+        let yaml = "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
+        let mut mh_yacd = compose_mihomo_config(yaml, 17890, None).unwrap();
+        apply_panel_features(&mut mh_yacd, CoreType::Mihomo, &features_with_ui("yacd"));
+        let mut mh_zash = compose_mihomo_config(yaml, 17890, None).unwrap();
+        apply_panel_features(
+            &mut mh_zash,
+            CoreType::Mihomo,
+            &features_with_ui("zashboard"),
+        );
+
+        assert_eq!(mh_yacd["external-ui"], "ui-yacd", "mihomo yacd 目录");
+        assert_eq!(
+            mh_zash["external-ui"], "ui-zashboard",
+            "mihomo zashboard 目录"
+        );
+        assert_ne!(
+            mh_yacd["external-ui"], mh_zash["external-ui"],
+            "mihomo 切换选择后 external-ui 目录必须不同"
         );
     }
 
