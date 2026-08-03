@@ -72,6 +72,18 @@ impl ClientCoreInventory {
         }
     }
 
+    /// GitHub 代理前缀（设置页「GitHub 访问」）：best-effort 从 `data_dir/client.json`
+    /// 读取，文件缺失/损坏时按空串（直连）处理。
+    ///
+    /// 核心版本查询与下载与远程资源拉取共用同一 GitHub 访问策略（URL 前缀拼接），
+    /// 用户配置的代理前缀同时作用于 `api.github.com` 的 release 查询与 `github.com`
+    /// 的 release 资产下载。
+    fn github_proxy_prefix(&self) -> String {
+        ClientConfig::load(&self.data_dir)
+            .unwrap_or_default()
+            .github_proxy_prefix
+    }
+
     /// 下载目录：`data_dir/cores`。
     pub fn cores_dir(&self) -> PathBuf {
         self.data_dir.join("cores")
@@ -137,6 +149,9 @@ impl ClientCoreInventory {
             "{}/repos/{}/{}/releases?per_page=10",
             self.api_base, owner, repo
         );
+        // GitHub API URL 经配置的代理前缀包装（与远程资源拉取共用 GitHub 访问策略）；
+        // 注入的 mock 服务地址（非 GitHub 域名）不受影响。
+        let url = crate::apply_github_proxy_prefix(&url, &self.github_proxy_prefix());
         let resp = self
             .client
             .get(&url)
@@ -197,6 +212,10 @@ impl ClientCoreInventory {
             .map_err(|e| {
                 PanelError::Core(format!("解析 {} {} 发布资产失败: {e}", core_type, tag))
             })?;
+        // 资产下载初始 URL 为 `github.com/<owner>/<repo>/releases/download/...`，
+        // 经配置的代理前缀包装后请求；302 跳转 `objects.githubusercontent.com`
+        // 由 gh 代理侧跟进（不在此重复包装）。
+        let asset_url = crate::apply_github_proxy_prefix(&asset_url, &self.github_proxy_prefix());
         tracing::info!(
             core_type = %core_type,
             version = %version,
@@ -288,6 +307,9 @@ impl ClientCoreInventory {
             "{}/repos/{}/{}/releases/tags/{}",
             self.api_base, owner, repo, tag
         );
+        // GitHub API URL 经配置的代理前缀包装（与远程资源拉取共用 GitHub 访问策略）；
+        // 注入的 mock 服务地址（非 GitHub 域名）不受影响。
+        let url = crate::apply_github_proxy_prefix(&url, &self.github_proxy_prefix());
         let resp = self
             .client
             .get(&url)

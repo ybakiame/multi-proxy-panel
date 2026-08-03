@@ -77,10 +77,12 @@ pub fn normalize_resource_url(url: &str) -> String {
     }
 }
 
-/// GitHub 相关域名列表（含 `www.github.com` 与各类 `*.githubusercontent.com` 子域）。
-const GITHUB_HOSTS: [&str; 7] = [
+/// GitHub 相关域名列表（含 `www.github.com`、`api.github.com` 与各类
+/// `*.githubusercontent.com` 子域）。
+const GITHUB_HOSTS: [&str; 8] = [
     "github.com",
     "www.github.com",
+    "api.github.com",
     "raw.githubusercontent.com",
     "gist.github.com",
     "gist.githubusercontent.com",
@@ -226,6 +228,9 @@ mod tests {
             "https://raw.githubusercontent.com/owner/repo/main/x.js"
         ));
         assert!(is_github_url("https://github.com/owner/repo"));
+        assert!(is_github_url(
+            "https://api.github.com/repos/owner/repo/releases"
+        ));
         assert!(is_github_url("http://www.github.com/owner/repo"));
         assert!(is_github_url("https://gist.github.com/owner/abc123"));
         assert!(is_github_url(
@@ -259,6 +264,11 @@ mod tests {
         assert_eq!(
             apply_github_proxy_prefix("https://github.com/o/r", "https://gh-proxy.com/"),
             "https://gh-proxy.com/https://github.com/o/r"
+        );
+        // api.github.com 同样走代理前缀（核心版本查询/下载共用此策略）。
+        assert_eq!(
+            apply_github_proxy_prefix("https://api.github.com/repos/o/r/releases", prefix),
+            "https://gh-proxy.com/https://api.github.com/repos/o/r/releases"
         );
         // 非 GitHub URL 原样返回。
         assert_eq!(
