@@ -35,6 +35,17 @@ function coreLabel(value: string): string {
   return CORE_LABELS[(value === "SingBox" ? "singbox" : value === "Mihomo" ? "mihomo" : value) as CoreType] ?? value;
 }
 
+/** 核心类型原始值（兼容 `singbox` / `mihomo` 小写 serde 值与 PascalCase 值，回退 singbox）。 */
+function coreTypeValue(value: string | undefined): string {
+  if (value === "Mihomo") {
+    return "mihomo";
+  }
+  if (value === "SingBox") {
+    return "singbox";
+  }
+  return value ?? "singbox";
+}
+
 export default function Dashboard() {
   const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
     useAppStore();
@@ -264,7 +275,8 @@ export default function Dashboard() {
   if (activeSub && !activeSub.enabled) {
     gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
-  // Android 核心为内置 libbox（无「选择核心二进制」概念），核心门禁跳过。
+  // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，无「选择核心二进制」
+  // 概念，核心类型在上方 Select 直接选择），二进制门禁跳过。
   if (!isAndroid && (!config?.core_binary || !activeCore)) {
     gateMessages.push("请先选择要使用的核心");
   }
@@ -391,8 +403,33 @@ export default function Dashboard() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="dashboard-core">核心</Label>
               {isAndroid ? (
-                // Android 核心为内置 libbox，无「选择核心二进制」概念，以静态行展示。
-                <span className="text-sm">内置 sing-box 核心（libbox）</span>
+                // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，经
+                // panelcore.aar 合并绑定）：无「选择核心二进制」概念，改为直接选择
+                // 核心类型（持久化 core_type，Kotlin 侧按 core 字段分派 VPN 服务）。
+                <Select
+                  id="dashboard-core"
+                  value={coreTypeValue(config?.core_type)}
+                  onChange={(key) => void persistConfig({ core_type: String(key ?? "singbox") })}
+                  placeholder="请选择核心类型"
+                  fullWidth
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="singbox" textValue="sing-box">
+                        sing-box
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                      <ListBox.Item id="mihomo" textValue="mihomo">
+                        mihomo
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
               ) : (
                 <Select
                   id="dashboard-core"
