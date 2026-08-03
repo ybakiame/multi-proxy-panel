@@ -5,6 +5,8 @@
 # gomobile bind 生成的 sources jar 一并忽略
 /libs/*-sources.jar
 /src/main/assets/tauri.conf.json
+# GEO 数据三件套为下载产物（体积大），不入库，用 scripts/update-android-geodata.sh 生成
+/src/main/assets/geo/
 /tauri.build.gradle.kts
 /proguard-tauri.pro
 /tauri.properties
