@@ -9,9 +9,9 @@ use std::sync::Arc;
 use pp_client::{
     apply_panel_features, build_core_config_v2, compose_mihomo_config, compose_singbox_config,
     detect_resource_from_url, fetch_subscription_with_ua, parse_config_meta,
-    resolve_remote_overrides, ClientConfig, ClientState, ConfigMeta, EffectiveOverrides,
-    PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager, RemoteResource, SubContent,
-    SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
+    resolve_remote_overrides, CachedSubscriptionContent, ClientConfig, ClientState, ConfigMeta,
+    EffectiveOverrides, PanelFeatures, Profile, ProfileStoreV2, RemoteKind, RemoteManager,
+    RemoteResource, SubContent, SubFormat, Subscription, SubscriptionFetcher, SubscriptionStore,
 };
 use pp_common::CoreType;
 use pp_mitm::{CaStore, TrafficRecorder};
@@ -1291,7 +1291,8 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
         .map_err(|e| format!("删除复写模板失败: {e}"))
 }
 
-/// 生成生效配置预览：拉取订阅 → 内置模板 → 订阅关联模板的远程 + 本地复写叠加 → 核心合成（不含 MITM 链路）。
+/// 生成生效配置预览：订阅节点（优先本地缓存组装，缓存缺失回退实时拉取）→ 内置模板
+/// → 订阅关联模板的远程 + 本地复写叠加 → 核心合成（不含 MITM 链路）。
 ///
 /// 返回最终核心可用的配置文本（sing-box 为 JSON、mihomo 为 YAML），供只读预览。
 /// 需要已保存的客户端配置（`data_dir/client.json`）。订阅选择与覆写解析与启动路径
@@ -1302,6 +1303,10 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
 ///   其关联的覆写模板经 `resolve_remote_overrides` 拉取/缓存回退叠加（缓存目录
 ///   `data_dir/profile_cache`），与本地复写一起由 `build_core_config_v2` 合成；
 ///   未选中订阅时回退旧版 Hub 订阅路径（deprecated，无覆写）。
+///
+/// 订阅节点优先读本地内容缓存（`data_dir/subscription_cache/<id>.json`，刷新订阅时
+/// 落盘）组装，避免每次预览远程拉取；缓存缺失时回退实时拉取（成功后写缓存，下次
+/// 预览即本地）。启动路径（`state.rs`）仍 live fetch 保证新鲜度，不受影响。
 #[tauri::command]
 pub async fn preview_core_config(
     state: State<'_, AppState>,
@@ -1321,6 +1326,9 @@ pub async fn preview_core_config(
 /// `preview_id = Some(id)` 时按指定订阅预览（不存在报错「订阅不存在」，忽略
 /// enabled 状态）；`None` 时保持既有 `active_subscription_id` 选择逻辑（含停用
 /// 校验与旧版 Hub 回退）。
+///
+/// 两条订阅路径（指定 id / active 选中）均优先读本地内容缓存组装，缓存缺失回退
+/// 实时拉取（成功后写缓存，下次预览即本地）。
 async fn preview_core_config_impl(
     data_dir: PathBuf,
     preview_id: Option<Uuid>,
@@ -1348,24 +1356,24 @@ async fn preview_core_config_impl(
     };
     let sub_content = if let Some(sub) = &specified {
         linked_profile_id = sub.profile_id;
-        let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
-            .await
-            .map_err(|e| format!("拉取订阅「{}」失败: {e}", sub.name))?;
-        // 格式兼容校验（等价启动路径 `state.rs` 的 `check_subscription_core_compat`）：
-        // 预览任意订阅时，订阅格式与当前核心不兼容直接报错（指明订阅名）。
-        check_preview_core_compat(fetch.format, cfg.core_type)
-            .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
-        match cfg.core_type {
-            CoreType::SingBox => {
-                SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
-            }
-            CoreType::Mihomo => {
-                let yaml = serde_yaml::to_string(&serde_json::json!({
-                    "proxies": fetch.mihomo_nodes,
-                }))
-                .map_err(|e| format!("序列化配置失败: {e}"))?;
-                SubContent::Mihomo(yaml)
-            }
+        // 预览优先读本地内容缓存（刷新订阅时落盘）组装，避免每次远程拉取；
+        // 缓存缺失回退实时拉取（成功后写缓存，下次预览即本地）。
+        if let Some(cached) = sub_store.load_cached_content(sub.id) {
+            // 缓存命中：格式兼容校验后直接用缓存节点组装（等价启动路径
+            // `state.rs` 的 `check_subscription_core_compat`）。
+            check_preview_core_compat(cached.format, cfg.core_type)
+                .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
+            sub_content_from_nodes(cfg.core_type, &cached.singbox_nodes, &cached.mihomo_nodes)?
+        } else {
+            let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+                .await
+                .map_err(|e| format!("拉取订阅「{}」失败: {e}", sub.name))?;
+            // 格式兼容校验（等价启动路径 `state.rs` 的 `check_subscription_core_compat`）：
+            // 预览任意订阅时，订阅格式与当前核心不兼容直接报错（指明订阅名）。
+            check_preview_core_compat(fetch.format, cfg.core_type)
+                .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
+            cache_fetch_result(&sub_store, sub.id, &fetch);
+            sub_content_from_nodes(cfg.core_type, &fetch.singbox_nodes, &fetch.mihomo_nodes)?
         }
     } else {
         match cfg.active_subscription_id {
@@ -1379,20 +1387,24 @@ async fn preview_core_config_impl(
                     return Err("所选订阅已停用，请在订阅页启用或在首页重新选择".to_string());
                 }
                 linked_profile_id = sub.profile_id;
-                let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
-                    .await
-                    .map_err(|e| format!("拉取订阅失败: {e}"))?;
-                match cfg.core_type {
-                    CoreType::SingBox => {
-                        SubContent::SingBox(serde_json::json!({ "outbounds": fetch.singbox_nodes }))
-                    }
-                    CoreType::Mihomo => {
-                        let yaml = serde_yaml::to_string(&serde_json::json!({
-                            "proxies": fetch.mihomo_nodes,
-                        }))
-                        .map_err(|e| format!("序列化配置失败: {e}"))?;
-                        SubContent::Mihomo(yaml)
-                    }
+                // 与指定订阅预览一致：优先本地缓存，缓存缺失回退实时拉取
+                // （成功后写缓存）。
+                if let Some(cached) = sub_store.load_cached_content(sub.id) {
+                    sub_content_from_nodes(
+                        cfg.core_type,
+                        &cached.singbox_nodes,
+                        &cached.mihomo_nodes,
+                    )?
+                } else {
+                    let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+                        .await
+                        .map_err(|e| format!("拉取订阅失败: {e}"))?;
+                    cache_fetch_result(&sub_store, sub.id, &fetch);
+                    sub_content_from_nodes(
+                        cfg.core_type,
+                        &fetch.singbox_nodes,
+                        &fetch.mihomo_nodes,
+                    )?
                 }
             }
             None if !cfg.hub_url.is_empty() && !cfg.sub_token.is_empty() => {
@@ -1831,15 +1843,51 @@ fn parse_profile_ref(profile_id: &Option<String>) -> Result<Option<Uuid>, String
     }
 }
 
-/// 把一次 fetch 结果合并进订阅（成功更新 userinfo / 节点数并清空 error；
-/// 失败仅记录 error，保留旧数据）。拉取 UA 取订阅条目配置（`None` → 默认 clash.meta）。
-async fn apply_fetch(sub: &mut Subscription, url: &str) {
+/// 把一次成功的订阅拉取结果写入本地内容缓存（best-effort，失败仅记 warn，
+/// 不阻塞元数据更新）。缓存供配置预览等场景优先本地组装。
+fn cache_fetch_result(store: &SubscriptionStore, id: Uuid, fetch: &pp_client::FetchResult) {
+    let cached = CachedSubscriptionContent {
+        format: fetch.format,
+        singbox_nodes: fetch.singbox_nodes.clone(),
+        mihomo_nodes: fetch.mihomo_nodes.clone(),
+    };
+    if let Err(e) = store.write_cached_content(id, &cached) {
+        tracing::warn!(id = %id, error = %e, "写入订阅内容缓存失败");
+    }
+}
+
+/// 从双核心节点组装 [`SubContent`]（与启动路径 `state.rs` 一致：sing-box 取
+/// `outbounds`，mihomo 取 `proxies` 序列化为 YAML）。
+fn sub_content_from_nodes(
+    core_type: CoreType,
+    singbox_nodes: &[serde_json::Value],
+    mihomo_nodes: &[serde_json::Value],
+) -> Result<SubContent, String> {
+    match core_type {
+        CoreType::SingBox => Ok(SubContent::SingBox(serde_json::json!({
+            "outbounds": singbox_nodes,
+        }))),
+        CoreType::Mihomo => {
+            let yaml = serde_yaml::to_string(&serde_json::json!({
+                "proxies": mihomo_nodes,
+            }))
+            .map_err(|e| format!("序列化配置失败: {e}"))?;
+            Ok(SubContent::Mihomo(yaml))
+        }
+    }
+}
+
+/// 把一次 fetch 结果合并进订阅（成功更新 userinfo / 节点数并清空 error，
+/// 同时写本地内容缓存；失败仅记录 error，保留旧数据）。拉取 UA 取订阅条目
+/// 配置（`None` → 默认 clash.meta）。
+async fn apply_fetch(store: &SubscriptionStore, sub: &mut Subscription, url: &str) {
     match fetch_subscription_with_ua(url, sub.user_agent.as_deref()).await {
         Ok(result) => {
-            sub.userinfo = result.userinfo;
             sub.node_count = result.singbox_nodes.len() as u64;
             sub.format = Some(result.format);
             sub.error = None;
+            cache_fetch_result(store, sub.id, &result);
+            sub.userinfo = result.userinfo;
         }
         Err(e) => {
             sub.error = Some(format!("拉取失败: {e}"));
@@ -1894,7 +1942,7 @@ pub async fn add_subscription(
         .add(&name, &url, true, ua)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
     sub.profile_id = profile_id;
-    apply_fetch(&mut sub, &url).await;
+    apply_fetch(&store, &mut sub, &url).await;
     write_subscription(&store, &sub)?;
     Ok(SubscriptionView::from_sub(&sub))
 }
@@ -1915,7 +1963,7 @@ pub async fn refresh_subscription(
         .position(|s| s.id == id)
         .ok_or_else(|| "订阅不存在".to_string())?;
     let url = subs[idx].url.clone();
-    apply_fetch(&mut subs[idx], &url).await;
+    apply_fetch(&store, &mut subs[idx], &url).await;
     store
         .save(&subs)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
@@ -2103,7 +2151,9 @@ fn gpu_acceleration_impl(
 /// 原生 toast）。
 #[tauri::command]
 pub fn toast_mode_override() -> Option<String> {
-    std::env::var("PP_TOAST_MODE").ok().filter(|v| !v.trim().is_empty())
+    std::env::var("PP_TOAST_MODE")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -2713,6 +2763,80 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("请先在首页选择要使用的订阅"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn preview_core_config_specified_uses_local_cache_without_network() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        // 订阅 URL 指向不可达地址（无 mock 服务器）：有缓存时应直接本地组装成功，
+        // 不发起网络请求。
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("spec", "http://127.0.0.1:1/unreachable", false, None)
+            .unwrap();
+        store
+            .write_cached_content(
+                sub.id,
+                &CachedSubscriptionContent {
+                    format: SubFormat::SingBoxJson,
+                    singbox_nodes: vec![serde_json::json!({
+                        "type": "vless",
+                        "tag": "n1",
+                        "server": "example.com",
+                        "server_port": 443,
+                        "uuid": "12345678-1234-1234-1234-123456789012",
+                        "tls": { "enabled": true, "server_name": "example.com" },
+                    })],
+                    mihomo_nodes: Vec::new(),
+                },
+            )
+            .unwrap();
+
+        let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
+            .await
+            .expect("有缓存时应直接用缓存预览成功");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box 预览应为 JSON");
+        assert!(value.get("outbounds").is_some());
+    }
+
+    #[tokio::test]
+    async fn preview_core_config_specified_fallback_writes_cache() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            CoreType::SingBox,
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        let base = spawn_sub_server(PREVIEW_SUB_JSON);
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("spec", &format!("{base}/sub"), false, None)
+            .unwrap();
+
+        // 无缓存 → 回退远程拉取成功，并写入缓存（下次预览即本地）。
+        let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
+            .await
+            .expect("回退远程拉取预览应成功");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box 预览应为 JSON");
+        assert!(value.get("outbounds").is_some());
+        let cached = store
+            .load_cached_content(sub.id)
+            .expect("回退拉取后应写入缓存");
+        assert_eq!(cached.format, SubFormat::SingBoxJson);
+        assert!(!cached.singbox_nodes.is_empty());
     }
 
     #[test]
