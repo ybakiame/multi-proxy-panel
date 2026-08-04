@@ -390,9 +390,9 @@ pub async fn open_export_dir(
 
 /// Tauri 命令：列出 `data_dir/logs` 下可查看的日志文件名。
 ///
-/// 覆盖滚动文件（`app.log` 前缀）与 Kotlin 侧固定文件名（`libbox.log` /
-/// `mihomo.log`）；按名称倒序返回（滚动文件日期零填充，倒序即最新在前）。
-/// 目录不存在时返回空列表。
+/// 覆盖滚动文件（`app.log` 前缀）、Kotlin 侧固定文件名（`libbox.log` /
+/// `mihomo.log`）与启动前脱敏落盘的 `last_start_config.{json,yaml}`；按名称
+/// 倒序返回（滚动文件日期零填充，倒序即最新在前）。目录不存在时返回空列表。
 #[tauri::command]
 pub fn list_log_files(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     list_log_files_impl(&state.data_dir.join("logs"))
@@ -402,7 +402,7 @@ pub fn list_log_files(state: tauri::State<'_, AppState>) -> Result<Vec<String>, 
 ///
 /// 安全校验：文件名须经 [`validate_log_file_name`]（拒绝路径分隔符与 `..`，
 /// 且匹配 `app.log` 前缀或恰为 `libbox.log` / `mihomo.log` /
-/// `last_start_config.json`），否则报错不读盘。返回最后 `max_lines` 行
+/// `last_start_config.{json,yaml}`），否则报错不读盘。返回最后 `max_lines` 行
 /// （默认与上限均为 [`LOG_TAIL_DEFAULT_LINES`] / [`LOG_TAIL_MAX_LINES`]）；
 /// 文件超过 [`LOG_TAIL_MAX_BYTES`] 时只读尾部字节后按行截断，避免大文件全量读入。
 #[tauri::command]
@@ -498,7 +498,14 @@ fn list_log_files_impl(logs_dir: &Path) -> Result<Vec<String>, String> {
         .filter_map(Result::ok)
         .filter_map(|entry| entry.file_name().into_string().ok())
         .filter(|name| {
-            name.starts_with("app.log") || name == "libbox.log" || name == "mihomo.log"
+            name.starts_with("app.log")
+                || matches!(
+                    name.as_str(),
+                    "libbox.log"
+                        | "mihomo.log"
+                        | "last_start_config.json"
+                        | "last_start_config.yaml"
+                )
         })
         .collect();
     // 名称倒序：`app.log.<YYYY-MM-DD>` 日期零填充，倒序即最新在前。
@@ -526,15 +533,17 @@ fn read_log_file_tail_impl(
 }
 
 /// 文件名安全校验：拒绝空名、路径分隔符（`/`、`\`）与 `..`，且须匹配 `app.log`
-/// 前缀（滚动文件）或恰为 `libbox.log` / `mihomo.log` / `last_start_config.json`。
+/// 前缀（滚动文件）或恰为 `libbox.log` / `mihomo.log` /
+/// `last_start_config.{json,yaml}`。
 fn validate_log_file_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("非法的日志文件名".to_string());
     }
     if name.starts_with("app.log")
-        || name == "libbox.log"
-        || name == "mihomo.log"
-        || name == "last_start_config.json"
+        || matches!(
+            name,
+            "libbox.log" | "mihomo.log" | "last_start_config.json" | "last_start_config.yaml"
+        )
     {
         Ok(())
     } else {
@@ -789,17 +798,22 @@ mod tests {
         std::fs::write(logs_dir.join("app.log.2026-08-02"), "day2\n").unwrap();
         std::fs::write(logs_dir.join("libbox.log"), "box\n").unwrap();
         std::fs::write(logs_dir.join("mihomo.log"), "mihomo\n").unwrap();
+        std::fs::write(logs_dir.join("last_start_config.json"), "{}\n").unwrap();
+        std::fs::write(logs_dir.join("last_start_config.yaml"), "---\n").unwrap();
         std::fs::write(logs_dir.join("export-20260101-000000.log"), "old\n").unwrap();
         std::fs::write(logs_dir.join("README.txt"), "ignore\n").unwrap();
 
-        // 名称倒序：mihomo.log / libbox.log 排最前（m > l），随后 app.log.<date>
-        // 倒序（最新在前），export-*.log 与无关文件被排除。
+        // 名称倒序：mihomo.log / libbox.log / last_start_config.{yaml,json} 排最前
+        // （m > l > l.a），随后 app.log.<date> 倒序（最新在前），export-*.log 与
+        // 无关文件被排除。
         let names = list_log_files_impl(&logs_dir).unwrap();
         assert_eq!(
             names,
             vec![
                 "mihomo.log",
                 "libbox.log",
+                "last_start_config.yaml",
+                "last_start_config.json",
                 "app.log.2026-08-02",
                 "app.log.2026-08-01",
                 "app.log",
@@ -813,7 +827,10 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("pp-log-nodir-{}", std::process::id()));
         // 目录不存在：返回空列表（不报错）。
         let logs_dir = tmp.join("logs");
-        assert_eq!(list_log_files_impl(&logs_dir).unwrap(), Vec::<String>::new());
+        assert_eq!(
+            list_log_files_impl(&logs_dir).unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -860,6 +877,7 @@ mod tests {
         assert!(validate_log_file_name("libbox.log").is_ok());
         assert!(validate_log_file_name("mihomo.log").is_ok());
         assert!(validate_log_file_name("last_start_config.json").is_ok());
+        assert!(validate_log_file_name("last_start_config.yaml").is_ok());
 
         // 拒绝：路径分隔符 / `..` / 空名 / 不在白名单的文件名。
         assert!(validate_log_file_name("").is_err());
