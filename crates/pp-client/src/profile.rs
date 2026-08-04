@@ -554,8 +554,9 @@ pub async fn apply_js_override(config: Value, js: &str) -> PanelResult<Value> {
     Ok(out.0)
 }
 
-/// 解析 Profile 的远程复写 URL：启动时拉取（no_proxy、30 秒超时、默认 UA
-/// `clash.meta`），成功写缓存 `profile_cache/<profile_id>.{yaml,js}`；失败回退
+/// 解析 Profile 的远程复写 URL：启动时经共享拉取管线 [`crate::fetch_resource_text`]
+/// 拉取（URL 归一化 + GitHub 代理前缀 + 走本地代理 + 重试 + GitHub 失败提示，
+/// 30 秒超时），成功写缓存 `profile_cache/<profile_id>.{yaml,js}`；失败回退
 /// 缓存；缓存也没有 → 记 warning 跳过该远程复写（不阻塞启动）。
 ///
 /// 返回叠加后的有效复写（远程为基底、本地覆盖）与警告列表；`ProfileOverrides`
@@ -597,7 +598,7 @@ async fn fetch_remote_override(
     ext: &str,
     warnings: &mut Vec<String>,
 ) -> String {
-    match fetch_remote_text(url).await {
+    match fetch_remote_text(cache_dir, url).await {
         Ok(text) => {
             if let Err(e) = write_override_cache(cache_dir, key, ext, &text) {
                 warnings.push(format!("profile remote {ext} cache write failed: {e}"));
@@ -628,27 +629,19 @@ async fn fetch_remote_override(
     }
 }
 
-/// GET 拉取远程复写文本：no_proxy、30 秒超时、默认 UA `clash.meta`；非 2xx 视为失败。
-async fn fetch_remote_text(url: &str) -> PanelResult<String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .no_proxy()
-        .user_agent("clash.meta")
-        .build()
-        .map_err(|e| PanelError::Client(format!("failed to build http client: {e}")))?;
-    let resp =
-        client.get(url).send().await.map_err(|e| {
-            PanelError::Client(format!("remote override fetch failed ({url}): {e}"))
-        })?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(PanelError::Client(format!(
-            "remote override fetch returned HTTP {status} ({url})"
-        )));
-    }
-    resp.text().await.map_err(|e| {
-        PanelError::Client(format!("failed to read remote override body ({url}): {e}"))
-    })
+/// GET 拉取远程复写文本：委托共享拉取管线 [`crate::fetch_resource_text`]。
+///
+/// 与订阅 / 脚本 / 图标拉取共用同一管线：URL 归一化 + GitHub 代理前缀 + 走本地
+/// 代理 + 重试 + GitHub 失败提示，30 秒超时。注意 UA 差异：旧实现固定
+/// `clash.meta`，共享管线使用 reqwest 默认 UA（若个别对 UA 敏感的订阅源受影响，
+/// 可在此处恢复自定义客户端并在其后叠加 [`crate::apply_github_proxy_prefix`]）。
+///
+/// `data_dir` 由 `cache_dir`（生产调用方传入 `data_dir/profile_cache`）取 parent
+/// 推导；测试等把 cache_dir 直接指向数据目录时 parent 指向其父目录，共享管线仅
+/// best-effort 读取 `client.json`（缺省按默认设置），不影响功能。
+async fn fetch_remote_text(cache_dir: &Path, url: &str) -> PanelResult<String> {
+    let data_dir = cache_dir.parent().unwrap_or(cache_dir);
+    crate::fetch_resource_text(data_dir, url, Duration::from_secs(30)).await
 }
 
 /// 远程复写缓存路径：`<cache_dir>/<key>.<ext>`（key 为 profile id）。
@@ -1623,10 +1616,11 @@ new-key:
             Some(format!("http://{toggle_addr}/yaml")),
             Some(format!("http://{ok_addr}/js")),
         );
-        let cache = dir.path();
+        // 与生产调用方结构一致：传 `data_dir/profile_cache`（共享管线从 parent 推导 data_dir）。
+        let cache = dir.path().join("profile_cache");
 
         // 第一次：yaml/js 均拉取成功并写缓存，无警告。
-        let (effective, warnings) = resolve_remote_overrides(cache, &profile).await;
+        let (effective, warnings) = resolve_remote_overrides(&cache, &profile).await;
         assert!(warnings.is_empty(), "warnings: {warnings:?}");
         assert_eq!(effective.remote_yaml, yaml_body);
         assert_eq!(effective.remote_js, js_body);
@@ -1636,7 +1630,7 @@ new-key:
         assert_eq!(std::fs::read_to_string(&js_cache).unwrap(), js_body);
 
         // 第二次：yaml 拉取失败（500）回退缓存；js 仍成功。
-        let (effective, warnings) = resolve_remote_overrides(cache, &profile).await;
+        let (effective, warnings) = resolve_remote_overrides(&cache, &profile).await;
         assert_eq!(effective.remote_yaml, yaml_body, "yaml 应回退到缓存");
         assert_eq!(effective.remote_js, js_body, "js 仍成功拉取");
         assert!(
@@ -1666,14 +1660,20 @@ new-key:
         let dir = tempfile::tempdir().unwrap();
         let profile = remote_test_profile(Some(format!("http://{addr}/yaml")), None);
 
-        let (effective, warnings) = resolve_remote_overrides(dir.path(), &profile).await;
+        let (effective, warnings) =
+            resolve_remote_overrides(&dir.path().join("profile_cache"), &profile).await;
         assert_eq!(effective.remote_yaml, "", "无缓存应跳过远程复写");
         assert_eq!(effective.local_yaml, "");
         assert!(
             warnings.iter().any(|w| w.contains("no cached copy")),
             "warnings: {warnings:?}"
         );
-        assert!(!dir.path().join(format!("{}.yaml", profile.id)).exists());
+        assert!(
+            !dir.path()
+                .join("profile_cache")
+                .join(format!("{}.yaml", profile.id))
+                .exists()
+        );
     }
 
     /// ⑤ 纯本地（无 URL）回归：resolve 产出本地复写，v2 与旧签名 build_core_config 一致。
