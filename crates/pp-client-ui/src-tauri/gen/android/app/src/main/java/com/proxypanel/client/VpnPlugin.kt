@@ -182,8 +182,9 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   /**
    * 把 `filesDir/logs/` 下 `.log` 文件、`app.log.*` 滚动文件及启动前脱敏落盘的
-   * `last_start_config.json`（最终核心配置脱敏快照，uuid/password/server 已打码，
-   * 见 Rust 侧 start_services）打包 zip 导出到公共 `Download/ProxyPanel/`：
+   * `last_start_config.json` / `last_start_config.yaml`（最终核心配置脱敏快照，
+   * uuid/password/server 已打码，见 Rust 侧 start_services；mihomo 为 YAML、
+   * sing-box 为 JSON）打包 zip 导出到公共 `Download/ProxyPanel/`：
    * - API 29+：经 [MediaStore.Downloads] 插入（`RELATIVE_PATH=Download/ProxyPanel/`，
    *   无需任何权限）；
    * - API 26-28：旧式直接写公共下载目录（依赖 manifest 中
@@ -216,12 +217,17 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   /**
    * 收集 `filesDir/logs/` 下 `.log` 文件、`app.log.*` 滚动文件及启动前脱敏落盘的
-   * `last_start_config.json`（目录不存在 / 无日志时返回空数组）。
+   * `last_start_config.json` / `last_start_config.yaml`（目录不存在 / 无日志时
+   * 返回空数组）。
    */
   private fun collectLogFiles(): Array<File> {
     val logsDir = File(activity.filesDir, "logs")
     return logsDir.listFiles { f ->
-      f.isFile && (f.name.endsWith(".log") || f.name.startsWith("app.log") || f.name == "last_start_config.json")
+      f.isFile &&
+        (f.name.endsWith(".log") ||
+          f.name.startsWith("app.log") ||
+          f.name == "last_start_config.json" ||
+          f.name == "last_start_config.yaml")
     } ?: emptyArray()
   }
 

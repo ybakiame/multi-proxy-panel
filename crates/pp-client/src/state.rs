@@ -472,10 +472,12 @@ impl ClientState {
             &self.config.data_dir,
         )?;
 
-        // Android 启动前把最终发给 libbox 的核心配置脱敏落盘：uuid/password/server
-        // 打码为 "***" 后以 pretty JSON 写入 data_dir/logs/last_start_config.json，
-        // 该文件随日志导出 zip 带出，供排障确认到达 libbox 的真实配置。整个过程
-        // best-effort：任何 IO 失败只记警告，绝不影响启动流程。
+        // Android 启动前把最终发给核心的配置脱敏落盘：uuid/password/server 打码为
+        // "***" 后写入 data_dir/logs/，文件名按核心类型区分——sing-box 保持
+        // last_start_config.json（pretty JSON），mihomo 落 last_start_config.yaml
+        // （serde_yaml 序列化，与 mihomo 实际使用的 YAML 格式一致）。该文件随日志
+        // 导出 zip 带出，供排障确认到达核心的真实配置。整个过程 best-effort：任何
+        // IO 失败只记警告，绝不影响启动流程。
         #[cfg(target_os = "android")]
         {
             let logs_dir = self.config.data_dir.join("logs");
@@ -483,16 +485,25 @@ impl ClientState {
                 std::fs::create_dir_all(&logs_dir)?;
                 let mut redacted = config_json.clone();
                 redact_config_credentials(&mut redacted);
-                let path = logs_dir.join("last_start_config.json");
-                let content =
-                    serde_json::to_string_pretty(&redacted).map_err(std::io::Error::other)?;
+                let (file_name, content) = if self.config.core_type == CoreType::Mihomo {
+                    (
+                        "last_start_config.yaml",
+                        serde_yaml::to_string(&redacted).map_err(std::io::Error::other)?,
+                    )
+                } else {
+                    (
+                        "last_start_config.json",
+                        serde_json::to_string_pretty(&redacted).map_err(std::io::Error::other)?,
+                    )
+                };
+                let path = logs_dir.join(file_name);
                 std::fs::write(&path, content)?;
                 Ok(path)
             })();
             match result {
                 Ok(path) => tracing::info!(
                     path = %path.display(),
-                    "已把脱敏后的最终核心配置落盘（last_start_config.json，随日志导出 zip 带出）"
+                    "已把脱敏后的最终核心配置落盘（sing-box 为 JSON / mihomo 为 YAML，随日志导出 zip 带出）"
                 ),
                 Err(e) => tracing::warn!(
                     error = %e,
