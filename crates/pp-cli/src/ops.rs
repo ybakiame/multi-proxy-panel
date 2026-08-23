@@ -415,12 +415,23 @@ async fn installed_version(bin_path: &Path) -> Result<Option<String>> {
     Ok(parse_version_from_output(&text))
 }
 
-/// Move a file, falling back to copy+remove across filesystems (EXDEV).
+/// Move a file, falling back to copy+atomic-rename across filesystems (EXDEV).
+/// The fallback copies to a sibling temp file first, then renames over the
+/// destination: rename(2) is atomic and is allowed to replace a running
+/// binary (unlike O_TRUNC writes, which fail with ETXTBSY).
 async fn move_file(src: &Path, dst: &Path) -> Result<()> {
     match tokio::fs::rename(src, dst).await {
         Ok(()) => Ok(()),
         Err(e) if e.raw_os_error() == Some(18) => {
-            copy_file(src, dst).await?;
+            let file_name = dst
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "bin".to_string());
+            let staging = dst.with_file_name(format!(".{}.new", file_name));
+            copy_file(src, &staging).await?;
+            tokio::fs::rename(&staging, dst)
+                .await
+                .with_context(|| format!("failed to move to {}", dst.display()))?;
             tokio::fs::remove_file(src)
                 .await
                 .with_context(|| format!("failed to remove {}", src.display()))?;
@@ -520,6 +531,12 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
     let cli_dst = PathBuf::from(BIN_DIR).join("proxy-panel");
     let web_dst = PathBuf::from(OPT_DIR).join("web/dist");
 
+    // Stop the running service before replacing its binary (ETXTBSY).
+    let hub_was_active = systemd_is_active("proxy-panel-hub").await;
+    if hub_was_active {
+        systemd_stop("proxy-panel-hub").await?;
+    }
+
     // Backup existing
     if hub_dst.exists() {
         let ver = installed_version(&hub_dst)
@@ -605,6 +622,12 @@ jwt_secret = "{}"
         .status()
         .await;
 
+    // Restart only if the hub was running before (fresh installs wait for
+    // the user to configure database_url first).
+    if hub_was_active {
+        systemd_restart("proxy-panel-hub").await?;
+    }
+
     println!("Hub 安装完成。");
     println!();
     println!("下一步：");
@@ -658,6 +681,11 @@ pub async fn install_agent(
     }
 
     let agent_dst = PathBuf::from(BIN_DIR).join("proxy-panel-agent");
+
+    // Stop the running service before replacing its binary (ETXTBSY).
+    if systemd_is_active("proxy-panel-agent").await {
+        systemd_stop("proxy-panel-agent").await?;
+    }
 
     // Backup existing
     if agent_dst.exists() {
@@ -779,6 +807,13 @@ async fn upgrade_component(
 
     ensure_dir(Path::new(BACKUP_DIR)).await?;
 
+    // Stop the service before replacing the binary (running binaries are
+    // busy and cannot be overwritten in place).
+    let was_active = has_service && systemd_is_active(&unit).await;
+    if was_active {
+        systemd_stop(&unit).await?;
+    }
+
     // Backup current binary
     let current_ver = installed_version(&bin_path)
         .await?
@@ -836,25 +871,22 @@ async fn upgrade_component(
         }
     }
 
-    if has_service {
-        let was_enabled = systemd_is_enabled(&unit).await;
-        if was_enabled {
-            systemd_restart(&unit).await?;
-            if !systemd_is_active(&unit).await {
-                // Rollback
-                eprintln!("服务启动失败，正在自动回滚...");
-                if bak.exists() {
-                    move_file(&bak, &bin_path).await?;
-                    systemd_restart(&unit).await?;
-                    if systemd_is_active(&unit).await {
-                        println!("已回滚到旧版本并恢复运行。");
-                        bail!("升级失败，已自动回滚到旧版本");
-                    } else {
-                        bail!("升级失败，回滚后服务仍无法启动，请手动检查");
-                    }
+    if was_active {
+        systemd_restart(&unit).await?;
+        if !systemd_is_active(&unit).await {
+            // Rollback
+            eprintln!("服务启动失败，正在自动回滚...");
+            if bak.exists() {
+                move_file(&bak, &bin_path).await?;
+                systemd_restart(&unit).await?;
+                if systemd_is_active(&unit).await {
+                    println!("已回滚到旧版本并恢复运行。");
+                    bail!("升级失败，已自动回滚到旧版本");
+                } else {
+                    bail!("升级失败，回滚后服务仍无法启动，请手动检查");
                 }
-                bail!("升级失败且无可用备份，无法回滚");
             }
+            bail!("升级失败且无可用备份，无法回滚");
         }
     }
 
@@ -875,6 +907,7 @@ pub async fn rollback(component: &str) -> Result<()> {
         .with_context(|| format!("未找到 {} 的备份文件", bin_name))?;
 
     let bin_path = PathBuf::from(BIN_DIR).join(bin_name);
+    systemd_stop(unit).await?;
     move_file(&bak, &bin_path).await?;
 
     systemd_restart(unit).await?;
