@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
-# ProxyPanel Agent bootstrap script
-# Downloads the CLI binary then delegates to `proxy-panel install agent`.
+# ProxyPanel Hub bootstrap script
+# Downloads the CLI binary then delegates to `proxy-panel install hub`.
 #
 # Usage:
-#   curl -fsSL https://<hub>/install.sh | bash -s -- --hub-url http://hub:50052 --token xxx [--agent-id <uuid>] [--name mynode] [--version latest] [--repo owner/repo]
-#   bash install-agent.sh --hub-url http://1.2.3.4:50052 --token <token> --name mynode
+#   curl -fsSL https://raw.githubusercontent.com/<repo>/main/scripts/install-hub.sh | bash -s -- [--version latest] [--repo owner/repo]
+#   bash install-hub.sh --version v0.3.3
 #
 # Options:
-#   --hub-url <url>      Hub gRPC address (required unless --uninstall)
-#   --token <token>      Node token (required unless --uninstall)
-#   --agent-id <uuid>    Node UUID (optional)
-#   --name <name>        Node display name (optional, defaults to hostname)
 #   --version <ver>      Release version, default latest
 #   --repo <owner/repo>  GitHub repository, default __PROXYPANEL_RELEASE_REPO__
-#   --uninstall          Uninstall the agent service (keep data)
+#   --uninstall          Uninstall the hub service (keep data)
 #   --purge              With --uninstall, also remove data and configs
 #   -h, --help           Show this help
 
@@ -34,16 +30,12 @@ err() {
 # Help
 # ---------------------------------------------------------------------------
 show_help() {
-    sed -n '2,20p' "$0"
+    sed -n '2,16p' "$0"
 }
 
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
-HUB_URL=""
-TOKEN=""
-AGENT_ID=""
-AGENT_NAME=""
 VERSION="latest"
 REPO="__PROXYPANEL_RELEASE_REPO__"
 UNINSTALL=false
@@ -51,22 +43,6 @@ PURGE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --hub-url)
-            HUB_URL="$2"
-            shift 2
-            ;;
-        --token)
-            TOKEN="$2"
-            shift 2
-            ;;
-        --agent-id)
-            AGENT_ID="$2"
-            shift 2
-            ;;
-        --name)
-            AGENT_NAME="$2"
-            shift 2
-            ;;
         --version)
             VERSION="$2"
             shift 2
@@ -178,25 +154,17 @@ log "已安装 /usr/local/bin/proxy-panel"
 # 7. Delegate to proxy-panel CLI
 # ---------------------------------------------------------------------------
 if [[ "$UNINSTALL" == true ]]; then
-    log "转发到 proxy-panel uninstall agent..."
+    log "转发到 proxy-panel uninstall hub..."
     if [[ "$PURGE" == true ]]; then
-        exec /usr/local/bin/proxy-panel uninstall agent --purge
+        exec /usr/local/bin/proxy-panel uninstall hub --purge
     else
-        exec /usr/local/bin/proxy-panel uninstall agent
+        exec /usr/local/bin/proxy-panel uninstall hub
     fi
 else
-    log "转发到 proxy-panel install agent..."
+    log "转发到 proxy-panel install hub..."
     PROXY_PANEL_ARGS=(
-        install agent
-        --hub-url "$HUB_URL"
-        --token "$TOKEN"
+        install hub
     )
-    if [[ -n "$AGENT_ID" ]]; then
-        PROXY_PANEL_ARGS+=(--agent-id "$AGENT_ID")
-    fi
-    if [[ -n "$AGENT_NAME" ]]; then
-        PROXY_PANEL_ARGS+=(--name "$AGENT_NAME")
-    fi
     if [[ -n "$VERSION" ]]; then
         PROXY_PANEL_ARGS+=(--version "$VERSION")
     fi

@@ -84,6 +84,12 @@ jobs:
           tar -czf dist/proxy-panel-agent-linux-${{ matrix.arch }}.tar.gz \
             -C target/${{ matrix.target }}/release proxy-panel-agent
 
+      - name: Package CLI tarball
+        run: |
+          mkdir -p dist
+          tar -czf dist/proxy-panel-cli-linux-${{ matrix.arch }}.tar.gz \
+            -C target/${{ matrix.target }}/release proxy-panel
+
       - name: Download web artifact
         uses: actions/download-artifact@v4
         with:
