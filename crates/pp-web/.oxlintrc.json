@@ -1,5 +1,8 @@
 {
+  "$schema": "https://unpkg.com/oxlint/configuration_schema.json",
+  "plugins": ["react", "jsx-a11y", "import"],
   "rules": {
-    "react-hooks/exhaustive-deps": "off"
+    "react-hooks/exhaustive-deps": "off",
+    "react/set-state-in-effect": "off"
   }
 }

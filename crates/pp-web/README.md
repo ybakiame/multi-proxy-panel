@@ -4,8 +4,8 @@ ProxyPanel Web 前端，基于 React + TypeScript + Vite + HeroUI + Tailwind CSS
 
 ## 技术栈
 
-- **框架**: React 18 + TypeScript
-- **构建工具**: Vite 6
+- **框架**: React 19 + TypeScript
+- **构建工具**: Vite 8 (Rolldown)
 - **UI 组件库**: HeroUI
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7

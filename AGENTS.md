@@ -69,9 +69,9 @@ bun run build
 
 ```bash
 cd crates/pp-web
-# Linter（oxlint + React / a11y / import 插件）
+# Linter（oxlint + React / a11y / import 插件，配置在 .oxlintrc.json）
 bun run lint
-# 格式化（Prettier 处理 JSON/CSS，oxfmt 处理 TS/TSX）
+# 格式化（oxfmt 处理 TS/TSX）
 bun run format
 # 格式检查
 bun run format:check
