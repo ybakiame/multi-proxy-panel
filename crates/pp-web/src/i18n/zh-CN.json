@@ -38,7 +38,8 @@
     "running": "运行中",
     "stopped": "已停止",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "optional": "可选"
   },
   "status": {
     "online": "在线",
@@ -144,13 +145,25 @@
     "pendingSummary": "{{count}} 个节点有待推送更新",
     "pushAllPending": "推送全部待更新",
     "pushResult": "成功 {{ok}} / 失败 {{fail}}",
-    "installCommand": "安装指令",
-    "installTitle": "一键安装指令",
+    "installCommand": "接入指令",
+    "installTitle": "一键接入指令",
     "installWarning": "该操作已轮换节点 Token，旧 Token 立即失效。",
     "installHint": "在目标服务器上执行以下命令即可安装 Agent。",
     "scriptUrl": "脚本地址",
     "hubUrl": "Hub 地址",
-    "version": "版本"
+    "version": "版本",
+    "wizardTitle": "添加节点",
+    "step1Title": "预注册",
+    "step2Title": "接入指令",
+    "step1Hint": "地址与主机名由 Agent 首次连接时自动上报，无需填写。",
+    "domain": "域名",
+    "waitingConnect": "等待节点接入…",
+    "connected": "节点已接入",
+    "gotoBindings": "去绑定协议",
+    "filterAll": "全部",
+    "filterConnecting": "待接入",
+    "filterOnline": "在线",
+    "filterOffline": "离线"
   },
   "certificates": {
     "title": "证书管理",

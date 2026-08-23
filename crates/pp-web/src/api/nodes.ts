@@ -25,18 +25,26 @@ export interface PushPendingResults {
 
 export interface CreateNodePayload {
   name: string;
-  hostname?: string;
-  address?: string;
+  domain?: string;
+  usage_coefficient?: number;
+  labels?: Record<string, string>;
+  parent_id?: string | null;
+}
+
+export interface UpdateNodePayload {
+  name?: string;
+  domain?: string;
   usage_coefficient?: number;
   labels?: Record<string, string>;
   parent_id?: string | null;
 }
 
 export const getNodes = () => get<Node[]>("/api/v1/nodes");
+export const getNode = (id: string) => get<Node>(`/api/v1/nodes/${id}`);
 export const getNodesPaginated = (page: number, perPage: number) =>
   getPaginated<Node>(`/api/v1/nodes?page=${page}&per_page=${perPage}`);
 export const createNode = (payload: CreateNodePayload) => post<Node>("/api/v1/nodes", payload);
-export const updateNode = (id: string, payload: Partial<CreateNodePayload>) =>
+export const updateNode = (id: string, payload: UpdateNodePayload) =>
   put<Node>(`/api/v1/nodes/${id}`, payload);
 export const deleteNode = (id: string) => del(`/api/v1/nodes/${id}`);
 export const pushConfig = (id: string, config: Record<string, unknown>) =>
@@ -70,6 +78,7 @@ export interface InstallCommand {
   script_url: string;
   version: string;
   command: string;
+  was_connected: boolean;
 }
 
 export const getInstallCommand = (id: string) =>

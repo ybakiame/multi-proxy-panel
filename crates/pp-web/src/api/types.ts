@@ -32,6 +32,7 @@ export interface Node {
   name: string;
   hostname: string;
   address: string;
+  domain: string | null;
   cores_available: string[];
   labels: Record<string, string>;
   usage_coefficient: number;

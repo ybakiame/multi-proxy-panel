@@ -38,7 +38,8 @@
     "running": "Running",
     "stopped": "Stopped",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "optional": "Optional"
   },
   "status": {
     "online": "Online",
@@ -144,13 +145,25 @@
     "pendingSummary": "{{count}} node(s) have pending updates",
     "pushAllPending": "Push All Pending",
     "pushResult": "Succeeded {{ok}} / Failed {{fail}}",
-    "installCommand": "Install Command",
-    "installTitle": "One-Click Install Command",
+    "installCommand": "Connect Command",
+    "installTitle": "One-Click Connect Command",
     "installWarning": "This action has rotated the node token. The old token is immediately invalid.",
     "installHint": "Run the following command on the target server to install the agent.",
     "scriptUrl": "Script URL",
     "hubUrl": "Hub URL",
-    "version": "Version"
+    "version": "Version",
+    "wizardTitle": "Add Node",
+    "step1Title": "Pre-register",
+    "step2Title": "Connect Command",
+    "step1Hint": "Address and hostname are automatically reported by the Agent on first connection; no need to fill them in.",
+    "domain": "Domain",
+    "waitingConnect": "Waiting for node to connect…",
+    "connected": "Node connected",
+    "gotoBindings": "Go to Bindings",
+    "filterAll": "All",
+    "filterConnecting": "Connecting",
+    "filterOnline": "Online",
+    "filterOffline": "Offline"
   },
   "certificates": {
     "title": "Certificates",

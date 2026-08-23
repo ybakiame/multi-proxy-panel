@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -24,22 +25,27 @@ import {
   getPendingUpdates,
   pushPendingUpdates,
   getInstallCommand,
-  CoreBinary,
-  InstallCommand,
+  type CoreBinary,
+  type InstallCommand,
+  type UpdateNodePayload,
 } from "../api/nodes";
-import { Node, AgentLog } from "../api/types";
+import { getNode } from "../api/nodes";
+import type { Node, AgentLog } from "../api/types";
 
 const nodesQueryKey = "nodes";
 const pendingQueryKey = "pending-updates";
 
+type StatusFilter = "all" | "connecting" | "online" | "offline";
+
 export function Nodes() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { page, perPage } = usePagination();
+  const { page, perPage, setPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2>(1);
+  const [newNodeId, setNewNodeId] = useState<string | null>(null);
   const [editNode, setEditNode] = useState<Node | null>(null);
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
-  const [newToken, setNewToken] = useState<string | null>(null);
   const [logNode, setLogNode] = useState<Node | null>(null);
   const [nodeLogs, setNodeLogs] = useState<AgentLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -54,10 +60,11 @@ export function Nodes() {
   const [pushPushing, setPushPushing] = useState(false);
   const [installCmd, setInstallCmd] = useState<InstallCommand | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
     name: "",
-    hostname: "",
-    address: "",
+    domain: "",
     usage_coefficient: 1,
     labels: "{}",
     parent_id: "",
@@ -69,18 +76,26 @@ export function Nodes() {
   });
 
   const nodes = nodesData?.data ?? [];
-  const _totalPages = nodesData?.pagination.total_pages ?? 1;
+  const totalPages = nodesData?.pagination.total_pages ?? 1;
 
   const { data: pending = [] } = useQuery({
     queryKey: [pendingQueryKey],
     queryFn: getPendingUpdates,
   });
 
+  // Poll new node status during wizard step 2
+  const { data: pollingNode } = useQuery({
+    queryKey: [nodesQueryKey, newNodeId],
+    queryFn: () => (newNodeId ? getNode(newNodeId) : null),
+    refetchInterval: 3000,
+    enabled: !!newNodeId && wizardStep === 2,
+  });
+
   const createMutation = useMutation({
     mutationFn: createNode,
     onSuccess: (res) => {
-      setNewToken(res.token || null);
-      setCreateOpen(false);
+      setNewNodeId(res.id);
+      setWizardStep(2);
       resetForm();
       queryClient.invalidateQueries({ queryKey: [nodesQueryKey] });
       queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
@@ -97,7 +112,7 @@ export function Nodes() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: { id: string; data: Parameters<typeof updateNode>[1] }) =>
+    mutationFn: (payload: { id: string; data: UpdateNodePayload }) =>
       updateNode(payload.id, payload.data),
     onSuccess: () => {
       setEditNode(null);
@@ -152,8 +167,7 @@ export function Nodes() {
     if (node) {
       setForm({
         name: node.name,
-        hostname: node.hostname,
-        address: node.address,
+        domain: node.domain || "",
         usage_coefficient: node.usage_coefficient,
         labels: JSON.stringify(node.labels || {}),
         parent_id: node.parent_id || "",
@@ -161,8 +175,7 @@ export function Nodes() {
     } else {
       setForm({
         name: "",
-        hostname: "",
-        address: "",
+        domain: "",
         usage_coefficient: 1,
         labels: "{}",
         parent_id: "",
@@ -179,8 +192,7 @@ export function Nodes() {
     }
     createMutation.mutate({
       name: form.name,
-      hostname: form.hostname,
-      address: form.address,
+      domain: form.domain || undefined,
       usage_coefficient: form.usage_coefficient,
       labels,
       parent_id: form.parent_id || undefined,
@@ -195,17 +207,14 @@ export function Nodes() {
     } catch {
       // ignore parse error
     }
-    updateMutation.mutate({
-      id: editNode.id,
-      data: {
-        name: form.name,
-        hostname: form.hostname,
-        address: form.address,
-        usage_coefficient: form.usage_coefficient,
-        labels,
-        parent_id: form.parent_id || undefined,
-      },
-    });
+    const payload: UpdateNodePayload = {
+      name: form.name,
+      domain: form.domain || undefined,
+      usage_coefficient: form.usage_coefficient,
+      labels,
+      parent_id: form.parent_id || undefined,
+    };
+    updateMutation.mutate({ id: editNode.id, data: payload });
   };
 
   const handleDelete = () => {
@@ -281,6 +290,23 @@ export function Nodes() {
     }
   };
 
+  const closeWizard = () => {
+    setCreateOpen(false);
+    setWizardStep(1);
+    setNewNodeId(null);
+    setInstallCmd(null);
+  };
+
+  const filteredNodes =
+    statusFilter === "all" ? nodes : nodes.filter((n) => n.status === statusFilter);
+
+  const statusFilters: { key: StatusFilter; label: string }[] = [
+    { key: "all", label: t("nodes.filterAll") },
+    { key: "connecting", label: t("nodes.filterConnecting") },
+    { key: "online", label: t("nodes.filterOnline") },
+    { key: "offline", label: t("nodes.filterOffline") },
+  ];
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -289,13 +315,13 @@ export function Nodes() {
           label: t("nodes.create"),
           onClick: () => {
             resetForm();
-            setNewToken(null);
+            setWizardStep(1);
+            setNewNodeId(null);
+            setInstallCmd(null);
             setCreateOpen(true);
           },
         }}
       />
-
-      {newToken && <CopyableSecret secret={newToken} label={t("nodes.tokenWarning")} />}
 
       {pending.length > 0 && (
         <div className="flex items-center gap-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning-soft-foreground">
@@ -324,6 +350,22 @@ export function Nodes() {
           {pushResult}
         </div>
       )}
+
+      <div className="flex flex-wrap gap-2">
+        {statusFilters.map((f) => (
+          <Button
+            key={f.key}
+            size="sm"
+            variant={statusFilter === f.key ? "primary" : "ghost"}
+            onPress={() => {
+              setStatusFilter(f.key);
+              setPage(1);
+            }}
+          >
+            {f.label}
+          </Button>
+        ))}
+      </div>
 
       <Card>
         <Card.Content>
@@ -354,11 +396,11 @@ export function Nodes() {
                       </div>
                     )}
                   >
-                    {nodes.map((node) => (
+                    {filteredNodes.map((node) => (
                       <Table.Row key={node.id}>
                         <Table.Cell>{node.name}</Table.Cell>
-                        <Table.Cell>{node.hostname}</Table.Cell>
-                        <Table.Cell>{node.address}</Table.Cell>
+                        <Table.Cell>{node.hostname || "-"}</Table.Cell>
+                        <Table.Cell>{node.address || "-"}</Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={node.status} />
                         </Table.Cell>
@@ -451,6 +493,37 @@ export function Nodes() {
         </Card.Content>
       </Card>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 py-4">
+          <Button
+            isIconOnly
+            variant="ghost"
+            size="sm"
+            isDisabled={page <= 1}
+            onPress={() => setPage(page - 1)}
+          >
+            ‹
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {t("pagination.pageInfo", {
+              current: page,
+              total: totalPages,
+              count: nodesData?.pagination.total ?? 0,
+            })}
+          </span>
+          <Button
+            isIconOnly
+            variant="ghost"
+            size="sm"
+            isDisabled={page >= totalPages}
+            onPress={() => setPage(page + 1)}
+          >
+            ›
+          </Button>
+        </div>
+      )}
+
       <ConfirmDialog
         title={t("nodes.deleteTitle")}
         isOpen={!!deleteNodeId}
@@ -460,58 +533,144 @@ export function Nodes() {
         {t("nodes.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
+      {/* Create Wizard Modal */}
+      <Modal.Backdrop
+        isOpen={createOpen}
+        onOpenChange={(open) => {
+          if (!open) closeWizard();
+        }}
+      >
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
-              <Modal.Heading>{t("nodes.createTitle")}</Modal.Heading>
+              <Modal.Heading>{t("nodes.wizardTitle")}</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("nodes.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormInput
-                label={t("nodes.hostname")}
-                value={form.hostname}
-                onChange={(value) => setForm({ ...form, hostname: value })}
-              />
-              <FormInput
-                label={t("nodes.address")}
-                value={form.address}
-                onChange={(value) => setForm({ ...form, address: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("nodes.usageCoefficient")}
-                value={form.usage_coefficient.toString()}
-                onChange={(value) => setForm({ ...form, usage_coefficient: Number(value) })}
-              />
-              <FormInput
-                label={t("nodes.parentId")}
-                value={form.parent_id}
-                onChange={(value) => setForm({ ...form, parent_id: value })}
-                placeholder="UUID (optional)"
-              />
-              <FormTextArea
-                label={t("nodes.labels")}
-                value={form.labels}
-                onChange={(value) => setForm({ ...form, labels: value })}
-                className="font-mono"
-              />
+              {wizardStep === 1 ? (
+                <>
+                  <FormInput
+                    label={t("nodes.name")}
+                    value={form.name}
+                    onChange={(value) => setForm({ ...form, name: value })}
+                    isRequired
+                  />
+                  <FormInput
+                    label={t("nodes.domain")}
+                    value={form.domain}
+                    onChange={(value) => setForm({ ...form, domain: value })}
+                    placeholder={t("common.optional")}
+                  />
+                  <p className="text-sm text-muted-foreground">{t("nodes.step1Hint")}</p>
+                  <Button variant="ghost" size="sm" onPress={() => setShowAdvanced(!showAdvanced)}>
+                    {showAdvanced ? t("common.collapse") : t("common.expand")}
+                  </Button>
+                  {showAdvanced && (
+                    <div className="space-y-4">
+                      <FormInput
+                        type="number"
+                        label={t("nodes.usageCoefficient")}
+                        value={form.usage_coefficient.toString()}
+                        onChange={(value) => setForm({ ...form, usage_coefficient: Number(value) })}
+                      />
+                      <FormInput
+                        label={t("nodes.parentId")}
+                        value={form.parent_id}
+                        onChange={(value) => setForm({ ...form, parent_id: value })}
+                        placeholder="UUID (optional)"
+                      />
+                      <FormTextArea
+                        label={t("nodes.labels")}
+                        value={form.labels}
+                        onChange={(value) => setForm({ ...form, labels: value })}
+                        className="font-mono"
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-medium">{t("nodes.step2Title")}</h3>
+                  {installLoading ? (
+                    <div className="flex h-32 items-center justify-center">
+                      <Spinner />
+                    </div>
+                  ) : installCmd ? (
+                    <>
+                      {installCmd.was_connected && (
+                        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                          {t("nodes.installWarning")}
+                        </div>
+                      )}
+                      <p className="text-sm text-muted-foreground">{t("nodes.installHint")}</p>
+                      <CopyableSecret
+                        secret={installCmd.command}
+                        label={t("nodes.installCommand")}
+                      />
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        <p>
+                          <span className="font-medium">{t("nodes.scriptUrl")}:</span>{" "}
+                          {installCmd.script_url}
+                        </p>
+                        <p>
+                          <span className="font-medium">{t("nodes.hubUrl")}:</span>{" "}
+                          {installCmd.hub_url}
+                        </p>
+                        <p>
+                          <span className="font-medium">{t("nodes.version")}:</span>{" "}
+                          {installCmd.version}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 rounded-lg bg-default-soft p-3">
+                        {pollingNode?.status === "online" ? (
+                          <>
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success text-success-foreground">
+                              ✓
+                            </span>
+                            <span className="text-sm font-medium">{t("nodes.connected")}</span>
+                            <Link to="/bindings">
+                              <Button size="sm" variant="primary">
+                                {t("nodes.gotoBindings")}
+                              </Button>
+                            </Link>
+                          </>
+                        ) : (
+                          <>
+                            <Spinner size="sm" />
+                            <span className="text-sm text-muted-foreground">
+                              {t("nodes.waitingConnect")}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+                </>
+              )}
             </Modal.Body>
             <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
+              {wizardStep === 1 ? (
+                <>
+                  <Button slot="close" variant="ghost" onPress={closeWizard}>
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    onPress={handleCreate}
+                    isDisabled={!form.name.trim() || createMutation.isPending}
+                  >
+                    {createMutation.isPending ? <Spinner size="sm" /> : t("common.create")}
+                  </Button>
+                </>
+              ) : (
+                <Button slot="close" variant="ghost" onPress={closeWizard}>
+                  {t("common.close")}
+                </Button>
+              )}
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
 
+      {/* Edit Modal */}
       <Modal.Backdrop
         isOpen={!!editNode}
         onOpenChange={(open) => {
@@ -530,15 +689,13 @@ export function Nodes() {
                 onChange={(value) => setForm({ ...form, name: value })}
               />
               <FormInput
-                label={t("nodes.hostname")}
-                value={form.hostname}
-                onChange={(value) => setForm({ ...form, hostname: value })}
+                label={t("nodes.domain")}
+                value={form.domain}
+                onChange={(value) => setForm({ ...form, domain: value })}
+                placeholder={t("common.optional")}
               />
-              <FormInput
-                label={t("nodes.address")}
-                value={form.address}
-                onChange={(value) => setForm({ ...form, address: value })}
-              />
+              <FormInput label={t("nodes.hostname")} value={editNode?.hostname || ""} isReadOnly />
+              <FormInput label={t("nodes.address")} value={editNode?.address || ""} isReadOnly />
               <FormInput
                 type="number"
                 label={t("nodes.usageCoefficient")}
@@ -567,6 +724,7 @@ export function Nodes() {
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+
       <Modal.Backdrop
         isOpen={!!pushNode}
         onOpenChange={(open) => {
@@ -603,6 +761,7 @@ export function Nodes() {
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+
       <Modal.Backdrop
         isOpen={!!binNode}
         onOpenChange={(open) => {
@@ -763,9 +922,11 @@ export function Nodes() {
                 </div>
               ) : installCmd ? (
                 <>
-                  <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-                    {t("nodes.installWarning")}
-                  </div>
+                  {installCmd.was_connected && (
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                      {t("nodes.installWarning")}
+                    </div>
+                  )}
                   <p className="text-sm text-muted-foreground">{t("nodes.installHint")}</p>
                   <CopyableSecret secret={installCmd.command} label={t("nodes.installCommand")} />
                   <div className="space-y-1 text-sm text-muted-foreground">
