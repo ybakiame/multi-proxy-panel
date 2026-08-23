@@ -230,11 +230,17 @@ pub async fn update_node(
         }
         active.name = Set(name);
     }
-    if let Some(hostname) = payload.hostname {
-        active.hostname = Set(hostname);
+    if payload.hostname.is_some() {
+        return Err(ApiError::bad_request(
+            "agent_managed_field",
+            "hostname and address are managed by the Agent and cannot be modified manually",
+        ));
     }
-    if let Some(address) = payload.address {
-        active.address = Set(address);
+    if payload.address.is_some() {
+        return Err(ApiError::bad_request(
+            "agent_managed_field",
+            "hostname and address are managed by the Agent and cannot be modified manually",
+        ));
     }
     if payload.domain.is_some() {
         active.domain = Set(payload.domain);

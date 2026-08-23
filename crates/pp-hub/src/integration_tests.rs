@@ -171,7 +171,7 @@ async fn nodes_crud_lifecycle() {
     let get_body = response_json(get_response).await;
     assert_eq!(get_body["data"]["name"], "test-node");
 
-    // Update
+    // Update name should succeed
     let update_response = app
         .clone()
         .oneshot(api_request(
@@ -181,8 +181,38 @@ async fn nodes_crud_lifecycle() {
             Some(json!({ "name": "renamed-node" })),
         ))
         .await
-        .expect("update");
+        .expect("update name");
     assert_eq!(update_response.status(), StatusCode::OK);
+
+    // Update hostname should be rejected (agent-managed field)
+    let update_hostname_response = app
+        .clone()
+        .oneshot(api_request(
+            "PUT",
+            &format!("/api/v1/nodes/{}", node_id),
+            &key,
+            Some(json!({ "hostname": "new-host" })),
+        ))
+        .await
+        .expect("update hostname");
+    assert_eq!(update_hostname_response.status(), StatusCode::BAD_REQUEST);
+    let update_hostname_body = response_json(update_hostname_response).await;
+    assert_eq!(update_hostname_body["error"]["code"], "agent_managed_field");
+
+    // Update address should also be rejected
+    let update_address_response = app
+        .clone()
+        .oneshot(api_request(
+            "PUT",
+            &format!("/api/v1/nodes/{}", node_id),
+            &key,
+            Some(json!({ "address": "1.2.3.4" })),
+        ))
+        .await
+        .expect("update address");
+    assert_eq!(update_address_response.status(), StatusCode::BAD_REQUEST);
+    let update_address_body = response_json(update_address_response).await;
+    assert_eq!(update_address_body["error"]["code"], "agent_managed_field");
 
     // Delete
     let delete_response = app
@@ -505,4 +535,42 @@ async fn node_install_command_not_found() {
         .expect("response");
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn node_install_command_was_connected_false_for_new_node() {
+    let (app, _state, key) = bootstrap_app().await;
+
+    // Create a node that has never connected
+    let create_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes",
+            &key,
+            Some(json!({ "name": "fresh-node" })),
+        ))
+        .await
+        .expect("create");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_json(create_response).await;
+    let node_id = create_body["data"]["id"].as_str().expect("node id");
+
+    // Install command should report was_connected=false
+    let resp = app
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("install-command");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_json(resp).await;
+    assert_eq!(
+        body["data"]["was_connected"].as_bool(),
+        Some(false),
+        "new node should have was_connected=false"
+    );
 }

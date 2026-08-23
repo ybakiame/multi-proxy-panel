@@ -73,6 +73,9 @@ pub async fn node_install_command(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("node not found"))?;
 
+    // Check whether the node has ever connected before moving `n` into ActiveModel
+    let was_connected = n.last_seen_at.is_some();
+
     // Rotate token
     let raw_token = pp_common::generate_secure_token();
     let token_hash = pp_common::hash_secret_async(raw_token.clone())
@@ -155,6 +158,7 @@ pub async fn node_install_command(
         "script_url": script_url,
         "version": version,
         "command": command,
+        "was_connected": was_connected,
     })))
 }
 

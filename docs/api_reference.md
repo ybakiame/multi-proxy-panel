@@ -315,6 +315,7 @@
 | `script_url` | 安装脚本地址，取自 `public_http_url` 配置或请求头推断 |
 | `version` | 当前 Hub 版本 |
 | `command` | 可直接粘贴执行的 `curl \| bash` 命令 |
+| `was_connected` | 该节点是否曾经接入过 Agent（`last_seen_at` 非空）。若为 `true`，前端可提示 token 轮换将导致已在线 Agent 断连 |
 
 **Token 轮换语义:**
 - 每次调用都会生成新的随机 token 并更新数据库中的 `token_hash`
@@ -323,6 +324,47 @@
 
 **状态码:**
 - `200 OK`
+- `404 Not Found` — 节点不存在
+- `500 Internal Server Error`
+
+---
+
+### PUT `/api/v1/nodes/{id}`
+
+更新节点信息。
+
+**路径参数:**
+- `id` — 节点 UUID
+
+**请求体:**
+
+```json
+{
+  "name": "renamed-node",
+  "domain": "node.example.com",
+  "usage_coefficient": 1.5,
+  "labels": { "region": "ap-northeast" },
+  "parent_id": null
+}
+```
+
+**字段说明:**
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `name` | string | ❌ | 节点显示名称 |
+| `domain` | string | ❌ | 域名 |
+| `usage_coefficient` | number | ❌ | 流量系数 |
+| `labels` | object | ❌ | 标签 |
+| `parent_id` | UUID / null | ❌ | 父节点 ID |
+
+> `hostname` 与 `address` 由 Agent 注册时自动上报，不支持手动修改。请求中携带这两个字段将返回 `400 Bad Request`，错误码 `agent_managed_field`。
+
+**响应:** 同 GET `/api/v1/nodes/{id}`
+
+**状态码:**
+- `200 OK`
+- `400 Bad Request` — 包含 Agent 托管字段（`hostname` / `address`）或名称非法
 - `404 Not Found` — 节点不存在
 - `500 Internal Server Error`
 
