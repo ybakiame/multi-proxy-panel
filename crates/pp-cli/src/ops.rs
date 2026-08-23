@@ -698,15 +698,15 @@ pub async fn upgrade(component: &str, version: &str, repo: &str) -> Result<()> {
     match component {
         "hub" => {
             let asset = format!("proxy-panel-hub-linux-{}.tar.gz", arch);
-            upgrade_component("proxy-panel-hub", version, repo, &asset, true).await?;
+            upgrade_component("proxy-panel-hub", version, repo, &asset, true, true).await?;
         }
         "agent" => {
             let asset = format!("proxy-panel-agent-linux-{}.tar.gz", arch);
-            upgrade_component("proxy-panel-agent", version, repo, &asset, true).await?;
+            upgrade_component("proxy-panel-agent", version, repo, &asset, true, false).await?;
         }
         "cli" => {
             let asset = format!("proxy-panel-cli-linux-{}.tar.gz", arch);
-            upgrade_component("proxy-panel", version, repo, &asset, false).await?;
+            upgrade_component("proxy-panel", version, repo, &asset, false, false).await?;
         }
         other => bail!("未知组件: {}", other),
     }
@@ -721,6 +721,7 @@ async fn upgrade_component(
     repo: &str,
     asset: &str,
     has_service: bool,
+    with_web_dist: bool,
 ) -> Result<()> {
     let bin_path = PathBuf::from(BIN_DIR).join(bin_name);
     let unit = format!(
@@ -774,6 +775,30 @@ async fn upgrade_component(
     let perms = std::fs::Permissions::from_mode(0o755);
     std::fs::set_permissions(&bin_path, perms)
         .with_context(|| format!("failed to chmod {}", bin_path.display()))?;
+
+    // Hub tarballs also carry the web console; swap it in alongside the binary.
+    if with_web_dist {
+        let new_dist = extract_dir.join("web").join("dist");
+        if new_dist.is_dir() {
+            let web_dst = PathBuf::from(OPT_DIR).join("web/dist");
+            if web_dst.exists() {
+                tokio::fs::remove_dir_all(&web_dst)
+                    .await
+                    .with_context(|| format!("failed to remove old {}", web_dst.display()))?;
+            }
+            ensure_dir(Path::new(OPT_DIR).join("web").as_path()).await?;
+            tokio::fs::rename(&new_dist, &web_dst)
+                .await
+                .with_context(|| format!("failed to install web/dist to {}", web_dst.display()))?;
+            let _ = Command::new("chown")
+                .arg("-R")
+                .arg(format!("{}:{}", USER_NAME, USER_NAME))
+                .arg(OPT_DIR)
+                .status()
+                .await;
+            println!("web 控制台已更新");
+        }
+    }
 
     if has_service {
         let was_enabled = systemd_is_enabled(&unit).await;
