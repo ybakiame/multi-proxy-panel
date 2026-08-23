@@ -1,34 +1,46 @@
 FROM rust:1.86 AS planner
 WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace manifests
 COPY Cargo.toml Cargo.lock ./
 COPY crates/pp-common/Cargo.toml crates/pp-common/Cargo.toml
 COPY crates/pp-db/Cargo.toml crates/pp-db/Cargo.toml
 COPY crates/pp-proto/Cargo.toml crates/pp-proto/Cargo.toml
 COPY crates/pp-config/Cargo.toml crates/pp-config/Cargo.toml
 COPY crates/pp-subscription/Cargo.toml crates/pp-subscription/Cargo.toml
+COPY crates/pp-script/Cargo.toml crates/pp-script/Cargo.toml
 COPY crates/pp-core/Cargo.toml crates/pp-core/Cargo.toml
 COPY crates/pp-hub/Cargo.toml crates/pp-hub/Cargo.toml
 COPY crates/pp-agent/Cargo.toml crates/pp-agent/Cargo.toml
 COPY crates/pp-cli/Cargo.toml crates/pp-cli/Cargo.toml
-COPY crates/pp-web/Cargo.toml crates/pp-web/Cargo.toml
+COPY crates/pp-mitm/Cargo.toml crates/pp-mitm/Cargo.toml
+COPY crates/pp-client/Cargo.toml crates/pp-client/Cargo.toml
+
+# Create placeholder source files for dependency caching
 RUN mkdir -p \
     crates/pp-common/src crates/pp-db/src crates/pp-proto/src \
-    crates/pp-config/src crates/pp-subscription/src crates/pp-core/src \
-    crates/pp-hub/src crates/pp-agent/src crates/pp-cli/src crates/pp-web/src && \
+    crates/pp-config/src crates/pp-subscription/src crates/pp-script/src \
+    crates/pp-core/src crates/pp-hub/src crates/pp-agent/src \
+    crates/pp-cli/src crates/pp-mitm/src crates/pp-client/src && \
     echo 'fn main() {}' > crates/pp-hub/src/main.rs && \
     echo 'fn main() {}' > crates/pp-agent/src/main.rs && \
     echo 'fn main() {}' > crates/pp-cli/src/main.rs && \
-    echo 'fn main() {}' > crates/pp-web/src/main.rs && \
     echo '' > crates/pp-common/src/lib.rs && \
     echo '' > crates/pp-db/src/lib.rs && \
+    echo 'fn main(){}' > crates/pp-proto/build.rs && \
     echo '' > crates/pp-proto/src/lib.rs && \
     echo '' > crates/pp-config/src/lib.rs && \
     echo '' > crates/pp-subscription/src/lib.rs && \
+    echo '' > crates/pp-script/src/lib.rs && \
     echo '' > crates/pp-core/src/lib.rs && \
+    echo '' > crates/pp-mitm/src/lib.rs && \
+    echo '' > crates/pp-client/src/lib.rs && \
     cargo build --release -p pp-agent
 
 FROM rust:1.86 AS builder
 WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 COPY . .
 COPY --from=planner /app/target /app/target
 RUN cargo build --release -p pp-agent
