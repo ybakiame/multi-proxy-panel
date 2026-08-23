@@ -94,8 +94,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 - Rust 1.86+ (参见 `rust-toolchain.toml`)
 - PostgreSQL 15+ (或 SQLite 用于开发)
-    - Node.js 20+ (构建 Web 前端)
-    - npm (用于安装前端依赖)
+- Bun 1.3+ (构建 Web 前端，见 `crates/pp-web/package.json` 的 packageManager 字段)
 
 
 ### 1. 克隆项目
@@ -141,8 +140,8 @@ Hub 将监听：
 
 ```bash
 cd crates/pp-web
-npm install
-npm run build
+bun install
+bun run build
 ```
 
 产物位于 `crates/pp-web/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
@@ -151,15 +150,23 @@ npm run build
 
 ```bash
 cd crates/pp-web
-npm run dev
+bun run dev
 ```
 
-### 7. 使用 Release 一键安装 Agent（推荐）
+### 7. 使用 CLI 安装 Agent（推荐）
 
-在节点服务器上执行以下命令即可一键安装 Agent：
+在节点服务器上先安装 `proxy-panel` CLI，再用 CLI 安装 Agent：
 
 ```bash
+# 方式一：通过 Hub 提供的 bootstrap 脚本一键安装
 curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token" \
+  --name "node-01"
+
+# 方式二：手动下载 CLI 后执行安装
+# 下载对应架构的 proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz 并解压到 /usr/local/bin/
+sudo proxy-panel install agent \
   --hub-url "https://grpc.example.com:50052" \
   --token "your-agent-token" \
   --name "node-01"
@@ -167,9 +174,9 @@ curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
 
 安装脚本会自动完成：
 - 架构检测（x86_64 / aarch64）与 glibc 兼容性检查
-- 从 GitHub Release 下载对应架构的 tar.gz 并校验 SHA256
-- 安装二进制到 `/usr/local/bin/`
-- 创建 systemd 服务并启动
+- 从 GitHub Release 下载 CLI tar.gz 并校验 SHA256
+- 安装 CLI 到 `/usr/local/bin/`
+- 调用 `proxy-panel install agent` 完成 Agent 安装、systemd 服务创建并启动
 
 > 也可在 Web 面板的 **节点管理** 页面点击「安装指令」按钮，直接获取包含 token 的完整安装命令。
 
@@ -265,7 +272,7 @@ proxy-panel/
 | `pp-hub` | 中央管理面板，提供 REST API、gRPC 服务和静态文件托管 | `proxy-panel-hub` |
 | `pp-agent` | 节点代理，管理本地 sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
 | `pp-web` | React 前端应用，提供现代化管理界面 | 静态文件 |
-| `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、诊断 | `proxy-panel` |
+| `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、组件生命周期管理（安装/升级/回滚/卸载/状态/日志/重启） | `proxy-panel` |
 | `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
 | `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
@@ -303,7 +310,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 
 # 构建前端
-cd crates/pp-web && npm install && npm run build
+cd crates/pp-web && bun install && bun run build
 
 # 生成实体（修改迁移后）
 cd crates/pp-db && sea-orm-cli generate entity -o src/entities
@@ -323,22 +330,73 @@ docker compose up -d
 docker compose up -d postgres
 ```
 
-### 使用 Release 一键安装 Agent
+### 使用 CLI 安装组件（推荐）
 
 项目通过 GitHub Actions 自动构建并发布二进制文件与容器镜像：
 
-- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`
+- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz`、`proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`
 - **GHCR 镜像**: 同时构建并推送 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
 
-在节点服务器上一键安装：
+**安装 Hub：**
 
 ```bash
+# 通过 bootstrap 脚本
+curl -fsSL https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/scripts/install-hub.sh | bash -s --
+
+# 或手动下载 CLI 后执行
+sudo proxy-panel install hub
+```
+
+安装完成后按提示编辑 `/etc/proxy-panel/hub.toml` 配置数据库，然后：
+
+```bash
+sudo proxy-panel init-db --database-url "postgres://..."
+sudo systemctl enable --now proxy-panel-hub
+```
+
+**安装 Agent：**
+
+```bash
+# 通过 bootstrap 脚本
 curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token"
+
+# 或手动下载 CLI 后执行
+sudo proxy-panel install agent \
   --hub-url "https://grpc.example.com:50052" \
   --token "your-agent-token"
 ```
 
-支持 `--version` 指定版本、`--uninstall` 卸载、`--purge` 彻底清理数据。详见 [docs/deployment.md](docs/deployment.md)。
+**常用 CLI 命令速查：**
+
+```bash
+# 查看各组件状态
+sudo proxy-panel status
+
+# 升级组件
+sudo proxy-panel upgrade hub
+sudo proxy-panel upgrade agent
+sudo proxy-panel upgrade cli
+
+# 回滚到上一版本
+sudo proxy-panel rollback hub
+sudo proxy-panel rollback agent
+
+# 查看日志
+sudo proxy-panel logs hub --lines 100 --follow
+sudo proxy-panel logs agent --lines 50
+
+# 重启服务
+sudo proxy-panel restart hub
+sudo proxy-panel restart agent
+
+# 卸载
+sudo proxy-panel uninstall agent --purge
+sudo proxy-panel uninstall hub --purge
+```
+
+详见 [docs/deployment.md](docs/deployment.md)。
 
 ### 手动部署
 

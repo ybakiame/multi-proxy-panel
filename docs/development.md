@@ -151,8 +151,8 @@ RUST_LOG=proxy_panel_agent=debug \
 
 ```bash
 cd crates/pp-web
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 访问 `http://localhost:5173`（Vite 开发服务器，带热重载）。
@@ -196,6 +196,32 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 4. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
 
 提交 PR 前请确保本地已通过 `cargo clippy --workspace --all-targets -- -D warnings` 和 `cargo test --workspace`（后端）以及 `bun run verify`（前端）。
+
+---
+
+## CLI 命令一览
+
+`proxy-panel` CLI 除开发常用的 `init-db`、`create-user`、`diagnose` 等命令外，还提供生产环境组件生命周期管理能力：
+
+| 子命令 | 说明 | 示例 |
+|--------|------|------|
+| `init-db` | 初始化数据库并运行迁移 | `cargo run --bin proxy-panel -- init-db --database-url "..."` |
+| `create-user` | 创建管理员用户 | `cargo run --bin proxy-panel -- create-user --database-url "..." --username admin --password "..."` |
+| `create-api-key` | 创建 API Key | `cargo run --bin proxy-panel -- create-api-key --database-url "..."` |
+| `provision-node` | 在数据库中注册节点并生成 token | `cargo run --bin proxy-panel -- provision-node --database-url "..." --name "node-01"` |
+| `gen-token` | 生成安全随机 token | `cargo run --bin proxy-panel -- gen-token` |
+| `agent-token` | 生成 Agent 注册 token（带节点名标注） | `cargo run --bin proxy-panel -- agent-token --node-name "node-01"` |
+| `diagnose` | 数据库连接诊断 | `cargo run --bin proxy-panel -- diagnose --database-url "..."` |
+| `install hub` | 安装 Hub 组件（下载、配置、写 unit） | `sudo proxy-panel install hub` |
+| `install agent` | 安装 Agent 组件（下载、配置、启动） | `sudo proxy-panel install agent --hub-url ... --token ...` |
+| `upgrade <component>` | 升级组件（hub / agent / cli），失败自动回滚 | `sudo proxy-panel upgrade agent` |
+| `rollback <component>` | 回滚到备份版本 | `sudo proxy-panel rollback hub` |
+| `uninstall <component>` | 卸载组件 | `sudo proxy-panel uninstall agent --purge` |
+| `status` | 查看各组件安装/运行状态 | `proxy-panel status` |
+| `logs <component>` | 查看 journalctl 日志 | `sudo proxy-panel logs hub --lines 100 --follow` |
+| `restart <component>` | 重启 systemd 服务 | `sudo proxy-panel restart agent` |
+
+> 涉及系统变更的子命令（install / upgrade / rollback / uninstall / restart）需要 root 权限。
 
 ---
 

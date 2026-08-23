@@ -2,19 +2,60 @@
 
 本目录提供 systemd 服务单元文件，用于在 Linux 服务器上长期运行 ProxyPanel Hub 与 Agent。
 
-## 快速部署 Agent（推荐）
+## 快速部署（推荐）
 
-Hub 提供一键安装脚本，无需手动准备 systemd 文件：
+### 部署 Hub
+
+使用 bootstrap 脚本一键安装：
 
 ```bash
-# 在 Web 面板「节点管理」中点击「安装指令」按钮，复制命令到节点服务器执行
+curl -fsSL https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/scripts/install-hub.sh | bash -s --
+```
+
+脚本会自动完成：架构检测、CLI 下载与 SHA256 校验、委托 `proxy-panel install hub` 完成安装。安装后请按提示编辑 `/etc/proxy-panel/hub.toml` 配置数据库，然后执行 `proxy-panel init-db` 与 `systemctl enable --now proxy-panel-hub`。
+
+### 部署 Agent
+
+在 Web 面板「节点管理」中点击「安装指令」按钮，复制命令到节点服务器执行：
+
+```bash
 curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
   --hub-url "https://grpc.example.com:50052" \
   --token "your-agent-token" \
   --name "node-01"
 ```
 
-安装脚本会自动完成：架构检测、二进制下载与 SHA256 校验、systemd 服务创建与启动。支持 `--uninstall` / `--purge` 卸载与 `--version` 指定版本。详见 [docs/deployment.md](../docs/deployment.md#节点一键安装推荐)。
+安装脚本会自动完成：架构检测、CLI 下载与 SHA256 校验、委托 `proxy-panel install agent` 完成安装并启动服务。支持 `--uninstall` / `--purge` 卸载与 `--version` 指定版本。
+
+## 常用 CLI 运维命令
+
+```bash
+# 查看状态
+sudo proxy-panel status
+
+# 升级
+sudo proxy-panel upgrade hub
+sudo proxy-panel upgrade agent
+sudo proxy-panel upgrade cli
+
+# 回滚
+sudo proxy-panel rollback hub
+sudo proxy-panel rollback agent
+
+# 日志
+sudo proxy-panel logs hub --lines 100 --follow
+sudo proxy-panel logs agent --lines 50
+
+# 重启
+sudo proxy-panel restart hub
+sudo proxy-panel restart agent
+
+# 卸载
+sudo proxy-panel uninstall agent --purge
+sudo proxy-panel uninstall hub --purge
+```
+
+详见 [docs/deployment.md](../docs/deployment.md)。
 
 ---
 
@@ -41,12 +82,13 @@ curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
 2. 准备目录：
 
    ```bash
-   sudo mkdir -p /opt/proxy-panel/{bin,config,web,data}
+   sudo mkdir -p /opt/proxy-panel/{bin,web/dist,backup}
    sudo mkdir -p /var/lib/proxy-panel/agent
+   sudo mkdir -p /etc/proxy-panel
    sudo chown -R proxypanel:proxypanel /opt/proxy-panel /var/lib/proxy-panel
    ```
 
-3. 复制二进制文件（通过 `cargo build --release --workspace` 构建）：
+3. 复制二进制文件（通过 `cargo build --release --workspace` 构建或从 Release 下载）：
 
    ```bash
    sudo cp target/release/proxy-panel-hub /usr/local/bin/
@@ -57,7 +99,7 @@ curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
 4. 复制前端产物：
 
    ```bash
-   cd crates/pp-web && npm install && npm run build
+   cd crates/pp-web && bun install && bun run build
    sudo cp -r crates/pp-web/dist/* /opt/proxy-panel/web/dist/
    ```
 
@@ -65,7 +107,7 @@ curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
 
    ```bash
    sudo cp config/hub.example.toml /etc/proxy-panel/hub.toml
-   # 编辑 /etc/proxy-panel/hub.toml，填入数据库、JWT  secret 等
+   # 编辑 /etc/proxy-panel/hub.toml，填入数据库、JWT secret 等
    ```
 
 ## 安装服务
@@ -80,17 +122,17 @@ sudo systemctl daemon-reload
 
 ```bash
 # 初始化数据库（首次部署）
-sudo /usr/local/bin/proxy-panel init-db --database-url "postgres://..."
+sudo proxy-panel init-db --database-url "postgres://..."
 
 # 创建首个管理员
-sudo /usr/local/bin/proxy-panel create-user \
+sudo proxy-panel create-user \
   --database-url "postgres://..." \
   --username admin \
   --password "STRONG_PASSWORD"
 
 # 启动并启用 Hub
 sudo systemctl enable --now proxy-panel-hub
-sudo journalctl -u proxy-panel-hub -f
+sudo proxy-panel logs hub --follow
 ```
 
 ## 启动 Agent
@@ -106,15 +148,16 @@ PROXYPANEL_AGENT_TOKEN=your-agent-token
 
 ```bash
 sudo systemctl enable --now proxy-panel-agent
-sudo journalctl -u proxy-panel-agent -f
+sudo proxy-panel logs agent --follow
 ```
 
 ## 状态查看
 
 ```bash
+sudo proxy-panel status
 sudo systemctl status proxy-panel-hub
 sudo systemctl status proxy-panel-agent
-sudo journalctl -u proxy-panel-hub -n 100 --no-pager
+sudo proxy-panel logs hub --lines 100
 ```
 
 ## 自动化部署脚本
@@ -124,7 +167,7 @@ sudo journalctl -u proxy-panel-hub -n 100 --no-pager
 ### 前置要求
 
 - 本地已完成 Release 构建：`cargo build --release --workspace`
-- 前端已构建：`cd crates/pp-web && npm run build`
+- 前端已构建：`cd crates/pp-web && bun run build`
 - Python 3 + paramiko：`pip install paramiko`
 
 ### 部署 Hub（含本地 Agent + Caddy）

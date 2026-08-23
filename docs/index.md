@@ -54,7 +54,7 @@ cargo run --bin proxy-panel -- init-db \
 cargo run --release --bin proxy-panel-hub
 
 # 5. 构建前端
-cd crates/pp-web && npm install && npm run build
+cd crates/pp-web && bun install && bun run build
 ```
 
 更多详情请参阅 [开发指南](development.md)。
