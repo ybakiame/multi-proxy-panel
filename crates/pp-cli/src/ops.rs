@@ -740,6 +740,14 @@ pub async fn install_agent(
         .status()
         .await;
 
+    // Fix ownership of /opt/proxy-panel (agent writes binaries here)
+    let _ = Command::new("chown")
+        .arg("-R")
+        .arg(format!("{}:{}", USER_NAME, USER_NAME))
+        .arg(OPT_DIR)
+        .status()
+        .await;
+
     systemd_enable_now("proxy-panel-agent").await?;
 
     if !systemd_is_active("proxy-panel-agent").await {
