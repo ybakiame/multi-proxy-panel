@@ -5,7 +5,7 @@ edition = "2021"
 description = "ProxyPanel 桌面客户端壳（Tauri 2 命令层）"
 license = "AGPL-3.0-or-later"
 authors = ["ProxyPanel Contributors"]
-repository = "https://github.com/your-org/proxy-panel"
+repository = "https://github.com/ybakiame/multi-proxy-panel"
 rust-version = "1.86"
 
 # Tauri 2 移动端（Android/iOS）构建要求 crate 提供 lib target：

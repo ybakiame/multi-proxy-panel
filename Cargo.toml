@@ -21,7 +21,7 @@ version = "0.3.3"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 authors = ["ProxyPanel Contributors"]
-repository = "https://github.com/your-org/proxy-panel"
+repository = "https://github.com/ybakiame/multi-proxy-panel"
 rust-version = "1.86"
 
 [workspace.dependencies]
