@@ -1,0 +1,15 @@
+# Build context hygiene: keep local artifacts out of the image build.
+target/
+**/target/
+**/node_modules/
+**/dist/
+.git/
+.reference/
+tmp/
+*.log
+scripts/.dev-*
+scripts/__pycache__/
+.venv-deploy/
+android/**/build/
+crates/pp-client-ui/src-tauri/target/
+crates/pp-client-ui/src-tauri/gen/
