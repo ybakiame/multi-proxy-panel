@@ -415,7 +415,6 @@ async fn installed_version(bin_path: &Path) -> Result<Option<String>> {
     Ok(parse_version_from_output(&text))
 }
 
-
 /// Move a file, falling back to copy+remove across filesystems (EXDEV).
 async fn move_file(src: &Path, dst: &Path) -> Result<()> {
     match tokio::fs::rename(src, dst).await {
