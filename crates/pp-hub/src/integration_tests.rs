@@ -397,8 +397,37 @@ async fn install_script_endpoint_returns_shell_script() {
         .expect("read body");
     let text = String::from_utf8_lossy(&body);
     assert!(
-        text.contains("proxy-panel-agent"),
-        "script should mention proxy-panel-agent"
+        text.contains("proxy-panel install agent"),
+        "script should delegate to the CLI"
+    );
+    assert!(
+        !text.contains("__PROXYPANEL_RELEASE_REPO__"),
+        "placeholder should be replaced"
+    );
+}
+
+#[tokio::test]
+async fn hub_install_script_endpoint_returns_bootstrap() {
+    let (app, _state, _key) = bootstrap_app().await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/install-hub.sh")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        text.contains("proxy-panel install hub"),
+        "script should delegate to the CLI"
     );
     assert!(
         !text.contains("__PROXYPANEL_RELEASE_REPO__"),

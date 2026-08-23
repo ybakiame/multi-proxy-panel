@@ -13,16 +13,12 @@ use uuid::Uuid;
 use crate::response::{ApiError, ApiResponse, ApiResult};
 use crate::state::AppState;
 
-/// Serve the agent install shell script.
-/// The script is embedded at compile time and the release repo placeholder is replaced.
-pub async fn serve_install_script(
-    State(state): State<Arc<AppState>>,
+/// Serve an install bootstrap script with the release repo placeholder replaced.
+fn render_script(
+    raw: &str,
+    release_repo: &str,
 ) -> Result<(axum::http::StatusCode, HeaderMap, String), ApiError> {
-    let script = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../scripts/install-agent.sh"
-    ));
-    let script = script.replace("__PROXYPANEL_RELEASE_REPO__", &state.config.release_repo);
+    let script = raw.replace("__PROXYPANEL_RELEASE_REPO__", release_repo);
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -39,6 +35,29 @@ pub async fn serve_install_script(
     );
 
     Ok((axum::http::StatusCode::OK, headers, script))
+}
+
+/// Serve the agent install shell script.
+/// The script is embedded at compile time and the release repo placeholder is replaced.
+pub async fn serve_install_script(
+    State(state): State<Arc<AppState>>,
+) -> Result<(axum::http::StatusCode, HeaderMap, String), ApiError> {
+    let script = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/install-agent.sh"
+    ));
+    render_script(script, &state.config.release_repo)
+}
+
+/// Serve the hub install bootstrap script (same placeholder replacement).
+pub async fn serve_hub_install_script(
+    State(state): State<Arc<AppState>>,
+) -> Result<(axum::http::StatusCode, HeaderMap, String), ApiError> {
+    let script = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/install-hub.sh"
+    ));
+    render_script(script, &state.config.release_repo)
 }
 
 /// Generate a one-click install command for a specific node.

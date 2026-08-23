@@ -518,6 +518,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route("/ready", get(health::ready))
         .route("/metrics", get(metrics_export::prometheus_metrics))
         .route("/install.sh", get(install::serve_install_script))
+        .route("/install-hub.sh", get(install::serve_hub_install_script))
         .route("/sub/{token}", get(subscription::serve_subscription))
         .route("/sub/{token}/qr", get(subscription::serve_subscription_qr))
         .route("/api/v1/login", post(login::login))
