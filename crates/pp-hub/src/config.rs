@@ -24,6 +24,9 @@ pub struct HubConfig {
     pub jwt_secret: String,
     pub http_tls_cert: Option<PathBuf>,
     pub http_tls_key: Option<PathBuf>,
+    pub public_http_url: Option<String>,
+    pub public_grpc_url: Option<String>,
+    pub release_repo: String,
 }
 
 impl Default for HubConfig {
@@ -39,6 +42,9 @@ impl Default for HubConfig {
             jwt_secret: JWT_SECRET_PLACEHOLDERS[0].to_string(),
             http_tls_cert: None,
             http_tls_key: None,
+            public_http_url: None,
+            public_grpc_url: None,
+            release_repo: default_release_repo(),
         }
     }
 }
@@ -60,7 +66,8 @@ impl HubConfig {
                 Self::default().static_dir.to_string_lossy().to_string(),
             )?
             .set_default("auto_register_agents", false)?
-            .set_default("jwt_secret", Self::default().jwt_secret)?;
+            .set_default("jwt_secret", Self::default().jwt_secret)?
+            .set_default("release_repo", Self::default().release_repo)?;
 
         let built = cfg.build()?;
 
@@ -82,6 +89,11 @@ impl HubConfig {
                 .unwrap_or_else(|_| Self::default().jwt_secret),
             http_tls_cert: built.get_string("http_tls_cert").ok().map(PathBuf::from),
             http_tls_key: built.get_string("http_tls_key").ok().map(PathBuf::from),
+            public_http_url: built.get_string("public_http_url").ok(),
+            public_grpc_url: built.get_string("public_grpc_url").ok(),
+            release_repo: built
+                .get_string("release_repo")
+                .unwrap_or_else(|_| Self::default().release_repo),
         };
 
         if let Some(listen) = overrides.listen {
@@ -142,6 +154,16 @@ fn parse_ips(value: Option<&str>) -> Option<HashSet<IpAddr>> {
             .collect();
         if ips.is_empty() { None } else { Some(ips) }
     })
+}
+
+fn default_release_repo() -> String {
+    let repo = env!("CARGO_PKG_REPOSITORY");
+    let stripped = repo.strip_prefix("https://github.com/").unwrap_or(repo);
+    if stripped.is_empty() || stripped.contains("your-org") {
+        "ybakiame/multi-proxy-panel".to_string()
+    } else {
+        stripped.to_string()
+    }
 }
 
 fn validate_jwt_secret(secret: &str) -> Result<(), String> {

@@ -365,3 +365,115 @@ async fn usage_endpoints_smoke() {
         .expect("response");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn install_script_endpoint_returns_shell_script() {
+    let (app, _state, _key) = bootstrap_app().await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/install.sh")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.contains("text/x-shellscript"),
+        "content-type: {}",
+        content_type
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        text.contains("proxy-panel-agent"),
+        "script should mention proxy-panel-agent"
+    );
+    assert!(
+        !text.contains("__PROXYPANEL_RELEASE_REPO__"),
+        "placeholder should be replaced"
+    );
+}
+
+#[tokio::test]
+async fn node_install_command_rotates_token() {
+    let (app, _state, key) = bootstrap_app().await;
+
+    // Create a node
+    let create_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes",
+            &key,
+            Some(json!({ "name": "install-test-node" })),
+        ))
+        .await
+        .expect("create");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_json(create_response).await;
+    let node_id = create_body["data"]["id"].as_str().expect("node id");
+
+    // First install command call
+    let resp1 = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("install-command 1");
+    assert_eq!(resp1.status(), StatusCode::OK);
+    let body1 = response_json(resp1).await;
+    let token1 = body1["data"]["token"].as_str().expect("token 1");
+    let command1 = body1["data"]["command"].as_str().expect("command 1");
+    assert!(!token1.is_empty());
+    assert!(command1.contains("curl -fsSL"));
+    assert!(command1.contains(&format!("--agent-id '{}'", node_id)));
+
+    // Second install command call — token should be different
+    let resp2 = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("install-command 2");
+    assert_eq!(resp2.status(), StatusCode::OK);
+    let body2 = response_json(resp2).await;
+    let token2 = body2["data"]["token"].as_str().expect("token 2");
+    assert_ne!(token1, token2, "token should be rotated");
+}
+
+#[tokio::test]
+async fn node_install_command_not_found() {
+    let (app, _state, key) = bootstrap_app().await;
+
+    let response = app
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes/00000000-0000-0000-0000-000000000000/install-command",
+            &key,
+            None,
+        ))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

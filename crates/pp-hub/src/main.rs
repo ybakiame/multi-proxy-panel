@@ -31,9 +31,9 @@ use middleware::api_key::scopes;
 use pp_db::entities::api_key as api_key_entity;
 use rate_limiter::RateLimiter;
 use routes::{
-    api_key, bindings, certificates, client, core_version, health, inbound_host, login, logs,
-    metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset, relay_rule,
-    subscription, traffic, usage, webhook,
+    api_key, bindings, certificates, client, core_version, health, inbound_host, install, login,
+    logs, metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset,
+    relay_rule, subscription, traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -131,6 +131,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route(
             "/api/v1/nodes/{id}/binaries/{file}",
             delete(nodes::delete_core_binary),
+        )
+        .route(
+            "/api/v1/nodes/{id}/install-command",
+            post(install::node_install_command)
+                .route_layer(middleware::api_key::scope_layer(scopes::NODES_WRITE)),
         )
         .route(
             "/api/v1/nodes/{id}/logs",
@@ -512,6 +517,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
         .route("/health", get(health::health))
         .route("/ready", get(health::ready))
         .route("/metrics", get(metrics_export::prometheus_metrics))
+        .route("/install.sh", get(install::serve_install_script))
         .route("/sub/{token}", get(subscription::serve_subscription))
         .route("/sub/{token}/qr", get(subscription::serve_subscription_qr))
         .route("/api/v1/login", post(login::login))

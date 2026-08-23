@@ -6,6 +6,7 @@ pub mod common;
 pub mod core_version;
 pub mod health;
 pub mod inbound_host;
+pub mod install;
 pub mod login;
 pub mod logs;
 pub mod metrics;
