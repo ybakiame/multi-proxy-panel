@@ -3,6 +3,8 @@
 use clap::{Parser, Subcommand};
 use sea_orm::ActiveModelTrait;
 
+mod ops;
+
 #[derive(Parser, Debug)]
 #[command(name = "proxy-panel", version, about = "ProxyPanel management CLI")]
 struct Args {
@@ -65,6 +67,77 @@ enum Commands {
     Diagnose {
         #[arg(long, env = "PROXYPANEL_DATABASE_URL")]
         database_url: String,
+    },
+    /// Install a ProxyPanel component
+    Install {
+        #[command(subcommand)]
+        target: InstallTarget,
+    },
+    /// Upgrade a component
+    Upgrade {
+        /// Component to upgrade: agent, hub, or cli
+        component: String,
+        #[arg(long, default_value = "latest")]
+        version: String,
+        #[arg(long, default_value = "ybakiame/multi-proxy-panel")]
+        repo: String,
+    },
+    /// Rollback a component to the previous backup
+    Rollback {
+        /// Component to rollback: agent or hub
+        component: String,
+    },
+    /// Uninstall a component
+    Uninstall {
+        /// Component to uninstall: agent or hub
+        component: String,
+        /// Also remove data directories
+        #[arg(long)]
+        purge: bool,
+    },
+    /// Show installation status of all components
+    Status,
+    /// Show logs for a component
+    Logs {
+        /// Component: agent or hub
+        component: String,
+        /// Number of lines to show
+        #[arg(long, default_value = "50")]
+        lines: usize,
+        /// Follow log output
+        #[arg(long, short)]
+        follow: bool,
+    },
+    /// Restart a component service
+    Restart {
+        /// Component: agent or hub
+        component: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum InstallTarget {
+    /// Install the Hub
+    Hub {
+        #[arg(long, default_value = "latest")]
+        version: String,
+        #[arg(long, default_value = "ybakiame/multi-proxy-panel")]
+        repo: String,
+    },
+    /// Install the Agent
+    Agent {
+        #[arg(long)]
+        hub_url: String,
+        #[arg(long)]
+        token: String,
+        #[arg(long)]
+        agent_id: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, default_value = "latest")]
+        version: String,
+        #[arg(long, default_value = "ybakiame/multi-proxy-panel")]
+        repo: String,
     },
 }
 
@@ -184,6 +257,55 @@ async fn main() -> anyhow::Result<()> {
             let db = pp_db::init_db(&database_url).await?;
             db.ping().await?;
             println!("Database connection: OK");
+        }
+        Commands::Install { target } => match target {
+            InstallTarget::Hub { version, repo } => {
+                ops::install_hub(&version, &repo).await?;
+            }
+            InstallTarget::Agent {
+                hub_url,
+                token,
+                agent_id,
+                name,
+                version,
+                repo,
+            } => {
+                ops::install_agent(
+                    &hub_url,
+                    &token,
+                    agent_id.as_deref(),
+                    name.as_deref(),
+                    &version,
+                    &repo,
+                )
+                .await?;
+            }
+        },
+        Commands::Upgrade {
+            component,
+            version,
+            repo,
+        } => {
+            ops::upgrade(&component, &version, &repo).await?;
+        }
+        Commands::Rollback { component } => {
+            ops::rollback(&component).await?;
+        }
+        Commands::Uninstall { component, purge } => {
+            ops::uninstall(&component, purge).await?;
+        }
+        Commands::Status => {
+            ops::status().await?;
+        }
+        Commands::Logs {
+            component,
+            lines,
+            follow,
+        } => {
+            ops::logs(&component, lines, follow).await?;
+        }
+        Commands::Restart { component } => {
+            ops::restart(&component).await?;
         }
     }
 
