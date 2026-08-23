@@ -22,7 +22,7 @@ edition = "2024"
 license = "AGPL-3.0-or-later"
 authors = ["ProxyPanel Contributors"]
 repository = "https://github.com/ybakiame/multi-proxy-panel"
-rust-version = "1.86"
+rust-version = "1.88"
 
 [workspace.dependencies]
 # Async runtime

@@ -2,7 +2,7 @@
 
 > 一个现代化的代理节点集中管理面板，采用 Rust 全栈构建。
 
-[![Rust Version](https://img.shields.io/badge/rust-1.86%2B-blue)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.88%2B-blue)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-orange)](LICENSE)
 
 ## 项目简介
@@ -92,7 +92,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 ### 环境要求
 
-- Rust 1.86+ (参见 `rust-toolchain.toml`)
+- Rust 1.88+（参见 `rust-toolchain.toml`）
 - PostgreSQL 15+ (或 SQLite 用于开发)
 - Bun 1.3+ (构建 Web 前端，见 `crates/pp-web/package.json` 的 packageManager 字段)
 

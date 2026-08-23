@@ -23,7 +23,7 @@
 
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Rust | 1.86+ | 后端与核心开发 |
+| Rust | 1.88+ | 后端与核心开发 |
 | PostgreSQL | 15+ | 开发数据库 |
 | Docker & Compose | 最新 | 基础设施快速启动 |
 | Node.js & npm | 20+ | 构建 Web 前端 |
@@ -35,7 +35,7 @@
 ```bash
 # 项目已包含 rust-toolchain.toml，自动安装正确版本
 cd proxy-panel
-rustc --version  # 应显示 1.86+
+rustc --version  # 应显示 1.88+
 
 # 安装额外组件
 cargo install sea-orm-cli

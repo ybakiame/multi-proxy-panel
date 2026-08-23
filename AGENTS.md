@@ -18,7 +18,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 ### 2.1 工具链
 
-- Rust 1.86+（Workspace 指定 `rust-version = "1.86"`，edition = "2024"）
+- Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
 - 构建前端需要 Node.js 20+ 和 npm（`crates/pp-web` 为独立的 Vite + React 项目）
 

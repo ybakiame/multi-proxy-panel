@@ -42,7 +42,7 @@
 ```markdown
 ## 环境信息
 - OS: Ubuntu 22.04
-- Rust: 1.86.0
+- Rust: 1.88.0
 - ProxyPanel: v0.1.0 (commit: abc123)
 - Database: PostgreSQL 16
 
