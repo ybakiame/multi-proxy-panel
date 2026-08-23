@@ -1,0 +1,196 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/pp-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: crates/pp-web/dist
+          retention-days: 1
+
+  build:
+    name: Build Binaries
+    needs: [web]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross-compilation tools (aarch64)
+        if: matrix.arch == 'aarch64'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --locked -p pp-hub -p pp-agent -p pp-cli --target ${{ matrix.target }}
+
+      - name: Strip binaries
+        run: |
+          strip target/${{ matrix.target }}/release/proxy-panel-hub || true
+          strip target/${{ matrix.target }}/release/proxy-panel-agent || true
+          strip target/${{ matrix.target }}/release/proxy-panel || true
+
+      - name: Package agent tarball
+        run: |
+          mkdir -p dist
+          tar -czf dist/proxy-panel-agent-linux-${{ matrix.arch }}.tar.gz \
+            -C target/${{ matrix.target }}/release proxy-panel-agent
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Package hub tarball
+        run: |
+          mkdir -p hub-bundle
+          cp target/${{ matrix.target }}/release/proxy-panel-hub hub-bundle/
+          cp target/${{ matrix.target }}/release/proxy-panel hub-bundle/
+          cp -r web/dist hub-bundle/
+          tar -czf dist/proxy-panel-hub-linux-${{ matrix.arch }}.tar.gz -C hub-bundle .
+
+      - name: Upload tarball artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarballs-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all tarball artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: tarballs-*
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  docker:
+    name: Build and Push Docker Images
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker meta (hub)
+        id: meta-hub
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/proxy-panel-hub
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - name: Docker meta (agent)
+        id: meta-agent
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/proxy-panel-agent
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push hub image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.hub
+          push: true
+          tags: ${{ steps.meta-hub.outputs.tags }}
+          labels: ${{ steps.meta-hub.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.agent
+          push: true
+          tags: ${{ steps.meta-agent.outputs.tags }}
+          labels: ${{ steps.meta-agent.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
