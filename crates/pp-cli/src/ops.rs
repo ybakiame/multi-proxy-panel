@@ -415,6 +415,55 @@ async fn installed_version(bin_path: &Path) -> Result<Option<String>> {
     Ok(parse_version_from_output(&text))
 }
 
+
+/// Move a file, falling back to copy+remove across filesystems (EXDEV).
+async fn move_file(src: &Path, dst: &Path) -> Result<()> {
+    match tokio::fs::rename(src, dst).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.raw_os_error() == Some(18) => {
+            copy_file(src, dst).await?;
+            tokio::fs::remove_file(src)
+                .await
+                .with_context(|| format!("failed to remove {}", src.display()))?;
+            Ok(())
+        }
+        Err(e) => Err(e).with_context(|| format!("failed to move to {}", dst.display())),
+    }
+}
+
+/// Move a path (file or directory), handling cross-filesystem moves.
+async fn move_path(src: &Path, dst: &Path) -> Result<()> {
+    if !src.is_dir() {
+        return move_file(src, dst).await;
+    }
+    match tokio::fs::rename(src, dst).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.raw_os_error() == Some(18) => {
+            copy_dir_recursive(src, dst).await?;
+            tokio::fs::remove_dir_all(src)
+                .await
+                .with_context(|| format!("failed to remove {}", src.display()))?;
+            Ok(())
+        }
+        Err(e) => Err(e).with_context(|| format!("failed to move to {}", dst.display())),
+    }
+}
+
+async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    ensure_dir(dst).await?;
+    let mut entries = tokio::fs::read_dir(src).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            Box::pin(copy_dir_recursive(&from, &to)).await?;
+        } else {
+            copy_file(&from, &to).await?;
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Public commands
 // ---------------------------------------------------------------------------
@@ -492,9 +541,7 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
 
     // Move / copy new binaries
     if let Some(src) = hub_bin_src {
-        tokio::fs::rename(&src, &hub_dst)
-            .await
-            .with_context(|| format!("failed to install {}", hub_dst.display()))?;
+        move_file(&src, &hub_dst).await?;
         let perms = std::fs::Permissions::from_mode(0o755);
         std::fs::set_permissions(&hub_dst, perms)
             .with_context(|| format!("failed to chmod {}", hub_dst.display()))?;
@@ -503,9 +550,7 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
     }
 
     if let Some(src) = cli_bin_src {
-        tokio::fs::rename(&src, &cli_dst)
-            .await
-            .with_context(|| format!("failed to install {}", cli_dst.display()))?;
+        move_file(&src, &cli_dst).await?;
         let perms = std::fs::Permissions::from_mode(0o755);
         std::fs::set_permissions(&cli_dst, perms)
             .with_context(|| format!("failed to chmod {}", cli_dst.display()))?;
@@ -519,9 +564,7 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
                 .await
                 .with_context(|| format!("failed to remove old {}", web_dst.display()))?;
         }
-        tokio::fs::rename(&src, &web_dst)
-            .await
-            .with_context(|| format!("failed to install web/dist to {}", web_dst.display()))?;
+        move_path(&src, &web_dst).await?;
     }
 
     // Write hub.toml if not exists
@@ -628,9 +671,7 @@ pub async fn install_agent(
     }
 
     if let Some(src) = agent_bin_src {
-        tokio::fs::rename(&src, &agent_dst)
-            .await
-            .with_context(|| format!("failed to install {}", agent_dst.display()))?;
+        move_file(&src, &agent_dst).await?;
         let perms = std::fs::Permissions::from_mode(0o755);
         std::fs::set_permissions(&agent_dst, perms)
             .with_context(|| format!("failed to chmod {}", agent_dst.display()))?;
@@ -769,9 +810,7 @@ async fn upgrade_component(
     }
 
     let src = new_bin.with_context(|| format!("tarball 中未找到 {}", bin_name))?;
-    tokio::fs::rename(&src, &bin_path)
-        .await
-        .with_context(|| format!("failed to replace {}", bin_path.display()))?;
+    move_file(&src, &bin_path).await?;
     let perms = std::fs::Permissions::from_mode(0o755);
     std::fs::set_permissions(&bin_path, perms)
         .with_context(|| format!("failed to chmod {}", bin_path.display()))?;
@@ -787,9 +826,7 @@ async fn upgrade_component(
                     .with_context(|| format!("failed to remove old {}", web_dst.display()))?;
             }
             ensure_dir(Path::new(OPT_DIR).join("web").as_path()).await?;
-            tokio::fs::rename(&new_dist, &web_dst)
-                .await
-                .with_context(|| format!("failed to install web/dist to {}", web_dst.display()))?;
+            move_path(&new_dist, &web_dst).await?;
             let _ = Command::new("chown")
                 .arg("-R")
                 .arg(format!("{}:{}", USER_NAME, USER_NAME))
@@ -808,9 +845,7 @@ async fn upgrade_component(
                 // Rollback
                 eprintln!("服务启动失败，正在自动回滚...");
                 if bak.exists() {
-                    tokio::fs::rename(&bak, &bin_path)
-                        .await
-                        .with_context(|| format!("failed to restore {}", bin_path.display()))?;
+                    move_file(&bak, &bin_path).await?;
                     systemd_restart(&unit).await?;
                     if systemd_is_active(&unit).await {
                         println!("已回滚到旧版本并恢复运行。");
@@ -841,9 +876,7 @@ pub async fn rollback(component: &str) -> Result<()> {
         .with_context(|| format!("未找到 {} 的备份文件", bin_name))?;
 
     let bin_path = PathBuf::from(BIN_DIR).join(bin_name);
-    tokio::fs::rename(&bak, &bin_path)
-        .await
-        .with_context(|| format!("failed to restore {}", bin_path.display()))?;
+    move_file(&bak, &bin_path).await?;
 
     systemd_restart(unit).await?;
     if !systemd_is_active(unit).await {
