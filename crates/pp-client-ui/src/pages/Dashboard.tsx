@@ -84,7 +84,9 @@ export default function Dashboard() {
   const [vpnError, setVpnError] = useState<string | null>(null);
   // platformInfo 异步返回后才拿到 os，现有 2s 轮询闭包会捕获旧值；用 ref 让轮询读到最新平台。
   const osRef = useRef(os);
-  osRef.current = os;
+  useEffect(() => {
+    osRef.current = os;
+  }, [os]);
 
   /**
    * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
