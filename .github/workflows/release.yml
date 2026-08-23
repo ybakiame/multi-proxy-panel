@@ -18,7 +18,7 @@ jobs:
         working-directory: crates/pp-web
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -30,7 +30,7 @@ jobs:
         run: bun run build
 
       - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: web-dist
           path: crates/pp-web/dist
@@ -51,7 +51,7 @@ jobs:
             arch: aarch64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install protobuf-compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -91,7 +91,7 @@ jobs:
             -C target/${{ matrix.target }}/release proxy-panel
 
       - name: Download web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: web-dist
           path: web/dist
@@ -105,7 +105,7 @@ jobs:
           tar -czf dist/proxy-panel-hub-linux-${{ matrix.arch }}.tar.gz -C hub-bundle .
 
       - name: Upload tarball artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tarballs-${{ matrix.arch }}
           path: dist/*.tar.gz
@@ -119,10 +119,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all tarball artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
           pattern: tarballs-*
@@ -149,7 +149,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Docker meta (hub)
         id: meta-hub
