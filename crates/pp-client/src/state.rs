@@ -356,20 +356,19 @@ impl ClientState {
         // 启动配置已含顶层 `mode`，此推送冗余但无害；sing-box 无组合层 mode 字段，
         // 完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
         let rule_mode = self.config.normalized_rule_mode().to_string();
-        if self.config.clash_api_enabled {
-            if let Err(e) = core_config::push_clash_mode(
+        if self.config.clash_api_enabled
+            && let Err(e) = core_config::push_clash_mode(
                 self.config.clash_api_port,
                 &self.config.clash_api_secret,
                 &rule_mode,
             )
             .await
-            {
-                tracing::warn!(
-                    error = %e,
-                    rule_mode = %rule_mode,
-                    "Clash API 推送规则模式失败"
-                );
-            }
+        {
+            tracing::warn!(
+                error = %e,
+                rule_mode = %rule_mode,
+                "Clash API 推送规则模式失败"
+            );
         }
         Ok(())
     }
@@ -566,12 +565,12 @@ impl ClientState {
     }
 
     async fn stop_core(&mut self) {
-        if let Some(core) = self.core.take() {
-            if let Err(e) = core.stop().await {
-                // 停止失败不静默：Android 桥接 stop（VpnService 有序关闭）失败时记
-                // 警告，供问题定位；前端轮询仍按 is_running 反映真实运行状态。
-                tracing::warn!(error = %e, "停止核心失败");
-            }
+        if let Some(core) = self.core.take()
+            && let Err(e) = core.stop().await
+        {
+            // 停止失败不静默：Android 桥接 stop（VpnService 有序关闭）失败时记
+            // 警告，供问题定位；前端轮询仍按 is_running 反映真实运行状态。
+            tracing::warn!(error = %e, "停止核心失败");
         }
     }
 

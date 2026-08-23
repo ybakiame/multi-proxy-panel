@@ -173,21 +173,20 @@ pub(crate) fn js_to_json<'js>(
 
 /// JS 值 → 字符串（用于错误消息与日志）。优先取 string / Error 的 message。
 pub(crate) fn value_to_string<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> String {
-    if let Some(s) = v.as_string() {
-        if let Ok(s) = s.to_string() {
-            return s;
-        }
+    if let Some(s) = v.as_string()
+        && let Ok(s) = s.to_string()
+    {
+        return s;
     }
     if let Some(obj) = v.as_object() {
         if let Ok(msg) = obj.get::<_, String>("message") {
             return msg;
         }
-        if let Ok(v2) = obj.get::<_, Value>("stack") {
-            if let Some(s) = v2.as_string() {
-                if let Ok(s) = s.to_string() {
-                    return s;
-                }
-            }
+        if let Ok(v2) = obj.get::<_, Value>("stack")
+            && let Some(s) = v2.as_string()
+            && let Ok(s) = s.to_string()
+        {
+            return s;
         }
     }
     let _ = ctx;

@@ -412,17 +412,16 @@ async fn handle_config_push(
     // Rolling-tag build upgrade: when the Hub reports a newer upstream build
     // for the pinned version, or a pinned version change, re-download
     // the binary before applying config.
-    if !push.core_build_id.is_empty() || !push.core_version.is_empty() {
-        if let Err(e) = ensure_core_build(
+    if (!push.core_build_id.is_empty() || !push.core_version.is_empty())
+        && let Err(e) = ensure_core_build(
             supervisor,
             core_type,
             &push.core_version,
             &push.core_build_id,
         )
         .await
-        {
-            tracing::warn!("core build upgrade failed for {:?}: {}", core_type, e);
-        }
+    {
+        tracing::warn!("core build upgrade failed for {:?}: {}", core_type, e);
     }
 
     if push.restart_required {

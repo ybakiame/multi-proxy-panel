@@ -339,12 +339,12 @@ impl RemoteManager {
                 },
             }
             // 图标本地化缓存（best-effort）：失败仅记 warning，不影响 fetched 计数。
-            if let Some(icon_url) = &remote.icon {
-                if let Err(e) = self.cache_icon(&remote.name, icon_url).await {
-                    report
-                        .warnings
-                        .push(format!("remote '{}': icon cache failed: {e}", remote.name));
-                }
+            if let Some(icon_url) = &remote.icon
+                && let Err(e) = self.cache_icon(&remote.name, icon_url).await
+            {
+                report
+                    .warnings
+                    .push(format!("remote '{}': icon cache failed: {e}", remote.name));
             }
         }
         report

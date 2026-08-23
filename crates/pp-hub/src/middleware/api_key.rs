@@ -109,11 +109,11 @@ pub async fn require_api_key(
     let cache_key = crate::state::ApiKeyCache::compute_key(&key_str);
     if let Some(cached) = state.api_key_cache.get(&cache_key) {
         // Re-validate expiration since it may have changed.
-        if let Some(expires) = cached.expires_at {
-            if expires < chrono::Utc::now() {
-                state.api_key_cache.invalidate();
-                return Err(StatusCode::UNAUTHORIZED);
-            }
+        if let Some(expires) = cached.expires_at
+            && expires < chrono::Utc::now()
+        {
+            state.api_key_cache.invalidate();
+            return Err(StatusCode::UNAUTHORIZED);
         }
 
         // Re-validate IP allowlist since it may have changed.
@@ -132,13 +132,13 @@ pub async fn require_api_key(
         }
 
         // Rate limit check
-        if let Some(limit) = cached.rate_limit {
-            if limit > 0 {
-                let key = format!("rate:apikey:{}", cached.key_id);
-                let allowed = state.rate_limiter.check(&key, limit as u64).await;
-                if !allowed {
-                    return Err(StatusCode::TOO_MANY_REQUESTS);
-                }
+        if let Some(limit) = cached.rate_limit
+            && limit > 0
+        {
+            let key = format!("rate:apikey:{}", cached.key_id);
+            let allowed = state.rate_limiter.check(&key, limit as u64).await;
+            if !allowed {
+                return Err(StatusCode::TOO_MANY_REQUESTS);
             }
         }
 
@@ -172,10 +172,10 @@ pub async fn require_api_key(
     let key_record = matched.ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Check expiration
-    if let Some(expires) = key_record.expires_at {
-        if expires < chrono::Utc::now() {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+    if let Some(expires) = key_record.expires_at
+        && expires < chrono::Utc::now()
+    {
+        return Err(StatusCode::UNAUTHORIZED);
     }
 
     // Check IP allowlist
@@ -194,13 +194,13 @@ pub async fn require_api_key(
     }
 
     // Rate limit check
-    if let Some(limit) = key_record.rate_limit {
-        if limit > 0 {
-            let key = format!("rate:apikey:{}", key_record.id);
-            let allowed = state.rate_limiter.check(&key, limit as u64).await;
-            if !allowed {
-                return Err(StatusCode::TOO_MANY_REQUESTS);
-            }
+    if let Some(limit) = key_record.rate_limit
+        && limit > 0
+    {
+        let key = format!("rate:apikey:{}", key_record.id);
+        let allowed = state.rate_limiter.check(&key, limit as u64).await;
+        if !allowed {
+            return Err(StatusCode::TOO_MANY_REQUESTS);
         }
     }
 
@@ -240,18 +240,17 @@ pub async fn require_api_key(
 
 fn extract_key_from_request(req: &Request) -> String {
     // Try X-API-Key header first
-    if let Some(header) = req.headers().get("x-api-key") {
-        if let Ok(val) = header.to_str() {
-            return val.trim().to_string();
-        }
+    if let Some(header) = req.headers().get("x-api-key")
+        && let Ok(val) = header.to_str()
+    {
+        return val.trim().to_string();
     }
     // Fallback to Authorization: Bearer <key>
-    if let Some(header) = req.headers().get("authorization") {
-        if let Ok(val) = header.to_str() {
-            if let Some(token) = val.strip_prefix("Bearer ") {
-                return token.trim().to_string();
-            }
-        }
+    if let Some(header) = req.headers().get("authorization")
+        && let Ok(val) = header.to_str()
+        && let Some(token) = val.strip_prefix("Bearer ")
+    {
+        return token.trim().to_string();
     }
     String::new()
 }
@@ -287,10 +286,10 @@ fn extract_client_ip(
 
 fn ip_matches(client_ip: &str, pattern: &str) -> bool {
     if pattern.contains('/') {
-        if let Ok(net) = pattern.parse::<ipnet::IpNet>() {
-            if let Ok(ip) = client_ip.parse::<std::net::IpAddr>() {
-                return net.contains(&ip);
-            }
+        if let Ok(net) = pattern.parse::<ipnet::IpNet>()
+            && let Ok(ip) = client_ip.parse::<std::net::IpAddr>()
+        {
+            return net.contains(&ip);
         }
         false
     } else {

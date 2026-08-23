@@ -196,13 +196,13 @@ fn merge_argument_descriptions(args: &mut Vec<ArgSpec>, value: &str) {
 /// 提取 `#!arguments-desc=` 的 `(key, desc)` 键值对（严格 JSON → 宽松语法 → 朴素语法回退）。
 fn parse_desc_pairs(value: &str) -> Vec<(String, String)> {
     // 1. 严格 JSON 对象：`{"key": "desc", ...}`。
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(value) {
-        if let Some(obj) = json.as_object() {
-            return obj
-                .iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect();
-        }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(value)
+        && let Some(obj) = json.as_object()
+    {
+        return obj
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect();
     }
     // 2. 宽松语法：`key:"描述"` / `key:'描述'`（键未加引号、值含空格/中文均可）。
     let mut out = Vec::new();
@@ -259,12 +259,12 @@ fn parse_naive_desc_pairs(value: &str) -> Vec<(String, String)> {
         for (offset, c) in desc_src.char_indices() {
             if c == ',' {
                 let after = desc_src[offset + 1..].trim_start();
-                if let Some(c2) = after.find(':') {
-                    if is_valid_key(&after[..c2]) {
-                        seg_end = offset;
-                        next_start = Some(offset + 1);
-                        break;
-                    }
+                if let Some(c2) = after.find(':')
+                    && is_valid_key(&after[..c2])
+                {
+                    seg_end = offset;
+                    next_start = Some(offset + 1);
+                    break;
                 }
             }
         }
@@ -369,13 +369,12 @@ fn is_remote_url(s: &str) -> bool {
 
 /// 从脚本 URL 派生任务名：取路径末段文件名（去掉 `.js` 后缀），失败时回退整个 URL。
 fn derive_name_from_url(url: &str) -> String {
-    if let Ok(parsed) = reqwest::Url::parse(url) {
-        if let Some(seg) = parsed.path_segments().and_then(|mut it| it.next_back()) {
-            if !seg.is_empty() {
-                let stem = seg.strip_suffix(".js").unwrap_or(seg);
-                return stem.to_string();
-            }
-        }
+    if let Ok(parsed) = reqwest::Url::parse(url)
+        && let Some(seg) = parsed.path_segments().and_then(|mut it| it.next_back())
+        && !seg.is_empty()
+    {
+        let stem = seg.strip_suffix(".js").unwrap_or(seg);
+        return stem.to_string();
     }
     url.to_string()
 }
@@ -643,10 +642,10 @@ fn parse_qx_task(cfg: &mut ImportedConfig, dialect: ScriptDialect, line: &str) {
     }
     let mut tag: Option<String> = None;
     for pair in params.split(',') {
-        if let Some((k, v)) = pair.trim().split_once('=') {
-            if k.trim().eq_ignore_ascii_case("tag") {
-                tag = Some(strip_quotes(v.trim()).to_string());
-            }
+        if let Some((k, v)) = pair.trim().split_once('=')
+            && k.trim().eq_ignore_ascii_case("tag")
+        {
+            tag = Some(strip_quotes(v.trim()).to_string());
         }
     }
     let name = tag

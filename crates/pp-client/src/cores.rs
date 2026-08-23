@@ -334,10 +334,11 @@ impl ClientCoreInventory {
 
         for asset in assets {
             let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            if name.contains(arch_hint) && ext_ok(core_type, is_windows, name) {
-                if let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str()) {
-                    return Ok((url.to_string(), name.to_string()));
-                }
+            if name.contains(arch_hint)
+                && ext_ok(core_type, is_windows, name)
+                && let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str())
+            {
+                return Ok((url.to_string(), name.to_string()));
             }
         }
         Err(PanelError::Core(format!(
@@ -574,10 +575,10 @@ fn parse_version_from_output(core_type: CoreType, output: &str) -> Option<String
     let re = regex::Regex::new(pattern).ok()?;
     // 子命令输出可能含多行：取含 "version" 的首行优先匹配（sing-box 1.14+），
     // 其余格式（如 mihomo 单行）回退到全文匹配。
-    if let Some(line) = output.lines().find(|l| l.contains("version")) {
-        if let Some(m) = re.captures(line).and_then(|c| c.get(1)) {
-            return Some(m.as_str().to_string());
-        }
+    if let Some(line) = output.lines().find(|l| l.contains("version"))
+        && let Some(m) = re.captures(line).and_then(|c| c.get(1))
+    {
+        return Some(m.as_str().to_string());
     }
     re.captures(output)
         .and_then(|caps| caps.get(1))

@@ -480,16 +480,15 @@ async fn find_template_for_format(
 ) -> Result<Option<subscription_template::Model>, ApiError> {
     let format_lower = format.to_ascii_lowercase();
 
-    if let Some(name) = template_name {
-        if let Some(t) = subscription_template::Entity::find()
+    if let Some(name) = template_name
+        && let Some(t) = subscription_template::Entity::find()
             .filter(subscription_template::Column::Name.eq(name))
             .filter(subscription_template::Column::IsEnabled.eq(true))
             .one(db)
             .await
             .map_err(ApiError::from)?
-        {
-            return Ok(Some(t));
-        }
+    {
+        return Ok(Some(t));
     }
 
     let templates = subscription_template::Entity::find()
@@ -708,23 +707,23 @@ async fn build_proxy_nodes(
                         obj.insert("path".to_string(), json!(path));
                     }
                 }
-                if let Some(tls) = cfg.tls_settings.as_ref() {
-                    if let Some(tls_obj) = tls.as_object() {
-                        let mut new_tls = tls_obj.clone();
-                        if let Some(sni) = &host.sni {
-                            new_tls.insert("serverName".to_string(), json!(sni));
-                        }
-                        if let Some(alpn) = &host.alpn {
-                            new_tls.insert(
-                                "alpn".to_string(),
-                                json!(alpn.split(',').collect::<Vec<_>>()),
-                            );
-                        }
-                        if let Some(fp) = &host.fingerprint {
-                            new_tls.insert("fingerprint".to_string(), json!(fp));
-                        }
-                        // Re-assign to settings.tls via a separate variable
+                if let Some(tls) = cfg.tls_settings.as_ref()
+                    && let Some(tls_obj) = tls.as_object()
+                {
+                    let mut new_tls = tls_obj.clone();
+                    if let Some(sni) = &host.sni {
+                        new_tls.insert("serverName".to_string(), json!(sni));
                     }
+                    if let Some(alpn) = &host.alpn {
+                        new_tls.insert(
+                            "alpn".to_string(),
+                            json!(alpn.split(',').collect::<Vec<_>>()),
+                        );
+                    }
+                    if let Some(fp) = &host.fingerprint {
+                        new_tls.insert("fingerprint".to_string(), json!(fp));
+                    }
+                    // Re-assign to settings.tls via a separate variable
                 }
             }
 
@@ -774,15 +773,13 @@ async fn resolve_subscription_tls(
         .get("cert_id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok());
-    if let Some(cert_id) = cert_id {
-        if let Some(cert) = certificate::Entity::find_by_id(cert_id).one(db).await? {
-            if cert.node_id == node_id {
-                if let Some(obj) = tls.as_object_mut() {
-                    obj.insert("serverName".to_string(), json!(cert.domain));
-                    obj.remove("cert_id");
-                }
-            }
-        }
+    if let Some(cert_id) = cert_id
+        && let Some(cert) = certificate::Entity::find_by_id(cert_id).one(db).await?
+        && cert.node_id == node_id
+        && let Some(obj) = tls.as_object_mut()
+    {
+        obj.insert("serverName".to_string(), json!(cert.domain));
+        obj.remove("cert_id");
     }
 
     let has_server_name = tls
@@ -794,12 +791,11 @@ async fn resolve_subscription_tls(
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    if !has_server_name {
-        if let Some(domain) = domain {
-            if let Some(obj) = tls.as_object_mut() {
-                obj.insert("serverName".to_string(), json!(domain));
-            }
-        }
+    if !has_server_name
+        && let Some(domain) = domain
+        && let Some(obj) = tls.as_object_mut()
+    {
+        obj.insert("serverName".to_string(), json!(domain));
     }
 
     Ok(Some(tls))
@@ -896,12 +892,11 @@ fn inject_client_credentials(settings: &mut Value, client: &client::Model, proto
                     "email": client.email.as_ref().unwrap_or(&client.name),
                     "flow": flow,
                 });
-                if let Some(limit) = client.max_devices {
-                    if limit > 0 {
-                        if let Some(obj) = client_obj.as_object_mut() {
-                            obj.insert("limitIp".to_string(), json!(limit));
-                        }
-                    }
+                if let Some(limit) = client.max_devices
+                    && limit > 0
+                    && let Some(obj) = client_obj.as_object_mut()
+                {
+                    obj.insert("limitIp".to_string(), json!(limit));
                 }
                 // Also expose the current client's id at top level for link generators.
                 obj.insert("id".to_string(), json!(client.id.to_string()));

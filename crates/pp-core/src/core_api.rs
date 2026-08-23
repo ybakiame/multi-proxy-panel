@@ -82,13 +82,13 @@ async fn query_singbox_online_users_grpc() -> PanelResult<Vec<OnlineUser>> {
 
     let mut client = StartedServiceClient::new(channel);
     let mut request = tonic::Request::new(SubscribeConnectionsRequest { interval: 0 });
-    if let Ok(secret) = std::env::var("PROXYPANEL_SINGBOX_API_SECRET") {
-        if !secret.is_empty() {
-            let token = format!("Bearer {}", secret);
-            let metadata = MetadataValue::try_from(token)
-                .map_err(|e| pp_common::PanelError::Core(format!("invalid api secret: {}", e)))?;
-            request.metadata_mut().insert("authorization", metadata);
-        }
+    if let Ok(secret) = std::env::var("PROXYPANEL_SINGBOX_API_SECRET")
+        && !secret.is_empty()
+    {
+        let token = format!("Bearer {}", secret);
+        let metadata = MetadataValue::try_from(token)
+            .map_err(|e| pp_common::PanelError::Core(format!("invalid api secret: {}", e)))?;
+        request.metadata_mut().insert("authorization", metadata);
     }
 
     let response = client

@@ -308,22 +308,22 @@ impl HttpHandler for Handler {
                 .await;
         }
 
-        if self.config.record_enabled {
-            if let Some(state) = state {
-                let duration_ms = state.start.elapsed().as_millis() as u64;
-                self.recorder.record(TrafficRecord {
-                    id: Uuid::new_v4(),
-                    method: state.method,
-                    url: state.url,
-                    request_headers: state.req_headers,
-                    request_body: state.req_body,
-                    response_status: status,
-                    response_headers: headers.clone(),
-                    response_body: body.clone(),
-                    timestamp: Utc::now(),
-                    duration_ms,
-                });
-            }
+        if self.config.record_enabled
+            && let Some(state) = state
+        {
+            let duration_ms = state.start.elapsed().as_millis() as u64;
+            self.recorder.record(TrafficRecord {
+                id: Uuid::new_v4(),
+                method: state.method,
+                url: state.url,
+                request_headers: state.req_headers,
+                request_body: state.req_body,
+                response_status: status,
+                response_headers: headers.clone(),
+                response_body: body.clone(),
+                timestamp: Utc::now(),
+                duration_ms,
+            });
         }
 
         parts.status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

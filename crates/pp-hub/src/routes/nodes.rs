@@ -410,15 +410,15 @@ pub async fn push_pending(
 ) -> ApiResult<Value> {
     let mut query = node_pending_update::Entity::find();
 
-    if let Some(ref ids) = payload.node_ids {
-        if !ids.is_empty() {
-            query = query.filter(node_pending_update::Column::NodeId.is_in(ids.clone()));
-        }
+    if let Some(ref ids) = payload.node_ids
+        && !ids.is_empty()
+    {
+        query = query.filter(node_pending_update::Column::NodeId.is_in(ids.clone()));
     }
-    if let Some(ref core_type) = payload.core_type {
-        if !core_type.is_empty() {
-            query = query.filter(node_pending_update::Column::CoreType.eq(core_type));
-        }
+    if let Some(ref core_type) = payload.core_type
+        && !core_type.is_empty()
+    {
+        query = query.filter(node_pending_update::Column::CoreType.eq(core_type));
     }
 
     let pendings = query.all(&state.db).await.map_err(ApiError::from)?;

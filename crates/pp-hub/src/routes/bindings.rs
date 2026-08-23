@@ -43,15 +43,15 @@ pub async fn list_bindings(
 ) -> PaginatedResult<Value> {
     let mut query = node_binding::Entity::find();
 
-    if let Some(node_id) = params.get("node_id") {
-        if let Ok(id) = Uuid::parse_str(node_id) {
-            query = query.filter(node_binding::Column::NodeId.eq(id));
-        }
+    if let Some(node_id) = params.get("node_id")
+        && let Ok(id) = Uuid::parse_str(node_id)
+    {
+        query = query.filter(node_binding::Column::NodeId.eq(id));
     }
-    if let Some(config_id) = params.get("config_id") {
-        if let Ok(id) = Uuid::parse_str(config_id) {
-            query = query.filter(node_binding::Column::ProtocolConfigId.eq(id));
-        }
+    if let Some(config_id) = params.get("config_id")
+        && let Ok(id) = Uuid::parse_str(config_id)
+    {
+        query = query.filter(node_binding::Column::ProtocolConfigId.eq(id));
     }
 
     let (bindings, total) =

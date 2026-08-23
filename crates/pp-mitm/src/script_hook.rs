@@ -181,14 +181,13 @@ fn apply_output(
     let Some(obj) = out.as_object() else {
         return;
     };
-    if let Some(status) = status {
-        if let Some(s) = obj
+    if let Some(status) = status
+        && let Some(s) = obj
             .get("status")
             .and_then(|v| v.as_u64())
             .and_then(|s| u16::try_from(s).ok())
-        {
-            *status = s;
-        }
+    {
+        *status = s;
     }
     if let Some(h) = obj.get("headers").and_then(|v| v.as_object()) {
         headers.clear();

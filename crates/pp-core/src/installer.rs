@@ -348,10 +348,11 @@ async fn resolve_asset_url(core_type: CoreType, version: &str, asset: &str) -> P
         if let Some(assets) = release.get("assets").and_then(|v| v.as_array()) {
             for a in assets {
                 let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                if name.contains(&arch_hint) && ext_ok(name) {
-                    if let Some(url) = a.get("browser_download_url").and_then(|v| v.as_str()) {
-                        return Ok(url.to_string());
-                    }
+                if name.contains(&arch_hint)
+                    && ext_ok(name)
+                    && let Some(url) = a.get("browser_download_url").and_then(|v| v.as_str())
+                {
+                    return Ok(url.to_string());
                 }
             }
         }

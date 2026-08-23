@@ -53,16 +53,15 @@ pub async fn generate_node_config(
             .override_settings
             .as_ref()
             .and_then(|o| o.get("tls_settings").cloned());
-        if let Some(ref overrides) = binding.override_settings {
-            if let Some(obj) = settings.as_object_mut() {
-                if let Some(over_obj) = overrides.as_object() {
-                    for (k, v) in over_obj {
-                        if k == "tls_settings" {
-                            continue;
-                        }
-                        obj.insert(k.clone(), v.clone());
-                    }
+        if let Some(ref overrides) = binding.override_settings
+            && let Some(obj) = settings.as_object_mut()
+            && let Some(over_obj) = overrides.as_object()
+        {
+            for (k, v) in over_obj {
+                if k == "tls_settings" {
+                    continue;
                 }
+                obj.insert(k.clone(), v.clone());
             }
         }
 
@@ -219,12 +218,11 @@ fn client_to_protocol_entry(client: &client::Model, protocol_type: &str) -> Valu
                 "email": email,
                 "flow": flow,
             });
-            if let Some(limit) = client.max_devices {
-                if limit > 0 {
-                    if let Some(map) = obj.as_object_mut() {
-                        map.insert("limitIp".to_string(), json!(limit));
-                    }
-                }
+            if let Some(limit) = client.max_devices
+                && limit > 0
+                && let Some(map) = obj.as_object_mut()
+            {
+                map.insert("limitIp".to_string(), json!(limit));
             }
             obj
         }
@@ -411,10 +409,10 @@ pub async fn nodes_with_bindings(
         let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
             .one(db)
             .await?;
-        if let Some(cfg) = config {
-            if cfg.core_type == core_type_str {
-                node_ids.insert(binding.node_id);
-            }
+        if let Some(cfg) = config
+            && cfg.core_type == core_type_str
+        {
+            node_ids.insert(binding.node_id);
         }
     }
 
@@ -485,14 +483,14 @@ pub async fn validate_node_port_conflicts(
         let mut port = config.listen_port as u16;
 
         // Apply binding-level overrides for listen/port if present.
-        if let Some(overrides) = binding.override_settings {
-            if let Some(obj) = overrides.as_object() {
-                if let Some(v) = obj.get("listen_address").and_then(|v| v.as_str()) {
-                    listen = v.to_string();
-                }
-                if let Some(v) = obj.get("listen_port").and_then(|v| v.as_u64()) {
-                    port = v as u16;
-                }
+        if let Some(overrides) = binding.override_settings
+            && let Some(obj) = overrides.as_object()
+        {
+            if let Some(v) = obj.get("listen_address").and_then(|v| v.as_str()) {
+                listen = v.to_string();
+            }
+            if let Some(v) = obj.get("listen_port").and_then(|v| v.as_u64()) {
+                port = v as u16;
             }
         }
 
@@ -697,10 +695,9 @@ async fn resolve_relay_sni(
         .get("cert_id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
+        && let Ok(Some(cert)) = certificate::Entity::find_by_id(cert_id).one(db).await
     {
-        if let Ok(Some(cert)) = certificate::Entity::find_by_id(cert_id).one(db).await {
-            return Some(cert.domain);
-        }
+        return Some(cert.domain);
     }
     tls.get("domain")
         .and_then(|v| v.as_str())

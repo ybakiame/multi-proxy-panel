@@ -188,26 +188,26 @@ async fn check_client_limits(db: &DatabaseConnection) -> Result<HashSet<Uuid>, P
 
     for c in clients {
         // 1. Check expiration
-        if let Some(expiry) = c.expiry_date {
-            if expiry < chrono::Utc::now() {
-                let mut active: client::ActiveModel = c.clone().into();
-                active.status = Set("expired".to_string());
-                active.update(db).await?;
-                affected.insert(c.id);
-                log_event(db, "client_expired", &format!("Client {} expired", c.id)).await?;
+        if let Some(expiry) = c.expiry_date
+            && expiry < chrono::Utc::now()
+        {
+            let mut active: client::ActiveModel = c.clone().into();
+            active.status = Set("expired".to_string());
+            active.update(db).await?;
+            affected.insert(c.id);
+            log_event(db, "client_expired", &format!("Client {} expired", c.id)).await?;
 
-                let _ = crate::service::webhook::trigger_event(
-                    db,
-                    "client_expired",
-                    &json!({
-                        "client_id": c.id,
-                        "name": c.name,
-                        "email": c.email,
-                    }),
-                )
-                .await;
-                continue;
-            }
+            let _ = crate::service::webhook::trigger_event(
+                db,
+                "client_expired",
+                &json!({
+                    "client_id": c.id,
+                    "name": c.name,
+                    "email": c.email,
+                }),
+            )
+            .await;
+            continue;
         }
 
         // 2. Check traffic limit (traffic_used_bytes is maintained by agent traffic reports)
@@ -259,31 +259,31 @@ async fn check_on_hold_timeouts(db: &DatabaseConnection) -> Result<HashSet<Uuid>
     let now = chrono::Utc::now();
 
     for c in clients {
-        if let Some(timeout) = c.on_hold_timeout {
-            if timeout < now {
-                let mut active: client::ActiveModel = c.clone().into();
-                active.status = Set("expired".to_string());
-                active.update(db).await?;
-                expired.insert(c.id);
-                log_event(
-                    db,
-                    "on_hold_expired",
-                    &format!("Client {} on-hold timeout expired", c.id),
-                )
-                .await?;
+        if let Some(timeout) = c.on_hold_timeout
+            && timeout < now
+        {
+            let mut active: client::ActiveModel = c.clone().into();
+            active.status = Set("expired".to_string());
+            active.update(db).await?;
+            expired.insert(c.id);
+            log_event(
+                db,
+                "on_hold_expired",
+                &format!("Client {} on-hold timeout expired", c.id),
+            )
+            .await?;
 
-                let _ = crate::service::webhook::trigger_event(
-                    db,
-                    "on_hold_expired",
-                    &json!({
-                        "client_id": c.id,
-                        "name": c.name,
-                        "email": c.email,
-                        "timeout": timeout.to_rfc3339(),
-                    }),
-                )
-                .await;
-            }
+            let _ = crate::service::webhook::trigger_event(
+                db,
+                "on_hold_expired",
+                &json!({
+                    "client_id": c.id,
+                    "name": c.name,
+                    "email": c.email,
+                    "timeout": timeout.to_rfc3339(),
+                }),
+            )
+            .await;
         }
     }
 

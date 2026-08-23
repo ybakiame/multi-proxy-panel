@@ -123,18 +123,16 @@ fn build_fetch_client(timeout: std::time::Duration, cfg: &config::ClientConfig) 
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     };
-    if cfg.fetch_via_local_proxy {
-        if let Ok(proxy) = reqwest::Proxy::all(format!("http://127.0.0.1:{}", cfg.mixed_port)) {
-            if let Ok(client) = reqwest::Client::builder()
-                .timeout(timeout)
-                .proxy(proxy)
-                .build()
-            {
-                return client;
-            }
-        }
-        // 本地代理客户端构建失败（非法地址等）→ 回退为无代理直连。
+    if cfg.fetch_via_local_proxy
+        && let Ok(proxy) = reqwest::Proxy::all(format!("http://127.0.0.1:{}", cfg.mixed_port))
+        && let Ok(client) = reqwest::Client::builder()
+            .timeout(timeout)
+            .proxy(proxy)
+            .build()
+    {
+        return client;
     }
+    // 本地代理客户端构建失败（非法地址等）→ 回退为无代理直连。
     no_proxy_client()
 }
 

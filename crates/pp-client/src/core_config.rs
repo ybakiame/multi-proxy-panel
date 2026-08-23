@@ -197,10 +197,10 @@ pub fn build_singbox_tun_inbound(features: &PanelFeatures, is_android: bool) -> 
 fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -> Option<String> {
     if let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) {
         for outbound in outbounds {
-            if outbound.get("type").and_then(Value::as_str) == Some("selector") {
-                if let Some(tag) = outbound.get("tag").and_then(Value::as_str) {
-                    return Some(tag.to_string());
-                }
+            if outbound.get("type").and_then(Value::as_str) == Some("selector")
+                && let Some(tag) = outbound.get("tag").and_then(Value::as_str)
+            {
+                return Some(tag.to_string());
             }
         }
     }

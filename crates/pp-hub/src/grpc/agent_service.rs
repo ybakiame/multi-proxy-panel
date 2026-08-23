@@ -234,10 +234,10 @@ async fn handle_register(
         active.status = Set("online".to_string());
         active.hostname = Set(req.hostname.clone());
         active.cores_available = Set(serde_json::json!(req.capabilities));
-        if let Some(addr) = &remote_addr {
-            if !is_loopback_addr(addr) {
-                active.address = Set(addr.clone());
-            }
+        if let Some(addr) = &remote_addr
+            && !is_loopback_addr(addr)
+        {
+            active.address = Set(addr.clone());
         }
         if !req.domain.is_empty() {
             active.domain = Set(Some(req.domain.clone()));
@@ -726,33 +726,33 @@ async fn handle_online_users(
         }
 
         // Activate on-hold clients on first actual connection
-        if let Some(c) = client_map.get(&client_id) {
-            if c.status == "on_hold" {
-                let now = chrono::Utc::now();
-                let expire_date = c
-                    .on_hold_expire_duration_secs
-                    .map(|secs| now + chrono::Duration::seconds(secs));
+        if let Some(c) = client_map.get(&client_id)
+            && c.status == "on_hold"
+        {
+            let now = chrono::Utc::now();
+            let expire_date = c
+                .on_hold_expire_duration_secs
+                .map(|secs| now + chrono::Duration::seconds(secs));
 
-                let mut active: client::ActiveModel = c.clone().into();
-                active.status = Set("active".to_string());
-                active.expiry_date = Set(expire_date.map(|d| d.into()));
-                active.updated_at = Set(now.into());
-                if let Err(e) = active.update(&state.db).await {
-                    tracing::warn!("failed to activate on-hold client {}: {}", client_id, e);
-                } else {
-                    tracing::info!("activated on-hold client {} on first connection", client_id);
+            let mut active: client::ActiveModel = c.clone().into();
+            active.status = Set("active".to_string());
+            active.expiry_date = Set(expire_date.map(|d| d.into()));
+            active.updated_at = Set(now.into());
+            if let Err(e) = active.update(&state.db).await {
+                tracing::warn!("failed to activate on-hold client {}: {}", client_id, e);
+            } else {
+                tracing::info!("activated on-hold client {} on first connection", client_id);
 
-                    let _ = crate::service::webhook::trigger_event(
-                        &state.db,
-                        "client_activated",
-                        &serde_json::json!({
-                            "client_id": client_id,
-                            "activated_at": now.to_rfc3339(),
-                            "expire_date": expire_date.map(|d| d.to_rfc3339()),
-                        }),
-                    )
-                    .await;
-                }
+                let _ = crate::service::webhook::trigger_event(
+                    &state.db,
+                    "client_activated",
+                    &serde_json::json!({
+                        "client_id": client_id,
+                        "activated_at": now.to_rfc3339(),
+                        "expire_date": expire_date.map(|d| d.to_rfc3339()),
+                    }),
+                )
+                .await;
             }
         }
 

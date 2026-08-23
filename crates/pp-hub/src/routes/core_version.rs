@@ -152,15 +152,15 @@ async fn fetch_upstream_versions(core_type: CoreType) -> Result<Vec<UpstreamRele
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         if is_pre {
-            if pre.len() < VERSIONS_PER_CHANNEL {
-                if let Some(r) = UpstreamRelease::from_json(release, CHANNEL_PRERELEASE) {
-                    pre.push(r);
-                }
+            if pre.len() < VERSIONS_PER_CHANNEL
+                && let Some(r) = UpstreamRelease::from_json(release, CHANNEL_PRERELEASE)
+            {
+                pre.push(r);
             }
-        } else if stable.len() < VERSIONS_PER_CHANNEL {
-            if let Some(r) = UpstreamRelease::from_json(release, CHANNEL_RELEASE) {
-                stable.push(r);
-            }
+        } else if stable.len() < VERSIONS_PER_CHANNEL
+            && let Some(r) = UpstreamRelease::from_json(release, CHANNEL_RELEASE)
+        {
+            stable.push(r);
         }
         if stable.len() >= VERSIONS_PER_CHANNEL && pre.len() >= VERSIONS_PER_CHANNEL {
             break;

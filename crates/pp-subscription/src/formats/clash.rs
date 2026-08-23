@@ -251,13 +251,12 @@ fn build_hysteria2_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
         "udp": true,
     });
 
-    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
-        if obfs_type != "none" {
-            proxy["obfs"] = json!(obfs_type);
-            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
-            {
-                proxy["obfs-password"] = json!(obfs_password);
-            }
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str())
+        && obfs_type != "none"
+    {
+        proxy["obfs"] = json!(obfs_type);
+        if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str()) {
+            proxy["obfs-password"] = json!(obfs_password);
         }
     }
 

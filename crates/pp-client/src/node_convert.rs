@@ -36,10 +36,10 @@ pub fn singbox_to_mihomo(o: &Value) -> Option<Value> {
         "vless" => {
             p.insert(String::from("type"), json!("vless"));
             p.insert(String::from("uuid"), o.get("uuid")?.clone());
-            if let Some(flow) = o.get("flow").and_then(Value::as_str) {
-                if !flow.is_empty() {
-                    p.insert(String::from("flow"), json!(flow));
-                }
+            if let Some(flow) = o.get("flow").and_then(Value::as_str)
+                && !flow.is_empty()
+            {
+                p.insert(String::from("flow"), json!(flow));
             }
             tls_to_mihomo(o, &mut p);
             transport_to_mihomo(o.get("transport"), &mut p);
@@ -58,10 +58,10 @@ pub fn singbox_to_mihomo(o: &Value) -> Option<Value> {
             p.insert(String::from("type"), json!("tuic"));
             p.insert(String::from("uuid"), o.get("uuid")?.clone());
             p.insert(String::from("password"), o.get("password")?.clone());
-            if let Some(cc) = o.get("congestion_control").and_then(Value::as_str) {
-                if !cc.is_empty() {
-                    p.insert(String::from("congestion-controller"), json!(cc));
-                }
+            if let Some(cc) = o.get("congestion_control").and_then(Value::as_str)
+                && !cc.is_empty()
+            {
+                p.insert(String::from("congestion-controller"), json!(cc));
             }
             tls_to_mihomo(o, &mut p);
         }
@@ -106,10 +106,10 @@ pub fn mihomo_to_singbox(p: &Value) -> Option<Value> {
         "vless" => {
             o.insert(String::from("type"), json!("vless"));
             o.insert(String::from("uuid"), p.get("uuid")?.clone());
-            if let Some(flow) = p.get("flow").and_then(Value::as_str) {
-                if !flow.is_empty() {
-                    o.insert(String::from("flow"), json!(flow));
-                }
+            if let Some(flow) = p.get("flow").and_then(Value::as_str)
+                && !flow.is_empty()
+            {
+                o.insert(String::from("flow"), json!(flow));
             }
             tls_from_mihomo(p, &mut o);
             transport_from_mihomo(p, &mut o);
@@ -130,10 +130,10 @@ pub fn mihomo_to_singbox(p: &Value) -> Option<Value> {
             o.insert(String::from("type"), json!("tuic"));
             o.insert(String::from("uuid"), p.get("uuid")?.clone());
             o.insert(String::from("password"), p.get("password")?.clone());
-            if let Some(cc) = p.get("congestion-controller").and_then(Value::as_str) {
-                if !cc.is_empty() {
-                    o.insert(String::from("congestion_control"), json!(cc));
-                }
+            if let Some(cc) = p.get("congestion-controller").and_then(Value::as_str)
+                && !cc.is_empty()
+            {
+                o.insert(String::from("congestion_control"), json!(cc));
             }
             tls_from_mihomo(p, &mut o);
             ensure_tls_defaults(&mut o);
@@ -159,10 +159,10 @@ fn tls_to_mihomo(o: &Value, p: &mut Map<String, Value>) {
     if tls.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         p.insert(String::from("tls"), json!(true));
     }
-    if let Some(sn) = tls.get("server_name").and_then(Value::as_str) {
-        if !sn.is_empty() {
-            p.insert(String::from("servername"), json!(sn));
-        }
+    if let Some(sn) = tls.get("server_name").and_then(Value::as_str)
+        && !sn.is_empty()
+    {
+        p.insert(String::from("servername"), json!(sn));
     }
     if tls.get("insecure").and_then(Value::as_bool) == Some(true) {
         p.insert(String::from("skip-cert-verify"), json!(true));
@@ -171,10 +171,9 @@ fn tls_to_mihomo(o: &Value, p: &mut Map<String, Value>) {
         .get("utls")
         .and_then(|u| u.get("fingerprint"))
         .and_then(Value::as_str)
+        && !fp.is_empty()
     {
-        if !fp.is_empty() {
-            p.insert(String::from("client-fingerprint"), json!(fp));
-        }
+        p.insert(String::from("client-fingerprint"), json!(fp));
     }
     let reality = match tls.get("reality") {
         Some(r) if r.is_object() => r,
@@ -184,15 +183,15 @@ fn tls_to_mihomo(o: &Value, p: &mut Map<String, Value>) {
         return;
     }
     let mut opts = Map::new();
-    if let Some(pk) = reality.get("public_key").and_then(Value::as_str) {
-        if !pk.is_empty() {
-            opts.insert(String::from("public-key"), json!(pk));
-        }
+    if let Some(pk) = reality.get("public_key").and_then(Value::as_str)
+        && !pk.is_empty()
+    {
+        opts.insert(String::from("public-key"), json!(pk));
     }
-    if let Some(sid) = reality.get("short_id").and_then(Value::as_str) {
-        if !sid.is_empty() {
-            opts.insert(String::from("short-id"), json!(sid));
-        }
+    if let Some(sid) = reality.get("short_id").and_then(Value::as_str)
+        && !sid.is_empty()
+    {
+        opts.insert(String::from("short-id"), json!(sid));
     }
     if !opts.is_empty() {
         p.insert(String::from("reality-opts"), Value::Object(opts));
@@ -210,17 +209,16 @@ fn transport_to_mihomo(t: Option<&Value>, p: &mut Map<String, Value>) {
         "ws" => {
             p.insert(String::from("network"), json!("ws"));
             let mut ws = Map::new();
-            if let Some(path) = t.get("path").and_then(Value::as_str) {
-                if !path.is_empty() {
-                    ws.insert(String::from("path"), json!(path));
-                }
+            if let Some(path) = t.get("path").and_then(Value::as_str)
+                && !path.is_empty()
+            {
+                ws.insert(String::from("path"), json!(path));
             }
-            if let Some(hdrs) = t.get("headers").and_then(Value::as_object) {
-                if let Some(host) = hdrs.get("Host").and_then(Value::as_str) {
-                    if !host.is_empty() {
-                        ws.insert(String::from("headers"), json!({ "Host": host }));
-                    }
-                }
+            if let Some(hdrs) = t.get("headers").and_then(Value::as_object)
+                && let Some(host) = hdrs.get("Host").and_then(Value::as_str)
+                && !host.is_empty()
+            {
+                ws.insert(String::from("headers"), json!({ "Host": host }));
             }
             if !ws.is_empty() {
                 p.insert(String::from("ws-opts"), Value::Object(ws));
@@ -228,22 +226,22 @@ fn transport_to_mihomo(t: Option<&Value>, p: &mut Map<String, Value>) {
         }
         "grpc" => {
             p.insert(String::from("network"), json!("grpc"));
-            if let Some(sn) = t.get("service_name").and_then(Value::as_str) {
-                if !sn.is_empty() {
-                    p.insert(
-                        String::from("grpc-opts"),
-                        json!({ "grpc-service-name": sn }),
-                    );
-                }
+            if let Some(sn) = t.get("service_name").and_then(Value::as_str)
+                && !sn.is_empty()
+            {
+                p.insert(
+                    String::from("grpc-opts"),
+                    json!({ "grpc-service-name": sn }),
+                );
             }
         }
         "http" => {
             p.insert(String::from("network"), json!("http"));
             let mut opts = Map::new();
-            if let Some(path) = t.get("path").and_then(Value::as_str) {
-                if !path.is_empty() {
-                    opts.insert(String::from("path"), json!(path));
-                }
+            if let Some(path) = t.get("path").and_then(Value::as_str)
+                && !path.is_empty()
+            {
+                opts.insert(String::from("path"), json!(path));
             }
             if !opts.is_empty() {
                 p.insert(String::from("http-opts"), Value::Object(opts));
@@ -266,34 +264,34 @@ fn tls_from_mihomo(p: &Value, o: &mut Map<String, Value>) {
         .get("servername")
         .or_else(|| p.get("sni"))
         .and_then(Value::as_str);
-    if let Some(sn) = sn {
-        if !sn.is_empty() {
-            tls.insert(String::from("server_name"), json!(sn));
-        }
+    if let Some(sn) = sn
+        && !sn.is_empty()
+    {
+        tls.insert(String::from("server_name"), json!(sn));
     }
     if p.get("skip-cert-verify").and_then(Value::as_bool) == Some(true) {
         tls.insert(String::from("insecure"), json!(true));
     }
-    if let Some(fp) = p.get("client-fingerprint").and_then(Value::as_str) {
-        if !fp.is_empty() {
-            tls.insert(
-                String::from("utls"),
-                json!({ "enabled": true, "fingerprint": fp }),
-            );
-        }
+    if let Some(fp) = p.get("client-fingerprint").and_then(Value::as_str)
+        && !fp.is_empty()
+    {
+        tls.insert(
+            String::from("utls"),
+            json!({ "enabled": true, "fingerprint": fp }),
+        );
     }
     if let Some(opts) = p.get("reality-opts").and_then(Value::as_object) {
         let mut r = Map::new();
         r.insert(String::from("enabled"), json!(true));
-        if let Some(pk) = opts.get("public-key").and_then(Value::as_str) {
-            if !pk.is_empty() {
-                r.insert(String::from("public_key"), json!(pk));
-            }
+        if let Some(pk) = opts.get("public-key").and_then(Value::as_str)
+            && !pk.is_empty()
+        {
+            r.insert(String::from("public_key"), json!(pk));
         }
-        if let Some(sid) = opts.get("short-id").and_then(Value::as_str) {
-            if !sid.is_empty() {
-                r.insert(String::from("short_id"), json!(sid));
-            }
+        if let Some(sid) = opts.get("short-id").and_then(Value::as_str)
+            && !sid.is_empty()
+        {
+            r.insert(String::from("short_id"), json!(sid));
         }
         tls.insert(String::from("reality"), Value::Object(r));
     }
@@ -337,17 +335,16 @@ fn transport_from_mihomo(p: &Value, o: &mut Map<String, Value>) {
             let mut t = Map::new();
             t.insert(String::from("type"), json!("ws"));
             if let Some(opts) = p.get("ws-opts").and_then(Value::as_object) {
-                if let Some(path) = opts.get("path").and_then(Value::as_str) {
-                    if !path.is_empty() {
-                        t.insert(String::from("path"), json!(path));
-                    }
+                if let Some(path) = opts.get("path").and_then(Value::as_str)
+                    && !path.is_empty()
+                {
+                    t.insert(String::from("path"), json!(path));
                 }
-                if let Some(hdrs) = opts.get("headers").and_then(Value::as_object) {
-                    if let Some(host) = hdrs.get("Host").and_then(Value::as_str) {
-                        if !host.is_empty() {
-                            t.insert(String::from("headers"), json!({ "Host": host }));
-                        }
-                    }
+                if let Some(hdrs) = opts.get("headers").and_then(Value::as_object)
+                    && let Some(host) = hdrs.get("Host").and_then(Value::as_str)
+                    && !host.is_empty()
+                {
+                    t.insert(String::from("headers"), json!({ "Host": host }));
                 }
             }
             o.insert(String::from("transport"), Value::Object(t));
@@ -355,24 +352,22 @@ fn transport_from_mihomo(p: &Value, o: &mut Map<String, Value>) {
         "grpc" => {
             let mut t = Map::new();
             t.insert(String::from("type"), json!("grpc"));
-            if let Some(opts) = p.get("grpc-opts").and_then(Value::as_object) {
-                if let Some(sn) = opts.get("grpc-service-name").and_then(Value::as_str) {
-                    if !sn.is_empty() {
-                        t.insert(String::from("service_name"), json!(sn));
-                    }
-                }
+            if let Some(opts) = p.get("grpc-opts").and_then(Value::as_object)
+                && let Some(sn) = opts.get("grpc-service-name").and_then(Value::as_str)
+                && !sn.is_empty()
+            {
+                t.insert(String::from("service_name"), json!(sn));
             }
             o.insert(String::from("transport"), Value::Object(t));
         }
         "http" => {
             let mut t = Map::new();
             t.insert(String::from("type"), json!("http"));
-            if let Some(opts) = p.get("http-opts").and_then(Value::as_object) {
-                if let Some(path) = opts.get("path").and_then(Value::as_str) {
-                    if !path.is_empty() {
-                        t.insert(String::from("path"), json!(path));
-                    }
-                }
+            if let Some(opts) = p.get("http-opts").and_then(Value::as_object)
+                && let Some(path) = opts.get("path").and_then(Value::as_str)
+                && !path.is_empty()
+            {
+                t.insert(String::from("path"), json!(path));
             }
             o.insert(String::from("transport"), Value::Object(t));
         }

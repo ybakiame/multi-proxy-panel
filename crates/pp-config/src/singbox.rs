@@ -74,10 +74,10 @@ impl ConfigBuilder for SingBoxConfigBuilder {
 
         if use_new_api {
             let services = build_api_service();
-            if let Some(arr) = services.as_array() {
-                if !arr.is_empty() {
-                    config["services"] = services;
-                }
+            if let Some(arr) = services.as_array()
+                && !arr.is_empty()
+            {
+                config["services"] = services;
             }
             // The 1.14 api service's connection tracking and Clash mode methods
             // require the Clash API to be configured alongside it.
@@ -307,10 +307,10 @@ fn vless_clients_to_users(settings: &Value) -> Value {
                     "uuid": c.get("id").and_then(|v| v.as_str()).unwrap_or(""),
                     "name": c.get("email").and_then(|v| v.as_str()).unwrap_or(""),
                 });
-                if let Some(flow) = c.get("flow").and_then(|v| v.as_str()) {
-                    if !flow.is_empty() {
-                        user["flow"] = json!(flow);
-                    }
+                if let Some(flow) = c.get("flow").and_then(|v| v.as_str())
+                    && !flow.is_empty()
+                {
+                    user["flow"] = json!(flow);
                 }
                 user
             })
@@ -479,10 +479,10 @@ fn build_anytls_inbound(settings: &Value, tls: Option<&Value>) -> PanelResult<Va
         "tls": build_singbox_server_tls(tls)?,
     });
 
-    if let Some(masquerade) = settings.get("masquerade").and_then(|v| v.as_str()) {
-        if !masquerade.is_empty() {
-            inbound["masquerade"] = json!(masquerade);
-        }
+    if let Some(masquerade) = settings.get("masquerade").and_then(|v| v.as_str())
+        && !masquerade.is_empty()
+    {
+        inbound["masquerade"] = json!(masquerade);
     }
 
     Ok(inbound)

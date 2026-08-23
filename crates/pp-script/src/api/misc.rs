@@ -27,15 +27,15 @@ pub(crate) fn install<'js>(
     let done_fn = move |ctx: Ctx<'js>, value: Value<'js>| -> rquickjs::Result<()> {
         // QX 语义：$done 可接收对象或 JSON 字符串；字符串先尝试解析为 JSON 对象。
         let mut json = crate::api::js_to_json(&ctx, value)?;
-        if let serde_json::Value::String(s) = &json {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
-                json = parsed;
-            }
+        if let serde_json::Value::String(s) = &json
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s)
+        {
+            json = parsed;
         }
-        if let Ok(mut tx) = done_tx.lock() {
-            if let Some(tx) = tx.take() {
-                let _ = tx.send(ScriptOutput(json));
-            }
+        if let Ok(mut tx) = done_tx.lock()
+            && let Some(tx) = tx.take()
+        {
+            let _ = tx.send(ScriptOutput(json));
         }
         Ok(())
     };

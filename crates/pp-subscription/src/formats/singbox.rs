@@ -54,12 +54,12 @@ pub fn generate(nodes: &[ProxyNode], base_config: Option<&str>) -> PanelResult<S
     let node_names: Vec<String> = supported.iter().map(|n| n.name.clone()).collect();
 
     // (a) Template path — placeholders present
-    if let Some(base) = base_config {
-        if base.contains("<OUTBOUND_REPLACE>") || base.contains("<NODE_REPLACE>") {
-            let rendered = render_template(base.to_string(), &node_outbounds, &node_names)?;
-            validate(&rendered)?;
-            return Ok(serde_json::to_string_pretty(&rendered)?);
-        }
+    if let Some(base) = base_config
+        && (base.contains("<OUTBOUND_REPLACE>") || base.contains("<NODE_REPLACE>"))
+    {
+        let rendered = render_template(base.to_string(), &node_outbounds, &node_names)?;
+        validate(&rendered)?;
+        return Ok(serde_json::to_string_pretty(&rendered)?);
     }
 
     // (b) Merge path — plain JSON base without placeholders
@@ -277,16 +277,14 @@ fn build_hysteria2_outbound(node: &ProxyNode) -> Result<Value, PanelError> {
     if let Some(down) = node.settings.get("down_mbps").and_then(|v| v.as_u64()) {
         outbound["down_mbps"] = serde_json::json!(down);
     }
-    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
-        if obfs_type != "none" {
-            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
-            {
-                outbound["obfs"] = serde_json::json!({
-                    "type": obfs_type,
-                    "password": obfs_password,
-                });
-            }
-        }
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str())
+        && obfs_type != "none"
+        && let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
+    {
+        outbound["obfs"] = serde_json::json!({
+            "type": obfs_type,
+            "password": obfs_password,
+        });
     }
 
     Ok(outbound)

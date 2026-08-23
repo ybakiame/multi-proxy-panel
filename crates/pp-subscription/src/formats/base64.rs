@@ -229,16 +229,15 @@ fn generate_hysteria2_link(node: &ProxyNode) -> PanelResult<String> {
     if let Some(down) = node.settings.get("down_mbps").and_then(|v| v.as_u64()) {
         params.push(format!("downmbps={}", down));
     }
-    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str()) {
-        if obfs_type != "none" {
-            params.push(format!("obfs={}", obfs_type));
-            if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str())
-            {
-                params.push(format!(
-                    "obfs-password={}",
-                    urlencoding::encode(obfs_password)
-                ));
-            }
+    if let Some(obfs_type) = node.settings.get("obfs_type").and_then(|v| v.as_str())
+        && obfs_type != "none"
+    {
+        params.push(format!("obfs={}", obfs_type));
+        if let Some(obfs_password) = node.settings.get("obfs_password").and_then(|v| v.as_str()) {
+            params.push(format!(
+                "obfs-password={}",
+                urlencoding::encode(obfs_password)
+            ));
         }
     }
     let alpn = tls_alpn(node).unwrap_or_else(|| "h3".to_string());

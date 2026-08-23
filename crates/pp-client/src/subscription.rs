@@ -515,14 +515,14 @@ pub fn parse_subscription_body(
     }
 
     // ① base64 分享链接列表。
-    if let Some(decoded) = crate::share_link::b64_decode(trimmed) {
-        if decoded.contains("://") {
-            return Ok(share_links_result(
-                parse_share_links(&decoded),
-                info,
-                SubFormat::ShareLinks,
-            ));
-        }
+    if let Some(decoded) = crate::share_link::b64_decode(trimmed)
+        && decoded.contains("://")
+    {
+        return Ok(share_links_result(
+            parse_share_links(&decoded),
+            info,
+            SubFormat::ShareLinks,
+        ));
     }
 
     // ② clash YAML。
@@ -550,33 +550,30 @@ pub fn parse_subscription_body(
     }
 
     // ③ sing-box JSON。
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-            if parsed.get("outbounds").and_then(Value::as_array).is_some() {
-                let outbounds = extract_nodes_singbox(&parsed);
-                let mut mihomo_nodes = Vec::with_capacity(outbounds.len());
-                let mut warnings = Vec::new();
-                for o in &outbounds {
-                    match singbox_to_mihomo(o) {
-                        Some(p) => mihomo_nodes.push(p),
-                        None => {
-                            if let Some(t) = o.get("tag").and_then(Value::as_str) {
-                                warnings.push(format!(
-                                    "unsupported sing-box outbound type skipped: {t}"
-                                ));
-                            }
-                        }
+    if (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && let Ok(parsed) = serde_json::from_str::<Value>(trimmed)
+        && parsed.get("outbounds").and_then(Value::as_array).is_some()
+    {
+        let outbounds = extract_nodes_singbox(&parsed);
+        let mut mihomo_nodes = Vec::with_capacity(outbounds.len());
+        let mut warnings = Vec::new();
+        for o in &outbounds {
+            match singbox_to_mihomo(o) {
+                Some(p) => mihomo_nodes.push(p),
+                None => {
+                    if let Some(t) = o.get("tag").and_then(Value::as_str) {
+                        warnings.push(format!("unsupported sing-box outbound type skipped: {t}"));
                     }
                 }
-                return Ok(FetchResult {
-                    format: SubFormat::SingBoxJson,
-                    singbox_nodes: outbounds,
-                    mihomo_nodes,
-                    userinfo: info,
-                    warnings,
-                });
             }
         }
+        return Ok(FetchResult {
+            format: SubFormat::SingBoxJson,
+            singbox_nodes: outbounds,
+            mihomo_nodes,
+            userinfo: info,
+            warnings,
+        });
     }
 
     // ④ 明文分享链接。

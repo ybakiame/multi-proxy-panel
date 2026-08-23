@@ -457,7 +457,7 @@ fn fallback_name(name: &str, server: &str, port: u16) -> String {
 pub(crate) fn b64_decode(s: &str) -> Option<String> {
     let s = s.trim();
     let mut padded = s.to_string();
-    while padded.len() % 4 != 0 {
+    while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
     let bytes = base64::engine::general_purpose::STANDARD
@@ -472,12 +472,13 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(h), Some(l)) = (hex_val(b[i + 1]), hex_val(b[i + 2])) {
-                out.push(h * 16 + l);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (hex_val(b[i + 1]), hex_val(b[i + 2]))
+        {
+            out.push(h * 16 + l);
+            i += 3;
+            continue;
         }
         out.push(b[i]);
         i += 1;

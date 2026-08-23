@@ -294,10 +294,10 @@ pub async fn list_relay_rules(
 ) -> PaginatedResult<Value> {
     let mut query = relay_rule::Entity::find();
 
-    if let Some(node_id) = params.get("node_id") {
-        if let Ok(id) = Uuid::parse_str(node_id) {
-            query = query.filter(relay_rule::Column::NodeId.eq(id));
-        }
+    if let Some(node_id) = params.get("node_id")
+        && let Ok(id) = Uuid::parse_str(node_id)
+    {
+        query = query.filter(relay_rule::Column::NodeId.eq(id));
     }
 
     let (rules, total) =
@@ -559,10 +559,10 @@ pub async fn update_relay_rule(
         .await
         .map_err(ApiError::from)?
         .map(|b| b.node_id);
-    if let Some(nid) = old_exit_node_id {
-        if nid != rule.node_id {
-            affected_nodes.push(nid);
-        }
+    if let Some(nid) = old_exit_node_id
+        && nid != rule.node_id
+    {
+        affected_nodes.push(nid);
     }
 
     let new_exit_node_id = node_binding::Entity::find_by_id(updated.exit_binding_id)
@@ -570,10 +570,11 @@ pub async fn update_relay_rule(
         .await
         .map_err(ApiError::from)?
         .map(|b| b.node_id);
-    if let Some(nid) = new_exit_node_id {
-        if nid != rule.node_id && !affected_nodes.contains(&nid) {
-            affected_nodes.push(nid);
-        }
+    if let Some(nid) = new_exit_node_id
+        && nid != rule.node_id
+        && !affected_nodes.contains(&nid)
+    {
+        affected_nodes.push(nid);
     }
 
     for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {
@@ -626,10 +627,10 @@ pub async fn delete_relay_rule(
 
     // Mark affected nodes as pending update
     let mut affected_nodes = vec![rule.node_id];
-    if let Some(nid) = exit_node_id {
-        if nid != rule.node_id {
-            affected_nodes.push(nid);
-        }
+    if let Some(nid) = exit_node_id
+        && nid != rule.node_id
+    {
+        affected_nodes.push(nid);
     }
 
     for core_type in [pp_common::CoreType::SingBox, pp_common::CoreType::Mihomo] {

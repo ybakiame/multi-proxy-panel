@@ -62,15 +62,14 @@ pub fn first_short_id(settings: &Value) -> Option<String> {
 /// Get the effective client UUID for VLESS/VMess/TUIC.
 /// Prefers the injected `clients` array over top-level placeholder `id`/`uuid`.
 pub fn client_uuid(settings: &Value) -> Option<String> {
-    if let Some(arr) = settings.get("clients").and_then(|v| v.as_array()) {
-        if let Some(uuid) = arr
+    if let Some(arr) = settings.get("clients").and_then(|v| v.as_array())
+        && let Some(uuid) = arr
             .first()
             .and_then(|c| c.get("id").or_else(|| c.get("uuid")))
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-        {
-            return Some(uuid.to_string());
-        }
+    {
+        return Some(uuid.to_string());
     }
 
     settings
@@ -84,15 +83,14 @@ pub fn client_uuid(settings: &Value) -> Option<String> {
 /// Get the effective client password for hysteria2/trojan/anytls/shadowsocks.
 /// Prefers the injected `clients` array over top-level placeholder `password`.
 pub fn client_password(settings: &Value) -> Option<String> {
-    if let Some(arr) = settings.get("clients").and_then(|v| v.as_array()) {
-        if let Some(password) = arr
+    if let Some(arr) = settings.get("clients").and_then(|v| v.as_array())
+        && let Some(password) = arr
             .first()
             .and_then(|c| c.get("password"))
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-        {
-            return Some(password.to_string());
-        }
+    {
+        return Some(password.to_string());
     }
 
     settings
