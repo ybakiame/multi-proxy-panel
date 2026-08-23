@@ -1,6 +1,8 @@
-use chrono::{Datelike, Duration};
+use chrono::{Datelike, Duration, Timelike};
 use pp_common::PanelError;
-use pp_db::entities::{client, client_online_session, node_binding, protocol_config, system_log};
+use pp_db::entities::{
+    agent_log, client, client_online_session, node_binding, protocol_config, system_log,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
@@ -57,7 +59,9 @@ pub async fn run_periodic_checks(state: &Arc<AppState>) -> Result<(), PanelError
     Ok(())
 }
 
-/// Cleanup old system logs and stale online sessions.
+/// Cleanup old system logs, stale online sessions, and agent logs.
+/// Agent log cleanup runs hourly (aligned to the first 5-minute tick of each hour)
+/// to avoid frequent delete churn.
 async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> {
     // Delete system logs older than 30 days
     let cutoff_logs = chrono::Utc::now() - Duration::days(30);
@@ -83,6 +87,22 @@ async fn cleanup_old_records(db: &DatabaseConnection) -> Result<(), PanelError> 
             "cleaned up {} stale online sessions",
             deleted_sessions.rows_affected
         );
+    }
+
+    // Delete agent logs older than 7 days, once per hour
+    let now = chrono::Utc::now();
+    if now.minute() < 5 {
+        let cutoff_agent_logs = now - Duration::days(7);
+        let deleted_agent_logs = agent_log::Entity::delete_many()
+            .filter(agent_log::Column::CreatedAt.lt(cutoff_agent_logs))
+            .exec(db)
+            .await?;
+        if deleted_agent_logs.rows_affected > 0 {
+            tracing::info!(
+                "cleaned up {} old agent log records",
+                deleted_agent_logs.rows_affected
+            );
+        }
     }
 
     Ok(())
