@@ -17,8 +17,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Setup Rust toolchain
-        # toolchain/components come from rust-toolchain.toml
+        # channel 与 rust-toolchain.toml 保持一致（stable + rustfmt + clippy）
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
