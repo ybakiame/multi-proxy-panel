@@ -3305,7 +3305,7 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "pp-agent"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3331,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "pp-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3353,7 +3353,7 @@ dependencies = [
 
 [[package]]
 name = "pp-client"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "axum",
@@ -3380,7 +3380,7 @@ dependencies = [
 
 [[package]]
 name = "pp-common"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "argon2",
  "base64",
@@ -3402,7 +3402,7 @@ dependencies = [
 
 [[package]]
 name = "pp-config"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "jsonschema",
  "pp-common",
@@ -3416,7 +3416,7 @@ dependencies = [
 
 [[package]]
 name = "pp-core"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3442,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "pp-db"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "chrono",
  "pp-common",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "pp-hub"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "pp-mitm"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "pp-proto"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "prost",
  "prost-types",
@@ -3545,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "pp-script"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3563,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "pp-subscription"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "base64",
  "pp-common",
