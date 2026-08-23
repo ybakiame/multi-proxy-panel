@@ -1,48 +1,40 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, FormSelect, FormCheckbox, MetricsChart } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getMetrics } from "../api/metrics";
 import { getNodes } from "../api/nodes";
-import { Metric, Node } from "../api/types";
 import { formatBytes, formatDateTime } from "../utils/format";
+
+const metricsQueryKey = "metrics";
+const nodesQueryKey = "nodes";
 
 export function Metrics() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const { page, perPage, setPage, setPerPage } = usePagination(1, 20);
   const [nodeId, setNodeId] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [loading, setLoading] = useState(false);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getMetrics(nodeId || undefined);
-      setMetrics(Array.isArray(res.data) ? res.data : []);
-      setTotal(res.pagination?.total ?? res.data.length ?? 0);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: metricsData,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: [metricsQueryKey, { nodeId }],
+    queryFn: () => getMetrics(nodeId || undefined),
+    refetchInterval: autoRefresh ? 30000 : false,
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [nodeId, page, perPage]);
+  const metrics = metricsData?.data ?? [];
+  const total = metricsData?.pagination?.total ?? metrics.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(fetch, 30000);
-    return () => clearInterval(id);
-  }, [autoRefresh, nodeId]);
-
-  useEffect(() => {
-    getNodes()
-      .then(setNodes)
-      .catch(() => {});
-  }, []);
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
 
   const display = metrics.slice((page - 1) * perPage, page * perPage);
 
@@ -68,7 +60,7 @@ export function Metrics() {
         <FormCheckbox isSelected={autoRefresh} onChange={setAutoRefresh}>
           {t("metrics.autoRefresh")}
         </FormCheckbox>
-        <Button onPress={fetch}>{t("common.refresh")}</Button>
+        <Button onPress={() => refetch()}>{t("common.refresh")}</Button>
       </div>
       <Card>
         <Card.Header>
@@ -80,7 +72,7 @@ export function Metrics() {
       </Card>
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

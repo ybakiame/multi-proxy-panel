@@ -1,6 +1,6 @@
 import { getApiKey, clearApiKey } from "../api/config";
 import { validateApiKey } from "../api/client";
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 
 interface AuthContextType {
   apiKey: string | null;
@@ -15,10 +15,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [apiKey, setApiKey] = useState<string | null>(getApiKey);
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    setApiKey(getApiKey());
-  }, []);
 
   const login = async (key: string) => {
     setIsLoading(true);

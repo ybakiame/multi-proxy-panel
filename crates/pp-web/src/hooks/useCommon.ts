@@ -14,8 +14,6 @@ export function useDebouncedValue<T>(value: T, delay = 300): T {
 export function usePagination(initialPage = 1, initialPerPage = 20) {
   const [page, setPage] = useState(initialPage);
   const [perPage, setPerPage] = useState(initialPerPage);
-  const [total, setTotal] = useState(0);
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   const reset = useCallback(() => setPage(1), []);
 
@@ -24,9 +22,6 @@ export function usePagination(initialPage = 1, initialPerPage = 20) {
     setPage,
     perPage,
     setPerPage,
-    total,
-    setTotal,
-    totalPages,
     reset,
   };
 }

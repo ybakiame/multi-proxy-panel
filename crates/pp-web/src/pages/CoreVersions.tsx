@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import { PageHeader, ConfirmDialog, FormCheckbox } from "../components/ui";
 import {
@@ -8,46 +9,58 @@ import {
   saveCoreVersions,
   deleteCoreVersion,
   activateCoreVersion,
-  UpstreamCore,
   SaveVersionItem,
 } from "../api/coreVersions";
-import { CoreVersion } from "../api/types";
+
+const coreVersionsQueryKey = "core-versions";
+const upstreamQueryKey = "core-versions-upstream";
 
 export function CoreVersions() {
   const { t } = useTranslation();
-  const [versions, setVersions] = useState<CoreVersion[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [upstreamOpen, setUpstreamOpen] = useState(false);
-  const [upstreamLoading, setUpstreamLoading] = useState(false);
-  const [upstream, setUpstream] = useState<UpstreamCore[]>([]);
   const [selected, setSelected] = useState<Map<string, SaveVersionItem>>(new Map());
   const [saving, setSaving] = useState(false);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      setVersions(await getCoreVersions());
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: versions = [], isLoading } = useQuery({
+    queryKey: [coreVersionsQueryKey],
+    queryFn: () => getCoreVersions(),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, []);
+  const { data: upstream = [], isLoading: upstreamLoading } = useQuery({
+    queryKey: [upstreamQueryKey],
+    queryFn: getUpstreamCoreVersions,
+    enabled: upstreamOpen,
+  });
 
-  const openUpstream = async () => {
+  const saveMutation = useMutation({
+    mutationFn: saveCoreVersions,
+    onSuccess: () => {
+      setUpstreamOpen(false);
+      setSelected(new Map());
+      queryClient.invalidateQueries({ queryKey: [coreVersionsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteCoreVersion,
+    onSuccess: () => {
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: [coreVersionsQueryKey] });
+    },
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: activateCoreVersion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [coreVersionsQueryKey] });
+    },
+  });
+
+  const openUpstream = () => {
     setUpstreamOpen(true);
     setSelected(new Map());
-    setUpstreamLoading(true);
-    try {
-      setUpstream(await getUpstreamCoreVersions());
-    } catch {
-      // error handled by axios interceptor
-    } finally {
-      setUpstreamLoading(false);
-    }
   };
 
   const toggleVersion = (item: SaveVersionItem, checked: boolean) => {
@@ -58,37 +71,20 @@ export function CoreVersions() {
     setSelected(next);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
-    try {
-      await saveCoreVersions(Array.from(selected.values()));
-      setUpstreamOpen(false);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(Array.from(selected.values()), {
+      onSettled: () => setSaving(false),
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteCoreVersion(deleteId);
-      setDeleteId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteId);
   };
 
-  const handleActivate = async (id: string) => {
-    try {
-      await activateCoreVersion(id);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleActivate = (id: string) => {
+    activateMutation.mutate(id);
   };
 
   const channelBadge = (channel: string) => (
@@ -115,7 +111,7 @@ export function CoreVersions() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

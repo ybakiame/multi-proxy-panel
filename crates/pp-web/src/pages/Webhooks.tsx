@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -11,13 +12,13 @@ import {
 } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getWebhooks, createWebhook, deleteWebhook } from "../api/webhooks";
-import { Webhook } from "../api/types";
+
+const webhooksQueryKey = "webhooks";
 
 export function Webhooks() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -28,20 +29,31 @@ export function Webhooks() {
     is_active: true,
   });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getWebhooks(page, perPage);
-      setWebhooks(res.data);
-      setTotal(res.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, isLoading } = useQuery({
+    queryKey: [webhooksQueryKey, { page, perPage }],
+    queryFn: () => getWebhooks(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const webhooks = data?.data ?? [];
+  const total = data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const createMutation = useMutation({
+    mutationFn: createWebhook,
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [webhooksQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteWebhook,
+    onSuccess: () => {
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: [webhooksQueryKey] });
+    },
+  });
 
   const resetForm = () => {
     setForm({
@@ -53,36 +65,25 @@ export function Webhooks() {
     });
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
+    let events: string[] = [];
     try {
-      let events: string[] = [];
-      try {
-        events = JSON.parse(form.events);
-      } catch {}
-      await createWebhook({
-        name: form.name,
-        url: form.url,
-        events,
-        secret: form.secret || undefined,
-        is_active: form.is_active,
-      });
-      setCreateOpen(false);
-      resetForm();
-      fetch();
+      events = JSON.parse(form.events);
     } catch {
-      // error handled by axios interceptor
+      // ignore parse error
     }
+    createMutation.mutate({
+      name: form.name,
+      url: form.url,
+      events,
+      secret: form.secret || undefined,
+      is_active: form.is_active,
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteWebhook(deleteId);
-      setDeleteId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteId);
   };
 
   return (
@@ -100,7 +101,7 @@ export function Webhooks() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

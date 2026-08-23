@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -17,11 +18,12 @@ interface ApiKeyWithToken extends ApiKey {
   token?: string;
 }
 
+const apiKeysQueryKey = "api-keys";
+
 export function ApiKeys() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -32,64 +34,62 @@ export function ApiKeys() {
     rate_limit: "",
   });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getApiKeys(page, perPage);
-      setApiKeys(res.data);
-      setTotal(res.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: apiKeysData, isLoading: loading } = useQuery({
+    queryKey: [apiKeysQueryKey, { page, perPage }],
+    queryFn: () => getApiKeys(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const apiKeys = apiKeysData?.data ?? [];
+  const total = apiKeysData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const createMutation = useMutation({
+    mutationFn: createApiKey,
+    onSuccess: (res) => {
+      const keyWithToken = res as ApiKeyWithToken;
+      setNewToken(keyWithToken.token || null);
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [apiKeysQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteApiKey,
+    onSuccess: () => {
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: [apiKeysQueryKey] });
+    },
+  });
 
   const resetForm = () => {
     setForm({ name: "", scopes: '["*"]', ip_allowlist: "[]", rate_limit: "" });
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
+    let scopes: string[] = ["*"];
+    let ipAllowlist: string[] = [];
+    let rateLimit: number | undefined;
     try {
-      let scopes: string[] = ["*"];
-      let ipAllowlist: string[] = [];
-      let rateLimit: number | undefined;
-      try {
-        scopes = JSON.parse(form.scopes);
-      } catch {}
-      try {
-        ipAllowlist = JSON.parse(form.ip_allowlist);
-      } catch {}
-      if (form.rate_limit) {
-        rateLimit = Number(form.rate_limit);
-      }
-      const res = await createApiKey({
-        name: form.name,
-        scopes,
-        ip_allowlist: ipAllowlist,
-        rate_limit: rateLimit,
-      });
-      const keyWithToken = res as ApiKeyWithToken;
-      setNewToken(keyWithToken.token || null);
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
+      scopes = JSON.parse(form.scopes);
+    } catch {}
+    try {
+      ipAllowlist = JSON.parse(form.ip_allowlist);
+    } catch {}
+    if (form.rate_limit) {
+      rateLimit = Number(form.rate_limit);
     }
+    createMutation.mutate({
+      name: form.name,
+      scopes,
+      ip_allowlist: ipAllowlist,
+      rate_limit: rateLimit,
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteApiKey(deleteId);
-      setDeleteId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteId);
   };
 
   return (

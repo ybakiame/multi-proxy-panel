@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -14,7 +15,12 @@ import { getGroupsPaginated, createGroup, updateGroup, deleteGroup } from "../ap
 import { getBindings } from "../api/bindings";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
-import { Group, Binding, Node, ProtocolConfig } from "../api/types";
+import { Group, Binding } from "../api/types";
+
+const groupsQueryKey = "groups";
+const bindingsQueryKey = "bindings";
+const nodesQueryKey = "nodes";
+const protocolsQueryKey = "protocols";
 
 interface GroupForm {
   name: string;
@@ -25,12 +31,8 @@ interface GroupForm {
 
 export function Groups() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [bindings, setBindings] = useState<Binding[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [configs, setConfigs] = useState<ProtocolConfig[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editGroup, setEditGroup] = useState<Group | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
@@ -41,36 +43,67 @@ export function Groups() {
     selectedBindings: new Set<string>(),
   });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [groupsRes, bindingsRes, nodesRes, configsRes] = await Promise.allSettled([
-        getGroupsPaginated(page, perPage),
-        getBindings(),
-        getNodes(),
-        getAllProtocols(),
-      ]);
-      if (groupsRes.status === "fulfilled") {
-        setGroups(groupsRes.value.data);
-        setTotal(groupsRes.value.pagination.total);
-      }
-      if (bindingsRes.status === "fulfilled") {
-        setBindings(bindingsRes.value);
-      }
-      if (nodesRes.status === "fulfilled") {
-        setNodes(nodesRes.value);
-      }
-      if (configsRes.status === "fulfilled") {
-        setConfigs(configsRes.value);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: groupsData, isLoading } = useQuery({
+    queryKey: [groupsQueryKey, { page, perPage }],
+    queryFn: () => getGroupsPaginated(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const groups = groupsData?.data ?? [];
+  const total = groupsData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const { data: bindings = [] } = useQuery({
+    queryKey: [bindingsQueryKey],
+    queryFn: getBindings,
+  });
+
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
+
+  const { data: configs = [] } = useQuery({
+    queryKey: [protocolsQueryKey],
+    queryFn: getAllProtocols,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      name: string;
+      description?: string;
+      labels?: Record<string, string>;
+      binding_ids?: string[];
+    }) => createGroup(payload),
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [groupsQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      data: {
+        name: string;
+        description?: string;
+        labels?: Record<string, string>;
+        binding_ids?: string[];
+      };
+    }) => updateGroup(payload.id, payload.data),
+    onSuccess: () => {
+      setEditGroup(null);
+      queryClient.invalidateQueries({ queryKey: [groupsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteGroup,
+    onSuccess: () => {
+      setDeleteGroupId(null);
+      queryClient.invalidateQueries({ queryKey: [groupsQueryKey] });
+    },
+  });
 
   const resetForm = (group?: Group) => {
     if (group) {
@@ -98,47 +131,31 @@ export function Groups() {
     }
   };
 
-  const handleCreate = async () => {
-    try {
-      await createGroup({
-        name: form.name,
-        description: form.description || undefined,
-        labels: parseLabels(),
-        binding_ids: Array.from(form.selectedBindings),
-      });
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleCreate = () => {
+    createMutation.mutate({
+      name: form.name,
+      description: form.description || undefined,
+      labels: parseLabels(),
+      binding_ids: Array.from(form.selectedBindings),
+    });
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editGroup) return;
-    try {
-      await updateGroup(editGroup.id, {
+    updateMutation.mutate({
+      id: editGroup.id,
+      data: {
         name: form.name,
         description: form.description || undefined,
         labels: parseLabels(),
         binding_ids: Array.from(form.selectedBindings),
-      });
-      setEditGroup(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+      },
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteGroupId) return;
-    try {
-      await deleteGroup(deleteGroupId);
-      setDeleteGroupId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteGroupId);
   };
 
   const openEdit = (group: Group) => {
@@ -176,7 +193,7 @@ export function Groups() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

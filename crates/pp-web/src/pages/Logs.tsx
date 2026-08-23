@@ -1,46 +1,36 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, SearchInput, FormSelect } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getLogs } from "../api/logs";
-import { Log } from "../api/types";
 import { formatDateTime } from "../utils/format";
 
 const LEVELS = ["all", "info", "warn", "error", "debug"];
+const logsQueryKey = "logs";
 
 export function Logs() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages, reset } = usePagination(
-    1,
-    20,
-  );
-  const [logs, setLogs] = useState<Log[]>([]);
+  const { page, perPage, setPage, setPerPage } = usePagination(1, 20);
   const [level, setLevel] = useState("all");
   const [source, setSource] = useState("");
   const [appliedLevel, setAppliedLevel] = useState("all");
   const [appliedSource, setAppliedSource] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getLogs(page, perPage, appliedLevel, appliedSource);
-      setLogs(res.data);
-      setTotal(res.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, isLoading } = useQuery({
+    queryKey: [logsQueryKey, { page, perPage, level: appliedLevel, source: appliedSource }],
+    queryFn: () => getLogs(page, perPage, appliedLevel, appliedSource),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage, appliedLevel, appliedSource]);
+  const logs = data?.data ?? [];
+  const total = data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   const handleFilter = () => {
     setAppliedLevel(level);
     setAppliedSource(source);
-    reset();
+    setPage(1);
   };
 
   return (
@@ -59,7 +49,7 @@ export function Logs() {
       </div>
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

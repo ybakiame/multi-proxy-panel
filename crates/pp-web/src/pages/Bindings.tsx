@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -15,7 +16,12 @@ import { getBindingsPaginated, createBinding, updateBinding, deleteBinding } fro
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
 import { getCertificates } from "../api/certificates";
-import { Binding, Node, ProtocolConfig, ManagedCertificate } from "../api/types";
+import { Binding, ManagedCertificate } from "../api/types";
+
+const bindingsQueryKey = "bindings";
+const nodesQueryKey = "nodes";
+const protocolsQueryKey = "protocols";
+const certificatesQueryKey = "certificates";
 
 interface BindingForm {
   node_id: string;
@@ -79,20 +85,73 @@ const tlsFieldsFromOverride = (
 
 export function Bindings() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [bindings, setBindings] = useState<Binding[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
-  const [certificates, setCertificates] = useState<ManagedCertificate[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editBinding, setEditBinding] = useState<Binding | null>(null);
   const [deleteBindingId, setDeleteBindingId] = useState<string | null>(null);
   const [form, setForm] = useState<BindingForm>(defaultForm);
 
+  const { data: bindingsData, isLoading } = useQuery({
+    queryKey: [bindingsQueryKey, { page, perPage }],
+    queryFn: () => getBindingsPaginated(page, perPage),
+  });
+
+  const bindings = bindingsData?.data ?? [];
+  const total = bindingsData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
+
+  const { data: protocols = [] } = useQuery({
+    queryKey: [protocolsQueryKey],
+    queryFn: getAllProtocols,
+  });
+
+  const { data: certificates = [] } = useQuery<ManagedCertificate[]>({
+    queryKey: [certificatesQueryKey],
+    queryFn: () => getCertificates(),
+  });
+
   const selectedProtocol = protocols.find((p) => p.id === form.protocol_config_id);
   const showTlsOverride = !!selectedProtocol && selectedProtocol.protocol_type !== "vless_reality";
   const isSingBox = selectedProtocol?.core_type === "sing-box";
+
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      node_id: string;
+      protocol_config_id: string;
+      is_active?: boolean;
+      override_settings?: Record<string, unknown>;
+    }) => createBinding(payload),
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [bindingsQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      data: { is_active?: boolean; override_settings?: Record<string, unknown> };
+    }) => updateBinding(payload.id, payload.data),
+    onSuccess: () => {
+      setEditBinding(null);
+      queryClient.invalidateQueries({ queryKey: [bindingsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteBinding,
+    onSuccess: () => {
+      setDeleteBindingId(null);
+      queryClient.invalidateQueries({ queryKey: [bindingsQueryKey] });
+    },
+  });
 
   const buildOverrideWithTls = (current: BindingForm): Record<string, unknown> => {
     const override = parseOverrideJson(current.override_settings);
@@ -133,72 +192,28 @@ export function Bindings() {
     setForm((prev) => ({ ...prev, override_settings: value, ...tlsFields }));
   };
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [bindingsRes, nodesRes, protocolsRes, certsRes] = await Promise.allSettled([
-        getBindingsPaginated(page, perPage),
-        getNodes(),
-        getAllProtocols(),
-        getCertificates(),
-      ]);
-      if (bindingsRes.status === "fulfilled") {
-        setBindings(bindingsRes.value.data);
-        setTotal(bindingsRes.value.pagination.total);
-      }
-      if (nodesRes.status === "fulfilled") {
-        setNodes(nodesRes.value);
-      }
-      if (protocolsRes.status === "fulfilled") {
-        setProtocols(protocolsRes.value);
-      }
-      if (certsRes.status === "fulfilled") {
-        setCertificates(certsRes.value);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
-
   const resetForm = () => {
     setForm(defaultForm);
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
+    let overrideSettings: Record<string, unknown> | undefined;
     try {
-      let overrideSettings: Record<string, unknown> | undefined;
-      try {
-        overrideSettings = JSON.parse(form.override_settings);
-      } catch {
-        overrideSettings = undefined;
-      }
-      await createBinding({
-        node_id: form.node_id,
-        protocol_config_id: form.protocol_config_id,
-        is_active: form.is_active,
-        override_settings: overrideSettings,
-      });
-      setCreateOpen(false);
-      resetForm();
-      fetch();
+      overrideSettings = JSON.parse(form.override_settings);
     } catch {
-      // error handled by axios interceptor
+      overrideSettings = undefined;
     }
+    createMutation.mutate({
+      node_id: form.node_id,
+      protocol_config_id: form.protocol_config_id,
+      is_active: form.is_active,
+      override_settings: overrideSettings,
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteBindingId) return;
-    try {
-      await deleteBinding(deleteBindingId);
-      setDeleteBindingId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteBindingId);
   };
 
   const openEdit = (binding: Binding) => {
@@ -215,24 +230,21 @@ export function Bindings() {
     setEditBinding(binding);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editBinding) return;
+    let overrideSettings: Record<string, unknown> | undefined;
     try {
-      let overrideSettings: Record<string, unknown> | undefined;
-      try {
-        overrideSettings = JSON.parse(form.override_settings);
-      } catch {
-        overrideSettings = undefined;
-      }
-      await updateBinding(editBinding.id, {
+      overrideSettings = JSON.parse(form.override_settings);
+    } catch {
+      overrideSettings = undefined;
+    }
+    updateMutation.mutate({
+      id: editBinding.id,
+      data: {
         is_active: form.is_active,
         override_settings: overrideSettings,
-      });
-      setEditBinding(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+      },
+    });
   };
 
   const getNodeName = (nodeId: string) => {
@@ -320,7 +332,7 @@ export function Bindings() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

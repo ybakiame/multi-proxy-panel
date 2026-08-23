@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -23,17 +24,18 @@ import {
   getPendingUpdates,
   pushPendingUpdates,
   getInstallCommand,
-  PendingUpdate,
   CoreBinary,
   InstallCommand,
 } from "../api/nodes";
 import { Node, AgentLog } from "../api/types";
 
+const nodesQueryKey = "nodes";
+const pendingQueryKey = "pending-updates";
+
 export function Nodes() {
   const { t } = useTranslation();
-  const { page, perPage, setTotal } = usePagination();
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editNode, setEditNode] = useState<Node | null>(null);
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
@@ -48,7 +50,6 @@ export function Nodes() {
   const [binaries, setBinaries] = useState<CoreBinary[]>([]);
   const [binLoading, setBinLoading] = useState(false);
   const [deleteBinary, setDeleteBinary] = useState<string | null>(null);
-  const [pending, setPending] = useState<PendingUpdate[]>([]);
   const [pushResult, setPushResult] = useState<string | null>(null);
   const [pushPushing, setPushPushing] = useState(false);
   const [installCmd, setInstallCmd] = useState<InstallCommand | null>(null);
@@ -62,42 +63,90 @@ export function Nodes() {
     parent_id: "",
   });
 
-  const fetchPending = async () => {
-    try {
-      setPending(await getPendingUpdates());
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
+  const { data: nodesData, isLoading } = useQuery({
+    queryKey: [nodesQueryKey, { page, perPage }],
+    queryFn: () => getNodesPaginated(page, perPage),
+  });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [nodesRes] = await Promise.all([getNodesPaginated(page, perPage), fetchPending()]);
-      setNodes(nodesRes.data);
-      setTotal(nodesRes.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const nodes = nodesData?.data ?? [];
+  const _totalPages = nodesData?.pagination.total_pages ?? 1;
 
-  const handlePushAll = async () => {
-    setPushPushing(true);
-    setPushResult(null);
-    try {
-      const r = await pushPendingUpdates({});
+  const { data: pending = [] } = useQuery({
+    queryKey: [pendingQueryKey],
+    queryFn: getPendingUpdates,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: createNode,
+    onSuccess: (res) => {
+      setNewToken(res.token || null);
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [nodesQueryKey] });
+      queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
+      if (res.id) {
+        setInstallLoading(true);
+        getInstallCommand(res.id)
+          .then((cmd) => setInstallCmd(cmd))
+          .catch(() => {
+            // error handled by axios interceptor
+          })
+          .finally(() => setInstallLoading(false));
+      }
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Parameters<typeof updateNode>[1] }) =>
+      updateNode(payload.id, payload.data),
+    onSuccess: () => {
+      setEditNode(null);
+      queryClient.invalidateQueries({ queryKey: [nodesQueryKey] });
+      queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteNode,
+    onSuccess: () => {
+      setDeleteNodeId(null);
+      queryClient.invalidateQueries({ queryKey: [nodesQueryKey] });
+      queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
+    },
+  });
+
+  const pushMutation = useMutation({
+    mutationFn: (payload: { id: string; config: Record<string, unknown> }) =>
+      pushConfig(payload.id, payload.config),
+    onSuccess: () => {
+      setPushNode(null);
+      queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
+    },
+  });
+
+  const pushAllMutation = useMutation({
+    mutationFn: pushPendingUpdates,
+    onSuccess: (r) => {
       setPushResult(t("nodes.pushResult", { ok: r.succeeded, fail: r.failed }));
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    } finally {
-      setPushPushing(false);
-    }
-  };
+      queryClient.invalidateQueries({ queryKey: [nodesQueryKey] });
+      queryClient.invalidateQueries({ queryKey: [pendingQueryKey] });
+    },
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const deleteBinaryMutation = useMutation({
+    mutationFn: (payload: { nodeId: string; fileName: string }) =>
+      deleteCoreBinary(payload.nodeId, payload.fileName),
+    onSuccess: (_, payload) => {
+      setDeleteBinary(null);
+      queryClient.invalidateQueries({ queryKey: [nodesQueryKey, payload.nodeId, "binaries"] });
+      // Refresh local binaries list for the open modal
+      getCoreBinaries(payload.nodeId)
+        .then((res) => setBinaries(res))
+        .catch(() => {
+          // error handled by axios interceptor
+        });
+    },
+  });
 
   const resetForm = (node?: Node) => {
     if (node) {
@@ -121,71 +170,47 @@ export function Nodes() {
     }
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
+    let labels: Record<string, string> = {};
     try {
-      let labels: Record<string, string> = {};
-      try {
-        labels = JSON.parse(form.labels);
-      } catch {}
-      const res = await createNode({
-        name: form.name,
-        hostname: form.hostname,
-        address: form.address,
-        usage_coefficient: form.usage_coefficient,
-        labels,
-        parent_id: form.parent_id || undefined,
-      });
-      setNewToken(res.token || null);
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-      if (res.id) {
-        setInstallLoading(true);
-        try {
-          const cmd = await getInstallCommand(res.id);
-          setInstallCmd(cmd);
-        } catch {
-          // error handled by axios interceptor
-        } finally {
-          setInstallLoading(false);
-        }
-      }
+      labels = JSON.parse(form.labels);
     } catch {
-      // error handled by axios interceptor
+      // ignore parse error
     }
+    createMutation.mutate({
+      name: form.name,
+      hostname: form.hostname,
+      address: form.address,
+      usage_coefficient: form.usage_coefficient,
+      labels,
+      parent_id: form.parent_id || undefined,
+    });
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editNode) return;
+    let labels: Record<string, string> = {};
     try {
-      let labels: Record<string, string> = {};
-      try {
-        labels = JSON.parse(form.labels);
-      } catch {}
-      await updateNode(editNode.id, {
+      labels = JSON.parse(form.labels);
+    } catch {
+      // ignore parse error
+    }
+    updateMutation.mutate({
+      id: editNode.id,
+      data: {
         name: form.name,
         hostname: form.hostname,
         address: form.address,
         usage_coefficient: form.usage_coefficient,
         labels,
         parent_id: form.parent_id || undefined,
-      });
-      setEditNode(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+      },
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteNodeId) return;
-    try {
-      await deleteNode(deleteNodeId);
-      setDeleteNodeId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteNodeId);
   };
 
   const openPush = (node: Node) => {
@@ -194,21 +219,15 @@ export function Nodes() {
     setPushNode(node);
   };
 
-  const handlePush = async () => {
+  const handlePush = () => {
     if (!pushNode || !pushCore) return;
     setPushing(true);
-    try {
-      await pushConfig(pushNode.id, {
-        core_type: pushCore,
-        restart: true,
-      });
-      setPushNode(null);
-      fetchPending();
-    } catch {
-      // error handled by axios interceptor
-    } finally {
-      setPushing(false);
-    }
+    pushMutation.mutate(
+      { id: pushNode.id, config: { core_type: pushCore, restart: true } },
+      {
+        onSettled: () => setPushing(false),
+      },
+    );
   };
 
   const openBinaries = async (node: Node) => {
@@ -223,15 +242,9 @@ export function Nodes() {
     }
   };
 
-  const handleDeleteBinary = async () => {
+  const handleDeleteBinary = () => {
     if (!binNode || !deleteBinary) return;
-    try {
-      await deleteCoreBinary(binNode.id, deleteBinary);
-      setDeleteBinary(null);
-      setBinaries(await getCoreBinaries(binNode.id));
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteBinaryMutation.mutate({ nodeId: binNode.id, fileName: deleteBinary });
   };
 
   const formatSize = (bytes: number) => {
@@ -287,7 +300,20 @@ export function Nodes() {
       {pending.length > 0 && (
         <div className="flex items-center gap-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning-soft-foreground">
           <span className="flex-1">{t("nodes.pendingSummary", { count: pending.length })}</span>
-          <Button size="sm" variant="primary" onPress={handlePushAll} isDisabled={pushPushing}>
+          <Button
+            size="sm"
+            variant="primary"
+            onPress={() => {
+              setPushPushing(true);
+              pushAllMutation.mutate(
+                {},
+                {
+                  onSettled: () => setPushPushing(false),
+                },
+              );
+            }}
+            isDisabled={pushPushing}
+          >
             {pushPushing ? <Spinner size="sm" /> : t("nodes.pushAllPending")}
           </Button>
         </div>
@@ -301,7 +327,7 @@ export function Nodes() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

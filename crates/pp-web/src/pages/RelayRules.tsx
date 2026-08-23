@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -16,12 +17,10 @@ import {
   updateRelayRule,
   deleteRelayRule,
   RelayRule,
-  RuleSetLibraryEntry,
 } from "../api/relayRules";
 import { getNodes } from "../api/nodes";
 import { getBindings } from "../api/bindings";
 import { getAllProtocols } from "../api/protocols";
-import { Node, Binding, ProtocolConfig } from "../api/types";
 
 interface RelayRuleForm {
   name: string;
@@ -50,6 +49,12 @@ const defaultForm: RelayRuleForm = {
   enabled: true,
   sort_order: "0",
 };
+
+const relayRulesQueryKey = "relay-rules";
+const nodesQueryKey = "nodes";
+const bindingsQueryKey = "bindings";
+const protocolsQueryKey = "protocols";
+const libraryQueryKey = "relay-rules-library";
 
 function parseLines(text: string): string[] {
   return text
@@ -113,40 +118,62 @@ function prefillForm(rule: RelayRule): RelayRuleForm {
 
 export function RelayRules() {
   const { t } = useTranslation();
-  const [rules, setRules] = useState<RelayRule[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [bindings, setBindings] = useState<Binding[]>([]);
-  const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
-  const [library, setLibrary] = useState<RuleSetLibraryEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editRule, setEditRule] = useState<RelayRule | null>(null);
   const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null);
   const [form, setForm] = useState<RelayRuleForm>(defaultForm);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [rulesRes, nodesRes, bindingsRes, protocolsRes, libraryRes] = await Promise.allSettled([
-        getRelayRules(),
-        getNodes(),
-        getBindings(),
-        getAllProtocols(),
-        getRuleSetLibrary(),
-      ]);
-      if (rulesRes.status === "fulfilled") setRules(rulesRes.value);
-      if (nodesRes.status === "fulfilled") setNodes(nodesRes.value);
-      if (bindingsRes.status === "fulfilled") setBindings(bindingsRes.value);
-      if (protocolsRes.status === "fulfilled") setProtocols(protocolsRes.value);
-      if (libraryRes.status === "fulfilled") setLibrary(libraryRes.value);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: rules = [], isLoading: rulesLoading } = useQuery({
+    queryKey: [relayRulesQueryKey],
+    queryFn: getRelayRules,
+  });
 
-  useEffect(() => {
-    fetch();
-  }, []);
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
+
+  const { data: bindings = [] } = useQuery({
+    queryKey: [bindingsQueryKey],
+    queryFn: getBindings,
+  });
+
+  const { data: protocols = [] } = useQuery({
+    queryKey: [protocolsQueryKey],
+    queryFn: getAllProtocols,
+  });
+
+  const { data: library = [] } = useQuery({
+    queryKey: [libraryQueryKey],
+    queryFn: getRuleSetLibrary,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: createRelayRule,
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [relayRulesQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Parameters<typeof updateRelayRule>[1] }) =>
+      updateRelayRule(payload.id, payload.data),
+    onSuccess: () => {
+      setEditRule(null);
+      queryClient.invalidateQueries({ queryKey: [relayRulesQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteRelayRule,
+    onSuccess: () => {
+      setDeleteRuleId(null);
+      queryClient.invalidateQueries({ queryKey: [relayRulesQueryKey] });
+    },
+  });
 
   const resetForm = (rule?: RelayRule) => {
     if (rule) {
@@ -156,29 +183,23 @@ export function RelayRules() {
     }
   };
 
-  const handleCreate = async () => {
-    try {
-      await createRelayRule({
-        name: form.name,
-        node_id: form.node_id,
-        exit_binding_id: form.exit_binding_id,
-        match_type: form.match_type,
-        match_config: buildMatchConfig(form),
-        enabled: form.enabled,
-        sort_order: Number(form.sort_order) || 0,
-      });
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleCreate = () => {
+    createMutation.mutate({
+      name: form.name,
+      node_id: form.node_id,
+      exit_binding_id: form.exit_binding_id,
+      match_type: form.match_type,
+      match_config: buildMatchConfig(form),
+      enabled: form.enabled,
+      sort_order: Number(form.sort_order) || 0,
+    });
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editRule) return;
-    try {
-      await updateRelayRule(editRule.id, {
+    updateMutation.mutate({
+      id: editRule.id,
+      data: {
         name: form.name,
         node_id: form.node_id,
         exit_binding_id: form.exit_binding_id,
@@ -186,23 +207,13 @@ export function RelayRules() {
         match_config: buildMatchConfig(form),
         enabled: form.enabled,
         sort_order: Number(form.sort_order) || 0,
-      });
-      setEditRule(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+      },
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteRuleId) return;
-    try {
-      await deleteRelayRule(deleteRuleId);
-      setDeleteRuleId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteRuleId);
   };
 
   const openEdit = (rule: RelayRule) => {
@@ -260,6 +271,8 @@ export function RelayRules() {
       </span>
     );
   };
+
+  const loading = rulesLoading;
 
   return (
     <div className="space-y-4">

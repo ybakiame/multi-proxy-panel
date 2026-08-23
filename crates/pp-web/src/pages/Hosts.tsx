@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import { PageHeader, ConfirmDialog, Pagination, FormInput, FormCheckbox } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
@@ -19,11 +20,12 @@ interface HostForm {
   is_active: boolean;
 }
 
+const hostsQueryKey = "hosts";
+
 export function Hosts() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [hosts, setHosts] = useState<InboundHost[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editHost, setEditHost] = useState<InboundHost | null>(null);
   const [deleteHostId, setDeleteHostId] = useState<string | null>(null);
@@ -39,20 +41,40 @@ export function Hosts() {
     is_active: true,
   });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getHosts(page, perPage);
-      setHosts(res.data);
-      setTotal(res.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: hostsData, isLoading: loading } = useQuery({
+    queryKey: [hostsQueryKey, { page, perPage }],
+    queryFn: () => getHosts(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const hosts = hostsData?.data ?? [];
+  const total = hostsData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const createMutation = useMutation({
+    mutationFn: createHost,
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [hostsQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Partial<CreateHostPayload> }) =>
+      updateHost(payload.id, payload.data),
+    onSuccess: () => {
+      setEditHost(null);
+      queryClient.invalidateQueries({ queryKey: [hostsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteHost,
+    onSuccess: () => {
+      setDeleteHostId(null);
+      queryClient.invalidateQueries({ queryKey: [hostsQueryKey] });
+    },
+  });
 
   const resetForm = (host?: InboundHost) => {
     if (host) {
@@ -96,47 +118,28 @@ export function Hosts() {
     };
   };
 
-  const handleCreate = async () => {
-    try {
-      await createHost({
-        protocol_config_id: form.protocol_config_id,
-        node_id: form.node_id,
-        remark: form.remark,
-        address: form.address,
-        port: Number(form.port),
-        sni: form.sni || undefined,
-        host: form.host || undefined,
-        path: form.path || undefined,
-        is_active: form.is_active,
-      });
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleCreate = () => {
+    createMutation.mutate({
+      protocol_config_id: form.protocol_config_id,
+      node_id: form.node_id,
+      remark: form.remark,
+      address: form.address,
+      port: Number(form.port),
+      sni: form.sni || undefined,
+      host: form.host || undefined,
+      path: form.path || undefined,
+      is_active: form.is_active,
+    });
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editHost) return;
-    try {
-      await updateHost(editHost.id, buildPayload());
-      setEditHost(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    updateMutation.mutate({ id: editHost.id, data: buildPayload() });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteHostId) return;
-    try {
-      await deleteHost(deleteHostId);
-      setDeleteHostId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteHostId);
   };
 
   const openEdit = (host: InboundHost) => {

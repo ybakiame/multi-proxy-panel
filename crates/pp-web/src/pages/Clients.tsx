@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -21,11 +22,14 @@ import {
 } from "../api/clients";
 import type { CreateClientPayload } from "../api/clients";
 import { getGroups } from "../api/groups";
-import { Client, Group } from "../api/types";
+import { Client } from "../api/types";
 import { formatBytes, formatDateTime } from "../utils/format";
 
 const RESET_STRATEGIES = ["no_reset", "daily", "weekly", "monthly", "yearly"];
 const CLIENT_STATUSES = ["active", "on_hold", "disabled", "expired"];
+
+const clientsQueryKey = "clients";
+const groupsQueryKey = "groups";
 
 interface ClientForm {
   name: string;
@@ -77,10 +81,8 @@ function formatDuration(seconds: number | null): string {
 export function Clients() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
@@ -98,28 +100,52 @@ export function Clients() {
     selectedGroups: new Set<string>(),
   });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [clientsRes, groupsRes] = await Promise.allSettled([
-        getClients(page, perPage),
-        getGroups(),
-      ]);
-      if (clientsRes.status === "fulfilled") {
-        setClients(clientsRes.value.data);
-        setTotal(clientsRes.value.pagination.total);
-      }
-      if (groupsRes.status === "fulfilled") {
-        setGroups(groupsRes.value);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: clientsData, isLoading } = useQuery({
+    queryKey: [clientsQueryKey, { page, perPage }],
+    queryFn: () => getClients(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const clients = clientsData?.data ?? [];
+  const total = clientsData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const { data: groups = [] } = useQuery({
+    queryKey: [groupsQueryKey],
+    queryFn: getGroups,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateClientPayload) => createClient(payload),
+    onSuccess: () => {
+      setCreateOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [clientsQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Partial<CreateClientPayload> }) =>
+      updateClient(payload.id, payload.data),
+    onSuccess: () => {
+      setEditClient(null);
+      queryClient.invalidateQueries({ queryKey: [clientsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteClient,
+    onSuccess: () => {
+      setDeleteClientId(null);
+      queryClient.invalidateQueries({ queryKey: [clientsQueryKey] });
+    },
+  });
+
+  const resetTrafficMutation = useMutation({
+    mutationFn: resetClientTraffic,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [clientsQueryKey] });
+    },
+  });
 
   const resetForm = (client?: Client) => {
     if (client) {
@@ -171,47 +197,23 @@ export function Clients() {
     };
   };
 
-  const handleCreate = async () => {
-    try {
-      const { status: _, ...payload } = buildPayload();
-      await createClient(payload);
-      setCreateOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleCreate = () => {
+    const { status: _, ...payload } = buildPayload();
+    createMutation.mutate(payload);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editClient) return;
-    try {
-      await updateClient(editClient.id, buildPayload());
-      setEditClient(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    updateMutation.mutate({ id: editClient.id, data: buildPayload() });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteClientId) return;
-    try {
-      await deleteClient(deleteClientId);
-      setDeleteClientId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteClientId);
   };
 
-  const handleResetTraffic = async (client: Client) => {
-    try {
-      await resetClientTraffic(client.id);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleResetTraffic = (client: Client) => {
+    resetTrafficMutation.mutate(client.id);
   };
 
   const openEdit = (client: Client) => {
@@ -243,7 +245,7 @@ export function Clients() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

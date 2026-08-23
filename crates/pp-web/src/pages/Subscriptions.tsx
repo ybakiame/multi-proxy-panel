@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Badge, Modal, Spinner, Switch, Table, Tabs } from "@heroui/react";
 import * as yaml from "js-yaml";
 import {
@@ -24,7 +25,7 @@ import {
   deleteTemplate,
 } from "../api/subscriptions";
 import { getClients } from "../api/clients";
-import { Client, Subscription, SubscriptionTemplate } from "../api/types";
+import { Subscription, SubscriptionTemplate } from "../api/types";
 import { formatDateTime } from "../utils/format";
 import { baseUrl } from "../api/config";
 
@@ -35,6 +36,10 @@ const QR_FORMATS = [
   { id: "sing-box", label: "Sing-box" },
   { id: "v2rayng", label: "V2RayNG" },
 ];
+
+const subscriptionsQueryKey = "subscriptions";
+const templatesQueryKey = "templates";
+const clientsQueryKey = "clients";
 
 function maskToken(token: string) {
   if (!token) return "-";
@@ -145,14 +150,11 @@ function normalizeTemplateForFormat(value: string, format: string, isCreate: boo
 
 export function Subscriptions() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("subscriptions");
 
   // Subscriptions state
   const subsPagination = usePagination();
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [templates, setTemplates] = useState<SubscriptionTemplate[]>([]);
-  const [loadingSubs, setLoadingSubs] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editSubscription, setEditSubscription] = useState<Subscription | null>(null);
   const [deleteSubId, setDeleteSubId] = useState<string | null>(null);
@@ -164,7 +166,6 @@ export function Subscriptions() {
   });
 
   // Templates state
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateFormOpen, setTemplateFormOpen] = useState(false);
   const [editTemplate, setEditTemplate] = useState<SubscriptionTemplate | null>(null);
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
@@ -181,66 +182,97 @@ export function Subscriptions() {
   const [qrSub, setQrSub] = useState<Subscription | null>(null);
   const [qrFormat, setQrFormat] = useState("base64");
 
-  const fetchSubscriptions = async () => {
-    setLoadingSubs(true);
-    try {
-      const res = await getSubscriptions(subsPagination.page, subsPagination.perPage);
-      setSubscriptions(res.data);
-      subsPagination.setTotal(res.pagination.total);
-    } finally {
-      setLoadingSubs(false);
-    }
-  };
+  const { data: subsData, isLoading: loadingSubs } = useQuery({
+    queryKey: [
+      subscriptionsQueryKey,
+      { page: subsPagination.page, perPage: subsPagination.perPage },
+    ],
+    queryFn: () => getSubscriptions(subsPagination.page, subsPagination.perPage),
+    enabled: activeTab === "subscriptions",
+  });
 
-  const fetchTemplates = async () => {
-    setLoadingTemplates(true);
-    try {
-      const res = await getTemplates();
-      setTemplates(res);
-    } finally {
-      setLoadingTemplates(false);
-    }
-  };
+  const subscriptions = subsData?.data ?? [];
+  const subsTotal = subsData?.pagination.total ?? 0;
 
-  const fetchClients = async () => {
-    try {
-      const res = await getClients(1, 1000);
-      setClients(res.data);
-    } catch {
-      // handled by interceptor
-    }
-  };
+  const { data: templates = [], isLoading: loadingTemplates } = useQuery({
+    queryKey: [templatesQueryKey],
+    queryFn: getTemplates,
+    enabled: activeTab === "templates",
+  });
 
-  useEffect(() => {
-    fetchClients();
-    fetchTemplates();
-  }, []);
+  const { data: clientsData } = useQuery({
+    queryKey: [clientsQueryKey, { page: 1, perPage: 1000 }],
+    queryFn: () => getClients(1, 1000),
+  });
 
-  useEffect(() => {
-    if (activeTab === "subscriptions") {
-      fetchSubscriptions();
-    }
-  }, [activeTab, subsPagination.page, subsPagination.perPage]);
+  const clients = clientsData?.data ?? [];
 
-  useEffect(() => {
-    if (activeTab === "templates") {
-      fetchTemplates();
-    }
-  }, [activeTab]);
+  const createSubMutation = useMutation({
+    mutationFn: createSubscription,
+    onSuccess: (res) => {
+      setNewToken(res.token || null);
+      setCreateOpen(false);
+      resetSubForm();
+      queryClient.invalidateQueries({ queryKey: [subscriptionsQueryKey] });
+    },
+  });
+
+  const updateSubMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Parameters<typeof updateSubscription>[1] }) =>
+      updateSubscription(payload.id, payload.data),
+    onSuccess: () => {
+      setEditSubscription(null);
+      queryClient.invalidateQueries({ queryKey: [subscriptionsQueryKey] });
+    },
+  });
+
+  const deleteSubMutation = useMutation({
+    mutationFn: deleteSubscription,
+    onSuccess: () => {
+      setDeleteSubId(null);
+      queryClient.invalidateQueries({ queryKey: [subscriptionsQueryKey] });
+    },
+  });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: (payload: {
+      id?: string;
+      data: Parameters<typeof createTemplate>[0] | Parameters<typeof updateTemplate>[1];
+    }) => {
+      if (payload.id) {
+        return updateTemplate(payload.id, payload.data as Parameters<typeof updateTemplate>[1]);
+      }
+      return createTemplate(payload.data as Parameters<typeof createTemplate>[0]);
+    },
+    onSuccess: () => {
+      setTemplateFormOpen(false);
+      resetTemplateFormState();
+      setEditTemplate(null);
+      queryClient.invalidateQueries({ queryKey: [templatesQueryKey] });
+    },
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: deleteTemplate,
+    onSuccess: () => {
+      setDeleteTemplateId(null);
+      queryClient.invalidateQueries({ queryKey: [templatesQueryKey] });
+    },
+  });
+
+  const toggleTemplateMutation = useMutation({
+    mutationFn: (payload: { id: string; data: Parameters<typeof updateTemplate>[1] }) =>
+      updateTemplate(payload.id, payload.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [templatesQueryKey] });
+    },
+  });
 
   // Subscription handlers
   const resetSubForm = () => setSubForm({ client_id: "" });
 
-  const handleCreateSubscription = async () => {
-    try {
-      const res = await createSubscription({ client_id: subForm.client_id });
-      setNewToken(res.token || null);
-      setCreateOpen(false);
-      resetSubForm();
-      fetchSubscriptions();
-    } catch {
-      // handled by interceptor
-    }
+  const handleCreateSubscription = () => {
+    createSubMutation.mutate({ client_id: subForm.client_id });
   };
 
   const openEditSubscription = (sub: Subscription) => {
@@ -251,29 +283,20 @@ export function Subscriptions() {
     });
   };
 
-  const handleUpdateSubscription = async () => {
+  const handleUpdateSubscription = () => {
     if (!editSubscription) return;
-    try {
-      await updateSubscription(editSubscription.id, {
+    updateSubMutation.mutate({
+      id: editSubscription.id,
+      data: {
         is_active: subEditForm.is_active,
         expire_at: subEditForm.expire_at || undefined,
-      });
-      setEditSubscription(null);
-      fetchSubscriptions();
-    } catch {
-      // handled by interceptor
-    }
+      },
+    });
   };
 
-  const handleDeleteSubscription = async () => {
+  const handleDeleteSubscription = () => {
     if (!deleteSubId) return;
-    try {
-      await deleteSubscription(deleteSubId);
-      setDeleteSubId(null);
-      fetchSubscriptions();
-    } catch {
-      // handled by interceptor
-    }
+    deleteSubMutation.mutate(deleteSubId);
   };
 
   // Template handlers
@@ -341,49 +364,41 @@ export function Subscriptions() {
     return "text";
   };
 
-  const handleSaveTemplate = async () => {
+  const handleSaveTemplate = () => {
     const { filterRules, customHeaders } = parseTemplateFormJson();
-    try {
-      if (editTemplate) {
-        const payload = editTemplate.is_builtin
-          ? { is_enabled: templateForm.is_enabled }
-          : {
-              name: templateForm.name,
-              format: templateForm.format,
-              base_config: templateForm.base_config,
-              filter_rules: filterRules,
-              custom_headers: customHeaders,
-              is_enabled: templateForm.is_enabled,
-            };
-        await updateTemplate(editTemplate.id, payload);
-      } else {
-        await createTemplate({
+    if (editTemplate) {
+      const payload = editTemplate.is_builtin
+        ? { is_enabled: templateForm.is_enabled }
+        : {
+            name: templateForm.name,
+            format: templateForm.format,
+            base_config: templateForm.base_config,
+            filter_rules: filterRules,
+            custom_headers: customHeaders,
+            is_enabled: templateForm.is_enabled,
+          };
+      saveTemplateMutation.mutate({ id: editTemplate.id, data: payload });
+    } else {
+      saveTemplateMutation.mutate({
+        data: {
           name: templateForm.name,
           format: templateForm.format,
           base_config: templateForm.base_config,
           filter_rules: filterRules,
           custom_headers: customHeaders,
           is_enabled: templateForm.is_enabled,
-        });
-      }
-      setTemplateFormOpen(false);
-      resetTemplateFormState();
-      setEditTemplate(null);
-      fetchTemplates();
-    } catch {
-      // handled by interceptor
+        },
+      });
     }
   };
 
-  const handleDeleteTemplate = async () => {
+  const handleDeleteTemplate = () => {
     if (!deleteTemplateId) return;
-    try {
-      await deleteTemplate(deleteTemplateId);
-      setDeleteTemplateId(null);
-      fetchTemplates();
-    } catch {
-      // handled by interceptor
-    }
+    deleteTemplateMutation.mutate(deleteTemplateId);
+  };
+
+  const handleToggleTemplate = (tmpl: SubscriptionTemplate, selected: boolean) => {
+    toggleTemplateMutation.mutate({ id: tmpl.id, data: { is_enabled: selected } });
   };
 
   // Helpers
@@ -541,9 +556,9 @@ export function Subscriptions() {
                     </Table>
                     <Pagination
                       page={subsPagination.page}
-                      totalPages={subsPagination.totalPages}
+                      totalPages={Math.max(1, Math.ceil(subsTotal / subsPagination.perPage))}
                       perPage={subsPagination.perPage}
-                      total={subsPagination.total}
+                      total={subsTotal}
                       onPageChange={subsPagination.setPage}
                       onPerPageChange={subsPagination.setPerPage}
                     />
@@ -605,9 +620,7 @@ export function Subscriptions() {
                                 <Switch
                                   isSelected={tmpl.is_enabled}
                                   onChange={(selected: boolean) =>
-                                    updateTemplate(tmpl.id, { is_enabled: selected })
-                                      .then(fetchTemplates)
-                                      .catch(() => {})
+                                    handleToggleTemplate(tmpl, selected)
                                   }
                                   aria-label={t("subscriptions.enabled")}
                                 >

@@ -1,60 +1,52 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, FormSelect, FormCheckbox, SearchInput } from "../components/ui";
 import { usePagination, useDebouncedValue } from "../hooks/useCommon";
 import { getOnlines } from "../api/onlines";
 import { getNodes } from "../api/nodes";
 import { getClients, getClientIps } from "../api/clients";
-import { Client, Node, OnlineSession } from "../api/types";
 import { formatDateTime, formatDurationSince } from "../utils/format";
+
+const onlinesQueryKey = "onlines";
+const nodesQueryKey = "nodes";
+const clientsQueryKey = "clients";
 
 export function Onlines() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination(1, 20);
-  const [sessions, setSessions] = useState<OnlineSession[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination(1, 20);
   const [nodeId, setNodeId] = useState("");
   const [clientId, setClientId] = useState("");
   const [search, setSearch] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [ipsModal, setIpsModal] = useState<{ clientName: string; ips: string[] } | null>(null);
   const [ipsLoading, setIpsLoading] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search);
 
+  const { data: sessionsData, isLoading } = useQuery({
+    queryKey: [onlinesQueryKey, { nodeId: nodeId || undefined, clientId: clientId || undefined }],
+    queryFn: () => getOnlines(nodeId || undefined, clientId || undefined),
+    refetchInterval: autoRefresh ? 30000 : false,
+  });
+
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
+
+  const { data: clientsData } = useQuery({
+    queryKey: [clientsQueryKey, { page: 1, perPage: 1000 }],
+    queryFn: () => getClients(1, 1000),
+  });
+
+  const sessions = sessionsData?.data ?? [];
+  const clients = clientsData?.data ?? [];
+
   const nodeNames = useMemo(() => new Map(nodes.map((n) => [n.id, n.name])), [nodes]);
   const clientNames = useMemo(() => new Map(clients.map((c) => [c.id, c.name])), [clients]);
-
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getOnlines(nodeId || undefined, clientId || undefined);
-      setSessions(res.data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetch();
-    setPage(1);
-  }, [nodeId, clientId]);
-
-  useEffect(() => {
-    Promise.allSettled([getNodes(), getClients(1, 1000)]).then(([nodesRes, clientsRes]) => {
-      if (nodesRes.status === "fulfilled") setNodes(nodesRes.value);
-      if (clientsRes.status === "fulfilled") setClients(clientsRes.value.data);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(fetch, 30000);
-    return () => clearInterval(id);
-  }, [autoRefresh, nodeId, clientId]);
 
   const filtered = useMemo(() => {
     const keyword = debouncedSearch.trim().toLowerCase();
@@ -67,13 +59,25 @@ export function Onlines() {
     );
   }, [sessions, debouncedSearch, clientNames, nodeNames]);
 
-  useEffect(() => {
-    setTotal(filtered.length);
-  }, [filtered.length, setTotal]);
-
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
   const display = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const openIps = async (session: OnlineSession) => {
+  const handleNodeChange = (value: string) => {
+    setNodeId(value);
+    setPage(1);
+  };
+
+  const handleClientChange = (value: string) => {
+    setClientId(value);
+    setPage(1);
+  };
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: [onlinesQueryKey] });
+  };
+
+  const openIps = async (session: { client_id: string; ip_address: string }) => {
     const clientName = clientNames.get(session.client_id) || session.client_id;
     setIpsLoading(true);
     setIpsModal({ clientName, ips: [] });
@@ -103,14 +107,14 @@ export function Onlines() {
         <FormSelect
           label={t("onlines.node")}
           value={nodeId}
-          onChange={setNodeId}
+          onChange={handleNodeChange}
           options={nodeOptions}
           className="min-w-[200px]"
         />
         <FormSelect
           label={t("onlines.client")}
           value={clientId}
-          onChange={setClientId}
+          onChange={handleClientChange}
           options={clientOptions}
           className="min-w-[200px]"
         />
@@ -125,11 +129,11 @@ export function Onlines() {
         <FormCheckbox isSelected={autoRefresh} onChange={setAutoRefresh}>
           {t("metrics.autoRefresh")}
         </FormCheckbox>
-        <Button onPress={fetch}>{t("common.refresh")}</Button>
+        <Button onPress={handleRefresh}>{t("common.refresh")}</Button>
       </div>
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

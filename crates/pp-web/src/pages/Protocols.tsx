@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import {
   PageHeader,
@@ -18,6 +19,8 @@ import {
   generateRealityKeys,
 } from "../api/protocols";
 import { ProtocolConfig } from "../api/types";
+
+const protocolsQueryKey = "protocols";
 
 const PROTOCOL_TYPES = ["vless_reality", "vless_xhttp", "hysteria2", "anytls"];
 
@@ -84,28 +87,79 @@ const defaultForm: ProtocolForm = {
 
 export function Protocols() {
   const { t } = useTranslation();
-  const { page, perPage, setPage, setPerPage, total, setTotal, totalPages } = usePagination();
-  const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { page, perPage, setPage, setPerPage } = usePagination();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState<ProtocolConfig | null>(null);
   const [deleteProtocolId, setDeleteProtocolId] = useState<string | null>(null);
   const [form, setForm] = useState<ProtocolForm>(defaultForm);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await getProtocols(page, perPage);
-      setProtocols(res.data);
-      setTotal(res.pagination.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: protocolsData, isLoading } = useQuery({
+    queryKey: [protocolsQueryKey, { page, perPage }],
+    queryFn: () => getProtocols(page, perPage),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [page, perPage]);
+  const protocols = protocolsData?.data ?? [];
+  const total = protocolsData?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      name: string;
+      protocol_type: string;
+      core_type: string;
+      listen_address: string;
+      listen_port: number;
+      settings: Record<string, unknown>;
+      tls_settings?: Record<string, unknown>;
+    }) => createProtocol(payload),
+    onSuccess: () => {
+      setIsModalOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [protocolsQueryKey] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      data: {
+        name: string;
+        protocol_type: string;
+        core_type: string;
+        listen_address: string;
+        listen_port: number;
+        settings: Record<string, unknown>;
+        tls_settings?: Record<string, unknown>;
+      };
+    }) => updateProtocol(payload.id, payload.data),
+    onSuccess: () => {
+      setIsModalOpen(false);
+      setEditingProtocol(null);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: [protocolsQueryKey] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteProtocol,
+    onSuccess: () => {
+      setDeleteProtocolId(null);
+      queryClient.invalidateQueries({ queryKey: [protocolsQueryKey] });
+    },
+  });
+
+  const realityKeysMutation = useMutation({
+    mutationFn: generateRealityKeys,
+    onSuccess: (keys) => {
+      setForm({
+        ...form,
+        private_key: keys.private_key || "",
+        public_key: keys.public_key || "",
+        short_id: keys.short_id || "",
+      });
+    },
+  });
 
   const parseSettings = (settings: Record<string, unknown>): Partial<ProtocolForm> => {
     return {
@@ -207,53 +261,22 @@ export function Protocols() {
     };
   };
 
-  const handleCreate = async () => {
-    try {
-      await createProtocol(buildPayload());
-      setIsModalOpen(false);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleCreate = () => {
+    createMutation.mutate(buildPayload());
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editingProtocol) return;
-    try {
-      await updateProtocol(editingProtocol.id, buildPayload());
-      setIsModalOpen(false);
-      setEditingProtocol(null);
-      resetForm();
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    updateMutation.mutate({ id: editingProtocol.id, data: buildPayload() });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteProtocolId) return;
-    try {
-      await deleteProtocol(deleteProtocolId);
-      setDeleteProtocolId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+    deleteMutation.mutate(deleteProtocolId);
   };
 
-  const handleGenerateRealityKeys = async () => {
-    try {
-      const keys = await generateRealityKeys();
-      setForm({
-        ...form,
-        private_key: keys.private_key || "",
-        public_key: keys.public_key || "",
-        short_id: keys.short_id || "",
-      });
-    } catch {
-      // error handled by axios interceptor
-    }
+  const handleGenerateRealityKeys = () => {
+    realityKeysMutation.mutate();
   };
 
   const generateRandomPort = (): number => {
@@ -440,7 +463,7 @@ export function Protocols() {
 
       <Card>
         <Card.Content>
-          {loading ? (
+          {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>

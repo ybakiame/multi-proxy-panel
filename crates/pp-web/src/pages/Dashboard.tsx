@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, TrafficChart } from "../components/ui";
 import type { TrafficPoint } from "../components/ui/TrafficChart";
@@ -13,84 +14,68 @@ import { getMetrics } from "../api/metrics";
 import { getOnlineCount } from "../api/onlines";
 import { getLogs } from "../api/logs";
 import { getTraffic } from "../api/traffic";
-import { Node, ProtocolConfig, Client, Binding, Metric, Log, TrafficRecord } from "../api/types";
+
+// Compute once at module load for the "last 24h" dashboard window.
+const start24hStatic = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
 export function Dashboard() {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState(true);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [protocols, setProtocols] = useState<ProtocolConfig[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [bindings, setBindings] = useState<Binding[]>([]);
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [onlineCount, setOnlineCount] = useState(0);
-  const [traffic24h, setTraffic24h] = useState<TrafficRecord[]>([]);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const start24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-        const [
-          nodesRes,
-          protocolsRes,
-          clientsRes,
-          bindingsRes,
-          metricsRes,
-          logsRes,
-          countRes,
-          trafficRes,
-        ] = await Promise.allSettled([
-          getNodes(),
-          getAllProtocols(),
-          getClients(1, 1000),
-          getBindings(),
-          getMetrics(),
-          getLogs(1, 5),
-          getOnlineCount(),
-          getTraffic({ start: start24h, limit: 5000 }),
-        ]);
+  const { data: nodes = [], isLoading: nodesLoading } = useQuery({
+    queryKey: ["nodes"],
+    queryFn: getNodes,
+  });
 
-        if (nodesRes.status === "fulfilled")
-          setNodes(Array.isArray(nodesRes.value) ? nodesRes.value : []);
-        if (protocolsRes.status === "fulfilled")
-          setProtocols(Array.isArray(protocolsRes.value) ? protocolsRes.value : []);
-        if (clientsRes.status === "fulfilled")
-          setClients(
-            clientsRes.value && Array.isArray(clientsRes.value.data) ? clientsRes.value.data : [],
-          );
-        if (bindingsRes.status === "fulfilled")
-          setBindings(Array.isArray(bindingsRes.value) ? bindingsRes.value : []);
-        if (metricsRes.status === "fulfilled")
-          setMetrics(
-            metricsRes.value && Array.isArray(metricsRes.value.data) ? metricsRes.value.data : [],
-          );
-        if (logsRes.status === "fulfilled")
-          setLogs(logsRes.value && Array.isArray(logsRes.value.data) ? logsRes.value.data : []);
-        if (countRes.status === "fulfilled") setOnlineCount(countRes.value?.count ?? 0);
-        if (trafficRes.status === "fulfilled")
-          setTraffic24h(
-            trafficRes.value && Array.isArray(trafficRes.value.data) ? trafficRes.value.data : [],
-          );
+  const { data: protocols = [], isLoading: protocolsLoading } = useQuery({
+    queryKey: ["protocols"],
+    queryFn: getAllProtocols,
+  });
 
-        const failed = [
-          nodesRes,
-          protocolsRes,
-          clientsRes,
-          bindingsRes,
-          metricsRes,
-          logsRes,
-          countRes,
-          trafficRes,
-        ].filter((r) => r.status === "rejected").length;
-        if (failed > 0) setError(t("dashboard.error"));
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [t]);
+  const { data: clientsData, isLoading: clientsLoading } = useQuery({
+    queryKey: ["clients", { page: 1, perPage: 1000 }],
+    queryFn: () => getClients(1, 1000),
+  });
+
+  const { data: bindings = [], isLoading: bindingsLoading } = useQuery({
+    queryKey: ["bindings"],
+    queryFn: getBindings,
+  });
+
+  const { data: metricsData, isLoading: metricsLoading } = useQuery({
+    queryKey: ["metrics"],
+    queryFn: () => getMetrics(),
+  });
+
+  const { data: logsData, isLoading: logsLoading } = useQuery({
+    queryKey: ["logs", { page: 1, perPage: 5 }],
+    queryFn: () => getLogs(1, 5),
+  });
+
+  const { data: onlineCountData, isLoading: onlineLoading } = useQuery({
+    queryKey: ["onlines", "count"],
+    queryFn: getOnlineCount,
+  });
+
+  const { data: trafficData, isLoading: trafficLoading } = useQuery({
+    queryKey: ["traffic", { start: start24hStatic, limit: 5000 }],
+    queryFn: () => getTraffic({ start: start24hStatic, limit: 5000 }),
+  });
+
+  const loading =
+    nodesLoading ||
+    protocolsLoading ||
+    clientsLoading ||
+    bindingsLoading ||
+    metricsLoading ||
+    logsLoading ||
+    onlineLoading ||
+    trafficLoading;
+
+  const clients = clientsData?.data ?? [];
+  const metrics = metricsData?.data ?? [];
+  const logs = logsData?.data ?? [];
+  const onlineCount = onlineCountData?.count ?? 0;
+  const traffic24h = trafficData?.data ?? [];
 
   const onlineNodes = nodes.filter((n) => n.status === "online").length;
 
@@ -137,12 +122,6 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader title={t("dashboard.title")} />
-
-      {error && (
-        <div className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
-          {error}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (

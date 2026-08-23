@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import { PageHeader, ConfirmDialog, FormInput, FormSelect } from "../components/ui";
 import {
@@ -9,61 +10,62 @@ import {
   deleteCertificate,
 } from "../api/certificates";
 import { getNodes } from "../api/nodes";
-import { ManagedCertificate, Node } from "../api/types";
+
+const certificatesQueryKey = "certificates";
+const nodesQueryKey = "nodes";
 
 export function Certificates() {
   const { t } = useTranslation();
-  const [certs, setCerts] = useState<ManagedCertificate[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({ domain: "", node_id: "" });
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const [certsRes, nodesRes] = await Promise.allSettled([getCertificates(), getNodes()]);
-      if (certsRes.status === "fulfilled") setCerts(certsRes.value);
-      if (nodesRes.status === "fulfilled") setNodes(nodesRes.value);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: certs = [], isLoading: loading } = useQuery({
+    queryKey: [certificatesQueryKey],
+    queryFn: () => getCertificates(),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, []);
+  const { data: nodes = [] } = useQuery({
+    queryKey: [nodesQueryKey],
+    queryFn: getNodes,
+  });
 
-  const handleCreate = async () => {
-    try {
-      await createCertificate({ domain: form.domain.trim(), node_id: form.node_id });
+  const createMutation = useMutation({
+    mutationFn: createCertificate,
+    onSuccess: () => {
       setCreateOpen(false);
       setForm({ domain: "", node_id: "" });
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
+      queryClient.invalidateQueries({ queryKey: [certificatesQueryKey] });
+    },
+  });
 
-  const handleRenew = async (id: string) => {
-    try {
-      await renewCertificate(id);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
-  };
+  const renewMutation = useMutation({
+    mutationFn: renewCertificate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [certificatesQueryKey] });
+    },
+  });
 
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await deleteCertificate(deleteId);
+  const deleteMutation = useMutation({
+    mutationFn: deleteCertificate,
+    onSuccess: () => {
       setDeleteId(null);
-      fetch();
-    } catch {
-      // error handled by axios interceptor
-    }
+      queryClient.invalidateQueries({ queryKey: [certificatesQueryKey] });
+    },
+  });
+
+  const handleCreate = () => {
+    createMutation.mutate({ domain: form.domain.trim(), node_id: form.node_id });
+  };
+
+  const handleRenew = (id: string) => {
+    renewMutation.mutate(id);
+  };
+
+  const handleDelete = () => {
+    if (!deleteId) return;
+    deleteMutation.mutate(deleteId);
   };
 
   const statusBadge = (status: string) => {
