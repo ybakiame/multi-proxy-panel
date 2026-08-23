@@ -40,28 +40,34 @@ async fn latest_core_statuses(
         return Ok(std::collections::HashMap::new());
     }
 
-    let logs = agent_log::Entity::find()
-        .filter(agent_log::Column::NodeId.is_in(node_ids.to_vec()))
-        .filter(agent_log::Column::Target.like("core-%"))
-        .order_by_desc(agent_log::Column::CreatedAt)
-        .all(&state.db)
-        .await
-        .map_err(ApiError::from)?;
-
     let mut by_node: std::collections::HashMap<Uuid, std::collections::HashMap<String, Value>> =
         std::collections::HashMap::new();
-    for log in logs {
-        if let Some(status) = core_status_from_log(&log) {
-            let core_type = status
-                .get("core_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-            by_node
-                .entry(log.node_id)
-                .or_default()
-                .entry(core_type)
-                .or_insert(status);
+
+    // Query per node with LIMIT to avoid loading the entire table.
+    // Each node has very few cores, so LIMIT 10 is sufficient for deduplication.
+    for node_id in node_ids {
+        let logs = agent_log::Entity::find()
+            .filter(agent_log::Column::NodeId.eq(*node_id))
+            .filter(agent_log::Column::Target.like("core-%"))
+            .order_by_desc(agent_log::Column::CreatedAt)
+            .limit(10)
+            .all(&state.db)
+            .await
+            .map_err(ApiError::from)?;
+
+        for log in logs {
+            if let Some(status) = core_status_from_log(&log) {
+                let core_type = status
+                    .get("core_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                by_node
+                    .entry(log.node_id)
+                    .or_default()
+                    .entry(core_type)
+                    .or_insert(status);
+            }
         }
     }
 

@@ -35,6 +35,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260724_000001_add_core_version_build_info::Migration),
             Box::new(m20260725_000001_create_relay_rules::Migration),
             Box::new(m20260726_000001_active_version_and_pending::Migration),
+            Box::new(m20260727_000001_add_agent_logs_node_target_created_index::Migration),
         ]
     }
 }
@@ -66,3 +67,4 @@ mod m20260722_000002_update_core_type_check;
 mod m20260724_000001_add_core_version_build_info;
 mod m20260725_000001_create_relay_rules;
 mod m20260726_000001_active_version_and_pending;
+mod m20260727_000001_add_agent_logs_node_target_created_index;
