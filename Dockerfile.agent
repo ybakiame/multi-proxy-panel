@@ -1,4 +1,4 @@
-FROM rust:1.86 AS planner
+FROM rust:1 AS planner
 WORKDIR /app
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
@@ -38,7 +38,7 @@ RUN mkdir -p \
     echo '' > crates/pp-client/src/lib.rs && \
     cargo build --release -p pp-agent
 
-FROM rust:1.86 AS builder
+FROM rust:1 AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 COPY . .
