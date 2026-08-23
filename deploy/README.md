@@ -2,7 +2,27 @@
 
 本目录提供 systemd 服务单元文件，用于在 Linux 服务器上长期运行 ProxyPanel Hub 与 Agent。
 
-## 文件说明
+## 快速部署 Agent（推荐）
+
+Hub 提供一键安装脚本，无需手动准备 systemd 文件：
+
+```bash
+# 在 Web 面板「节点管理」中点击「安装指令」按钮，复制命令到节点服务器执行
+curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token" \
+  --name "node-01"
+```
+
+安装脚本会自动完成：架构检测、二进制下载与 SHA256 校验、systemd 服务创建与启动。支持 `--uninstall` / `--purge` 卸载与 `--version` 指定版本。详见 [docs/deployment.md](../docs/deployment.md#节点一键安装推荐)。
+
+---
+
+## 手动部署（备用）
+
+若因环境限制无法使用一键安装，可按以下步骤手动部署。
+
+### 文件说明
 
 | 文件 | 说明 |
 |------|------|
@@ -10,7 +30,7 @@
 | `proxy-panel-hub.service` | Hub 服务单元 |
 | `proxy-panel-agent.service` | Agent 服务单元 |
 
-## 前置准备
+### 前置准备
 
 1. 创建运行用户：
 

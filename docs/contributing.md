@@ -88,7 +88,7 @@
 快速开始：
 
 ```bash
-git clone https://github.com/your-org/proxy-panel.git
+git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
 docker compose up -d postgres
 cargo run --bin proxy-panel -- init-db --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
@@ -379,8 +379,8 @@ Closes #456
 
 ## 联系方式
 
-- **Issue 追踪**: [GitHub Issues](https://github.com/your-org/proxy-panel/issues)
-- **讨论区**: [GitHub Discussions](https://github.com/your-org/proxy-panel/discussions)
+- **Issue 追踪**: [GitHub Issues](https://github.com/ybakiame/multi-proxy-panel/issues)
+- **讨论区**: [GitHub Discussions](https://github.com/ybakiame/multi-proxy-panel/discussions)
 - **安全报告**: 请发送邮件至 security@example.com（不要公开披露安全漏洞）
 
 ---
@@ -389,6 +389,6 @@ Closes #456
 
 感谢所有为 ProxyPanel 做出贡献的开发者！
 
-<a href="https://github.com/your-org/proxy-panel/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=your-org/proxy-panel" />
+<a href="https://github.com/ybakiame/multi-proxy-panel/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ybakiame/multi-proxy-panel" />
 </a>

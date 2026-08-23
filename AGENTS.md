@@ -361,6 +361,6 @@ grpcurl -plaintext localhost:50052 list proxypanel.HubAgent
 
 ## 10. 联系方式与资源
 
-- 仓库: `https://github.com/your-org/proxy-panel`
+- 仓库: `https://github.com/ybakiame/multi-proxy-panel`
 - Issues: 使用 GitHub Issues
 - 文档目录: `docs/`

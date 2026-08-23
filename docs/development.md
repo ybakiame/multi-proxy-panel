@@ -63,7 +63,7 @@ brew install protobuf
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/your-org/proxy-panel.git
+git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
 ```
 
@@ -170,6 +170,32 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 - `http://localhost:5173` 是 Vite 开发服务器，推荐使用。
 - `http://localhost:8081` 是 Hub 自身的 HTTP 端口，会回退提供前端静态文件。由于静态文件没有鉴权，若此前在同一 Origin 登录过（`localStorage` 中已有 `pp_api_key`），直接访问 8081 会进入 Dashboard；所有 `/api/v1/*` 接口仍然需要 API Key。
+
+---
+
+## 持续集成
+
+项目使用 GitHub Actions 进行持续集成，定义于 `.github/workflows/`：
+
+### CI (`.github/workflows/ci.yml`)
+
+在每次 push 到 `main`/`master` 或提交 Pull Request 时触发，包含两个并行 Job：
+
+| Job | 说明 |
+|-----|------|
+| `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
+| `web` | 在 `crates/pp-web` 目录执行 `bun run verify`（构建 + oxc Linter + 格式检查） |
+
+### Release (`.github/workflows/release.yml`)
+
+在推送 `v*` 标签或手动触发时执行，包含四个阶段：
+
+1. **`web`** — 构建前端产物
+2. **`build`** — 在 x86_64 与 aarch64  runner 上交叉编译 Release 二进制，打包为 `proxy-panel-{hub,agent}-linux-{arch}.tar.gz`
+3. **`release`** — 汇总 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
+4. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+
+提交 PR 前请确保本地已通过 `cargo clippy --workspace --all-targets -- -D warnings` 和 `cargo test --workspace`（后端）以及 `bun run verify`（前端）。
 
 ---
 

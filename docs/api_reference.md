@@ -279,6 +279,70 @@
 
 ---
 
+### POST `/api/v1/nodes/{id}/install-command`
+
+为指定节点生成一键安装命令。调用时**自动轮换该节点的 token**（旧 token 立即失效），并返回可直接在节点服务器执行的 `curl | bash` 命令。
+
+**所需 scope:** `NODES_WRITE`
+
+**路径参数:**
+- `id` — 节点 UUID
+
+**响应:**
+
+```json
+{
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Tokyo-01",
+    "token": "new-secure-token-generated-on-the-fly",
+    "hub_url": "https://grpc.example.com:50052",
+    "script_url": "https://panel.example.com/install.sh",
+    "version": "v0.3.3",
+    "command": "curl -fsSL 'https://panel.example.com/install.sh' | bash -s -- --hub-url 'https://grpc.example.com:50052' --token 'new-secure-token-generated-on-the-fly' --agent-id '550e8400-e29b-41d4-a716-446655440000' --name 'Tokyo-01' --version 'v0.3.3'"
+  }
+}
+```
+
+**字段说明:**
+
+| 字段 | 说明 |
+|------|------|
+| `id` | 节点 UUID |
+| `name` | 节点显示名称 |
+| `token` | **新生成的节点 token**（仅返回一次，请妥善保存） |
+| `hub_url` | Agent 应连接的 gRPC 地址，取自 `public_grpc_url` 配置或请求头推断 |
+| `script_url` | 安装脚本地址，取自 `public_http_url` 配置或请求头推断 |
+| `version` | 当前 Hub 版本 |
+| `command` | 可直接粘贴执行的 `curl \| bash` 命令 |
+
+**Token 轮换语义:**
+- 每次调用都会生成新的随机 token 并更新数据库中的 `token_hash`
+- 旧 token 立即失效，已连接的 Agent 将在下次心跳/重连时被断开
+- 建议在准备安装新节点或重新安装现有节点时调用
+
+**状态码:**
+- `200 OK`
+- `404 Not Found` — 节点不存在
+- `500 Internal Server Error`
+
+---
+
+### GET `/install.sh`
+
+公开端点，返回 Agent 一键安装 shell 脚本（`text/x-shellscript`）。脚本中的 `__PROXYPANEL_RELEASE_REPO__` 占位符会被替换为 Hub 配置中的 `release_repo` 值。
+
+**认证:** 无需认证
+
+**响应头:**
+- `Content-Type: text/x-shellscript; charset=utf-8`
+- `Cache-Control: no-store`
+
+**状态码:**
+- `200 OK`
+
+---
+
 ## 协议配置
 
 ### GET `/api/v1/protocols`

@@ -40,7 +40,7 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-org/proxy-panel.git
+git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
 
 # 2. 启动数据库
@@ -77,9 +77,9 @@ cd crates/pp-web && npm install && npm run build
 ## 获取帮助
 
 - 遇到问题？先查阅 [故障排查](deployment.md#故障排查)
-- 发现 Bug？提交 [GitHub Issue](https://github.com/your-org/proxy-panel/issues)
+- 发现 Bug？提交 [GitHub Issue](https://github.com/ybakiame/multi-proxy-panel/issues)
 - 想参与开发？阅读 [贡献指南](contributing.md)
-- 需要讨论？使用 [GitHub Discussions](https://github.com/your-org/proxy-panel/discussions)
+- 需要讨论？使用 [GitHub Discussions](https://github.com/ybakiame/multi-proxy-panel/discussions)
 
 ---
 

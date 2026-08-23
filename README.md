@@ -101,7 +101,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-org/proxy-panel.git
+git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
 ```
 
@@ -154,7 +154,26 @@ cd crates/pp-web
 npm run dev
 ```
 
-### 7. 启动 Agent（在节点服务器上）
+### 7. 使用 Release 一键安装 Agent（推荐）
+
+在节点服务器上执行以下命令即可一键安装 Agent：
+
+```bash
+curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token" \
+  --name "node-01"
+```
+
+安装脚本会自动完成：
+- 架构检测（x86_64 / aarch64）与 glibc 兼容性检查
+- 从 GitHub Release 下载对应架构的 tar.gz 并校验 SHA256
+- 安装二进制到 `/usr/local/bin/`
+- 创建 systemd 服务并启动
+
+> 也可在 Web 面板的 **节点管理** 页面点击「安装指令」按钮，直接获取包含 token 的完整安装命令。
+
+### 8. 手动启动 Agent（开发调试）
 
 ```bash
 cargo run --release --bin proxy-panel-agent \
@@ -162,7 +181,7 @@ cargo run --release --bin proxy-panel-agent \
   --token "your-agent-token"
 ```
 
-### 8. 构建桌面客户端（可选）
+### 9. 构建桌面客户端（可选）
 
 桌面客户端为独立的 Tauri 项目（退出根 workspace），使用 Bun 作为包管理器：
 
@@ -303,6 +322,23 @@ docker compose up -d
 # 仅启动数据库
 docker compose up -d postgres
 ```
+
+### 使用 Release 一键安装 Agent
+
+项目通过 GitHub Actions 自动构建并发布二进制文件与容器镜像：
+
+- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`
+- **GHCR 镜像**: 同时构建并推送 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+
+在节点服务器上一键安装：
+
+```bash
+curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token"
+```
+
+支持 `--version` 指定版本、`--uninstall` 卸载、`--purge` 彻底清理数据。详见 [docs/deployment.md](docs/deployment.md)。
 
 ### 手动部署
 

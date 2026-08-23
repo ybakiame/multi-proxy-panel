@@ -8,13 +8,15 @@
 
 1. [部署要求](#部署要求)
 2. [Docker Compose 部署（推荐）](#docker-compose-部署推荐)
-3. [手动部署](#手动部署)
-4. [高可用部署](#高可用部署)
-5. [安全配置](#安全配置)
-6. [监控与日志](#监控与日志)
-7. [备份与恢复](#备份与恢复)
-8. [升级指南](#升级指南)
-9. [故障排查](#故障排查)
+3. [节点一键安装（推荐）](#节点一键安装推荐)
+4. [手动部署](#手动部署)
+5. [高可用部署](#高可用部署)
+6. [安全配置](#安全配置)
+7. [监控与日志](#监控与日志)
+8. [备份与恢复](#备份与恢复)
+9. [升级指南](#升级指南)
+10. [故障排查](#故障排查)
+11. [CI/CD 产物说明](#cicd-产物说明)
 
 ---
 
@@ -59,9 +61,9 @@ mkdir -p /opt/proxypanel
 cd /opt/proxypanel
 
 # 下载 compose 文件
-curl -O https://raw.githubusercontent.com/your-org/proxy-panel/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/your-org/proxy-panel/main/Dockerfile.hub
-curl -O https://raw.githubusercontent.com/your-org/proxy-panel/main/Dockerfile.agent
+curl -O https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/Dockerfile.hub
+curl -O https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/Dockerfile.agent
 ```
 
 ### 2. 配置环境变量
@@ -82,10 +84,13 @@ PROXYPANEL_DATABASE_URL=postgres://proxypanel:CHANGE_THIS_TO_STRONG_PASSWORD@pos
 RUST_LOG=proxy_panel_hub=info,tower_http=info
 
 # Agent (if running agent on same host)
-PROXYPANEL_AGENT_TOKEN=your-secure-agent-token
-PROXYPANEL_HUB_URL=http://hub:50052
+PROXYPANEL_PUBLIC_HTTP_URL=https://panel.example.com
+PROXYPANEL_PUBLIC_GRPC_URL=https://grpc.example.com:50052
+PROXYPANEL_RELEASE_REPO=ybakiame/multi-proxy-panel
 EOF
 ```
+
+> `public_http_url` 与 `public_grpc_url` 用于生成正确的安装脚本地址和 Agent 连接地址。若 Hub 位于反向代理后，必须显式配置这两项，否则 Hub 会尝试从请求头推断，可能产生错误的内网地址。
 
 ### 3. 启动服务
 
@@ -154,13 +159,101 @@ grpc.example.com {
 
 ---
 
+## 节点一键安装（推荐）
+
+Hub 提供公开端点 `/install.sh` 伺服安装脚本，并在管理 API 中提供「生成安装指令」功能。这是最推荐的 Agent 部署方式。
+
+### 前置配置
+
+在 Hub 配置中设置以下新配置项（环境变量或配置文件）：
+
+| 配置项 | 环境变量 | 说明 |
+|--------|----------|------|
+| `public_http_url` | `PROXYPANEL_PUBLIC_HTTP_URL` | Hub 对外 HTTP 地址，用于生成安装脚本 URL |
+| `public_grpc_url` | `PROXYPANEL_PUBLIC_GRPC_URL` | Hub 对外 gRPC 地址，用于 Agent 连接 |
+| `release_repo` | `PROXYPANEL_RELEASE_REPO` | GitHub 仓库地址，默认 `ybakiame/multi-proxy-panel` |
+
+### 面板生成安装指令
+
+1. 在 Web 前端 **节点管理** 页面，点击目标节点的「安装指令」按钮
+2. 系统调用 `POST /api/v1/nodes/{id}/install-command`，自动：
+   - 轮换该节点的 token（旧 token 立即失效）
+   - 生成包含 `--hub-url`、`--token`、`--agent-id`、`--name`、`--version` 的 `curl \| bash` 命令
+3. 复制弹窗中的命令，在节点服务器上以 root 执行即可
+
+### 手动执行一键安装
+
+若已知 token，也可直接在节点服务器上执行：
+
+```bash
+curl -fsSL https://panel.example.com/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-agent-token" \
+  --name "tokyo-01" \
+  --version "v0.3.3"
+```
+
+### install-agent.sh 参数表
+
+| 参数 | 必需 | 说明 |
+|------|------|------|
+| `--hub-url <url>` | ✅ | Hub gRPC 地址（`--uninstall` 时除外） |
+| `--token <token>` | ✅ | 节点 token |
+| `--agent-id <uuid>` | ❌ | 节点 UUID（面板生成时会自动填入） |
+| `--name <name>` | ❌ | 节点显示名，默认取 `hostname` |
+| `--version <ver>` | ❌ | 版本，默认 `latest` |
+| `--repo <owner/repo>` | ❌ | GitHub 仓库，默认 `ybakiame/multi-proxy-panel` |
+| `--uninstall` | ❌ | 卸载服务（保留数据） |
+| `--purge` | ❌ | 配合 `--uninstall` 删除数据与配置 |
+| `-h, --help` | ❌ | 显示帮助 |
+
+### systemd 管理命令
+
+安装完成后，Agent 以 systemd 服务运行：
+
+```bash
+# 查看状态
+sudo systemctl status proxy-panel-agent
+
+# 查看实时日志
+sudo journalctl -u proxy-panel-agent -f
+
+# 重启服务
+sudo systemctl restart proxy-panel-agent
+
+# 停止服务
+sudo systemctl stop proxy-panel-agent
+```
+
+### 升级 Agent
+
+重复执行安装命令即可升级：脚本会下载新版本、停止旧服务、替换二进制、重新启动。数据目录 `/var/lib/proxy-panel` 与配置 `/etc/proxy-panel/agent.env` 会被保留。
+
+```bash
+curl -fsSL https://panel.example.com/install.sh | bash -s -- \
+  --hub-url "https://grpc.example.com:50052" \
+  --token "your-new-token"
+```
+
+### 卸载 Agent
+
+```bash
+# 仅卸载服务，保留数据
+curl -fsSL https://panel.example.com/install.sh | bash -s -- --uninstall
+
+# 彻底卸载并删除所有数据
+curl -fsSL https://panel.example.com/install.sh | bash -s -- --uninstall --purge
+```
+
+---
+
 ## 手动部署
 
 ### 1. 编译二进制文件
 
 ```bash
 # 在开发机器上编译
-git clone https://github.com/your-org/proxy-panel.git
+git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
 
 # 编译 Release 版本
@@ -536,6 +629,39 @@ sudo systemctl status proxypanel-hub
 # 7. 清理旧版本（确认正常后）
 sudo rm /opt/proxypanel/bin/proxy-panel-hub.bak
 ```
+
+---
+
+## CI/CD 产物说明
+
+项目通过 GitHub Actions 自动化构建与发布：
+
+### CI Workflow (`.github/workflows/ci.yml`)
+
+| Job | 触发条件 | 说明 |
+|-----|----------|------|
+| `rust` | push 到 `main`/`master`、任意 PR | 执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
+| `web` | 同上 | 在 `crates/pp-web` 执行 `bun run verify`（构建 + Linter + 格式检查） |
+
+### Release Workflow (`.github/workflows/release.yml`)
+
+| Job | 触发条件 | 说明 |
+|-----|----------|------|
+| `web` | push `v*` 标签、手动触发 | 构建前端产物并上传 artifact |
+| `build` | `web` 完成后 | 在 `ubuntu-22.04` (x86_64) 与 `ubuntu-24.04-arm` (aarch64) 上交叉编译 Release 二进制 |
+| `release` | `build` 完成后 | 收集 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease） |
+| `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent` |
+
+### 产物命名
+
+| 产物 | 文件名 |
+|------|--------|
+| Hub 二进制包 (x86_64) | `proxy-panel-hub-linux-x86_64.tar.gz`（含前端 dist） |
+| Hub 二进制包 (aarch64) | `proxy-panel-hub-linux-aarch64.tar.gz`（不含前端 dist） |
+| Agent 二进制包 | `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz` |
+| 校验文件 | `SHA256SUMS` |
+| Hub 容器镜像 | `ghcr.io/ybakiame/proxy-panel-hub:latest` / `:vX.Y.Z` |
+| Agent 容器镜像 | `ghcr.io/ybakiame/proxy-panel-agent:latest` / `:vX.Y.Z` |
 
 ---
 
