@@ -1,6 +1,9 @@
 //! cron/event 脚本调度器：管理按 cron 表达式定时执行的脚本任务（QX/Surge/Loon 的
 //! task/cron 签到类脚本），支持注册/移除、手动触发、到期批量执行与后台循环。
 
+// tonic::Status is inherently large; these gRPC-facing helpers return it by value.
+#![allow(clippy::result_large_err)]
+
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;

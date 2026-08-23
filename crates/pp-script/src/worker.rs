@@ -9,6 +9,9 @@
 //! 运行时，任务经 mpsc 串行化执行，对外暴露 `Send` future。
 //! 多个调用方可并发调用 `run_script`（内部串行化）；克隆共享同一 worker。
 
+// tonic::Status is inherently large; these gRPC-facing helpers return it by value.
+#![allow(clippy::result_large_err)]
+
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{mpsc, oneshot};

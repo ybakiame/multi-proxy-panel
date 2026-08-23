@@ -3,6 +3,9 @@
 //! Collects traffic statistics from running proxy cores and sends periodic
 //! reports to the Hub via the gRPC bidirectional stream.
 
+// tonic::Status is inherently large; these gRPC-facing helpers return it by value.
+#![allow(clippy::result_large_err)]
+
 use pp_proto::singbox_daemon::ConnectionEvent;
 use pp_proto::{AgentMessage, InboundTraffic, TrafficReport, UserTraffic};
 use std::collections::HashMap;
