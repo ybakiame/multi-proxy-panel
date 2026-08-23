@@ -1,10 +1,13 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react({ compiler: true }), tailwindcss()],
   base: "/",
   build: {
     outDir: "dist",
@@ -12,16 +15,20 @@ export default defineConfig({
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
-        manualChunks: {
-          heroui: ["@heroui/react"],
-          vendor: [
-            "react",
-            "react-dom",
-            "react-router-dom",
-            "axios",
-            "i18next",
-            "react-i18next",
-          ],
+        manualChunks(id: string) {
+          if (id.includes("@heroui/react")) {
+            return "heroui";
+          }
+          if (
+            id.includes("react") ||
+            id.includes("react-dom") ||
+            id.includes("react-router-dom") ||
+            id.includes("axios") ||
+            id.includes("i18next") ||
+            id.includes("react-i18next")
+          ) {
+            return "vendor";
+          }
         },
       },
     },
