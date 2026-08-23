@@ -22,8 +22,10 @@ import {
   deleteCoreBinary,
   getPendingUpdates,
   pushPendingUpdates,
+  getInstallCommand,
   PendingUpdate,
   CoreBinary,
+  InstallCommand,
 } from "../api/nodes";
 import { Node, AgentLog } from "../api/types";
 
@@ -49,6 +51,8 @@ export function Nodes() {
   const [pending, setPending] = useState<PendingUpdate[]>([]);
   const [pushResult, setPushResult] = useState<string | null>(null);
   const [pushPushing, setPushPushing] = useState(false);
+  const [installCmd, setInstallCmd] = useState<InstallCommand | null>(null);
+  const [installLoading, setInstallLoading] = useState(false);
   const [form, setForm] = useState({
     name: "",
     hostname: "",
@@ -135,6 +139,17 @@ export function Nodes() {
       setCreateOpen(false);
       resetForm();
       fetch();
+      if (res.id) {
+        setInstallLoading(true);
+        try {
+          const cmd = await getInstallCommand(res.id);
+          setInstallCmd(cmd);
+        } catch {
+          // error handled by axios interceptor
+        } finally {
+          setInstallLoading(false);
+        }
+      }
     } catch {
       // error handled by axios interceptor
     }
@@ -238,6 +253,18 @@ export function Nodes() {
       setNodeLogs(res);
     } finally {
       setLogsLoading(false);
+    }
+  };
+
+  const openInstallCommand = async (node: Node) => {
+    setInstallLoading(true);
+    try {
+      const cmd = await getInstallCommand(node.id);
+      setInstallCmd(cmd);
+    } catch {
+      // error handled by axios interceptor
+    } finally {
+      setInstallLoading(false);
     }
   };
 
@@ -368,6 +395,13 @@ export function Nodes() {
                             </Button>
                             <Button size="sm" variant="ghost" onPress={() => openPush(node)}>
                               {t("nodes.pushConfig")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openInstallCommand(node)}
+                            >
+                              {t("nodes.installCommand")}
                             </Button>
                             <Button size="sm" variant="ghost" onPress={() => openBinaries(node)}>
                               {t("nodes.binaries")}
@@ -674,6 +708,58 @@ export function Nodes() {
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" onPress={() => setLogNode(null)}>
+                {t("common.close")}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop
+        isOpen={!!installCmd || installLoading}
+        onOpenChange={(open) => {
+          if (!open) setInstallCmd(null);
+        }}
+      >
+        <Modal.Container className="max-w-3xl">
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {installCmd
+                  ? `${t("nodes.installTitle")}: ${installCmd.name}`
+                  : t("nodes.installTitle")}
+              </Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              {installLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : installCmd ? (
+                <>
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                    {t("nodes.installWarning")}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{t("nodes.installHint")}</p>
+                  <CopyableSecret secret={installCmd.command} label={t("nodes.installCommand")} />
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <p>
+                      <span className="font-medium">{t("nodes.scriptUrl")}:</span>{" "}
+                      {installCmd.script_url}
+                    </p>
+                    <p>
+                      <span className="font-medium">{t("nodes.hubUrl")}:</span> {installCmd.hub_url}
+                    </p>
+                    <p>
+                      <span className="font-medium">{t("nodes.version")}:</span>{" "}
+                      {installCmd.version}
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="ghost" onPress={() => setInstallCmd(null)}>
                 {t("common.close")}
               </Button>
             </Modal.Footer>

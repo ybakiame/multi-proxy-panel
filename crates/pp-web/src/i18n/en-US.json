@@ -143,7 +143,14 @@
     "pendingCore": "Core",
     "pendingSummary": "{{count}} node(s) have pending updates",
     "pushAllPending": "Push All Pending",
-    "pushResult": "Succeeded {{ok}} / Failed {{fail}}"
+    "pushResult": "Succeeded {{ok}} / Failed {{fail}}",
+    "installCommand": "Install Command",
+    "installTitle": "One-Click Install Command",
+    "installWarning": "This action has rotated the node token. The old token is immediately invalid.",
+    "installHint": "Run the following command on the target server to install the agent.",
+    "scriptUrl": "Script URL",
+    "hubUrl": "Hub URL",
+    "version": "Version"
   },
   "certificates": {
     "title": "Certificates",

@@ -143,7 +143,14 @@
     "pendingCore": "核心",
     "pendingSummary": "{{count}} 个节点有待推送更新",
     "pushAllPending": "推送全部待更新",
-    "pushResult": "成功 {{ok}} / 失败 {{fail}}"
+    "pushResult": "成功 {{ok}} / 失败 {{fail}}",
+    "installCommand": "安装指令",
+    "installTitle": "一键安装指令",
+    "installWarning": "该操作已轮换节点 Token，旧 Token 立即失效。",
+    "installHint": "在目标服务器上执行以下命令即可安装 Agent。",
+    "scriptUrl": "脚本地址",
+    "hubUrl": "Hub 地址",
+    "version": "版本"
   },
   "certificates": {
     "title": "证书管理",

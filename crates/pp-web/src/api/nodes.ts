@@ -62,5 +62,18 @@ export const deleteCoreBinary = (id: string, fileName: string) =>
 export const getPendingUpdates = () =>
   get<{ pending: PendingUpdate[] }>("/api/v1/nodes/pending-updates").then((r) => r.pending);
 
+export interface InstallCommand {
+  id: string;
+  name: string;
+  token: string;
+  hub_url: string;
+  script_url: string;
+  version: string;
+  command: string;
+}
+
+export const getInstallCommand = (id: string) =>
+  post<InstallCommand>(`/api/v1/nodes/${id}/install-command`, {});
+
 export const pushPendingUpdates = (payload: { node_ids?: string[]; core_type?: string }) =>
   post<PushPendingResults>("/api/v1/nodes/push-pending", payload);
