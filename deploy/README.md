@@ -200,22 +200,8 @@ sudo proxy-panel status
 
 ## 订阅模板
 
-### Clash 完整配置模板
+在 Web 界面「订阅模板」中新建模板，选择内置格式（base64 / clash / sing-box 等）或粘贴自定义模板内容即可；创建订阅时选用对应模板生成客户端配置。
 
-`deploy/clash-full-template.json` 是一个 Clash Meta / Mihomo 完整配置模板，使用占位符机制：
-
-- `"\u003cPROXY_REPLACE\u003e"` — 注入节点 proxy 列表
-- `"\u003cNODE_REPLACE\u003e"` — 注入节点名称列表
-
-通过 API 创建到 Hub：
-
-```bash
-export PANEL_API_KEY=your_api_key
-export PANEL_HOST=https://test3-panel.ybakiame.net
-python3 scripts/create-clash-template.py
-```
-
-创建后，在 Web 界面新建/编辑订阅，选择 `clash-full` 模板即可生成完整客户端配置。
 
 ## 完整部署指南
 
