@@ -474,6 +474,32 @@ async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Keep only the newest backup for a component binary (rollback needs one).
+async fn prune_backups(bin_name: &str) {
+    let backup_dir = Path::new(BACKUP_DIR);
+    if !backup_dir.exists() {
+        return;
+    }
+    let Ok(mut entries) = tokio::fs::read_dir(backup_dir).await else {
+        return;
+    };
+    let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(&format!("{}.", bin_name))
+            && name_str.ends_with(".bak")
+            && let Ok(modified) = entry.metadata().await.and_then(|m| m.modified())
+        {
+            candidates.push((entry.path(), modified));
+        }
+    }
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.1));
+    for (path, _) in candidates.into_iter().skip(1) {
+        let _ = tokio::fs::remove_file(&path).await;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public commands
 // ---------------------------------------------------------------------------
@@ -628,6 +654,9 @@ jwt_secret = "{}"
         systemd_restart("proxy-panel-hub").await?;
     }
 
+    prune_backups("proxy-panel-hub").await;
+    prune_backups("proxy-panel").await;
+
     println!("Hub 安装完成。");
     println!();
     println!("下一步：");
@@ -761,6 +790,8 @@ pub async fn install_agent(
         );
         bail!("proxy-panel-agent 启动失败");
     }
+
+    prune_backups("proxy-panel-agent").await;
 
     println!("Agent 安装并启动成功。");
     Ok(())
@@ -897,6 +928,9 @@ async fn upgrade_component(
             bail!("升级失败且无可用备份，无法回滚");
         }
     }
+
+    // Upgrade succeeded: keep only the newest backup (previous version).
+    prune_backups(bin_name).await;
 
     Ok(())
 }
