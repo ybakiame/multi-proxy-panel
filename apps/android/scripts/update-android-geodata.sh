@@ -23,23 +23,23 @@ set -euo pipefail
 #     文件会回退到 HomeDir 下载（无代理必败）
 #
 # 用法:
-#   ./scripts/update-android-geodata.sh
+#   ./apps/android/scripts/update-android-geodata.sh
 #
 # 环境要求:
 #   - gh CLI（已登录 github.com，用于读取 latest release 元数据）
 #   - curl（下载资产；不可用时自动回退 wget）
 #
 # 产物（不入库，见 app/.gitignore 的 /src/main/assets/geo/）:
-#   crates/pp-client-ui/src-tauri/gen/android/app/src/main/assets/geo/
+#   apps/desktop/src-tauri/gen/android/app/src/main/assets/geo/
 #     geoip.metadb  geosite.dat  ASN.mmdb  VERSION
 #   GEO 数据文件总量约 25MB，构建 APK 前先运行本脚本生成 assets。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../../.." && pwd)"
 
 REPO="MetaCubeX/meta-rules-dat"
 # latest 标签与 mihomo config.go 默认 GeoXUrl 下载地址一致
-ASSETS_DIR="$PROJECT_ROOT/crates/pp-client-ui/src-tauri/gen/android/app/src/main/assets/geo"
+ASSETS_DIR="$REPO_ROOT/apps/desktop/src-tauri/gen/android/app/src/main/assets/geo"
 VERSION_FILE="$ASSETS_DIR/VERSION"
 
 # release 资产 -> mihomo HomeDir 磁盘文件名（asset:target）

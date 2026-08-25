@@ -8,7 +8,7 @@ set -euo pipefail
 # 不入库）。解决两个独立 AAR 内嵌相同 go.* 运行时类冲突无法共存的问题。
 #
 # 用法:
-#   ./scripts/build-panel-core.sh [OUTPUT_AAR]
+#   ./apps/android/scripts/build-panel-core.sh [OUTPUT_AAR]
 #
 # 环境要求:
 #   - Go 工具链（go1.24.5，推荐 ~/go-sdk/go；系统 go1.26.x 与 sagernet
@@ -35,7 +35,7 @@ set -euo pipefail
 #     差异：-androidapi 26（对齐 App minSdk）、-javapkg com.proxypanel.core
 #     （官方为 21 / io.nekohasekai）。
 #   - ABI 只编 arm64-v8a + x86_64，与
-#     crates/pp-client-ui/src-tauri/gen/android/app/build.gradle.kts 的
+#     apps/desktop/src-tauri/gen/android/app/build.gradle.kts 的
 #     abiFilters 对齐。
 #   - libbox 包不在本 module 内，由 mihomocore/gomobile.go 的 blank import
 #     钉进 go.mod，gobind 的 packages.Load 方可解析。
@@ -45,10 +45,10 @@ set -euo pipefail
 #   同样受 GPL-3.0 约束，分发应用前请确保满足开源/源码可得性要求。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../../.." && pwd)"
 
 # 参数（可覆盖）
-OUTPUT_AAR="${1:-$PROJECT_ROOT/crates/pp-client-ui/src-tauri/gen/android/app/libs/panelcore.aar}"
+OUTPUT_AAR="${1:-$REPO_ROOT/apps/desktop/src-tauri/gen/android/app/libs/panelcore.aar}"
 
 # 环境默认值
 GOPATH="${GOPATH:-$HOME/go-work}"
@@ -120,7 +120,7 @@ gomobile init
 # 2. 构建 AAR（一次 bind 合并 libbox + mihomocore，参数对齐 build_libbox）
 echo "==> 构建 panelcore.aar（libbox + mihomocore，多 ABI，耗时较长）..."
 mkdir -p "$(dirname "$OUTPUT_AAR")"
-cd "$PROJECT_ROOT/android/panel-core"
+cd "$REPO_ROOT/apps/android/panel-core"
 gomobile bind -v -x \
     -target android/arm64,android/amd64 \
     -androidapi 26 \
