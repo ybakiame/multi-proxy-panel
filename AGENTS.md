@@ -10,7 +10,8 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
-- **Web** (`pp-web`): React 前端，通过 HTTP API 与 Hub 交互（Vite + TypeScript + HeroUI + Tailwind CSS）
+- **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
+- **Desktop** (`apps/desktop`): Tauri 桌面/安卓客户端（React 前端 + 独立 cargo 项目，依赖 pp-client 库）
 
 ---
 
@@ -20,7 +21,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
-- 构建前端需要 Node.js 20+ 和 npm（`crates/pp-web` 为独立的 Vite + React 项目）
+- 前端（`apps/panel` 管理系统、`apps/desktop` Tauri 客户端）不是 Cargo workspace 成员，由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）
 
 ### 2.2 常用构建命令
 
@@ -50,36 +51,32 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
 
-### 2.3 Web 前端构建
+### 2.3 前端构建（Bun workspaces）
 
-`crates/pp-web` 使用 Bun 作为包管理器（见 `packageManager` 字段）。
+`apps/panel`（管理系统）与 `apps/desktop`（Tauri 客户端）是 Bun workspaces 成员，依赖在**仓库根目录**统一安装（单一 `bun.lock`）：
 
 ```bash
-cd crates/pp-web
-# 安装依赖
+# 根目录一次安装全部前端依赖
 bun install
-# 开发模式
-bun run dev
-# 发布构建
-bun run build
-# 产物位于 crates/pp-web/dist/
+
+# 按 app 执行脚本（--filter 用各 app package.json 的 name）
+bun run --filter pp-web dev          # panel 开发模式
+bun run --filter pp-web build        # panel 发布构建（产物 apps/panel/dist/）
+bun run --filter pp-client-ui dev    # desktop 开发模式
 ```
 
-前端代码检查与格式化已集成 oxc 工具链：
+前端代码检查与格式化已集成 oxc 工具链（也可 `cd apps/panel` 后直接 `bun run <script>`）：
 
 ```bash
-cd crates/pp-web
-# Linter（oxlint + React / a11y / import 插件，配置在 .oxlintrc.json）
-bun run lint
+# Linter（oxlint + React / a11y / import 插件，配置在各 app 的 .oxlintrc.json）
+bun run --filter pp-web lint
 # 格式化（oxfmt 处理 TS/TSX）
-bun run format
-# 格式检查
-bun run format:check
+bun run --filter pp-web format
 # 最终核验：构建 + Linter + 格式检查
-bun run verify
+bun run --filter pp-web verify
 ```
 
-提交前必须在 `crates/pp-web` 目录执行 `bun run verify` 并全部通过。
+提交前端改动前必须执行对应 app 的 `verify`（`--filter pp-web` / `--filter pp-client-ui`）并全部通过。
 
 ---
 

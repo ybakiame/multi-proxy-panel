@@ -94,7 +94,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 - Rust 1.88+（参见 `rust-toolchain.toml`）
 - PostgreSQL 15+ (或 SQLite 用于开发)
-- Bun 1.3+ (构建 Web 前端，见 `crates/pp-web/package.json` 的 packageManager 字段)
+- Bun 1.3+ (构建 Web 前端，见 `apps/panel/package.json` 的 packageManager 字段)
 
 
 ### 1. 克隆项目
@@ -139,17 +139,17 @@ Hub 将监听：
 ### 6. 构建 Web 前端
 
 ```bash
-cd crates/pp-web
+cd apps/panel
 bun install
 bun run build
 ```
 
-产物位于 `crates/pp-web/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
+产物位于 `apps/panel/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
 
 开发模式热重载：
 
 ```bash
-cd crates/pp-web
+cd apps/panel
 bun run dev
 ```
 
@@ -193,7 +193,7 @@ cargo run --release --bin proxy-panel-agent \
 桌面客户端为独立的 Tauri 项目（退出根 workspace），使用 Bun 作为包管理器：
 
 ```bash
-cd crates/pp-client-ui
+cd apps/desktop
 bun install
 bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
@@ -213,12 +213,12 @@ bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/�
 - Android NDK：`*-android26-clang` 工具链（minSdk 26 对应），路径见下方配置
 - Rust Android targets（`rustup target add ...`）：ABI 裁剪后只需 `aarch64-linux-android`、`x86_64-linux-android` 两个 target（保留全部 4 个 target 也无害，未裁剪 ABI 对应的 target 产物不会进入 APK）
 - 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`。`JAVA_HOME`：Gradle 默认使用 `archlinux-java`/系统默认 JDK，也可用 `JAVA_HOME` 显式指定（如 `/usr/lib/jvm/java-21-openjdk`）；多 JDK 共存但不想改系统默认时，构建命令前内联 `JAVA_HOME=...` 即可
-- 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `crates/pp-client-ui/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
+- 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `apps/desktop/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
 
 **构建命令**
 
 ```bash
-cd crates/pp-client-ui
+cd apps/desktop
 # Debug APK（--target 为 tauri CLI 的 ABI 别名，可重复传参；对应 Rust target
 # aarch64-linux-android / x86_64-linux-android）
 bunx tauri android build --debug --apk --target aarch64 --target x86_64
@@ -254,13 +254,13 @@ proxy-panel/
 │   ├── pp-script/          # 客户端脚本引擎（QuickJS + QX/Surge/Loon 方言）
 │   ├── pp-mitm/            # HTTPS MITM 引擎（hudsucker 封装 + 重写/抓包）
 │   ├── pp-client/          # 桌面客户端核心库（订阅/配置合成/系统代理）
-│   ├── pp-client-ui/       # Tauri 桌面应用（独立 cargo 项目，React 前端）
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
 │   ├── pp-agent/           # 节点代理程序
-│   ├── pp-web/             # React Web 前端
-│   │                         # React + Vite + HeroUI + Tailwind CSS
 │   └── pp-cli/             # 管理 CLI 工具
-├── migrations/             # 数据库迁移文件
+├── apps/
+│   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
+│   ├── desktop/            # 客户端：Tauri 2 桌面/安卓应用（React 前端 + 独立 cargo 项目）
+│   └── android/            # 安卓核心 Go 模块（panel-core）与构建脚本
 ├── docs/                   # 项目文档
 └── scripts/                # 辅助脚本
 ```
@@ -271,7 +271,7 @@ proxy-panel/
 |-------|------|------|
 | `pp-hub` | 中央管理面板，提供 REST API、gRPC 服务和静态文件托管 | `proxy-panel-hub` |
 | `pp-agent` | 节点代理，管理本地 sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
-| `pp-web` | React 前端应用，提供现代化管理界面 | 静态文件 |
+| `apps/panel` | 管理系统 Web 前端（bun workspaces 成员） | 静态文件 |
 | `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、组件生命周期管理（安装/升级/回滚/卸载/状态/日志/重启） | `proxy-panel` |
 | `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
@@ -282,7 +282,7 @@ proxy-panel/
 | `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
 | `pp-mitm` | HTTPS MITM 引擎：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
 | `pp-client` | 桌面客户端核心库：订阅同步、核心配置合成（MITM 链路）、系统代理、生命周期编排 | 库 |
-| `pp-client-ui` | Tauri 2.11 桌面应用（React 19 + Vite 8 + HeroUI，5 页界面） | 桌面应用 |
+| `apps/desktop` | Tauri 2 桌面/安卓客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员） | 桌面/安卓应用 |
 
 ## 支持的协议
 
@@ -310,7 +310,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 
 # 构建前端
-cd crates/pp-web && bun install && bun run build
+cd apps/panel && bun install && bun run build
 
 # 生成实体（修改迁移后）
 cd crates/pp-db && sea-orm-cli generate entity -o src/entities

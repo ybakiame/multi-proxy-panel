@@ -35,7 +35,7 @@ impl Default for HubConfig {
             listen: "0.0.0.0:8081".to_string(),
             grpc_listen: "0.0.0.0:50052".to_string(),
             database_url: String::new(),
-            static_dir: PathBuf::from("crates/pp-web/dist"),
+            static_dir: PathBuf::from("apps/panel/dist"),
             cors_origins: None,
             trusted_proxy_ips: None,
             auto_register_agents: false,

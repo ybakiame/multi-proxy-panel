@@ -4157,7 +4157,7 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "pp-client"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4207,7 +4207,7 @@ dependencies = [
 
 [[package]]
 name = "pp-common"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -4229,7 +4229,7 @@ dependencies = [
 
 [[package]]
 name = "pp-config"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "jsonschema",
  "pp-common",
@@ -4242,7 +4242,7 @@ dependencies = [
 
 [[package]]
 name = "pp-core"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4268,7 +4268,7 @@ dependencies = [
 
 [[package]]
 name = "pp-mitm"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4298,7 +4298,7 @@ dependencies = [
 
 [[package]]
 name = "pp-proto"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "prost",
  "prost-types",
@@ -4308,7 +4308,7 @@ dependencies = [
 
 [[package]]
 name = "pp-script"
-version = "0.3.3"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "chrono",

@@ -68,4 +68,4 @@ Store raw xray JSON in `settings` when `core_type = xray`, and raw sing-box JSON
 - `crates/pp-config/src/xray.rs` — xray builder with neutral-field conversion
 - `crates/pp-config/src/singbox.rs` — sing-box builder with neutral-field conversion
 - `crates/pp-hub/src/routes/subscription.rs` — `inject_client_credentials()`
-- `crates/pp-web/src/pages/protocols.rs` — frontend forms using neutral field names
+- `apps/panel/src/pages/protocols.rs` — frontend forms using neutral field names

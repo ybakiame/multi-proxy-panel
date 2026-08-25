@@ -1,0 +1,5 @@
+{
+  "name": "proxy-panel",
+  "private": true,
+  "workspaces": ["apps/panel", "apps/desktop"]
+}

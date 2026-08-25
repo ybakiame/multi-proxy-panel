@@ -38,9 +38,6 @@ jobs:
   web:
     name: Web Checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: crates/pp-web
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -48,8 +45,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
+      - name: Install dependencies (bun workspaces)
         run: bun install --frozen-lockfile
 
-      - name: Verify
-        run: bun run verify
+      - name: Verify panel
+        run: bun run --filter pp-web verify

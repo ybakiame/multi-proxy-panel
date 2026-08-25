@@ -4,7 +4,7 @@
 listen = "0.0.0.0:8081"
 grpc_listen = "0.0.0.0:50052"
 database_url = "postgres://proxypanel:changeme@localhost/proxypanel"
-static_dir = "crates/pp-web/dist"
+static_dir = "apps/panel/dist"
 
 # Comma-separated list of allowed CORS origins. Leave empty to allow same-origin only.
 # In production, set this to the exact origin(s) serving the web panel.

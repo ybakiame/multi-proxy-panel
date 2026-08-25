@@ -99,8 +99,8 @@ sudo proxy-panel uninstall hub --purge
 4. 复制前端产物：
 
    ```bash
-   cd crates/pp-web && bun install && bun run build
-   sudo cp -r crates/pp-web/dist/* /opt/proxy-panel/web/dist/
+   cd apps/panel && bun install && bun run build
+   sudo cp -r apps/panel/dist/* /opt/proxy-panel/web/dist/
    ```
 
 5. 准备配置文件：

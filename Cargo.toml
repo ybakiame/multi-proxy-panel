@@ -13,7 +13,7 @@ members = [
     "crates/pp-cli",
     "crates/pp-mitm",
     "crates/pp-client",
-    # "crates/pp-web",  # now a standalone React/Vite app, see crates/pp-web/README.md
+    # 前端不在 workspace：apps/panel（管理系统）、apps/desktop（Tauri 客户端），bun workspaces 管理
 ]
 
 [workspace.package]

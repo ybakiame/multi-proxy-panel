@@ -150,7 +150,7 @@ RUST_LOG=proxy_panel_agent=debug \
 **终端 3 — 启动前端开发服务器:**
 
 ```bash
-cd crates/pp-web
+cd apps/panel
 bun install
 bun run dev
 ```
@@ -184,7 +184,7 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 | Job | 说明 |
 |-----|------|
 | `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `web` | 在 `crates/pp-web` 目录执行 `bun run verify`（构建 + oxc Linter + 格式检查） |
+| `web` | 在 `apps/panel` 目录执行 `bun run verify`（构建 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
 
@@ -332,7 +332,7 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 ### 项目结构
 
 ```
-crates/pp-web/
+apps/panel/
 ├── src/
 │   ├── main.tsx              # React 入口
 │   ├── App.tsx               # 路由与布局
@@ -583,7 +583,7 @@ brew install protobuf
 确保 Hub 的 `--static-dir` 指向正确路径：
 
 ```bash
-cargo run --bin proxy-panel-hub -- --static-dir crates/pp-web/dist
+cargo run --bin proxy-panel-hub -- --static-dir apps/panel/dist
 ```
 
 ### Q: Agent 无法连接 Hub？

@@ -123,7 +123,7 @@ cmd_start() {
 listen = "0.0.0.0:$HUB_HTTP_PORT"
 grpc_listen = "0.0.0.0:$HUB_GRPC_PORT"
 database_url = "$DB_URL"
-static_dir = "crates/pp-web/dist"
+static_dir = "apps/panel/dist"
 cors_origins = "http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT"
 auto_register_agents = true
 EOF
@@ -133,7 +133,7 @@ EOF
         RUST_LOG=proxy_panel_hub=info,tower_http=debug \
         cargo run --bin proxy-panel-hub -- \
             --config '$HUB_CONFIG' \
-            --static-dir crates/pp-web/dist \
+            --static-dir apps/panel/dist \
             --listen 0.0.0.0:$HUB_HTTP_PORT \
             --grpc-listen 0.0.0.0:$HUB_GRPC_PORT
     " > "$HUB_LOG" 2>&1 &
@@ -177,13 +177,13 @@ EOF
 
     # 5. 启动 Web 前端
     log_step "[5/5] 启动 Web 前端 (http://localhost:$WEB_PORT)..."
-    cd "$PROJECT_ROOT/crates/pp-web"
+    cd "$PROJECT_ROOT/apps/panel"
     if [ ! -d "node_modules" ]; then
         log_info "安装前端依赖..."
-        npm install >/dev/null 2>&1
+        bun install >/dev/null 2>npm install >/dev/null 2>&11
     fi
     # 前端开发服务器需要知道 Hub API 地址，否则默认使用自身 origin 导致 404。
-    nohup bash -c "PROXYPANEL_API_URL=http://127.0.0.1:$HUB_HTTP_PORT npm run dev -- --host 127.0.0.1 --port $WEB_PORT" > "$WEB_LOG" 2>&1 &
+    nohup bash -c "PROXYPANEL_API_URL=http://127.0.0.1:$HUB_HTTP_PORT bun run dev -- --host 127.0.0.1 --port $WEB_PORT" > "$WEB_LOG" 2>&1 &
     WEB_PID=$!
     echo "web:$WEB_PID" >> "$PID_FILE"
     log_info "Web 前端启动完成 (PID: $WEB_PID)"

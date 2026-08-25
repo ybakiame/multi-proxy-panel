@@ -1,6 +1,6 @@
 # Android 交叉编译工具链配置（cargo 沿「当前工作目录」向上发现配置）。
 #
-# 本配置放在 `crates/pp-client-ui/.cargo/`（而非 src-tauri/.cargo/）：`bunx tauri
+# 本配置放在 `apps/desktop/.cargo/`（而非 src-tauri/.cargo/）：`bunx tauri
 # android build` 由 tauri CLI 从本目录（前端项目根）调用 cargo，cargo 只沿 cwd
 # 向上查找 `.cargo/config.toml`，因此找不到 src-tauri 内的配置。src-tauri/.cargo/
 # 下的同名配置仍保留，仅供在 src-tauri 内裸 `cargo check --target *-android` 使用。

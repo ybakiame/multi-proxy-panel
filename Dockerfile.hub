@@ -1,9 +1,10 @@
 FROM oven/bun:1 AS web-builder
 WORKDIR /app
-COPY crates/pp-web/package.json crates/pp-web/bun.lock ./crates/pp-web/
-RUN cd crates/pp-web && bun install --frozen-lockfile
-COPY crates/pp-web ./crates/pp-web
-RUN cd crates/pp-web && bun run build
+COPY package.json bun.lock ./
+COPY apps/panel/package.json apps/panel/package.json
+RUN bun install --frozen-lockfile
+COPY apps/panel ./apps/panel
+RUN cd apps/panel && bun run build
 
 FROM rust:1-bookworm AS planner
 WORKDIR /app
@@ -64,7 +65,7 @@ RUN groupadd -r proxypanel && useradd -r -g proxypanel -d /app -s /sbin/nologin 
 
 WORKDIR /app
 COPY --from=builder --chown=proxypanel:proxypanel /app/target/release/proxy-panel-hub /usr/local/bin/proxy-panel-hub
-COPY --from=web-builder --chown=proxypanel:proxypanel /app/crates/pp-web/dist /app/dist
+COPY --from=web-builder --chown=proxypanel:proxypanel /app/apps/panel/dist /app/dist
 
 USER proxypanel
 

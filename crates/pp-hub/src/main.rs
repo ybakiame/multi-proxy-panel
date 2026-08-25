@@ -55,11 +55,7 @@ struct Args {
     #[arg(long, env = "PROXYPANEL_AUTO_REGISTER_AGENTS")]
     auto_register_agents: Option<bool>,
 
-    #[arg(
-        long,
-        env = "PROXYPANEL_STATIC_DIR",
-        default_value = "crates/pp-web/dist"
-    )]
+    #[arg(long, env = "PROXYPANEL_STATIC_DIR", default_value = "apps/panel/dist")]
     static_dir: PathBuf,
 
     #[arg(long, env = "PROXYPANEL_GRPC_TLS_CERT")]

@@ -13,9 +13,6 @@ jobs:
   web:
     name: Build Web
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: crates/pp-web
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -23,17 +20,17 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
+      - name: Install dependencies (bun workspaces)
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      - name: Build panel
+        run: bun run --filter pp-web build
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v5
         with:
           name: web-dist
-          path: crates/pp-web/dist
+          path: apps/panel/dist
           retention-days: 1
 
   build:

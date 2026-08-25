@@ -16,7 +16,7 @@
 /scripts/deploy-prod.yaml
 scripts/.deploy-secrets.env
 node_modules/
-crates/pp-web/dist/
+apps/panel/dist/
 __pycache__/
 
 # Local configs (tracked examples only)

@@ -448,7 +448,7 @@ static_dir = "/opt/proxypanel/web/dist"
 EOF
 
 # 复制前端文件
-sudo cp -r crates/pp-web/dist/* /opt/proxypanel/web/dist/
+sudo cp -r apps/panel/dist/* /opt/proxypanel/web/dist/
 ```
 
 ### 3. 创建 systemd 服务
@@ -814,7 +814,7 @@ sudo systemctl status proxy-panel-hub
 | Job | 触发条件 | 说明 |
 |-----|----------|------|
 | `rust` | push 到 `main`/`master`、任意 PR | 执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
-| `web` | 同上 | 在 `crates/pp-web` 执行 `bun run verify`（构建 + Linter + 格式检查） |
+| `web` | 同上 | 在 `apps/panel` 执行 `bun run verify`（构建 + Linter + 格式检查） |
 
 ### Release Workflow (`.github/workflows/release.yml`)
 
