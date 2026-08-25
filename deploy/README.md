@@ -160,35 +160,42 @@ sudo systemctl status proxy-panel-agent
 sudo proxy-panel logs hub --lines 100
 ```
 
-## 自动化部署脚本
+## 自动化部署
 
-项目根目录 `scripts/deploy-server.py` 支持一键部署 Hub 或 Agent（基于 SSH + paramiko，自动打包、上传、安装 systemd 服务）。
+推荐使用 Release 产物 + `proxy-panel` CLI 完成自动化部署（无需本地构建）：
 
-### 前置要求
-
-- 本地已完成 Release 构建：`cargo build --release --workspace`
-- 前端已构建：`cd crates/pp-web && bun run build`
-- Python 3 + paramiko：`pip install paramiko`
-
-### 部署 Hub（含本地 Agent + Caddy）
+### 部署 Hub
 
 ```bash
-python3 scripts/deploy-server.py \
-  --mode hub \
-  --host 192.3.150.233 \
-  --password '***REMOVED***' \
-  --domain test2-panel.ybakiame.net
+curl -fsSL https://github.com/ybakiame/multi-proxy-panel/releases/latest/download/install-hub.sh | sudo bash -s -- --version latest
 ```
 
-### 部署 Agent（仅 Agent，连接远端 Hub）
+或先安装 CLI 再执行：
 
 ```bash
-python3 scripts/deploy-server.py \
-  --mode agent \
-  --host 64.188.27.110 \
-  --password '***REMOVED***' \
-  --hub-host test2-panel.ybakiame.net:50052 \
-  --agent-token your-agent-token
+sudo proxy-panel install hub --version latest
+# 按提示编辑 /etc/proxy-panel/hub.toml 填入 database_url
+sudo proxy-panel init-db --database-url "postgres://..."
+sudo systemctl enable --now proxy-panel-hub
+```
+
+### 部署 Agent
+
+在面板「节点管理 → 添加节点」生成一键接入命令，或手动执行：
+
+```bash
+curl -fsSL https://<your-hub-domain>/install.sh | sudo bash -s -- \
+  --hub-url "https://<your-hub-domain>:443" \
+  --token "<节点 token>" \
+  --name "<节点名称>"
+```
+
+日常生命周期管理（升级 / 回滚 / 卸载 / 状态 / 日志）统一使用：
+
+```bash
+sudo proxy-panel upgrade hub --version vX.Y.Z
+sudo proxy-panel rollback hub
+sudo proxy-panel status
 ```
 
 ## 订阅模板
