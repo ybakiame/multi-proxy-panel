@@ -5,7 +5,6 @@ import {
   listCores,
   listProfiles,
   listSubscriptions,
-  platformInfo,
   refreshSubscription,
   requestVpnPermission,
   setActiveCore,
@@ -15,6 +14,7 @@ import {
 } from "../api";
 import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionFormat, SubscriptionView } from "../api";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useAppStore } from "../store";
 import { toastError, toastSuccess, toastWarning } from "../toast";
 
@@ -43,11 +43,6 @@ function coreTypeOf(value: string | undefined): "singbox" | "mihomo" {
   return "singbox";
 }
 
-/** 核心类型原始值（兼容 `singbox` / `mihomo` 小写 serde 值与 PascalCase 值，回退 singbox）。 */
-function coreTypeValue(value: string | undefined): string {
-  return coreTypeOf(value);
-}
-
 /** 由订阅 format 推导适配核心；ShareLinks/空 返回 null（跟随全局核心）。 */
 function subCoreType(format: SubscriptionFormat | null | undefined): "singbox" | "mihomo" | null {
   if (format === "ClashYaml") {
@@ -67,6 +62,7 @@ function sleep(ms: number): Promise<void> {
 export default function Dashboard() {
   const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
     useAppStore();
+  const { data: capabilities } = useCapabilities();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   // 选中订阅后嗅探 format 期间置忙：禁用订阅 Select 避免重复触发。
   const [refreshingSub, setRefreshingSub] = useState(false);
@@ -77,16 +73,16 @@ export default function Dashboard() {
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  // 运行平台（Android 由 VpnService 接管，隐藏桌面专属开关）。
-  const [os, setOs] = useState<string | null>(null);
   const [vpnAuthBusy, setVpnAuthBusy] = useState(false);
   // Android VPN 启动失败原因（非空时展示 danger Alert；来自 Kotlin ProxyVpnService.lastError）。
   const [vpnError, setVpnError] = useState<string | null>(null);
-  // platformInfo 异步返回后才拿到 os，现有 2s 轮询闭包会捕获旧值；用 ref 让轮询读到最新平台。
-  const osRef = useRef(os);
+  // capabilities 异步返回前为 undefined，用 ref 让轮询读到最新平台。
+  const capsRef = useRef(capabilities);
   useEffect(() => {
-    osRef.current = os;
-  }, [os]);
+    capsRef.current = capabilities;
+  }, [capabilities]);
+
+  const isAndroid = capabilities?.is_android ?? false;
 
   /**
    * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
@@ -145,16 +141,11 @@ export default function Dashboard() {
     void loadSubscriptions();
     void loadCores();
     void loadProfiles();
-    void platformInfo()
-      .then((info) => setOs(info.os))
-      .catch(() => {
-        // 命令失败保持未知平台（按桌面渲染）。
-      });
     // 状态轮询：每 2s 刷新一次运行状态；Android 并入读取 VPN 启动错误
     // （libbox 在后台线程启动，失败不阻塞 start_proxy 返回，需轮询兜底展示）。
     const timer = window.setInterval(() => {
       void refreshStatus();
-      if (osRef.current === "android") {
+      if (capsRef.current?.is_android) {
         void vpnLastError()
           .then((err) => setVpnError(err ?? null))
           .catch(() => {
@@ -201,7 +192,7 @@ export default function Dashboard() {
     setVpnError(null);
     try {
       await start();
-      if (osRef.current === "android") {
+      if (capsRef.current?.is_android) {
         // Android：核心异步启动，轮询确认后再提示，避免「启动失败却提示成功」。
         await confirmAndroidStart();
       } else {
@@ -351,7 +342,6 @@ export default function Dashboard() {
   const tunAuthRequired = error?.includes("tun_auth_required") ?? false;
   // Android 下 start_proxy 未获 VPN 授权时返回 `vpn_not_authorized` 前缀错误，改为引导「去授权」。
   const vpnAuthRequired = error?.includes("vpn_not_authorized") ?? false;
-  const isAndroid = os === "android";
   const alertError = error ?? actionError;
 
   // 运行门禁：不满足时禁止启动并逐条提示。
@@ -379,15 +369,19 @@ export default function Dashboard() {
     gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
   // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，无「选择核心二进制」
-  // 概念，核心类型在上方 Select 直接选择），二进制门禁跳过。
+  // 概念，核心类型由运行时自动判定），二进制门禁跳过。
   if (!isAndroid && (!config?.core_binary || !activeCore)) {
     gateMessages.push("请先选择要使用的核心");
   }
-  if (activeSub && activeSub.format === "ClashYaml" && config?.core_type === "singbox") {
-    gateMessages.push("该订阅为 Clash 格式，需切换 mihomo 核心");
-  }
-  if (activeSub && activeSub.format === "SingBoxJson" && config?.core_type === "mihomo") {
-    gateMessages.push("该订阅为 sing-box 格式，需切换 sing-box 核心");
+  // Android: clash 订阅与 sing-box 不兼容时自动降级到 mihomo（state.rs 中
+  // check_subscription_core_compat 处理），前端不再显示格式不匹配门禁。
+  if (!isAndroid) {
+    if (activeSub && activeSub.format === "ClashYaml" && config?.core_type === "singbox") {
+      gateMessages.push("该订阅为 Clash 格式，需切换 mihomo 核心");
+    }
+    if (activeSub && activeSub.format === "SingBoxJson" && config?.core_type === "mihomo") {
+      gateMessages.push("该订阅为 sing-box 格式，需切换 sing-box 核心");
+    }
   }
   if (activeSub?.profile_id) {
     const profile = profiles.find((p) => p.id === activeSub.profile_id);
@@ -508,39 +502,13 @@ export default function Dashboard() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="dashboard-core">核心</Label>
               {isAndroid ? (
-                // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，经
-                // panelcore.aar 合并绑定）：无「选择核心二进制」概念，改为直接选择
-                // 核心类型（持久化 core_type，Kotlin 侧按 core 字段分派 VPN 服务）。
-                // key 区分平台分支：platformInfo 异步返回前 os=null 走桌面分支，返回
-                // android 后切换本分支，分支级 key 强制重挂载，避免 react-aria 复用
-                // fiber 导致集合节点 key 从 __empty 变为 singbox 而触发
-                // "Cannot change the id of an item" 渲染崩溃。
-                <Select
-                  key="core-android"
-                  id="dashboard-core"
-                  aria-label="核心类型"
-                  value={coreTypeValue(config?.core_type)}
-                  onChange={(key) => void persistConfig({ core_type: String(key ?? "singbox") })}
-                  placeholder="请选择核心类型"
-                  fullWidth
-                >
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item key="singbox" id="singbox" textValue="sing-box">
-                        sing-box
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                      <ListBox.Item key="mihomo" id="mihomo" textValue="mihomo">
-                        mihomo
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
+                // Phase ②: Android core selection silenced — hide switch UI,
+                // show read-only status text (default sing-box, but
+                // check_subscription_core_compat may auto-downgrade to mihomo).
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-sm">
+                  <span className="font-medium">自动（{coreLabel(config?.core_type ?? "singbox")}）</span>
+                  <span className="ml-2 text-xs text-muted">（Android 内置核心）</span>
+                </div>
               ) : (
                 // 桌面分支：items 按当前 core_type 过滤；active 二进制不属于当前
                 // 类型时显示 placeholder（不强行展示旧值），提示核心类型切换后需
@@ -687,7 +655,11 @@ export default function Dashboard() {
           <Card.Header>
             <Card.Title>核心状态</Card.Title>
             <Card.Description>
-              {config?.core_type === "mihomo" ? "mihomo" : "sing-box"}
+              {isAndroid
+                ? `当前运行核心：${coreLabel(config?.core_type ?? "singbox")}`
+                : config?.core_type === "mihomo"
+                  ? "mihomo"
+                  : "sing-box"}
               {config ? ` · 混合端口 ${config.mixed_port}` : ""}
             </Card.Description>
           </Card.Header>

@@ -498,7 +498,35 @@ export function testGithubProxy(): Promise<string> {
   return invoke<string>("test_github_proxy");
 }
 
-/** 运行平台信息（与 Rust 侧 `PlatformInfoView` 对齐）。 */
+/** 平台能力矩阵（与 Rust 侧 `CapabilitiesView` 对齐）。 */
+export interface Capabilities {
+  /** 运行平台：`android` / `linux` / `windows` / `macos`。 */
+  os: string;
+  /** 是否为 Android 平台（便捷字段）。 */
+  is_android: boolean;
+  /** 功能能力矩阵。 */
+  capabilities: {
+    /** MITM 代理支持。 */
+    mitm: boolean;
+    /** 系统代理设置接管。 */
+    system_proxy: boolean;
+    /** 核心二进制管理（下载/删除/探测/切换）。 */
+    core_management: boolean;
+    /** TUN 模式开关。 */
+    tun_toggle: boolean;
+    /** 远程脚本/片段资源订阅。 */
+    scripts_remote: boolean;
+    /** 定时任务（cron 脚本调度）。 */
+    cron_tasks: boolean;
+  };
+}
+
+/** 查询平台能力矩阵（替代旧 `platform_info`，提供更细粒度能力判断）。 */
+export function getCapabilities(): Promise<Capabilities> {
+  return invoke<Capabilities>("get_capabilities");
+}
+
+/** 运行平台信息（与 Rust 侧 `PlatformInfoView` / `CapabilitiesView` 对齐）。 */
 export interface PlatformInfo {
   /** 运行平台：`android` / `linux` / `windows` / `macos`。 */
   os: string;

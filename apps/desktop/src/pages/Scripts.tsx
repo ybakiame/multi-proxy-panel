@@ -28,6 +28,7 @@ import {
   updateRemote,
 } from "../api";
 import type { ArgSpecView, DetectRemoteView, FetchReport, ImportSummary, RemoteResource, TaskScriptView } from "../api";
+import { useCapabilities } from "../hooks/useCapabilities";
 
 /**
  * 远程资源添加表单的方言选项（仅保留 Surge / Loon）。
@@ -140,6 +141,10 @@ function groupArgsByTag<T extends { key: string; tag: string | null }>(args: T[]
 }
 
 export default function Scripts() {
+  const { data: capabilities } = useCapabilities();
+  const capScriptsRemote = capabilities?.capabilities.scripts_remote ?? true;
+  const capCronTasks = capabilities?.capabilities.cron_tasks ?? true;
+
   const [remotes, setRemotes] = useState<RemoteResource[]>([]);
   // 本地图标缓存（name → data URL）：优先本地，远程 URL 兜底。
   const [iconCache, setIconCache] = useState<Record<string, string>>({});
@@ -222,9 +227,13 @@ export default function Scripts() {
   }, []);
 
   useEffect(() => {
-    void refreshRemotes();
-    void refreshTasks();
-  }, [refreshRemotes, refreshTasks]);
+    if (capScriptsRemote) {
+      void refreshRemotes();
+    }
+    if (capCronTasks) {
+      void refreshTasks();
+    }
+  }, [refreshRemotes, refreshTasks, capScriptsRemote, capCronTasks]);
 
   /** 嗅探远端资源：按后缀判定类型/方言，Snippet 可访问时解析元数据并预填表单。 */
   const handleDetect = useCallback(async () => {
@@ -559,315 +568,327 @@ export default function Scripts() {
       <Tabs>
         <Tabs.ListContainer>
           <Tabs.List aria-label="脚本管理">
-            <Tabs.Tab id="remotes">
-              远程资源
-              <Tabs.Indicator />
-            </Tabs.Tab>
-            <Tabs.Tab id="tasks">
-              定时任务
-              <Tabs.Indicator />
-            </Tabs.Tab>
-            <Tabs.Tab id="import">
-              配置导入
-              <Tabs.Indicator />
-            </Tabs.Tab>
+            {capScriptsRemote && (
+              <Tabs.Tab id="remotes">
+                远程资源
+                <Tabs.Indicator />
+              </Tabs.Tab>
+            )}
+            {capCronTasks && (
+              <Tabs.Tab id="tasks">
+                定时任务
+                <Tabs.Indicator />
+              </Tabs.Tab>
+            )}
+            {capScriptsRemote && (
+              <Tabs.Tab id="import">
+                配置导入
+                <Tabs.Indicator />
+              </Tabs.Tab>
+            )}
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="remotes">
-          <Card>
-            <Card.Header>
-              <Card.Title>远程资源</Card.Title>
-              <Card.Description>脚本 / 配置片段订阅，按间隔拉取并落盘缓存</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              {remotes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                  <span className="text-sm text-muted">暂无远程资源</span>
-                  <span className="text-xs text-muted/80">点击「添加资源」创建第一条订阅</span>
+        {capScriptsRemote && (
+          <Tabs.Panel className="flex flex-col gap-4 pt-4" id="remotes">
+            <Card>
+              <Card.Header>
+                <Card.Title>远程资源</Card.Title>
+                <Card.Description>脚本 / 配置片段订阅，按间隔拉取并落盘缓存</Card.Description>
+              </Card.Header>
+              <Card.Content>
+                {remotes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                    <span className="text-sm text-muted">暂无远程资源</span>
+                    <span className="text-xs text-muted/80">点击「添加资源」创建第一条订阅</span>
+                  </div>
+                ) : (
+                  <Table>
+                    <Table.ScrollContainer>
+                      <Table.Content aria-label="远程资源" className="min-w-[720px]">
+                        <Table.Header>
+                          <Table.Column>图标</Table.Column>
+                          <Table.Column isRowHeader>名称</Table.Column>
+                          <Table.Column>描述</Table.Column>
+                          <Table.Column>类型</Table.Column>
+                          <Table.Column>更新间隔</Table.Column>
+                          <Table.Column>启用</Table.Column>
+                          <Table.Column>操作</Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {remotes.map((remote) => (
+                            <Table.Row key={remote.name}>
+                              <Table.Cell>
+                                <Avatar size="sm" className="h-6 w-6">
+                                  {remote.icon ? (
+                                    <Avatar.Image
+                                      src={iconCache[remote.name] ?? remote.icon}
+                                      alt={`${remote.name} 图标`}
+                                    />
+                                  ) : null}
+                                  <Avatar.Fallback color="accent">
+                                    {(remote.name.charAt(0) || "?").toUpperCase()}
+                                  </Avatar.Fallback>
+                                </Avatar>
+                              </Table.Cell>
+                              <Table.Cell className="max-w-[180px] truncate">
+                                <span title={remote.name}>{remote.name}</span>
+                              </Table.Cell>
+                              <Table.Cell className="max-w-[200px] truncate">
+                                <span title={remote.description ?? "-"}>{remote.description ?? "-"}</span>
+                              </Table.Cell>
+                              <Table.Cell>
+                                {remote.kind === "Script"
+                                  ? "脚本"
+                                  : `片段 / ${normalizeDialect(remote.dialect) ?? remote.dialect}`}
+                              </Table.Cell>
+                              <Table.Cell>{formatInterval(remote.update_interval_secs)}</Table.Cell>
+                              <Table.Cell>
+                                <Switch
+                                  aria-label={`启用 ${remote.name}`}
+                                  isSelected={remote.enabled}
+                                  onChange={() => void handleToggle(remote)}
+                                >
+                                  <Switch.Content>
+                                    <Switch.Control>
+                                      <Switch.Thumb />
+                                    </Switch.Control>
+                                    <span className="sr-only">{remote.enabled ? "启用" : "停用"}</span>
+                                  </Switch.Content>
+                                </Switch>
+                              </Table.Cell>
+                              <Table.Cell>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="tertiary"
+                                    isDisabled={busy}
+                                    onPress={() => handleOpenEdit(remote)}
+                                  >
+                                    编辑
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="tertiary"
+                                    isDisabled={busy}
+                                    onPress={() => void handleRemove(remote.name)}
+                                  >
+                                    删除
+                                  </Button>
+                                </div>
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
+                )}
+              </Card.Content>
+              <Card.Footer>
+                <div className="flex w-full items-center justify-between gap-3">
+                  <Button
+                    variant="secondary"
+                    isPending={busy}
+                    isDisabled={remotes.length === 0}
+                    onPress={() => void handleFetch()}
+                  >
+                    立即更新
+                  </Button>
+                  <Button
+                    variant="primary"
+                    isDisabled={busy}
+                    onPress={() => {
+                      resetAddForm();
+                      setAddOpen(true);
+                    }}
+                  >
+                    添加资源
+                  </Button>
                 </div>
-              ) : (
-                <Table>
-                  <Table.ScrollContainer>
-                    <Table.Content aria-label="远程资源" className="min-w-[720px]">
-                      <Table.Header>
-                        <Table.Column>图标</Table.Column>
-                        <Table.Column isRowHeader>名称</Table.Column>
-                        <Table.Column>描述</Table.Column>
-                        <Table.Column>类型</Table.Column>
-                        <Table.Column>更新间隔</Table.Column>
-                        <Table.Column>启用</Table.Column>
-                        <Table.Column>操作</Table.Column>
-                      </Table.Header>
-                      <Table.Body>
-                        {remotes.map((remote) => (
-                          <Table.Row key={remote.name}>
-                            <Table.Cell>
-                              <Avatar size="sm" className="h-6 w-6">
-                                {remote.icon ? (
-                                  <Avatar.Image
-                                    src={iconCache[remote.name] ?? remote.icon}
-                                    alt={`${remote.name} 图标`}
-                                  />
-                                ) : null}
-                                <Avatar.Fallback color="accent">
-                                  {(remote.name.charAt(0) || "?").toUpperCase()}
-                                </Avatar.Fallback>
-                              </Avatar>
-                            </Table.Cell>
-                            <Table.Cell className="max-w-[180px] truncate">
-                              <span title={remote.name}>{remote.name}</span>
-                            </Table.Cell>
-                            <Table.Cell className="max-w-[200px] truncate">
-                              <span title={remote.description ?? "-"}>{remote.description ?? "-"}</span>
-                            </Table.Cell>
-                            <Table.Cell>
-                              {remote.kind === "Script"
-                                ? "脚本"
-                                : `片段 / ${normalizeDialect(remote.dialect) ?? remote.dialect}`}
-                            </Table.Cell>
-                            <Table.Cell>{formatInterval(remote.update_interval_secs)}</Table.Cell>
-                            <Table.Cell>
-                              <Switch
-                                aria-label={`启用 ${remote.name}`}
-                                isSelected={remote.enabled}
-                                onChange={() => void handleToggle(remote)}
-                              >
-                                <Switch.Content>
-                                  <Switch.Control>
-                                    <Switch.Thumb />
-                                  </Switch.Control>
-                                  <span className="sr-only">{remote.enabled ? "启用" : "停用"}</span>
-                                </Switch.Content>
-                              </Switch>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <div className="flex items-center gap-2">
+              </Card.Footer>
+            </Card>
+
+            {fetchResult && (
+              <Alert status={fetchResult.warnings.length > 0 ? "warning" : "success"}>
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>更新完成</Alert.Title>
+                  <Alert.Description>
+                    成功拉取 {fetchResult.fetched} 个资源：脚本 {fetchResult.scripts}、重写 {fetchResult.rewrites}、任务{" "}
+                    {fetchResult.tasks}
+                    {fetchResult.warnings.length > 0 && `，警告 ${fetchResult.warnings.length} 条`}
+                  </Alert.Description>
+                  {fetchResult.warnings.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
+                      {fetchResult.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+                </Alert.Content>
+              </Alert>
+            )}
+          </Tabs.Panel>
+        )}
+
+        {capCronTasks && (
+          <Tabs.Panel className="flex flex-col gap-4 pt-4" id="tasks">
+            <Card>
+              <Card.Header>
+                <Card.Title>定时任务</Card.Title>
+                <Card.Description>远程订阅中的 cron 任务脚本，需代理运行中且 MITM 已启用</Card.Description>
+              </Card.Header>
+              <Card.Content>
+                {tasks.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                    <span className="text-sm text-muted">暂无定时任务</span>
+                    <span className="text-xs text-muted/80">远程资源中的 [task_local] / cron 脚本会在此列出</span>
+                  </div>
+                ) : (
+                  <Table>
+                    <Table.ScrollContainer>
+                      <Table.Content aria-label="定时任务" className="min-w-[720px]">
+                        <Table.Header>
+                          <Table.Column isRowHeader>名称</Table.Column>
+                          <Table.Column>cron</Table.Column>
+                          <Table.Column>下次执行</Table.Column>
+                          <Table.Column>上次执行</Table.Column>
+                          <Table.Column>上次错误</Table.Column>
+                          <Table.Column>操作</Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {tasks.map((task) => (
+                            <Table.Row key={task.name}>
+                              <Table.Cell className="max-w-[180px] truncate">
+                                <span title={task.name}>{task.name}</span>
+                              </Table.Cell>
+                              <Table.Cell className="font-mono text-xs">{task.cron_expr}</Table.Cell>
+                              <Table.Cell>{formatTime(task.next_run)}</Table.Cell>
+                              <Table.Cell>{formatTime(task.last_run)}</Table.Cell>
+                              <Table.Cell className="max-w-[200px] truncate">
+                                <span title={task.last_error ?? "-"}>{task.last_error ?? "-"}</span>
+                              </Table.Cell>
+                              <Table.Cell>
                                 <Button
                                   size="sm"
-                                  variant="tertiary"
+                                  variant="secondary"
                                   isDisabled={busy}
-                                  onPress={() => handleOpenEdit(remote)}
+                                  onPress={() => void handleRunTask(task.name)}
                                 >
-                                  编辑
+                                  运行
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="tertiary"
-                                  isDisabled={busy}
-                                  onPress={() => void handleRemove(remote.name)}
-                                >
-                                  删除
-                                </Button>
-                              </div>
-                            </Table.Cell>
-                          </Table.Row>
-                        ))}
-                      </Table.Body>
-                    </Table.Content>
-                  </Table.ScrollContainer>
-                </Table>
-              )}
-            </Card.Content>
-            <Card.Footer>
-              <div className="flex w-full items-center justify-between gap-3">
-                <Button
-                  variant="secondary"
-                  isPending={busy}
-                  isDisabled={remotes.length === 0}
-                  onPress={() => void handleFetch()}
-                >
-                  立即更新
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
+                )}
+              </Card.Content>
+              <Card.Footer>
+                <Button variant="secondary" isDisabled={busy} onPress={() => void refreshTasks()}>
+                  刷新
                 </Button>
+              </Card.Footer>
+            </Card>
+
+            {runResult && (
+              <Alert status="success">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>任务「{runResult.name}」已运行</Alert.Title>
+                  <Alert.Description className="break-all font-mono text-xs">
+                    {runResult.output || "$done()"}
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
+            )}
+          </Tabs.Panel>
+        )}
+
+        {capScriptsRemote && (
+          <Tabs.Panel className="flex flex-col gap-4 pt-4" id="import">
+            <Card>
+              <Card.Header>
+                <Card.Title>导入配置</Card.Title>
+                <Card.Description>粘贴 Surge / Loon 的 rewrite / script / mitm 片段，合并进本地缓存</Card.Description>
+              </Card.Header>
+              <Card.Content className="flex flex-col gap-4">
+                <Select
+                  className="w-full sm:max-w-[240px]"
+                  placeholder="选择方言"
+                  value={importDialect}
+                  onChange={(value) => setImportDialect(String(value ?? ""))}
+                >
+                  <Label>方言</Label>
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {IMPORT_DIALECT_OPTIONS.map((option) => (
+                        <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                          {option.label}
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                <TextArea
+                  aria-label="配置片段"
+                  value={importText}
+                  onChange={(event) => setImportText(event.target.value)}
+                  placeholder={
+                    "[rewrite_local]\n^https?://example\\.com/api/ url-and-header https://cdn.example.com/$1\n\n[mitm]\nhostname = *.example.com"
+                  }
+                  rows={12}
+                  fullWidth
+                />
+              </Card.Content>
+              <Card.Footer>
                 <Button
                   variant="primary"
-                  isDisabled={busy}
-                  onPress={() => {
-                    resetAddForm();
-                    setAddOpen(true);
-                  }}
+                  isPending={busy}
+                  isDisabled={importText.trim().length === 0}
+                  onPress={() => void handleImport()}
                 >
-                  添加资源
+                  导入
                 </Button>
-              </div>
-            </Card.Footer>
-          </Card>
+              </Card.Footer>
+            </Card>
 
-          {fetchResult && (
-            <Alert status={fetchResult.warnings.length > 0 ? "warning" : "success"}>
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>更新完成</Alert.Title>
-                <Alert.Description>
-                  成功拉取 {fetchResult.fetched} 个资源：脚本 {fetchResult.scripts}、重写 {fetchResult.rewrites}、任务{" "}
-                  {fetchResult.tasks}
-                  {fetchResult.warnings.length > 0 && `，警告 ${fetchResult.warnings.length} 条`}
-                </Alert.Description>
-                {fetchResult.warnings.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
-                    {fetchResult.warnings.map((w) => (
-                      <li key={w}>{w}</li>
-                    ))}
-                  </ul>
-                )}
-              </Alert.Content>
-            </Alert>
-          )}
-        </Tabs.Panel>
-
-        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="tasks">
-          <Card>
-            <Card.Header>
-              <Card.Title>定时任务</Card.Title>
-              <Card.Description>远程订阅中的 cron 任务脚本，需代理运行中且 MITM 已启用</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              {tasks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                  <span className="text-sm text-muted">暂无定时任务</span>
-                  <span className="text-xs text-muted/80">远程资源中的 [task_local] / cron 脚本会在此列出</span>
-                </div>
-              ) : (
-                <Table>
-                  <Table.ScrollContainer>
-                    <Table.Content aria-label="定时任务" className="min-w-[720px]">
-                      <Table.Header>
-                        <Table.Column isRowHeader>名称</Table.Column>
-                        <Table.Column>cron</Table.Column>
-                        <Table.Column>下次执行</Table.Column>
-                        <Table.Column>上次执行</Table.Column>
-                        <Table.Column>上次错误</Table.Column>
-                        <Table.Column>操作</Table.Column>
-                      </Table.Header>
-                      <Table.Body>
-                        {tasks.map((task) => (
-                          <Table.Row key={task.name}>
-                            <Table.Cell className="max-w-[180px] truncate">
-                              <span title={task.name}>{task.name}</span>
-                            </Table.Cell>
-                            <Table.Cell className="font-mono text-xs">{task.cron_expr}</Table.Cell>
-                            <Table.Cell>{formatTime(task.next_run)}</Table.Cell>
-                            <Table.Cell>{formatTime(task.last_run)}</Table.Cell>
-                            <Table.Cell className="max-w-[200px] truncate">
-                              <span title={task.last_error ?? "-"}>{task.last_error ?? "-"}</span>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                isDisabled={busy}
-                                onPress={() => void handleRunTask(task.name)}
-                              >
-                                运行
-                              </Button>
-                            </Table.Cell>
-                          </Table.Row>
-                        ))}
-                      </Table.Body>
-                    </Table.Content>
-                  </Table.ScrollContainer>
-                </Table>
-              )}
-            </Card.Content>
-            <Card.Footer>
-              <Button variant="secondary" isDisabled={busy} onPress={() => void refreshTasks()}>
-                刷新
-              </Button>
-            </Card.Footer>
-          </Card>
-
-          {runResult && (
-            <Alert status="success">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>任务「{runResult.name}」已运行</Alert.Title>
-                <Alert.Description className="break-all font-mono text-xs">
-                  {runResult.output || "$done()"}
-                </Alert.Description>
-              </Alert.Content>
-            </Alert>
-          )}
-        </Tabs.Panel>
-
-        <Tabs.Panel className="flex flex-col gap-4 pt-4" id="import">
-          <Card>
-            <Card.Header>
-              <Card.Title>导入配置</Card.Title>
-              <Card.Description>粘贴 Surge / Loon 的 rewrite / script / mitm 片段，合并进本地缓存</Card.Description>
-            </Card.Header>
-            <Card.Content className="flex flex-col gap-4">
-              <Select
-                className="w-full sm:max-w-[240px]"
-                placeholder="选择方言"
-                value={importDialect}
-                onChange={(value) => setImportDialect(String(value ?? ""))}
-              >
-                <Label>方言</Label>
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {IMPORT_DIALECT_OPTIONS.map((option) => (
-                      <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
-                        {option.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-              <TextArea
-                aria-label="配置片段"
-                value={importText}
-                onChange={(event) => setImportText(event.target.value)}
-                placeholder={
-                  "[rewrite_local]\n^https?://example\\.com/api/ url-and-header https://cdn.example.com/$1\n\n[mitm]\nhostname = *.example.com"
-                }
-                rows={12}
-                fullWidth
-              />
-            </Card.Content>
-            <Card.Footer>
-              <Button
-                variant="primary"
-                isPending={busy}
-                isDisabled={importText.trim().length === 0}
-                onPress={() => void handleImport()}
-              >
-                导入
-              </Button>
-            </Card.Footer>
-          </Card>
-
-          {importResult && (
-            <Alert status={importResult.warnings.length > 0 ? "warning" : "success"}>
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>导入完成</Alert.Title>
-                <Alert.Description>
-                  重写 {importResult.rewrites}、脚本 {importResult.scripts}、任务 {importResult.tasks}、 主机名{" "}
-                  {importResult.hostnames}
-                  {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
-                </Alert.Description>
-                {importResult.meta?.name && (
-                  <div className="mt-2 break-words text-sm">
-                    识别为：{importResult.meta.name}
-                    {importResult.meta.desc ? ` — ${importResult.meta.desc}` : ""}
-                  </div>
-                )}
-                {importResult.warnings.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
-                    {importResult.warnings.map((w) => (
-                      <li key={w}>{w}</li>
-                    ))}
-                  </ul>
-                )}
-              </Alert.Content>
-            </Alert>
-          )}
-        </Tabs.Panel>
+            {importResult && (
+              <Alert status={importResult.warnings.length > 0 ? "warning" : "success"}>
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>导入完成</Alert.Title>
+                  <Alert.Description>
+                    重写 {importResult.rewrites}、脚本 {importResult.scripts}、任务 {importResult.tasks}、 主机名{" "}
+                    {importResult.hostnames}
+                    {importResult.warnings.length > 0 && `，警告 ${importResult.warnings.length} 条`}
+                  </Alert.Description>
+                  {importResult.meta?.name && (
+                    <div className="mt-2 break-words text-sm">
+                      识别为：{importResult.meta.name}
+                      {importResult.meta.desc ? ` — ${importResult.meta.desc}` : ""}
+                    </div>
+                  )}
+                  {importResult.warnings.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc space-y-1 break-words text-sm">
+                      {importResult.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+                </Alert.Content>
+              </Alert>
+            )}
+          </Tabs.Panel>
+        )}
       </Tabs>
 
       {error && (

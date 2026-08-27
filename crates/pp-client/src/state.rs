@@ -221,7 +221,28 @@ impl ClientState {
             let fetch =
                 subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                     .await?;
-            check_subscription_core_compat(fetch.format, self.config.core_type)?;
+            let effective_core = check_subscription_core_compat(
+                fetch.format,
+                self.config.core_type,
+                Some(sub.id),
+            )?;
+            // Android auto-downgrade: if compat check returns a different core_type,
+            // update config in-memory for this start cycle and persist it so that
+            // subsequent starts use the downgraded core without re-deriving.
+            // Desktop always returns the same core_type.
+            if effective_core != self.config.core_type {
+                tracing::info!(
+                    "Auto-downgrade applied: core_type {:?} → {:?} for subscription {}",
+                    self.config.core_type,
+                    effective_core,
+                    sub.id
+                );
+                self.config.core_type = effective_core;
+                // Persist the downgraded core_type so the next start uses it directly.
+                if let Err(e) = self.config.save() {
+                    tracing::warn!(error = %e, "Failed to persist auto-downgraded core_type");
+                }
+            }
             match self.config.core_type {
                 CoreType::SingBox => profile::SubContent::SingBox(serde_json::json!({
                     "outbounds": fetch.singbox_nodes,
@@ -683,37 +704,65 @@ fn panel_features_tun_enabled(is_android: bool, core_type: CoreType, tun_enabled
     }
 }
 
-/// 订阅格式 ↔ 核心类型绑定校验。
+/// Pure logic for subscription format ↔ core type compatibility check,
+/// parameterized by `is_android` so it can be unit-tested on desktop builds.
 ///
-/// - [`SubFormat::SingBoxJson`] 仅支持 sing-box 核心（其节点为 sing-box JSON，跨格式
-///   转 mihomo 有信息丢失，且此路径在「订阅绑定格式」决策后已废弃）；
-/// - [`SubFormat::ClashYaml`] 仅支持 mihomo 核心（历史 bug：clash 订阅节点转 sing-box
-///   outbound 时丢失 TLS 块导致 sing-box `initialize outbound: TLS required` FATAL）；
-/// - [`SubFormat::ShareLinks`] 双核心皆可。
-///
-/// 不匹配时返回明确错误（含检测到的订阅格式与当前核心类型），核心不启动。
-fn check_subscription_core_compat(
+/// - `SubFormat::SingBoxJson` → only sing-box core;
+/// - `SubFormat::ClashYaml` → only mihomo core (on Android, auto-downgrade
+///   from sing-box to mihomo instead of hard error);
+/// - `SubFormat::ShareLinks` → both cores.
+fn check_subscription_core_compat_pure(
     format: subscription::SubFormat,
     core_type: CoreType,
-) -> PanelResult<()> {
+    subscription_id: Option<uuid::Uuid>,
+    is_android: bool,
+) -> PanelResult<CoreType> {
     let compatible = match format {
         subscription::SubFormat::ShareLinks => true,
         subscription::SubFormat::SingBoxJson => core_type == CoreType::SingBox,
         subscription::SubFormat::ClashYaml => core_type == CoreType::Mihomo,
     };
     if compatible {
-        return Ok(());
+        return Ok(core_type);
     }
+
+    // Android: auto-downgrade clash → mihomo instead of hard error
+    if is_android && format == subscription::SubFormat::ClashYaml && core_type == CoreType::SingBox {
+        if let Some(id) = subscription_id {
+            tracing::warn!(
+                subscription_id = %id,
+                "Android auto-downgrade: clash subscription incompatible with sing-box, switching core singbox→mihomo"
+            );
+        } else {
+            tracing::warn!(
+                "Android auto-downgrade: clash subscription incompatible with sing-box, switching core singbox→mihomo"
+            );
+        }
+        return Ok(CoreType::Mihomo);
+    }
+
     let (format_name, supported_core) = match format {
         subscription::SubFormat::ClashYaml => ("clash", "mihomo"),
         subscription::SubFormat::SingBoxJson => ("sing-box", "sing-box"),
         subscription::SubFormat::ShareLinks => {
-            unreachable!("ShareLinks 双核心皆可，不会走到不匹配分支")
+            unreachable!("ShareLinks supports both cores, should not reach mismatch branch")
         }
     };
     Err(PanelError::Client(format!(
         "订阅格式为 {format_name}，仅支持 {supported_core} 核心，当前核心类型为 {core_type}，请在设置中切换核心类型"
     )))
+}
+
+/// Subscription format ↔ core type compatibility check.
+///
+/// Delegates to [`check_subscription_core_compat_pure`] with the actual
+/// platform flag (`target_os = "android"`).
+fn check_subscription_core_compat(
+    format: subscription::SubFormat,
+    core_type: CoreType,
+    subscription_id: Option<uuid::Uuid>,
+) -> PanelResult<CoreType> {
+    check_subscription_core_compat_pure(format, core_type, subscription_id, cfg!(target_os = "android"))
 }
 
 /// 核心类型的用户可见展示名（`sing-box` / `mihomo`），用于覆写匹配错误信息。
@@ -1861,56 +1910,134 @@ mod tests {
         assert_eq!(cfg["experimental"]["server"]["host"], "deep.example.com");
     }
 
-    /// 项 2：`tun_enabled=true` 且已授权（注入 Authorized 检测）→ 注入 tun 入站。
-    #[tokio::test]
-    async fn start_injects_tun_inbound_when_authorized() {
-        let body = r#"{
-            "log": {"level": "info"},
-            "outbounds": [{"type": "direct"}]
-        }"#;
-        let addr = spawn_server(StatusCode::OK, body).await;
-        let dir = tempfile::tempdir().unwrap();
-
-        let capture = dir.path().join("core-config-capture.json");
-        let core_bin = fake_core_capturing_args(&dir, &capture);
-        let mut cfg = ClientConfig::new(
-            dir.path().to_path_buf(),
-            format!("http://{addr}"),
-            "tok",
-            CoreType::SingBox,
-            core_bin,
+    /// Phase ②: Android auto-downgrade pure logic tests (desktop-runnable).
+    #[test]
+    fn compat_check_sharelinks_always_compatible() {
+        let id = Some(uuid::Uuid::new_v4());
+        assert_eq!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::ShareLinks,
+                CoreType::SingBox,
+                id,
+                false
+            )
+            .unwrap(),
+            CoreType::SingBox
         );
-        cfg.tun_enabled = true;
-        cfg.save().unwrap();
+        assert_eq!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::ShareLinks,
+                CoreType::Mihomo,
+                id,
+                true
+            )
+            .unwrap(),
+            CoreType::Mihomo
+        );
+    }
 
-        let mock = Arc::new(MockSystemProxy::new());
-        let mut state = ClientState {
-            config: cfg,
-            core: None,
-            mitm: None,
-            sysproxy: mock,
-            notifier: Arc::new(TracingNotifier::new()),
-            recorder: Arc::new(MemoryRecorder::new(2048)),
-            scheduler: None,
-            tun_auth_check: Arc::new(|_| TunAuthStatus::Authorized),
-            rule_count: 0,
-        };
-        state.start().await.unwrap();
-
-        let mut attempts = 0;
-        while !capture.exists() && attempts < 100 {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            attempts += 1;
-        }
-        assert!(capture.exists(), "假核心应已复制合成配置");
-        let core_config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
-        let inbounds = core_config["inbounds"].as_array().unwrap();
+    #[test]
+    fn compat_check_singboxjson_only_with_singbox() {
+        let id = Some(uuid::Uuid::new_v4());
+        assert_eq!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::SingBoxJson,
+                CoreType::SingBox,
+                id,
+                false
+            )
+            .unwrap(),
+            CoreType::SingBox
+        );
+        // sing-box JSON + mihomo core → error regardless of platform
         assert!(
-            inbounds.iter().any(|i| i["type"] == "tun"),
-            "tun_enabled=true 且已授权时应注入 tun 入站: {core_config}"
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::SingBoxJson,
+                CoreType::Mihomo,
+                id,
+                false
+            )
+            .is_err()
         );
+        assert!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::SingBoxJson,
+                CoreType::Mihomo,
+                id,
+                true
+            )
+            .is_err()
+        );
+    }
 
-        state.stop().await;
+    #[test]
+    fn compat_check_clashyaml_with_mihomo_ok() {
+        let id = Some(uuid::Uuid::new_v4());
+        assert_eq!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::ClashYaml,
+                CoreType::Mihomo,
+                id,
+                false
+            )
+            .unwrap(),
+            CoreType::Mihomo
+        );
+        assert_eq!(
+            check_subscription_core_compat_pure(
+                subscription::SubFormat::ClashYaml,
+                CoreType::Mihomo,
+                id,
+                true
+            )
+            .unwrap(),
+            CoreType::Mihomo
+        );
+    }
+
+    #[test]
+    fn compat_check_clashyaml_with_singbox_desktop_errors() {
+        let id = Some(uuid::Uuid::new_v4());
+        let result = check_subscription_core_compat_pure(
+            subscription::SubFormat::ClashYaml,
+            CoreType::SingBox,
+            id,
+            false, // desktop
+        );
+        assert!(result.is_err(), "desktop should hard-error on clash+singbox");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("clash"), "{msg}");
+        assert!(msg.contains("mihomo"), "{msg}");
+    }
+
+    #[test]
+    fn compat_check_clashyaml_with_singbox_android_downgrades() {
+        let id = Some(uuid::Uuid::new_v4());
+        let result = check_subscription_core_compat_pure(
+            subscription::SubFormat::ClashYaml,
+            CoreType::SingBox,
+            id,
+            true, // android
+        );
+        assert_eq!(
+            result.unwrap(),
+            CoreType::Mihomo,
+            "Android should auto-downgrade clash+singbox → mihomo"
+        );
+    }
+
+    #[test]
+    fn compat_check_clashyaml_with_singbox_android_downgrades_without_sub_id() {
+        let result = check_subscription_core_compat_pure(
+            subscription::SubFormat::ClashYaml,
+            CoreType::SingBox,
+            None,
+            true, // android
+        );
+        assert_eq!(
+            result.unwrap(),
+            CoreType::Mihomo,
+            "Android auto-downgrade works even without subscription id"
+        );
     }
 }

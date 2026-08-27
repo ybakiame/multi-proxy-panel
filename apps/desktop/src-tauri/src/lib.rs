@@ -223,6 +223,7 @@ pub fn run() {
             #[cfg(target_os = "android")]
             commands::vpn_last_error,
             commands::platform_info,
+            commands::get_capabilities,
             logs::get_logs,
             logs::export_logs,
             logs::open_export_dir,

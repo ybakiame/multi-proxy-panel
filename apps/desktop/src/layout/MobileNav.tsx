@@ -3,7 +3,18 @@ import { Bars3Icon } from "@heroicons/react/24/outline";
 import { Button, Drawer } from "@heroui/react";
 import clsx from "clsx";
 import { NavLink } from "react-router-dom";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { NAV_ITEMS } from "./nav";
+
+function visibleNavItems(capabilities: ReturnType<typeof useCapabilities>["data"]) {
+  if (!capabilities) return NAV_ITEMS;
+  const caps = capabilities.capabilities;
+  return NAV_ITEMS.filter((item) => {
+    if (item.requiresMitm && !caps.mitm) return false;
+    if (item.requiresScriptsRemote && !caps.scripts_remote) return false;
+    return true;
+  });
+}
 
 /**
  * 移动端导航：`lg`（1024px）以下显示的顶栏（汉堡按钮 + 应用名）与
@@ -12,6 +23,8 @@ import { NAV_ITEMS } from "./nav";
  */
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
+  const { data: capabilities } = useCapabilities();
+  const items = visibleNavItems(capabilities);
 
   return (
     <>
@@ -39,7 +52,7 @@ export function MobileNav() {
             </Drawer.Header>
             <Drawer.Body>
               <nav className="flex flex-col gap-1" aria-label="主导航">
-                {NAV_ITEMS.map((item) => (
+                {items.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}

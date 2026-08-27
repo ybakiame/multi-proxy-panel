@@ -22,6 +22,24 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+/// Android 不可用命令的统一错误前缀。
+const UNSUPPORTED_PLATFORM_PREFIX: &str = "unsupported_platform";
+
+/// 若当前为 Android 平台，返回统一错误；否则执行闭包。
+///
+/// 用于桌面专属命令（核心管理、MITM 类、TUN 提权等）在 Android 上直接拒绝，
+/// 避免行为未定义或误导性执行。
+#[cfg(target_os = "android")]
+fn require_desktop<T>(feature: &str) -> Result<T, String> {
+    Err(format!("{UNSUPPORTED_PLATFORM_PREFIX}: {feature} is not supported on Android"))
+}
+
+/// 桌面平台：直接执行闭包。
+#[cfg(not(target_os = "android"))]
+fn require_desktop<T>(_: &str) -> Result<T, String> {
+    unreachable!("require_desktop should only be called after cfg guard")
+}
+
 /// 通过 tauri-plugin-notification 发送 OS 桌面通知的 [`pp_script::Notifier`]。
 ///
 /// 通知发送失败时回退为 `tracing::warn` 日志，不阻断脚本执行。
@@ -300,6 +318,22 @@ fn save_config_impl(
     #[cfg_attr(target_os = "android", allow(unused_mut))]
     let mut warnings: Vec<String> = Vec::new();
 
+    // Android: ignore frontend-submitted core_type changes — core is managed
+    // silently by the auto-downgrade logic in `ClientState::start`.
+    #[cfg(target_os = "android")]
+    {
+        if let Ok(prev) = ClientConfig::load(data_dir) {
+            if prev.core_type != config.core_type {
+                tracing::warn!(
+                    "Ignoring frontend core_type change on Android: {:?} → {:?}",
+                    prev.core_type,
+                    config.core_type
+                );
+                config.core_type = prev.core_type;
+            }
+        }
+    }
+
     // core_type 联动本地核心二进制（仅桌面/非 Android：Android 核心为内置
     // panelcore 合并绑定，无本地二进制下载管理语义，跳过以避免误导性
     // “未找到本地核心”警告）。
@@ -399,25 +433,84 @@ pub async fn tun_auth_status(state: State<'_, AppState>) -> Result<String, Strin
 /// 提示以管理员身份重启），返回授权后的最新状态。
 #[tauri::command]
 pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String> {
-    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
-    pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
-    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("TUN authorization");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+        pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
+        Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+    }
 }
 
-/// 运行平台信息的对外视图。
+/// 平台能力矩阵的对外视图（供前端统一判断功能显隐，替代散落的 `os === "android"`）。
 #[derive(Debug, Clone, Serialize)]
-pub struct PlatformInfoView {
+pub struct CapabilitiesView {
     /// 运行平台：`android` / `linux` / `windows` / `macos`。
     pub os: String,
+    /// 是否为 Android 平台（前端便捷字段，等价 `os == "android"`）。
+    pub is_android: bool,
+    /// 功能能力矩阵：每项 `true` 表示该平台支持该功能。
+    pub capabilities: PlatformCapabilities,
 }
 
-/// 查询运行平台（前端据此隐藏桌面专属开关：Android 由 VpnService 接管，
-/// 系统代理 / MITM / TUN 桌面开关无效）。
-#[tauri::command]
-pub fn platform_info() -> PlatformInfoView {
-    PlatformInfoView {
-        os: std::env::consts::OS.to_string(),
+/// 各平台功能能力矩阵（与审计结论对齐）。
+///
+/// Android 当前值（阶段①）：mitm=false, system_proxy=false, core_management=false,
+/// tun_toggle=false, scripts_remote=false, cron_tasks=false。
+/// cron_tasks 在阶段③打开；其余为桌面专属功能。
+#[derive(Debug, Clone, Serialize)]
+pub struct PlatformCapabilities {
+    /// MITM 代理（HTTPS 拦截、重写、脚本钩子）。
+    pub mitm: bool,
+    /// 系统代理设置接管。
+    pub system_proxy: bool,
+    /// 核心二进制管理（下载 / 删除 / 探测 / 切换）。
+    pub core_management: bool,
+    /// TUN 模式开关（桌面需提权；Android 由 VpnService 接管，无独立开关语义）。
+    pub tun_toggle: bool,
+    /// 远程脚本/片段资源订阅（MITM 依赖功能）。
+    pub scripts_remote: bool,
+    /// 定时任务（cron 脚本调度）。
+    pub cron_tasks: bool,
+}
+
+impl CapabilitiesView {
+    /// 按当前编译目标构造能力视图。
+    fn current() -> Self {
+        let os = std::env::consts::OS.to_string();
+        let is_android = cfg!(target_os = "android");
+        Self {
+            os: os.clone(),
+            is_android,
+            capabilities: PlatformCapabilities {
+                mitm: !is_android,
+                system_proxy: !is_android,
+                core_management: !is_android,
+                tun_toggle: !is_android,
+                scripts_remote: !is_android,
+                cron_tasks: false, // stage③再打开
+            },
+        }
     }
+}
+
+/// 查询平台能力矩阵（前端据此统一控制功能显隐）。
+///
+/// 替代旧 `platform_info`：返回更细粒度的 `capabilities` 对象，避免前端各处
+/// 重复写死 `os === "android"` 判断。
+#[tauri::command]
+pub fn get_capabilities() -> CapabilitiesView {
+    CapabilitiesView::current()
+}
+
+/// 旧 `platform_info` 保留兼容（前端过渡期内仍可调用），内部委托 `get_capabilities`。
+#[tauri::command]
+pub fn platform_info() -> CapabilitiesView {
+    CapabilitiesView::current()
 }
 
 /// 请求系统 VPN 授权（仅 Android）：经 `vpn` 插件调用 Kotlin
@@ -529,12 +622,20 @@ pub async fn set_rule_mode(
 /// `MemoryRecorder` 并按时间序映射为视图；未启动时返回空列表。
 #[tauri::command]
 pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecordView>, String> {
-    let lock = state.client.lock().await;
-    let Some(client) = lock.as_ref() else {
-        return Ok(Vec::new());
-    };
-    let records = client.recorder().list();
-    Ok(records.iter().map(TrafficRecordView::from_record).collect())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("MITM traffic recording");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let lock = state.client.lock().await;
+        let Some(client) = lock.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let records = client.recorder().list();
+        Ok(records.iter().map(TrafficRecordView::from_record).collect())
+    }
 }
 
 /// MITM CA 证书的对外视图（供客户端信任指引展示）。
@@ -550,7 +651,15 @@ pub struct MitmCaView {
 /// [`pp_mitm::FileCaStore`] 生成并落盘，已存在时不重复生成）。
 #[tauri::command]
 pub fn get_mitm_ca(state: State<'_, AppState>) -> Result<MitmCaView, String> {
-    get_mitm_ca_impl(&state.data_dir)
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("MITM CA certificate");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        get_mitm_ca_impl(&state.data_dir)
+    }
 }
 
 /// `get_mitm_ca` 的具体实现（命令层可测试的纯逻辑）。
@@ -749,14 +858,22 @@ pub struct ImportSummaryView {
 /// 列出全部远程资源（`remotes.json` 清单）。
 #[tauri::command]
 pub async fn list_remotes(state: State<'_, AppState>) -> Result<Vec<RemoteResourceView>, String> {
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let remotes = manager
-        .load()
-        .map_err(|e| format!("读取远程资源失败: {e}"))?;
-    Ok(remotes
-        .iter()
-        .map(RemoteResourceView::from_remote)
-        .collect())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("remote resource management");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let remotes = manager
+            .load()
+            .map_err(|e| format!("读取远程资源失败: {e}"))?;
+        Ok(remotes
+            .iter()
+            .map(RemoteResourceView::from_remote)
+            .collect())
+    }
 }
 
 /// 新增一条远程资源；重名时报错。
@@ -769,52 +886,68 @@ pub async fn add_remote(
     state: State<'_, AppState>,
     remote: RemoteResourceView,
 ) -> Result<(), String> {
-    if remote.name.trim().is_empty() {
-        return Err("资源名不能为空".to_string());
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, remote);
+        return require_desktop("remote resource management");
     }
-    if remote.url.trim().is_empty() {
-        return Err("URL 不能为空".to_string());
-    }
-    let mut remote = remote.into_remote()?;
-    remote.url = pp_client::normalize_resource_url(&remote.url);
-    pp_client::prefill_argument_values(&mut remote);
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let mut remotes = manager
-        .load()
-        .map_err(|e| format!("读取远程资源失败: {e}"))?;
-    if remotes.iter().any(|r| r.name == remote.name) {
-        return Err(format!("远程资源 '{}' 已存在", remote.name));
-    }
-    let name = remote.name.clone();
-    let icon = remote.icon.clone();
-    remotes.push(remote);
-    manager
-        .save(&remotes)
-        .map_err(|e| format!("保存远程资源失败: {e}"))?;
-    // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
-    if let Some(icon_url) = icon {
-        if let Err(e) = manager.cache_icon(&name, &icon_url).await {
-            tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+    #[cfg(not(target_os = "android"))]
+    {
+        if remote.name.trim().is_empty() {
+            return Err("资源名不能为空".to_string());
         }
+        if remote.url.trim().is_empty() {
+            return Err("URL 不能为空".to_string());
+        }
+        let mut remote = remote.into_remote()?;
+        remote.url = pp_client::normalize_resource_url(&remote.url);
+        pp_client::prefill_argument_values(&mut remote);
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let mut remotes = manager
+            .load()
+            .map_err(|e| format!("读取远程资源失败: {e}"))?;
+        if remotes.iter().any(|r| r.name == remote.name) {
+            return Err(format!("远程资源 '{}' 已存在", remote.name));
+        }
+        let name = remote.name.clone();
+        let icon = remote.icon.clone();
+        remotes.push(remote);
+        manager
+            .save(&remotes)
+            .map_err(|e| format!("保存远程资源失败: {e}"))?;
+        // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
+        if let Some(icon_url) = icon {
+            if let Err(e) = manager.cache_icon(&name, &icon_url).await {
+                tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 /// 删除一条远程资源；不存在时报错。
 #[tauri::command]
 pub async fn remove_remote(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let mut remotes = manager
-        .load()
-        .map_err(|e| format!("读取远程资源失败: {e}"))?;
-    let before = remotes.len();
-    remotes.retain(|r| r.name != name);
-    if remotes.len() == before {
-        return Err(format!("远程资源 '{}' 不存在", name));
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, name);
+        return require_desktop("remote resource management");
     }
-    manager
-        .save(&remotes)
-        .map_err(|e| format!("保存远程资源失败: {e}"))
+    #[cfg(not(target_os = "android"))]
+    {
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let mut remotes = manager
+            .load()
+            .map_err(|e| format!("读取远程资源失败: {e}"))?;
+        let before = remotes.len();
+        remotes.retain(|r| r.name != name);
+        if remotes.len() == before {
+            return Err(format!("远程资源 '{}' 不存在", name));
+        }
+        manager
+            .save(&remotes)
+            .map_err(|e| format!("保存远程资源失败: {e}"))
+    }
 }
 
 /// 按 name 定位全量更新一条远程资源（替代「删除重加」）；不存在时报错。
@@ -826,28 +959,36 @@ pub async fn update_remote(
     state: State<'_, AppState>,
     resource: RemoteResourceView,
 ) -> Result<(), String> {
-    if resource.name.trim().is_empty() {
-        return Err("资源名不能为空".to_string());
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, resource);
+        return require_desktop("remote resource management");
     }
-    if resource.url.trim().is_empty() {
-        return Err("URL 不能为空".to_string());
-    }
-    let mut remote = resource.into_remote()?;
-    remote.url = pp_client::normalize_resource_url(&remote.url);
-    pp_client::prefill_argument_values(&mut remote);
-    let name = remote.name.clone();
-    let icon = remote.icon.clone();
-    let manager = RemoteManager::new(state.data_dir.clone());
-    manager
-        .update_resource(&name, remote)
-        .map_err(|e| format!("更新远程资源失败: {e}"))?;
-    // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
-    if let Some(icon_url) = icon {
-        if let Err(e) = manager.cache_icon(&name, &icon_url).await {
-            tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+    #[cfg(not(target_os = "android"))]
+    {
+        if resource.name.trim().is_empty() {
+            return Err("资源名不能为空".to_string());
         }
+        if resource.url.trim().is_empty() {
+            return Err("URL 不能为空".to_string());
+        }
+        let mut remote = resource.into_remote()?;
+        remote.url = pp_client::normalize_resource_url(&remote.url);
+        pp_client::prefill_argument_values(&mut remote);
+        let name = remote.name.clone();
+        let icon = remote.icon.clone();
+        let manager = RemoteManager::new(state.data_dir.clone());
+        manager
+            .update_resource(&name, remote)
+            .map_err(|e| format!("更新远程资源失败: {e}"))?;
+        // 图标本地化缓存预热（best-effort）：失败仅记日志，不影响命令结果。
+        if let Some(icon_url) = icon {
+            if let Err(e) = manager.cache_icon(&name, &icon_url).await {
+                tracing::warn!(name = %name, error = %e, "icon cache warmup failed");
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 /// 读取远程资源本地图标缓存，返回 `data:{mime};base64,...` data URL。
@@ -860,28 +1001,36 @@ pub async fn get_remote_icon(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<Option<String>, String> {
-    use base64::Engine as _;
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let Some(path) = manager.icon_file(&name) else {
-        return Ok(None);
-    };
-    let bytes = std::fs::read(&path).map_err(|e| format!("读取图标缓存失败: {e}"))?;
-    let mime = match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
+    #[cfg(target_os = "android")]
     {
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("webp") => "image/webp",
-        Some("gif") => "image/gif",
-        Some("svg") => "image/svg+xml",
-        Some("ico") => "image/x-icon",
-        _ => "application/octet-stream",
-    };
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(Some(format!("data:{mime};base64,{encoded}")))
+        let _ = (state, name);
+        return require_desktop("remote resource management");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use base64::Engine as _;
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let Some(path) = manager.icon_file(&name) else {
+            return Ok(None);
+        };
+        let bytes = std::fs::read(&path).map_err(|e| format!("读取图标缓存失败: {e}"))?;
+        let mime = match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("png") => "image/png",
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("webp") => "image/webp",
+            Some("gif") => "image/gif",
+            Some("svg") => "image/svg+xml",
+            Some("ico") => "image/x-icon",
+            _ => "application/octet-stream",
+        };
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(Some(format!("data:{mime};base64,{encoded}")))
+    }
 }
 
 /// 远程资源类型的字符串表示（与 `RemoteResourceView.kind` 的 serde 表示一致）。
@@ -936,56 +1085,72 @@ pub async fn detect_remote(
     state: State<'_, AppState>,
     url: String,
 ) -> Result<DetectRemoteView, String> {
-    let url = pp_client::normalize_resource_url(url.trim());
-    let (kind, dialect) = match detect_resource_from_url(&url) {
-        Some((kind, dialect)) => (
-            Some(remote_kind_str(kind).to_string()),
-            Some(script_dialect_str(dialect).to_string()),
-        ),
-        None => (None, None),
-    };
-
-    // 仅 Snippet 且 URL 可访问时拉取内容解析元数据；失败静默（meta 置 None）。
-    let meta = if kind.as_deref() == Some("Snippet")
-        && (url.starts_with("http://") || url.starts_with("https://"))
+    #[cfg(target_os = "android")]
     {
-        fetch_detect_text(&state.data_dir, &url)
-            .await
-            .map(|text| {
-                let parsed = parse_config_meta(&text);
-                if parsed != ConfigMeta::default() {
-                    Some(ConfigMetaView::from_meta(&parsed))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None)
-    } else {
-        None
-    };
+        let _ = (state, url);
+        return require_desktop("remote resource management");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let url = pp_client::normalize_resource_url(url.trim());
+        let (kind, dialect) = match detect_resource_from_url(&url) {
+            Some((kind, dialect)) => (
+                Some(remote_kind_str(kind).to_string()),
+                Some(script_dialect_str(dialect).to_string()),
+            ),
+            None => (None, None),
+        };
 
-    Ok(DetectRemoteView {
-        kind,
-        dialect,
-        meta,
-    })
+        // 仅 Snippet 且 URL 可访问时拉取内容解析元数据；失败静默（meta 置 None）。
+        let meta = if kind.as_deref() == Some("Snippet")
+            && (url.starts_with("http://") || url.starts_with("https://"))
+        {
+            fetch_detect_text(&state.data_dir, &url)
+                .await
+                .map(|text| {
+                    let parsed = parse_config_meta(&text);
+                    if parsed != ConfigMeta::default() {
+                        Some(ConfigMetaView::from_meta(&parsed))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(None)
+        } else {
+            None
+        };
+
+        Ok(DetectRemoteView {
+            kind,
+            dialect,
+            meta,
+        })
+    }
 }
 
 /// 拉取全部启用的远程资源（无系统代理，30 秒超时）。
 #[tauri::command]
 pub async fn fetch_remotes(state: State<'_, AppState>) -> Result<FetchReportView, String> {
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let remotes = manager
-        .load()
-        .map_err(|e| format!("读取远程资源失败: {e}"))?;
-    let report = manager.fetch_all(&remotes).await;
-    Ok(FetchReportView {
-        fetched: report.fetched,
-        scripts: report.scripts,
-        rewrites: report.rewrites,
-        tasks: report.tasks,
-        warnings: report.warnings,
-    })
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("remote resource management");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let remotes = manager
+            .load()
+            .map_err(|e| format!("读取远程资源失败: {e}"))?;
+        let report = manager.fetch_all(&remotes).await;
+        Ok(FetchReportView {
+            fetched: report.fetched,
+            scripts: report.scripts,
+            rewrites: report.rewrites,
+            tasks: report.tasks,
+            warnings: report.warnings,
+        })
+    }
 }
 
 /// 探测 GitHub 访问链路可用性：按真实拉取管线（GitHub 代理前缀 / 走本地代理）
@@ -1005,14 +1170,22 @@ pub async fn test_github_proxy(state: State<'_, AppState>) -> Result<String, Str
 /// 列出定时任务；客户端未启动或调度器未就绪时返回空列表。
 #[tauri::command]
 pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView>, String> {
-    let lock = state.client.lock().await;
-    let Some(client) = lock.as_ref() else {
-        return Ok(Vec::new());
-    };
-    let Some(scheduler) = client.scheduler() else {
-        return Ok(Vec::new());
-    };
-    Ok(scheduler.list_tasks())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("scheduled tasks");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let lock = state.client.lock().await;
+        let Some(client) = lock.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let Some(scheduler) = client.scheduler() else {
+            return Ok(Vec::new());
+        };
+        Ok(scheduler.list_tasks())
+    }
 }
 
 /// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
@@ -1021,20 +1194,28 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView
 /// `scheduler.run_now` 的 future 亦为 `Send`，可直接在 Tauri 命令中 `await`。
 #[tauri::command]
 pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
-    let scheduler = {
-        let lock = state.client.lock().await;
-        let client = lock
-            .as_ref()
-            .ok_or_else(|| "客户端未启动，无法运行任务".to_string())?;
-        client
-            .scheduler_handle()
-            .ok_or_else(|| "任务调度器未就绪".to_string())?
-    };
-    let output = scheduler
-        .run_now(&name)
-        .await
-        .map_err(|e| format!("运行任务失败: {e}"))?;
-    Ok(output.0.to_string())
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, name);
+        return require_desktop("scheduled tasks");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let scheduler = {
+            let lock = state.client.lock().await;
+            let client = lock
+                .as_ref()
+                .ok_or_else(|| "客户端未启动，无法运行任务".to_string())?;
+            client
+                .scheduler_handle()
+                .ok_or_else(|| "任务调度器未就绪".to_string())?
+        };
+        let output = scheduler
+            .run_now(&name)
+            .await
+            .map_err(|e| format!("运行任务失败: {e}"))?;
+        Ok(output.0.to_string())
+    }
 }
 
 /// 导入 Surge / Loon 配置片段：解析 → 拉取脚本源码回填 → 合并写入本地导入缓存
@@ -1045,28 +1226,36 @@ pub async fn import_config(
     content: String,
     dialect: String,
 ) -> Result<ImportSummaryView, String> {
-    let script_dialect = match dialect.as_str() {
-        // QX 已并入 Loon 生态（Loon 方言同时注入 QX 与 Surge 两套 API）；
-        // 保留 quantumultx 输入兼容旧前端，语义归入 Loon。
-        "surge" => ScriptDialect::Surge,
-        "loon" | "quantumultx" => ScriptDialect::Loon,
-        other => {
-            return Err(format!("未知方言 '{other}'（可选: surge / loon）"));
-        }
-    };
-    let manager = RemoteManager::new(state.data_dir.clone());
-    let summary = manager
-        .import_content(&content, script_dialect)
-        .await
-        .map_err(|e| format!("导入配置失败: {e}"))?;
-    Ok(ImportSummaryView {
-        rewrites: summary.rewrites,
-        scripts: summary.scripts,
-        tasks: summary.tasks,
-        hostnames: summary.hostnames,
-        warnings: summary.warnings,
-        meta: ConfigMetaView::from_meta(&summary.meta),
-    })
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, content, dialect);
+        return require_desktop("config import");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let script_dialect = match dialect.as_str() {
+            // QX 已并入 Loon 生态（Loon 方言同时注入 QX 与 Surge 两套 API）；
+            // 保留 quantumultx 输入兼容旧前端，语义归入 Loon。
+            "surge" => ScriptDialect::Surge,
+            "loon" | "quantumultx" => ScriptDialect::Loon,
+            other => {
+                return Err(format!("未知方言 '{other}'（可选: surge / loon）"));
+            }
+        };
+        let manager = RemoteManager::new(state.data_dir.clone());
+        let summary = manager
+            .import_content(&content, script_dialect)
+            .await
+            .map_err(|e| format!("导入配置失败: {e}"))?;
+        Ok(ImportSummaryView {
+            rewrites: summary.rewrites,
+            scripts: summary.scripts,
+            tasks: summary.tasks,
+            hostnames: summary.hostnames,
+            warnings: summary.warnings,
+            meta: ConfigMetaView::from_meta(&summary.meta),
+        })
+    }
 }
 
 /// 核心类型序列化为前端小写约定（`singbox` / `mihomo`）。
@@ -1592,13 +1781,21 @@ fn active_binary(data_dir: &std::path::Path) -> std::path::PathBuf {
 /// 列出本地可用核心（已下载 + 系统探测，含 active 标记）。
 #[tauri::command]
 pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
-    let active = active_binary(&state.data_dir);
-    Ok(cores
-        .iter()
-        .map(|c| LocalCoreView::from_core(c, &active))
-        .collect())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("core management");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+        let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
+        let active = active_binary(&state.data_dir);
+        Ok(cores
+            .iter()
+            .map(|c| LocalCoreView::from_core(c, &active))
+            .collect())
+    }
 }
 
 /// 列出远端最近 10 个发布版本（GitHub releases，去 `v` 前缀）。
@@ -1607,11 +1804,19 @@ pub async fn list_remote_core_versions(
     state: State<'_, AppState>,
     core_type: String,
 ) -> Result<Vec<String>, String> {
-    let ct = core_type_from_str(&core_type)?;
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    inv.list_remote_versions(ct)
-        .await
-        .map_err(|e| format!("拉取远端版本失败: {e}"))
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, core_type);
+        return require_desktop("core version listing");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let ct = core_type_from_str(&core_type)?;
+        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+        inv.list_remote_versions(ct)
+            .await
+            .map_err(|e| format!("拉取远端版本失败: {e}"))
+    }
 }
 
 /// 列出指定核心类型已下载的版本（版本目录扫描，语义化版本倒序）的具体实现。
@@ -1668,18 +1873,25 @@ pub async fn download_core(
     core_type: String,
     version: String,
 ) -> Result<LocalCoreView, String> {
-    let ct = core_type_from_str(&core_type)?;
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let core = inv
-        .download(ct, &version)
-        .await
-        .map_err(|e| format!("下载核心失败: {e}"))?;
-    // 下载类型匹配当前 core_type 时自动选中（写回 core_binary），免去手动
-    // 回首页再选；类型不匹配不动当前选择，避免制造核心/二进制不匹配。
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, core_type, version);
+        return require_desktop("core download");
+    }
     #[cfg(not(target_os = "android"))]
-    auto_select_downloaded_core(&state.data_dir, ct, &core.path);
-    let active = active_binary(&state.data_dir);
-    Ok(LocalCoreView::from_core(&core, &active))
+    {
+        let ct = core_type_from_str(&core_type)?;
+        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+        let core = inv
+            .download(ct, &version)
+            .await
+            .map_err(|e| format!("下载核心失败: {e}"))?;
+        // 下载类型匹配当前 core_type 时自动选中（写回 core_binary），免去手动
+        // 回首页再选；类型不匹配不动当前选择，避免制造核心/二进制不匹配。
+        auto_select_downloaded_core(&state.data_dir, ct, &core.path);
+        let active = active_binary(&state.data_dir);
+        Ok(LocalCoreView::from_core(&core, &active))
+    }
 }
 
 /// 将指定路径设为核心二进制：校验存在且可执行后，先在本地核心清单
@@ -1688,50 +1900,66 @@ pub async fn download_core(
 /// 启用异类型核心时两者不一致。无法识别类型时返回错误提示手动选择。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    let bin = PathBuf::from(&path);
-    if !bin.is_file() {
-        return Err(format!("核心二进制不存在: {path}"));
-    }
-    #[cfg(unix)]
+    #[cfg(target_os = "android")]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let meta = std::fs::metadata(&bin).map_err(|e| format!("读取核心信息失败: {e}"))?;
-        if meta.permissions().mode() & 0o111 == 0 {
-            return Err(format!("核心二进制不可执行: {path}"));
-        }
+        let _ = (state, path);
+        return require_desktop("core selection");
     }
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let core_type = merge_cores(inv.list_installed(), inv.detect_system_cores())
-        .into_iter()
-        .find(|c| c.path == bin)
-        .map(|c| c.core_type)
-        .or_else(|| pp_client::infer_core_type(&bin))
-        .ok_or_else(|| format!("无法识别核心类型: {path}，请在设置页手动选择核心类型"))?;
-    let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
-        Ok(cfg) => cfg,
-        Err(_) => pp_client::ClientConfig::new(
-            state.data_dir.clone(),
-            String::new(),
-            String::new(),
-            CoreType::SingBox,
-            PathBuf::new(),
-        ),
-    };
-    config.core_binary = bin;
-    config.core_type = core_type;
-    config.save().map_err(|e| format!("保存配置失败: {e}"))
+    #[cfg(not(target_os = "android"))]
+    {
+        let bin = PathBuf::from(&path);
+        if !bin.is_file() {
+            return Err(format!("核心二进制不存在: {path}"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(&bin).map_err(|e| format!("读取核心信息失败: {e}"))?;
+            if meta.permissions().mode() & 0o111 == 0 {
+                return Err(format!("核心二进制不可执行: {path}"));
+            }
+        }
+        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+        let core_type = merge_cores(inv.list_installed(), inv.detect_system_cores())
+            .into_iter()
+            .find(|c| c.path == bin)
+            .map(|c| c.core_type)
+            .or_else(|| pp_client::infer_core_type(&bin))
+            .ok_or_else(|| format!("无法识别核心类型: {path}，请在设置页手动选择核心类型"))?;
+        let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
+            Ok(cfg) => cfg,
+            Err(_) => pp_client::ClientConfig::new(
+                state.data_dir.clone(),
+                String::new(),
+                String::new(),
+                CoreType::SingBox,
+                PathBuf::new(),
+            ),
+        };
+        config.core_binary = bin;
+        config.core_type = core_type;
+        config.save().map_err(|e| format!("保存配置失败: {e}"))
+    }
 }
 
 /// 手动刷新系统核心探测。
 #[tauri::command]
 pub async fn detect_system_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let active = active_binary(&state.data_dir);
-    Ok(inv
-        .detect_system_cores()
-        .iter()
-        .map(|c| LocalCoreView::from_core(c, &active))
-        .collect())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return require_desktop("system core detection");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+        let active = active_binary(&state.data_dir);
+        Ok(inv
+            .detect_system_cores()
+            .iter()
+            .map(|c| LocalCoreView::from_core(c, &active))
+            .collect())
+    }
 }
 
 /// `delete_core` 的具体实现（命令层可测试的纯逻辑）。
@@ -1762,7 +1990,15 @@ fn delete_core_impl(data_dir: &std::path::Path, path: &str) -> Result<(), String
 /// 删除一个已下载核心（系统来源 / 当前使用中的核心不可删除）。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn delete_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    delete_core_impl(&state.data_dir, &path)
+    #[cfg(target_os = "android")]
+    {
+        let _ = (state, path);
+        return require_desktop("core deletion");
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        delete_core_impl(&state.data_dir, &path)
+    }
 }
 
 // ---------- 订阅管理 ----------

@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { toastModeOverride } from "./api";
 import { Toaster } from "./components/Toaster";
 import { setToastMode } from "./toast";
+import { useCapabilities } from "./hooks/useCapabilities";
 import { MobileNav } from "./layout/MobileNav";
 import { Sidebar } from "./layout/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -13,6 +14,28 @@ import Nodes from "./pages/Nodes";
 import Override from "./pages/Override";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
+
+/**
+ * /mitm route guard: redirects to home on Android (where mitm capability is false).
+ */
+function MitmGuard() {
+  const { data: caps } = useCapabilities();
+  if (caps && !caps.capabilities.mitm) {
+    return <Navigate to="/" replace />;
+  }
+  return <Mitm />;
+}
+
+/**
+ * /scripts route guard: redirects to home on Android (where scripts_remote capability is false).
+ */
+function ScriptsGuard() {
+  const { data: caps } = useCapabilities();
+  if (caps && !caps.capabilities.scripts_remote) {
+    return <Navigate to="/" replace />;
+  }
+  return <Scripts />;
+}
 
 /**
  * 渲染期错误兜底：捕获子组件渲染时的未处理异常，展示错误信息与
@@ -132,8 +155,8 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/nodes" element={<Nodes />} />
-                <Route path="/mitm" element={<Mitm />} />
-                <Route path="/scripts" element={<Scripts />} />
+                <Route path="/mitm" element={<MitmGuard />} />
+                <Route path="/scripts" element={<ScriptsGuard />} />
                 <Route path="/override" element={<Override />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/settings" element={<Settings />} />
