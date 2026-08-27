@@ -42,8 +42,8 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 - pp-client 已是独立 crate，未来若做原生 Android UI（Compose），库可直接复用——拆分成本被架构设计对冲了
 
 行动项：
-- [ ] 建立平台特性矩阵（feature × platform），前端按矩阵隐藏页面/卡片（MITM、系统代理、核心管理在 Android 隐藏）
-- [ ] Rust 命令层对移动端不可用命令返回明确的 `unsupported_platform` 错误（而非行为未定义）
+- [x] 建立平台特性矩阵（feature × platform），前端按矩阵隐藏页面/卡片（MITM、系统代理、核心管理在 Android 隐藏） — 已完成（vNext，get_capabilities + useCapabilities）
+- [x] Rust 命令层对移动端不可用命令返回明确的 `unsupported_platform` 错误（而非行为未定义） — 已完成
 - [ ] 收敛 `cfg(target_os)` 散布：系统代理/提权/核心下载归入 `SystemProxy`、`PrivilegeChecker`、`CoreDownloader` 等 trait，安卓侧为 no-op 实现
 - [ ] `pp-mitm`/`pp-script` 加 Cargo feature，安卓构建裁剪以减小体积
 - [ ] `commands.rs` 纯逻辑（校验/视图转换）下沉 pp-client
@@ -58,8 +58,8 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 - 桌面"系统代理→mixed 入口→MITM outbound"模式在 Android 无等效机制
 
 行动项：
-- [ ] Android 隐藏 MITM 页面入口（导航与路由守卫）
-- [ ] 评估把 **cron 定时任务从 MITM 链路解耦**：脚本签到类任务只需 HTTP 客户端（`http_exec.rs` 已有 reqwest 实现），不依赖抓包；解耦后安卓端也能跑定时任务（QX 生态里移动端最实用的一块）
+- [x] Android 隐藏 MITM 页面入口（导航与路由守卫） — 已完成
+- [x] 评估并实施 **cron 定时任务从 MITM 链路解耦** — 已完成（start_scheduler_from_cache 独立构造，Android 可用定时任务）：脚本签到类任务只需 HTTP 客户端（`http_exec.rs` 已有 reqwest 实现），不依赖抓包；解耦后安卓端也能跑定时任务（QX 生态里移动端最实用的一块）
 - [ ] docs 中明确标注 MITM 为桌面端能力
 
 ## 4. 决策三：移动端双内核去留与重设计
@@ -84,8 +84,8 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 - 规则集订阅化：内置社区规则集市场（勾选即订阅、自动更新），不向普通用户暴露 rule_providers/rule_set 语法差异
 
 行动项：
-- [ ] 移动端隐藏内核切换 UI，默认 sing-box；订阅嗅探到 sing-box 不兼容的 clash 节点时自动切 mihomo（日志记录原因）
-- [ ] `check_subscription_core_compat` 的硬限制改为自动降级而非报错
+- [x] 移动端隐藏内核切换 UI，默认 sing-box；订阅嗅探到 sing-box 不兼容的 clash 节点时自动切 mihomo（日志记录原因） — 已完成（自动降级 + 持久化 + 6 单测）
+- [x] `check_subscription_core_compat` 的硬限制改为自动降级而非报错 — 已完成（仅 Android；桌面保持报错）
 - [ ] 本地 Override 层设计（schema + 合并策略 + UI）
 - [ ] 规则卡片列表 + 场景模板（移动端优先，桌面端复用）
 - [ ] mihomo Kotlin 侧补全或冻结：若走 sing-box 主核路线，`MihomoVpnService` 标记为 fallback 维护模式（只修崩溃，不加功能）
@@ -101,4 +101,4 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 | Karing/Streisand | sing-box 单核的稳定性收益 | — |
 | NekoBox | 多核插件化的反面教材（用户困惑） | — |
 
-*生成于 2026-08，基于 kimi-for-coding 子代理的四份并行审计。*
+*生成于 2026-08，基于 kimi-for-coding 子代理的四份并行审计。阶段①②③已实施（2026-08-25）。*
