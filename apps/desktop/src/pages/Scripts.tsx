@@ -737,7 +737,7 @@ export default function Scripts() {
             <Card>
               <Card.Header>
                 <Card.Title>定时任务</Card.Title>
-                <Card.Description>远程订阅中的 cron 任务脚本，需代理运行中且 MITM 已启用</Card.Description>
+                <Card.Description>远程订阅中的 cron 任务脚本，阶段③解耦后不再依赖 MITM</Card.Description>
               </Card.Header>
               <Card.Content>
                 {tasks.length === 0 ? (

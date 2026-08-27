@@ -124,7 +124,8 @@ impl ClientState {
         Arc::clone(&self.recorder)
     }
 
-    /// 定时任务调度器（远程订阅 task 脚本）；未启用 MITM 或没有任务时为 `None`。
+    /// 定时任务调度器（远程订阅 task 脚本）；未启动或没有任务时为 `None`。
+    /// 阶段③解耦后：不再依赖 MITM，从远程缓存独立读取 task 脚本启动。
     pub fn scheduler(&self) -> Option<&ScriptScheduler> {
         self.scheduler.as_ref().map(|h| h.scheduler.as_ref())
     }
@@ -312,6 +313,14 @@ impl ClientState {
 
         // MITM 先于核心启动：拿到监听地址才能注入核心路由规则。
         let chain = self.start_mitm_chain().await?;
+
+        // 定时任务调度器：阶段③解耦后独立于 MITM 启动。
+        // 从远程缓存读取 task 脚本（无论 MITM 是否启用），只要有启用的任务即启动调度器。
+        // 失败仅记 warning，不阻塞核心启动（与 MITM 失败隔离）。
+        if let Err(e) = self.start_scheduler_from_cache().await {
+            tracing::warn!(error = %e, "定时任务调度器启动失败（不影响核心启动）");
+        }
+
         // TUN / Clash 面板配置（设置页最高优先级）：在 compose（build_core_config +
         // 复写）之后强制注入，模板/复写中的同名字段以设置为准整体替换。
         //
@@ -396,15 +405,15 @@ impl ClientState {
 
     /// MITM 启用时启动 MITM 并返回链路信息；未启用时返回 `None`。
     ///
-    /// 读取远程订阅缓存（重写规则 / 脚本钩子 / 主机名 / 定时任务），构建并启动
-    /// MITM，上游指向核心回流 mixed 入口（`mixed_port + 1`）。调度器启动失败时
-    /// 回滚已启动的 MITM；其余失败发生在 MITM 启动之前，无需回滚。
+    /// 读取远程订阅缓存（重写规则 / 脚本钩子 / 主机名），构建并启动
+    /// MITM，上游指向核心回流 mixed 入口（`mixed_port + 1`）。
+    /// 定时任务调度器已在 [`Self::start`] 中独立启动，不再由 MITM 链路负责。
     async fn start_mitm_chain(&mut self) -> PanelResult<Option<core_config::MitmChain>> {
         if !self.config.mitm_enabled {
             return Ok(None);
         }
         tracing::info!("启动 MITM 代理");
-        // 读取远程订阅缓存：重写规则 / 脚本钩子 / 主机名 / 定时任务。
+        // 读取远程订阅缓存：重写规则 / 脚本钩子 / 主机名。
         let remote = RemoteManager::new(self.config.data_dir.clone());
         let merged = match remote.load_cached() {
             Ok(m) => m,
@@ -456,11 +465,6 @@ impl ClientState {
         };
         let mitm_addr = running.addr;
         self.mitm = Some(running);
-        // 定时任务调度器（MITM 就绪后启动；失败回滚 MITM）。
-        if let Err(e) = self.start_scheduler(host, merged.task_scripts).await {
-            self.stop_mitm().await;
-            return Err(e);
-        }
         Ok(Some(core_config::MitmChain {
             proxy_addr: mitm_addr,
             return_port,
@@ -474,8 +478,25 @@ impl ClientState {
         self.stop_scheduler().await;
     }
 
+    /// 从远程缓存独立启动定时任务调度器（阶段③解耦：不依赖 MITM）。
+    ///
+    /// 读取 `remote_cache/` 中的 task 脚本，构造 ScriptHost（HttpExecutor + Notifier +
+    /// FilePersistentStore）并启动调度器。失败返回错误，由调用方决定是否记 warning。
+    async fn start_scheduler_from_cache(&mut self) -> PanelResult<()> {
+        let remote = RemoteManager::new(self.config.data_dir.clone());
+        let merged = remote.load_cached()?;
+        let host = Arc::new(ScriptHost::new(
+            Arc::new(ReqwestHttpExecutor::new()),
+            Arc::new(FilePersistentStore::new(
+                self.config.data_dir.join("script_store"),
+            )),
+            Arc::clone(&self.notifier),
+        ));
+        self.start_scheduler(host, merged.task_scripts).await
+    }
+
     /// 在订阅与配置合成之后，启动核心 → 启用系统代理（指向核心 mixed 主入口），
-    /// 失败回滚。MITM 已在 [`Self::start`] 中先于核心启动。
+    /// 失败回滚。MITM 与调度器已在 [`Self::start`] 中先于核心启动。
     ///
     /// 回滚策略：核心启动失败则关闭 MITM 与调度器；系统代理启用失败则按逆序
     /// 关闭核心、MITM 与调度器，最后把错误向上传播。

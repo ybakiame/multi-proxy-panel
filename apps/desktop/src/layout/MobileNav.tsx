@@ -12,6 +12,7 @@ function visibleNavItems(capabilities: ReturnType<typeof useCapabilities>["data"
   return NAV_ITEMS.filter((item) => {
     if (item.requiresMitm && !caps.mitm) return false;
     if (item.requiresScriptsRemote && !caps.scripts_remote) return false;
+    if (item.requiresCronTasks && !caps.cron_tasks) return false;
     return true;
   });
 }

@@ -459,9 +459,9 @@ pub struct CapabilitiesView {
 
 /// 各平台功能能力矩阵（与审计结论对齐）。
 ///
-/// Android 当前值（阶段①）：mitm=false, system_proxy=false, core_management=false,
-/// tun_toggle=false, scripts_remote=false, cron_tasks=false。
-/// cron_tasks 在阶段③打开；其余为桌面专属功能。
+/// Android 当前值（阶段③）：mitm=false, system_proxy=false, core_management=false,
+/// tun_toggle=false, scripts_remote=false, cron_tasks=true。
+/// 远程资源/配置导入仍为桌面专属（依赖 MITM）；cron_tasks 已解耦打开。
 #[derive(Debug, Clone, Serialize)]
 pub struct PlatformCapabilities {
     /// MITM 代理（HTTPS 拦截、重写、脚本钩子）。
@@ -492,7 +492,7 @@ impl CapabilitiesView {
                 core_management: !is_android,
                 tun_toggle: !is_android,
                 scripts_remote: !is_android,
-                cron_tasks: false, // stage③再打开
+                cron_tasks: true, // stage③: decoupled from MITM, available on Android
             },
         }
     }
@@ -1170,22 +1170,14 @@ pub async fn test_github_proxy(state: State<'_, AppState>) -> Result<String, Str
 /// 列出定时任务；客户端未启动或调度器未就绪时返回空列表。
 #[tauri::command]
 pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView>, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("scheduled tasks");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let lock = state.client.lock().await;
-        let Some(client) = lock.as_ref() else {
-            return Ok(Vec::new());
-        };
-        let Some(scheduler) = client.scheduler() else {
-            return Ok(Vec::new());
-        };
-        Ok(scheduler.list_tasks())
-    }
+    let lock = state.client.lock().await;
+    let Some(client) = lock.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let Some(scheduler) = client.scheduler() else {
+        return Ok(Vec::new());
+    };
+    Ok(scheduler.list_tasks())
 }
 
 /// 手动运行一个定时任务；返回脚本 `$done` 输出的 JSON 字符串。
@@ -1194,28 +1186,20 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskScriptView
 /// `scheduler.run_now` 的 future 亦为 `Send`，可直接在 Tauri 命令中 `await`。
 #[tauri::command]
 pub async fn run_task(state: State<'_, AppState>, name: String) -> Result<String, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = (state, name);
-        return require_desktop("scheduled tasks");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let scheduler = {
-            let lock = state.client.lock().await;
-            let client = lock
-                .as_ref()
-                .ok_or_else(|| "客户端未启动，无法运行任务".to_string())?;
-            client
-                .scheduler_handle()
-                .ok_or_else(|| "任务调度器未就绪".to_string())?
-        };
-        let output = scheduler
-            .run_now(&name)
-            .await
-            .map_err(|e| format!("运行任务失败: {e}"))?;
-        Ok(output.0.to_string())
-    }
+    let scheduler = {
+        let lock = state.client.lock().await;
+        let client = lock
+            .as_ref()
+            .ok_or_else(|| "客户端未启动，无法运行任务".to_string())?;
+        client
+            .scheduler_handle()
+            .ok_or_else(|| "任务调度器未就绪".to_string())?
+    };
+    let output = scheduler
+        .run_now(&name)
+        .await
+        .map_err(|e| format!("运行任务失败: {e}"))?;
+    Ok(output.0.to_string())
 }
 
 /// 导入 Surge / Loon 配置片段：解析 → 拉取脚本源码回填 → 合并写入本地导入缓存
