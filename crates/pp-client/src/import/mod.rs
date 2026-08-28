@@ -333,7 +333,10 @@ hostname = %APPEND% *.example.com, -exclude.example.com
         assert!(cfg.scripts[0].source.is_empty());
         assert_eq!(
             cfg.script_urls[0],
-            ("json".to_string(), "https://example.com/json.js".to_string())
+            (
+                "json".to_string(),
+                "https://example.com/json.js".to_string()
+            )
         );
         assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
         assert!(!cfg.scripts[1].requires_body);
@@ -494,7 +497,10 @@ hostname = %APPEND% *.example.com, -exclude.example.com
             } => {
                 assert_eq!(*status, 200);
                 assert_eq!(body, "y");
-                assert!(headers.is_empty(), "unknown data-type should not append Content-Type");
+                assert!(
+                    headers.is_empty(),
+                    "unknown data-type should not append Content-Type"
+                );
             }
             other => panic!("unexpected kind: {other:?}"),
         }

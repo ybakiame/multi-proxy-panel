@@ -140,11 +140,7 @@ pub(super) fn parse_qx_rewrite(
 ///
 /// pp-script's cron crate needs 6 parts, prefix with `"0 "` during parsing;
 /// `name` takes `tag`, falls back to URL-derived name when missing.
-pub(super) fn parse_qx_task(
-    cfg: &mut super::ImportedConfig,
-    dialect: ScriptDialect,
-    line: &str,
-) {
+pub(super) fn parse_qx_task(cfg: &mut super::ImportedConfig, dialect: ScriptDialect, line: &str) {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     if tokens.len() < 6 {
         cfg.warn(

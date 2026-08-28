@@ -60,7 +60,10 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         // but the directory already has old panel, never re-downloads (restart still shows old
         // panel); after directory distinction, new choice goes to new directory and re-downloads,
         // old directory残留 does not affect. URL path remains `/ui`.
-        let ui_dir = format!("ui-{}", super::normalized_clash_api_ui(&features.clash_api_ui));
+        let ui_dir = format!(
+            "ui-{}",
+            super::normalized_clash_api_ui(&features.clash_api_ui)
+        );
         clash_api.insert("external_ui".to_string(), Value::String(ui_dir));
         clash_api.insert(
             "external_ui_download_url".to_string(),
@@ -218,10 +221,7 @@ pub fn inject_android_dns(composed: &mut Value) {
 /// "empty direct outbound" must be omitted.
 ///
 /// Returns `false` when: outbound not found, not `direct` type, or direct has extra config keys.
-pub(crate) fn is_empty_direct_outbound(
-    obj: &serde_json::Map<String, Value>,
-    tag: &str,
-) -> bool {
+pub(crate) fn is_empty_direct_outbound(obj: &serde_json::Map<String, Value>, tag: &str) -> bool {
     let Some(outbounds) = obj.get("outbounds").and_then(Value::as_array) else {
         return false;
     };

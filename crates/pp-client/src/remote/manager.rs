@@ -8,8 +8,7 @@ use pp_script::ScriptDialect;
 use crate::import::{ConfigMeta, ImportedConfig, parse_import};
 
 use super::{
-    FetchReport, ImportSummary, MergedRemoteConfig, RemoteKind,
-    RemoteResource, safe_name,
+    FetchReport, ImportSummary, MergedRemoteConfig, RemoteKind, RemoteResource, safe_name,
 };
 
 /// Remote resource manager: responsible for remotes manifest I/O, periodic fetching, and cache reading.

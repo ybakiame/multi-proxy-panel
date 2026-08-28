@@ -22,9 +22,21 @@ impl CachedRemoteConfig {
     /// Build from parsed [`ImportedConfig`].
     pub fn from_imported(imported: &ImportedConfig) -> Self {
         Self {
-            rewrites: imported.rewrites.iter().map(CachedRewriteRule::from).collect(),
-            scripts: imported.scripts.iter().map(CachedScriptRule::from).collect(),
-            task_scripts: imported.task_scripts.iter().map(|(t, _)| t.clone()).collect(),
+            rewrites: imported
+                .rewrites
+                .iter()
+                .map(CachedRewriteRule::from)
+                .collect(),
+            scripts: imported
+                .scripts
+                .iter()
+                .map(CachedScriptRule::from)
+                .collect(),
+            task_scripts: imported
+                .task_scripts
+                .iter()
+                .map(|(t, _)| t.clone())
+                .collect(),
             hostnames: imported.hostnames.clone(),
             meta: if imported.meta == ConfigMeta::default() {
                 None
@@ -84,7 +96,9 @@ impl TryFrom<CachedRewriteRule> for RewriteRule {
 /// Cache serialization of rewrite rule kind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CachedRewriteKind {
-    UrlRewrite { target: String },
+    UrlRewrite {
+        target: String,
+    },
     HeaderRewrite {
         phase: CachedPhase,
         name: String,

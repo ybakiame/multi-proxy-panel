@@ -237,7 +237,11 @@ pub fn apply_argument_templates(
         .into_iter()
         .map(|mut rule| {
             if let Some(template) = rule.argument.take() {
-                rule.argument = Some(resolve_argument_template(&template, &user_values, &defaults));
+                rule.argument = Some(resolve_argument_template(
+                    &template,
+                    &user_values,
+                    &defaults,
+                ));
             }
             rule
         })
