@@ -6,16 +6,16 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
-use super::{
-    BACKUP_DIR, BIN_DIR, ETC_DIR, OPT_DIR, USER_NAME, VAR_DIR, AGENT_UNIT, HUB_UNIT,
-    require_root, release_arch,
-};
 use super::download::{download_and_verify, installed_version};
 use super::fsutil::{
     backup_path, copy_file, ensure_dir, move_file, move_path, prune_backups, write_file,
 };
 use super::systemd::{
     systemd_daemon_reload, systemd_enable_now, systemd_is_active, systemd_restart, systemd_stop,
+};
+use super::{
+    AGENT_UNIT, BACKUP_DIR, BIN_DIR, ETC_DIR, HUB_UNIT, OPT_DIR, USER_NAME, VAR_DIR, release_arch,
+    require_root,
 };
 
 /// Tar extraction helper (spawns system tar).

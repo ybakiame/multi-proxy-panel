@@ -5,14 +5,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-use super::{BACKUP_DIR, BIN_DIR, OPT_DIR, require_root, release_arch};
 use super::download::{download_and_verify, installed_version};
-use super::fsutil::{
-    backup_path, copy_file, ensure_dir, move_file, move_path, prune_backups,
-};
-use super::systemd::{
-    systemd_is_active, systemd_restart, systemd_stop,
-};
+use super::fsutil::{backup_path, copy_file, ensure_dir, move_file, move_path, prune_backups};
+use super::systemd::{systemd_is_active, systemd_restart, systemd_stop};
+use super::{BACKUP_DIR, BIN_DIR, OPT_DIR, release_arch, require_root};
 
 /// Upgrade a component (agent, hub, or cli).
 pub async fn upgrade(component: &str, version: &str, repo: &str) -> Result<()> {

@@ -1,7 +1,5 @@
 use pp_common::{CoreType, PanelResult};
-use pp_db::entities::{
-    certificate, node, node_binding, protocol_config, relay_rule,
-};
+use pp_db::entities::{certificate, node, node_binding, protocol_config, relay_rule};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 use uuid::Uuid;

@@ -38,7 +38,10 @@ fn parse_sha256_from_sums_ok() {
         super::download::parse_sha256_from_sums(sums, "other.tar.gz"),
         Some("def456".to_string())
     );
-    assert_eq!(super::download::parse_sha256_from_sums(sums, "missing.tar.gz"), None);
+    assert_eq!(
+        super::download::parse_sha256_from_sums(sums, "missing.tar.gz"),
+        None
+    );
 }
 
 #[test]

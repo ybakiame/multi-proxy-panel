@@ -1,10 +1,6 @@
 use pp_common::{CoreType, PanelResult};
-use pp_db::entities::{
-    core_version, node_binding, node_pending_update, protocol_config,
-};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use pp_db::entities::{core_version, node_binding, node_pending_update, protocol_config};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use std::collections::HashSet;
 use uuid::Uuid;
 

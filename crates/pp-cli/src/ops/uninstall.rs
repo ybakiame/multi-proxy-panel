@@ -3,9 +3,9 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use super::{BIN_DIR, ETC_DIR, OPT_DIR, VAR_DIR, require_root};
 use super::fsutil::{remove_dir_if_empty, remove_if_exists};
 use super::systemd::{systemd_daemon_reload, systemd_disable, systemd_stop};
+use super::{BIN_DIR, ETC_DIR, OPT_DIR, VAR_DIR, require_root};
 
 /// Uninstall a component.
 pub async fn uninstall(component: &str, purge: bool) -> Result<()> {

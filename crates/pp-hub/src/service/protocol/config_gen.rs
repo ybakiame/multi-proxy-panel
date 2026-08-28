@@ -1,12 +1,10 @@
 use pp_common::{CoreType, PanelResult};
 use pp_config::{BuilderRegistry, InboundConfig};
 use pp_db::entities::{
-    certificate, client, client_group_binding, node_binding,
-    node_binding_group_binding, protocol_config,
+    certificate, client, client_group_binding, node_binding, node_binding_group_binding,
+    protocol_config,
 };
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use uuid::Uuid;

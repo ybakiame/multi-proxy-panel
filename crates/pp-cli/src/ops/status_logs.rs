@@ -5,9 +5,9 @@ use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use super::{BIN_DIR, ETC_DIR};
 use super::download::installed_version;
 use super::systemd::{systemd_is_active, systemd_is_enabled, systemd_restart};
+use super::{BIN_DIR, ETC_DIR};
 
 /// Show status of installed components.
 pub async fn status() -> Result<()> {
