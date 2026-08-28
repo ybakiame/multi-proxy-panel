@@ -48,6 +48,8 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩
 
 桌面客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心并叠加 MITM 与脚本引擎，代理流量直连远端节点。
 
+> **注：MITM 为桌面端能力（Android 受系统限制不支持）。**
+
 ### 设计原则
 
 - **无状态 Hub**: Hub 不保存运行时状态（除 Agent 连接句柄外），所有持久化数据存入数据库
@@ -349,6 +351,8 @@ Hub 写入 host_metrics 表
 
 桌面客户端（**Client**）运行在用户设备上，是 ProxyPanel 的用户侧组件：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
 
+> **注：MITM 为桌面端能力（Android 受系统限制不支持）。**
+
 客户端由四个 crate 组成：
 
 | Crate | 职责 | 说明 |
@@ -371,6 +375,8 @@ Hub 写入 host_metrics 表
 ### pp-mitm — HTTPS MITM 引擎
 
 本地 HTTPS 中间人代理，基于 hudsucker 0.25：
+
+> **注：MITM 为桌面端能力（Android 受系统限制不支持）。**
 
 - **CA 管理**: [`CaStore`] trait 抽象 CA 材料，[`FileCaStore`] 为基于本地目录的默认实现，首次调用用 **rcgen** 生成自签证书（`ca.crt` / `ca.key`，文件权限 **0600**）
 - **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）/ `should_intercept_tls`，白名单外流量整体透传

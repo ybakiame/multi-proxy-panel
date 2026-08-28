@@ -19,9 +19,9 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **桌面客户端**: 基于 Tauri 的跨平台桌面应用，内置脚本引擎与 HTTPS MITM 抓包重写
+- **桌面客户端**: 基于 Tauri 的跨平台桌面应用，内置脚本引擎与 HTTPS MITM 抓包重写（MITM 为桌面端能力，Android 受系统限制不支持）
 - **脚本引擎**: 兼容 Quantumult X / Surge / Loon 三方言 API 的 JS 脚本运行时（QuickJS）
-- **HTTPS 解密与重写**: URL / Header / Body 重写、Reject / Mock、请求响应脚本钩子、流量抓包
+- **HTTPS 解密与重写**: URL / Header / Body 重写、Reject / Mock、请求响应脚本钩子、流量抓包（桌面端专属）
 - **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
 - **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
 
@@ -66,7 +66,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-桌面客户端（`pp-client-ui`，Tauri）运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写：
+桌面客户端（`pp-client-ui`，Tauri）运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，Android 受系统限制不支持）：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -280,8 +280,8 @@ proxy-panel/
 | `pp-core` | 核心进程管理：启动、停止、重载、流量采集 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
 | `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
-| `pp-mitm` | HTTPS MITM 引擎：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
-| `pp-client` | 桌面客户端核心库：订阅同步、核心配置合成（MITM 链路）、系统代理、生命周期编排 | 库 |
+| `pp-mitm` | HTTPS MITM 引擎（桌面端专属，Android 不支持）：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
+| `pp-client` | 桌面客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
 | `apps/desktop` | Tauri 2 桌面/安卓客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员） | 桌面/安卓应用 |
 
 ## 支持的协议

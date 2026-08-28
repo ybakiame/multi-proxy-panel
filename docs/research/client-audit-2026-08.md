@@ -60,7 +60,7 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 行动项：
 - [x] Android 隐藏 MITM 页面入口（导航与路由守卫） — 已完成
 - [x] 评估并实施 **cron 定时任务从 MITM 链路解耦** — 已完成（start_scheduler_from_cache 独立构造，Android 可用定时任务）：脚本签到类任务只需 HTTP 客户端（`http_exec.rs` 已有 reqwest 实现），不依赖抓包；解耦后安卓端也能跑定时任务（QX 生态里移动端最实用的一块）
-- [ ] docs 中明确标注 MITM 为桌面端能力
+- [x] docs 中明确标注 MITM 为桌面端能力
 
 ## 4. 决策三：移动端双内核去留与重设计
 
@@ -88,7 +88,7 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 - [x] `check_subscription_core_compat` 的硬限制改为自动降级而非报错 — 已完成（仅 Android；桌面保持报错）
 - [ ] 本地 Override 层设计（schema + 合并策略 + UI）
 - [ ] 规则卡片列表 + 场景模板（移动端优先，桌面端复用）
-- [ ] mihomo Kotlin 侧补全或冻结：若走 sing-box 主核路线，`MihomoVpnService` 标记为 fallback 维护模式（只修崩溃，不加功能）
+- [x] mihomo Kotlin 侧补全或冻结：若走 sing-box 主核路线，`MihomoVpnService` 标记为 fallback 维护模式（只修崩溃，不加功能）
 
 ---
 
