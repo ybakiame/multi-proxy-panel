@@ -7,11 +7,16 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["mitm", "scripts"]
+mitm = ["dep:pp-mitm"]
+scripts = ["dep:pp-script"]
+
 [dependencies]
 pp-common = { workspace = true }
 pp-core = { workspace = true }
-pp-mitm = { workspace = true }
-pp-script = { workspace = true }
+pp-mitm = { workspace = true, optional = true }
+pp-script = { workspace = true, optional = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }

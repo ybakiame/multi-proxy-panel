@@ -48,3 +48,16 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "z"
+
+# ------------------------------------------------------------------------------
+# Feature-gating for Android builds
+# ------------------------------------------------------------------------------
+# Cargo features cannot be conditioned on target_os at the dependency level.
+# To build Android without MITM, use:
+#   cargo build --lib -p pp-client-ui --no-default-features --features scripts
+# or set CARGO_BUILD_TARGET before invoking tauri android build.
+#
+# Tauri CLI does not expose per-target feature flags. The recommended approach
+# is to use a build script or CI matrix that sets the feature flags explicitly
+# for Android targets. Desktop builds keep default features (mitm + scripts).
+# ------------------------------------------------------------------------------
