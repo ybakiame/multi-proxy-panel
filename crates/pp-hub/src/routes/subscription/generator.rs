@@ -1,0 +1,523 @@
+use pp_db::entities::{
+    certificate, client, client_group_binding, inbound_host, node, node_binding,
+    node_binding_group_binding, node_group, protocol_config,
+};
+use pp_subscription::ProxyNode;
+use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter};
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Proxy Node Builder
+// ---------------------------------------------------------------------------
+
+/// Build proxy nodes for a client from all active bindings.
+pub async fn build_proxy_nodes(
+    db: &sea_orm::DatabaseConnection,
+    client: &client::Model,
+    filter_rules: Option<&Value>,
+) -> Result<Vec<ProxyNode>, DbErr> {
+    // Skip clients that are limited or expired
+    if client.status == "limited" || client.status == "expired" {
+        return Ok(Vec::new());
+    }
+
+    let client_group_ids = get_client_group_ids(db, client.id).await?;
+
+    // Parse filter rules
+    let allowed_protocols = filter_rules
+        .and_then(|r| r.get("protocols"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default();
+
+    let allowed_node_group_names = filter_rules
+        .and_then(|r| r.get("node_groups"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default();
+
+    // Resolve group names to IDs for filtering
+    let allowed_node_group_ids: std::collections::HashSet<Uuid> =
+        if !allowed_node_group_names.is_empty() {
+            let all_groups = node_group::Entity::find().all(db).await?;
+            all_groups
+                .into_iter()
+                .filter(|g| allowed_node_group_names.contains(&g.name))
+                .map(|g| g.id)
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+    let bindings = node_binding::Entity::find()
+        .filter(node_binding::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    let mut nodes = Vec::new();
+
+    for binding in bindings {
+        let config = protocol_config::Entity::find_by_id(binding.protocol_config_id)
+            .one(db)
+            .await?;
+        let node_model = node::Entity::find_by_id(binding.node_id).one(db).await?;
+
+        if let (Some(cfg), Some(node)) = (config, node_model) {
+            let protocol_type = match parse_protocol_type(&cfg.protocol_type) {
+                Ok(pt) => pt,
+                Err(_) => continue,
+            };
+
+            // Apply filter: protocol type
+            if !allowed_protocols.is_empty()
+                && !allowed_protocols.contains(&protocol_type.to_string())
+            {
+                continue;
+            }
+
+            // Group-based access control.
+            // A client must belong to at least one group. It can only access bindings
+            // that share at least one group with it. No groups for the client means
+            // no binding access.
+            let binding_group_ids = get_binding_group_ids(db, binding.id).await?;
+            let binding_has_groups = !binding_group_ids.is_empty();
+
+            if client_group_ids.is_empty() {
+                continue;
+            }
+
+            if !binding_has_groups
+                || !binding_group_ids
+                    .iter()
+                    .any(|g| client_group_ids.contains(g))
+            {
+                continue;
+            }
+
+            // Apply template filter: node groups (by group name)
+            if !allowed_node_group_ids.is_empty() {
+                let has_matching_group = binding_group_ids
+                    .iter()
+                    .any(|gid| allowed_node_group_ids.contains(gid));
+                if !has_matching_group {
+                    continue;
+                }
+            }
+
+            // Inject client credentials into settings
+            let mut settings = cfg.settings.clone();
+            inject_client_credentials(&mut settings, client, &cfg.protocol_type);
+
+            // Determine effective address/port: check for inbound_host override
+            let host_override = inbound_host::Entity::find()
+                .filter(inbound_host::Column::ProtocolConfigId.eq(cfg.id))
+                .filter(inbound_host::Column::NodeId.eq(node.id))
+                .filter(inbound_host::Column::IsActive.eq(true))
+                .one(db)
+                .await?;
+
+            let (effective_server, effective_port) = if let Some(ref host) = host_override {
+                (host.address.clone(), host.port as u16)
+            } else if let Some(parent_id) = node.parent_id {
+                // Relay/child node: use parent node's domain/address with this node's port
+                let parent = node::Entity::find_by_id(parent_id).one(db).await?;
+                if let Some(parent) = parent {
+                    (
+                        parent
+                            .domain
+                            .clone()
+                            .unwrap_or_else(|| parent.address.clone()),
+                        cfg.listen_port as u16,
+                    )
+                } else {
+                    (
+                        node.domain.clone().unwrap_or_else(|| node.address.clone()),
+                        cfg.listen_port as u16,
+                    )
+                }
+            } else {
+                (
+                    node.domain.clone().unwrap_or_else(|| node.address.clone()),
+                    cfg.listen_port as u16,
+                )
+            };
+
+            // Apply host overrides to settings (sni, host, path)
+            if let Some(ref host) = host_override {
+                if let Some(obj) = settings.as_object_mut() {
+                    if let Some(sni) = &host.sni {
+                        obj.insert("sni".to_string(), json!(sni));
+                    }
+                    if let Some(host_val) = &host.host {
+                        obj.insert("host".to_string(), json!(host_val));
+                    }
+                    if let Some(path) = &host.path {
+                        obj.insert("path".to_string(), json!(path));
+                    }
+                }
+                if let Some(tls) = cfg.tls_settings.as_ref()
+                    && let Some(tls_obj) = tls.as_object()
+                {
+                    let mut new_tls = tls_obj.clone();
+                    if let Some(sni) = &host.sni {
+                        new_tls.insert("serverName".to_string(), json!(sni));
+                    }
+                    if let Some(alpn) = &host.alpn {
+                        new_tls.insert(
+                            "alpn".to_string(),
+                            json!(alpn.split(',').collect::<Vec<_>>()),
+                        );
+                    }
+                    if let Some(fp) = &host.fingerprint {
+                        new_tls.insert("fingerprint".to_string(), json!(fp));
+                    }
+                    // Re-assign to settings.tls via a separate variable
+                }
+            }
+
+            // Build node name with variable substitution
+            let display_name = if let Some(ref host) = host_override {
+                substitute_variables(&host.remark, client, &cfg, &node)
+            } else {
+                format!("{}-{}", node.name, cfg.name)
+            };
+
+            let tls = pp_common::settings_helper::merge_tls_settings(
+                cfg.tls_settings.clone(),
+                binding
+                    .override_settings
+                    .as_ref()
+                    .and_then(|o| o.get("tls_settings").cloned()),
+            );
+            let tls = resolve_subscription_tls(db, binding.node_id, tls).await?;
+
+            nodes.push(ProxyNode {
+                name: display_name,
+                protocol: protocol_type,
+                server: effective_server,
+                port: effective_port,
+                settings,
+                tls,
+            });
+        }
+    }
+
+    Ok(nodes)
+}
+
+/// Normalize TLS settings for client links: managed certificates contribute
+/// their domain as the SNI (serverName), and an ACME domain doubles as the
+/// SNI when nothing more specific is set.
+async fn resolve_subscription_tls(
+    db: &sea_orm::DatabaseConnection,
+    node_id: Uuid,
+    tls: Option<Value>,
+) -> Result<Option<Value>, DbErr> {
+    let Some(mut tls) = tls else {
+        return Ok(None);
+    };
+
+    let cert_id = tls
+        .get("cert_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+    if let Some(cert_id) = cert_id
+        && let Some(cert) = certificate::Entity::find_by_id(cert_id).one(db).await?
+        && cert.node_id == node_id
+        && let Some(obj) = tls.as_object_mut()
+    {
+        obj.insert("serverName".to_string(), json!(cert.domain));
+        obj.remove("cert_id");
+    }
+
+    let has_server_name = tls
+        .get("serverName")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    let domain = tls
+        .get("domain")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    if !has_server_name
+        && let Some(domain) = domain
+        && let Some(obj) = tls.as_object_mut()
+    {
+        obj.insert("serverName".to_string(), json!(domain));
+    }
+
+    Ok(Some(tls))
+}
+
+/// Fetch group IDs assigned to a client.
+async fn get_client_group_ids(
+    db: &sea_orm::DatabaseConnection,
+    client_id: Uuid,
+) -> Result<Vec<Uuid>, DbErr> {
+    let bindings = client_group_binding::Entity::find()
+        .filter(client_group_binding::Column::ClientId.eq(client_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
+}
+
+/// Fetch group IDs assigned to a node binding.
+async fn get_binding_group_ids(
+    db: &sea_orm::DatabaseConnection,
+    node_binding_id: Uuid,
+) -> Result<Vec<Uuid>, DbErr> {
+    let bindings = node_binding_group_binding::Entity::find()
+        .filter(node_binding_group_binding::Column::NodeBindingId.eq(node_binding_id))
+        .all(db)
+        .await?;
+    Ok(bindings.into_iter().map(|b| b.group_id).collect())
+}
+
+/// Substitute template variables in a string.
+/// Supported: {USERNAME}, {DATA_USED}, {DATA_LEFT}, {DATA_LIMIT}, {DAYS_LEFT},
+/// {EXPIRE_DATE}, {STATUS}, {PROTOCOL}, {TRANSPORT}, {SERVER_IP}
+fn substitute_variables(
+    template: &str,
+    client: &client::Model,
+    cfg: &protocol_config::Model,
+    node: &node::Model,
+) -> String {
+    let data_used = client.traffic_used_bytes;
+    let data_limit = client.traffic_limit_bytes;
+    let data_left = if data_limit > 0 {
+        (data_limit - data_used).max(0)
+    } else {
+        0
+    };
+    let days_left = client
+        .expiry_date
+        .map(|e| {
+            let diff = e.signed_duration_since(chrono::Utc::now().fixed_offset());
+            diff.num_days().max(0)
+        })
+        .unwrap_or(0);
+
+    let expire_date_str = client
+        .expiry_date
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "never".to_string());
+
+    let transport_str = cfg
+        .settings
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp")
+        .to_string();
+
+    template
+        .replace("{USERNAME}", &client.name)
+        .replace("{DATA_USED}", &format_bytes(data_used))
+        .replace("{DATA_LEFT}", &format_bytes(data_left))
+        .replace("{DATA_LIMIT}", &format_bytes(data_limit))
+        .replace("{DAYS_LEFT}", &days_left.to_string())
+        .replace("{EXPIRE_DATE}", &expire_date_str)
+        .replace("{STATUS}", &client.status)
+        .replace("{PROTOCOL}", &cfg.protocol_type)
+        .replace("{TRANSPORT}", &transport_str)
+        .replace(
+            "{SERVER_IP}",
+            &node.domain.clone().unwrap_or_else(|| node.address.clone()),
+        )
+}
+
+/// Format bytes as human-readable string (e.g. "1.5 GB").
+fn format_bytes(bytes: i64) -> String {
+    const KB: i64 = 1024;
+    const MB: i64 = KB * 1024;
+    const GB: i64 = MB * 1024;
+    const TB: i64 = GB * 1024;
+
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn inject_client_credentials(settings: &mut Value, client: &client::Model, protocol_type: &str) {
+    if let Some(obj) = settings.as_object_mut() {
+        // Ensure clients array exists
+        if !obj.contains_key("clients") {
+            obj.insert("clients".to_string(), json!([]));
+        }
+
+        match protocol_type {
+            // UUID-based VLESS protocols
+            pt if pt.starts_with("vless") => {
+                let flow = if pt == "vless_reality" {
+                    "xtls-rprx-vision"
+                } else {
+                    ""
+                };
+                let mut client_obj = json!({
+                    "id": client.id.to_string(),
+                    "email": client.email.as_ref().unwrap_or(&client.name),
+                    "flow": flow,
+                });
+                if let Some(limit) = client.max_devices
+                    && limit > 0
+                    && let Some(obj) = client_obj.as_object_mut()
+                {
+                    obj.insert("limitIp".to_string(), json!(limit));
+                }
+                // Also expose the current client's id at top level for link generators.
+                obj.insert("id".to_string(), json!(client.id.to_string()));
+                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
+                    arr.push(client_obj);
+                }
+            }
+            // Password-based protocols
+            "hysteria2" | "anytls" => {
+                let client_obj = json!({
+                    "name": client.email.as_ref().unwrap_or(&client.name),
+                    "password": client.id.to_string(),
+                });
+                if let Some(arr) = obj.get_mut("clients").and_then(|v| v.as_array_mut()) {
+                    arr.push(client_obj);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_protocol_type(s: &str) -> Result<pp_common::ProtocolType, ()> {
+    use pp_common::ProtocolType;
+    match s {
+        "vless_reality" => Ok(ProtocolType::VlessReality),
+        "vless_xhttp" => Ok(ProtocolType::VlessXhttp),
+        "hysteria2" => Ok(ProtocolType::Hysteria2),
+        "anytls" => Ok(ProtocolType::Anytls),
+        _ => Err(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pp_db::entities::{client, node, protocol_config};
+
+    #[test]
+    fn parse_protocol_type_works() {
+        assert!(parse_protocol_type("vless_reality").is_ok());
+        assert!(parse_protocol_type("hysteria2").is_ok());
+        assert!(parse_protocol_type("unknown").is_err());
+    }
+
+    #[test]
+    fn format_bytes_works() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_bytes(1024_i64 * 1024 * 1024 * 1024), "1.0 TB");
+    }
+
+    fn make_test_client() -> client::Model {
+        client::Model {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            name: "testuser".to_string(),
+            email: Some("test@example.com".to_string()),
+            traffic_limit_bytes: 10 * 1024 * 1024 * 1024, // 10 GB
+            traffic_used_bytes: 2 * 1024 * 1024 * 1024,   // 2 GB used
+            all_time_used_bytes: 5 * 1024 * 1024 * 1024,
+            expiry_date: Some((chrono::Utc::now() + chrono::Duration::days(30)).into()),
+            reset_day: None,
+            data_limit_reset_strategy: "monthly".to_string(),
+            last_traffic_reset_time: None,
+            max_devices: Some(3),
+            status: "active".to_string(),
+            on_hold_expire_duration_secs: None,
+            on_hold_timeout: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    fn make_test_config() -> protocol_config::Model {
+        protocol_config::Model {
+            id: Uuid::new_v4(),
+            name: "vless-reality".to_string(),
+            protocol_type: "vless_reality".to_string(),
+            core_type: "sing-box".to_string(),
+            listen_port: 443,
+            listen_address: "0.0.0.0".to_string(),
+            settings: serde_json::json!({"network": "tcp"}),
+            tls_settings: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    fn make_test_node() -> node::Model {
+        node::Model {
+            id: Uuid::new_v4(),
+            name: "us-node".to_string(),
+            hostname: "us-server".to_string(),
+            address: "1.2.3.4".to_string(),
+            domain: None,
+            token_hash: "hash".to_string(),
+            cores_available: serde_json::json!(["sing-box"]),
+            labels: None,
+            usage_coefficient: 1.0,
+            status: "online".to_string(),
+            parent_id: None,
+            last_seen_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        }
+    }
+
+    #[test]
+    fn substitute_variables_replaces_all_placeholders() {
+        let client = make_test_client();
+        let config = make_test_config();
+        let node = make_test_node();
+
+        let template = "{USERNAME}-{PROTOCOL}-{TRANSPORT}-{SERVER_IP}-{STATUS}-{DAYS_LEFT}-{DATA_USED}-{DATA_LEFT}-{DATA_LIMIT}-{EXPIRE_DATE}";
+        let result = substitute_variables(template, &client, &config, &node);
+
+        assert!(result.contains("testuser"));
+        assert!(result.contains("vless_reality"));
+        assert!(result.contains("tcp"));
+        assert!(result.contains("1.2.3.4"));
+        assert!(result.contains("active"));
+        assert!(result.contains("2.0 GB")); // DATA_USED
+        assert!(result.contains("8.0 GB")); // DATA_LEFT (10-2)
+        assert!(result.contains("10.0 GB")); // DATA_LIMIT
+    }
+
+    #[test]
+    fn substitute_variables_handles_no_expiry() {
+        let mut client = make_test_client();
+        client.expiry_date = None;
+        let config = make_test_config();
+        let node = make_test_node();
+
+        let result = substitute_variables("{EXPIRE_DATE}-{DAYS_LEFT}", &client, &config, &node);
+        assert!(result.contains("never"));
+        assert!(result.contains("0"));
+    }
+}
