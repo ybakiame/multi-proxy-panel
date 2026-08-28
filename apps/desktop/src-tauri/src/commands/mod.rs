@@ -75,49 +75,37 @@ impl pp_script::Notifier for TauriNotifier {
     }
 }
 
-/// Serializes `CoreType` to frontend lowercase convention (`singbox` / `mihomo`).
-fn core_type_str(core_type: CoreType) -> String {
-    serde_json::to_value(core_type)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
-/// Parses frontend lowercase core type string (`singbox` / `mihomo`).
-fn core_type_from_str(s: &str) -> Result<CoreType, String> {
-    serde_json::from_value(serde_json::Value::String(s.to_string()))
-        .map_err(|_| format!("invalid core type '{s}' (expected: singbox / mihomo)"))
-}
-
 /// Parses a profile ID string into `Uuid`.
 fn parse_profile_id(id: &str) -> Result<Uuid, String> {
     Uuid::parse_str(id).map_err(|e| format!("invalid profile ID: {e}"))
 }
 
+// The following pure conversion functions are re-exported from pp_client::validation
+// for backward compatibility with existing command modules.
+
+/// Serializes `CoreType` to frontend lowercase convention (`singbox` / `mihomo`).
+fn core_type_str(core_type: CoreType) -> String {
+    pp_client::core_type_str(core_type)
+}
+
+/// Parses frontend lowercase core type string (`singbox` / `mihomo`).
+fn core_type_from_str(s: &str) -> Result<CoreType, String> {
+    pp_client::core_type_from_str(s)
+}
+
 /// String representation of `RemoteKind` (matches `RemoteResourceView.kind` serde).
 fn remote_kind_str(kind: pp_client::RemoteKind) -> &'static str {
-    match kind {
-        pp_client::RemoteKind::Script => "Script",
-        pp_client::RemoteKind::Snippet => "Snippet",
-    }
+    pp_client::remote_kind_str(kind)
 }
 
 /// String representation of `ScriptDialect` (matches `RemoteResourceView.dialect` serde).
 ///
 /// QX is merged into the Loon ecosystem; detected QuantumultX is mapped to `Loon`.
 fn script_dialect_str(dialect: ScriptDialect) -> &'static str {
-    match dialect {
-        ScriptDialect::QuantumultX => "Loon",
-        ScriptDialect::Surge => "Surge",
-        ScriptDialect::Loon => "Loon",
-    }
+    pp_client::script_dialect_str(dialect)
 }
 
 /// String representation of `SubFormat`.
 fn sub_format_str(format: SubFormat) -> &'static str {
-    match format {
-        SubFormat::ShareLinks => "ShareLinks",
-        SubFormat::ClashYaml => "ClashYaml",
-        SubFormat::SingBoxJson => "SingBoxJson",
-    }
+    pp_client::sub_format_str(format)
 }

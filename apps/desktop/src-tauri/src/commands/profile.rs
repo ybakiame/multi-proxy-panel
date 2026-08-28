@@ -118,59 +118,18 @@ pub struct UpdateProfileInput {
     pub js_url: Option<String>,
 }
 
-/// Validate YAML override: non-empty must be a parseable YAML mapping.
-pub(crate) fn validate_yaml_override(yaml: &str) -> Result<(), String> {
-    if yaml.trim().is_empty() {
-        return Ok(());
-    }
-    let patch: serde_json::Value =
-        serde_yaml::from_str(yaml).map_err(|e| format!("YAML 复写解析失败: {e}"))?;
-    if patch.is_null() {
-        return Ok(());
-    }
-    if !patch.is_object() {
-        return Err("YAML 复写必须是 mapping（对象）".to_string());
-    }
-    Ok(())
-}
-
-/// Rough check that JS override defines a `main` function.
-pub(crate) fn validate_js_override(js: &str) -> Result<(), String> {
-    if js.trim().is_empty() {
-        return Ok(());
-    }
-    if !js.contains("function main") && !js.contains("main(") {
-        return Err(
-            "JS 复写需定义 main 函数（function main(config) { ... return config; }）".to_string(),
-        );
-    }
-    Ok(())
-}
-
-/// Validate remote override URL: non-empty must start with http:// or https://.
-pub(crate) fn validate_remote_url(url: &Option<String>) -> Result<(), String> {
-    if let Some(url) = url {
-        let url = url.trim();
-        if !(url.is_empty() || url.starts_with("http://") || url.starts_with("https://")) {
-            return Err("远程复写 URL 必须是 http:// 或 https:// 开头".to_string());
-        }
-    }
-    Ok(())
-}
-
-/// Normalize empty string to `None`.
-pub(crate) fn normalize_optional_url(url: Option<String>) -> Option<String> {
-    url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty())
-}
-
 /// Update profile editable fields.
 #[tauri::command]
 pub fn update_profile(state: State<'_, AppState>, input: UpdateProfileInput) -> Result<(), String> {
     let id = parse_profile_id(&input.id)?;
-    validate_yaml_override(&input.yaml_override)?;
-    validate_js_override(&input.js_override)?;
-    validate_remote_url(&input.yaml_url)?;
-    validate_remote_url(&input.js_url)?;
+    pp_client::validate_yaml_override(&input.yaml_override)
+        .map_err(|e| format!("YAML 复写校验失败: {e}"))?;
+    pp_client::validate_js_override(&input.js_override)
+        .map_err(|e| format!("JS 复写校验失败: {e}"))?;
+    pp_client::validate_remote_url(&input.yaml_url)
+        .map_err(|e| format!("远程 YAML URL 校验失败: {e}"))?;
+    pp_client::validate_remote_url(&input.js_url)
+        .map_err(|e| format!("远程 JS URL 校验失败: {e}"))?;
     let store = ProfileStoreV2::new(state.data_dir.clone());
     let mut profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
     let target = profiles
@@ -180,8 +139,8 @@ pub fn update_profile(state: State<'_, AppState>, input: UpdateProfileInput) -> 
     target.name = input.name;
     target.yaml_override = input.yaml_override;
     target.js_override = input.js_override;
-    target.yaml_url = normalize_optional_url(input.yaml_url);
-    target.js_url = normalize_optional_url(input.js_url);
+    target.yaml_url = pp_client::normalize_optional_url(input.yaml_url);
+    target.js_url = pp_client::normalize_optional_url(input.js_url);
     store
         .save(&profiles)
         .map_err(|e| format!("保存复写模板失败: {e}"))

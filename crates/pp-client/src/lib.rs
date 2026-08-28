@@ -14,6 +14,7 @@ pub mod core_engine;
 pub mod cores;
 pub mod http_exec;
 pub mod import;
+#[cfg(feature = "mitm")]
 pub mod mitm;
 pub mod node_convert;
 pub mod privilege;
@@ -24,6 +25,7 @@ pub mod share_link;
 pub mod state;
 pub mod subscription;
 pub mod sysproxy;
+pub mod validation;
 
 pub use config::*;
 pub use core_config::*;
@@ -31,6 +33,7 @@ pub use core_engine::*;
 pub use cores::*;
 pub use http_exec::*;
 pub use import::*;
+#[cfg(feature = "mitm")]
 pub use mitm::*;
 pub use node_convert::*;
 pub use privilege::*;
@@ -41,6 +44,7 @@ pub use share_link::*;
 pub use state::*;
 pub use subscription::*;
 pub use sysproxy::*;
+pub use validation::*;
 
 /// 归一化 GitHub 资源 URL：`github.com/<owner>/<repo>/{blob,raw}/<branch>/<path>` →
 /// `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`；其他 URL 原样返回。

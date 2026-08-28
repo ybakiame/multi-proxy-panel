@@ -29,6 +29,8 @@ mod download;
 mod tests;
 mod version;
 
+pub use version::infer_core_type;
+
 /// GitHub API request timeout (seconds).
 const HTTP_TIMEOUT_SECS: u64 = 30;
 

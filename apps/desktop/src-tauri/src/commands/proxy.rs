@@ -94,17 +94,6 @@ pub(crate) fn idle_status_view(data_dir: &std::path::Path) -> ClientStatusView {
     }
 }
 
-/// Persist rule mode after validation.
-pub(crate) fn set_rule_mode_persist(data_dir: &std::path::Path, mode: &str) -> Result<(), String> {
-    match mode {
-        "rule" | "global" | "direct" => {}
-        _ => return Err("无效的规则模式".to_string()),
-    }
-    let mut config = ClientConfig::load(data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
-    config.rule_mode = mode.to_string();
-    config.save().map_err(|e| format!("保存配置失败: {e}"))
-}
-
 /// Set rule mode (`rule` / `global` / `direct`): persist to `client.json`.
 ///
 /// Best-effort hot-switch via Clash API PATCH /configs when applicable.
@@ -113,7 +102,8 @@ pub async fn set_rule_mode(
     state: State<'_, AppState>,
     mode: String,
 ) -> Result<ClientStatusView, String> {
-    set_rule_mode_persist(&state.data_dir, &mode)?;
+    pp_client::set_rule_mode_persist(&state.data_dir, &mode)
+        .map_err(|e| format!("规则模式设置失败: {e}"))?;
     let mut lock = state.client.lock().await;
     let Some(client) = lock.as_mut() else {
         return Ok(idle_status_view(&state.data_dir));
@@ -179,8 +169,8 @@ mod tests {
         cfg.save().unwrap();
 
         for invalid in ["", "bogus", "Rule", "全局"] {
-            let err = set_rule_mode_persist(dir.path(), invalid).unwrap_err();
-            assert!(err.contains("无效的规则模式"), "{invalid:?}: {err}");
+            let err = pp_client::set_rule_mode_persist(dir.path(), invalid).unwrap_err();
+            assert!(err.contains("Invalid rule mode"), "{invalid:?}: {err}");
         }
     }
 
@@ -200,7 +190,7 @@ mod tests {
         assert_eq!(saved.rule_mode, "rule");
 
         for mode in ["global", "direct", "rule"] {
-            set_rule_mode_persist(dir.path(), mode).unwrap();
+            pp_client::set_rule_mode_persist(dir.path(), mode).unwrap();
             let saved = ClientConfig::load(dir.path()).unwrap();
             assert_eq!(saved.rule_mode, mode, "{mode} should persist to client.json");
         }
@@ -223,7 +213,7 @@ mod tests {
         assert!(!view.core_running);
         assert!(view.clash_api_url.is_none());
 
-        set_rule_mode_persist(dir.path(), "direct").unwrap();
+        pp_client::set_rule_mode_persist(dir.path(), "direct").unwrap();
         let view = idle_status_view(dir.path());
         assert_eq!(view.rule_mode, "direct");
     }

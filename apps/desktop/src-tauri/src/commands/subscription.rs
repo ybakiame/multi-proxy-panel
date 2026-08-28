@@ -79,15 +79,6 @@ pub struct AddSubscriptionInput {
     pub profile_id: Option<String>,
 }
 
-/// Validate subscription URL must be http/https.
-pub(crate) fn validate_subscription_url(url: &str) -> Result<(), String> {
-    if url.starts_with("http://") || url.starts_with("https://") {
-        Ok(())
-    } else {
-        Err("订阅 URL 必须以 http:// 或 https:// 开头".to_string())
-    }
-}
-
 /// Parse subscription ID string to Uuid.
 pub(crate) fn parse_subscription_id(id: &str) -> Result<Uuid, String> {
     Uuid::parse_str(id).map_err(|e| format!("无效的订阅 ID: {e}"))
@@ -179,7 +170,8 @@ pub async fn add_subscription(
         return Err("名称不能为空".to_string());
     }
     let url = input.url.trim().to_string();
-    validate_subscription_url(&url)?;
+    pp_client::validate_subscription_url(&url)
+        .map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
     let ua = input
         .user_agent
         .as_deref()
@@ -319,7 +311,8 @@ pub async fn update_subscription(
         return Err("名称不能为空".to_string());
     }
     let url = pp_client::normalize_resource_url(url.trim());
-    validate_subscription_url(&url)?;
+    pp_client::validate_subscription_url(&url)
+        .map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
     let ua = user_agent
         .as_deref()
         .map(str::trim)

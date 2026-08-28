@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use pp_client::{
     apply_panel_features, build_core_config_v2, compose_mihomo_config, compose_singbox_config,
     fetch_subscription_with_ua, resolve_remote_overrides, ClientConfig, EffectiveOverrides,
-    PanelFeatures, SubscriptionFetcher, SubscriptionStore, SubContent, SubFormat,
+    PanelFeatures, SubscriptionFetcher, SubscriptionStore, SubContent,
 };
 use pp_common::CoreType;
 use tauri::State;
@@ -52,14 +52,14 @@ pub(crate) async fn preview_core_config_impl(
     let sub_content = if let Some(sub) = &specified {
         linked_profile_id = sub.profile_id;
         if let Some(cached) = sub_store.load_cached_content(sub.id) {
-            check_preview_core_compat(cached.format, cfg.core_type)
+            pp_client::check_preview_core_compat(cached.format, cfg.core_type)
                 .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
             sub_content_from_nodes(cfg.core_type, &cached.singbox_nodes, &cached.mihomo_nodes)?
         } else {
             let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                 .await
                 .map_err(|e| format!("拉取订阅「{}」失败: {e}", sub.name))?;
-            check_preview_core_compat(fetch.format, cfg.core_type)
+            pp_client::check_preview_core_compat(fetch.format, cfg.core_type)
                 .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
             cache_fetch_result(&sub_store, sub.id, &fetch);
             sub_content_from_nodes(cfg.core_type, &fetch.singbox_nodes, &fetch.mihomo_nodes)?
@@ -189,26 +189,6 @@ pub(crate) async fn preview_core_config_impl(
             serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
         }
     }
-}
-
-/// Subscription format <-> core type compatibility check.
-pub(crate) fn check_preview_core_compat(format: SubFormat, core_type: CoreType) -> Result<(), String> {
-    let compatible = match format {
-        SubFormat::ShareLinks => true,
-        SubFormat::SingBoxJson => core_type == CoreType::SingBox,
-        SubFormat::ClashYaml => core_type == CoreType::Mihomo,
-    };
-    if compatible {
-        return Ok(());
-    }
-    let (format_name, supported_core) = if format == SubFormat::ClashYaml {
-        ("clash", "mihomo")
-    } else {
-        ("sing-box", "sing-box")
-    };
-    Err(format!(
-        "订阅格式为 {format_name}，仅支持 {supported_core} 核心，当前核心类型为 {core_type}，请在设置中切换核心类型"
-    ))
 }
 
 #[cfg(test)]
