@@ -1,3 +1,8 @@
+// Package mihomocore provides a gomobile-friendly wrapper around the mihomo core.
+//
+// Fallback maintenance mode: this package is used as a silent fallback kernel when
+// sing-box cannot parse a subscription. Only crash fixes are accepted; no new
+// features or protocol support will be added.
 package mihomocore
 
 import (

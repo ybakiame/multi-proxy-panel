@@ -1,13 +1,20 @@
 package mihomocore
 
-// 与 sing-box AndroidLib 构建（cmd/internal/build_libbox）一致：
-// gobind 生成绑定代码时用 packages.Load 解析 "github.com/sagernet/gomobile/bind"，
-// 要求该 module 出现在本 module 的 require 列表中。根包是零开销 stub，
-// 仅用于把依赖钉进 go.mod（gobind 独立进程解析用）。
+// Package mihomocore provides a gomobile-friendly wrapper around the mihomo core.
 //
-// libbox 同理：gomobile bind 的第二个目标包
-// github.com/sagernet/sing-box/experimental/libbox 不在本 module 内，
-// 需在 require 列表中才能被 gobind 的 packages.Load 解析。
+// Fallback maintenance mode: this package is used as a silent fallback kernel when
+// sing-box cannot parse a subscription. Only crash fixes are accepted; no new
+// features or protocol support will be added.
+//
+// Consistent with sing-box AndroidLib build (cmd/internal/build_libbox):
+// gobind generates binding code using packages.Load to parse
+// "github.com/sagernet/gomobile/bind", requiring this module to appear in the
+// require list. The root package is a zero-overhead stub used only to pin the
+// dependency into go.mod (for gobind's independent process resolution).
+//
+// libbox is similar: the second target package of gomobile bind,
+// github.com/sagernet/sing-box/experimental/libbox, is not in this module,
+// so it must be in the require list to be resolved by gobind's packages.Load.
 import (
 	_ "github.com/sagernet/gomobile"
 	_ "github.com/sagernet/sing-box/experimental/libbox"

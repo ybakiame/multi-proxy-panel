@@ -27,6 +27,9 @@ import java.time.format.DateTimeFormatter
  * `com.proxypanel.core.mihomocore`）驱动 mihomo 核心，由 [VpnPlugin] 的
  * start/stop 命令控制启停。
  *
+ * **Fallback 维护模式**：本服务为 sing-box 无法解析订阅时的自动降级内核；
+ * 只修崩溃不加功能，不新增协议支持或交互特性。
+ *
  * P1 spike 最小实现（对齐 ProxyVpnService 结构，但不做接口监控 / per-app /
  * 通知 action），启动序列：
  *   1. `Mihomocore.setup(homeDir, configYAML, callback)`：设置 HomeDir、保存
