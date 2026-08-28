@@ -3,10 +3,10 @@
 //! 同时作为 lib 与 bin 构建：桌面端 `main` 调用 [`run`]；Android/iOS 端由
 //! [`tauri::mobile_entry_point`] 注入移动入口，`main` 不参与编译。
 
-mod commands;
+pub mod commands;
 #[cfg(target_os = "android")]
 mod core_bridge;
-mod logs;
+pub mod logs;
 mod state;
 
 use tauri::Manager;
