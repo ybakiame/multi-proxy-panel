@@ -86,8 +86,8 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 行动项：
 - [x] 移动端隐藏内核切换 UI，默认 sing-box；订阅嗅探到 sing-box 不兼容的 clash 节点时自动切 mihomo（日志记录原因） — 已完成（自动降级 + 持久化 + 6 单测）
 - [x] `check_subscription_core_compat` 的硬限制改为自动降级而非报错 — 已完成（仅 Android；桌面保持报错）
-- [ ] 本地 Override 层设计（schema + 合并策略 + UI）
-- [ ] 规则卡片列表 + 场景模板（移动端优先，桌面端复用）
+- [x] 本地 Override 层设计（schema + 合并策略 + UI） — 已完成（ADR-0002 + MVP 实施）
+- [x] 规则卡片列表 + 场景模板（移动端优先，桌面端复用） — 已完成 MVP（/rules 页）
 - [x] mihomo Kotlin 侧补全或冻结：若走 sing-box 主核路线，`MihomoVpnService` 标记为 fallback 维护模式（只修崩溃，不加功能）
 
 ---

@@ -592,7 +592,7 @@ local_override/
 
 - [ ] `LocalOverride` schema 定义与 `local_override.json` 存储。
 - [ ] 规则卡片列表：增删改查、开关、摘要显示。
-- [ ] 规则编辑 Sheet/Modal：类型选择 → 目标输入 → 动作选择，三步完成。
+- [x] 规则编辑 Sheet/Modal：类型选择 → 目标输入 → 动作选择，三步完成。
 - [ ] 上下移动按钮排序（拖拽排序推迟到 v2）。
 - [ ] 滑动删除 + Snackbar 撤销（移动端）。
 - [ ] 场景模板：回国模式 / 海外模式 / 广告过滤 3 个模板。
@@ -684,25 +684,25 @@ local_override/
 
 ## 8. 待办任务（实施拆分）
 
-### 8.1 Rust 后端（pp-client）
+### 8.1 Rust 后端（pp-client）— ✅ v1 已完成
 
-- [ ] `local_override/schema.rs` — 类型定义
-- [ ] `local_override/store.rs` — JSON 文件存储 + 迁移
-- [ ] `local_override/singbox.rs` — sing-box 配置注入
-- [ ] `local_override/mihomo.rs` — mihomo 配置注入
-- [ ] `local_override/template.rs` — 4 个场景模板定义
-- [ ] `local_override/ruleset.rs` — 规则集下载 + 缓存 + 自动更新调度
-- [ ] 修改 `ClientState::start()` 插入本地 Override 注入点
-- [ ] 单元测试：schema 序列化、双核心注入、模板生成
+- [x] `local_override/schema.rs` — 类型定义
+- [x] `local_override/store.rs` — JSON 文件存储 + 迁移
+- [x] `local_override/singbox.rs` — sing-box 配置注入
+- [x] `local_override/mihomo.rs` — mihomo 配置注入
+- [x] `local_override/template.rs` — 4 个场景模板定义
+- [x] `local_override/ruleset.rs` — 规则集下载 + 缓存 + 自动更新调度
+- [x] 修改 `ClientState::start()` 插入本地 Override 注入点
+- [x] 单元测试：schema 序列化、双核心注入、模板生成
 
-### 8.2 前端（apps/desktop / apps/android）
+### 8.2 前端（apps/desktop / apps/android）— ✅ v1 已完成
 
-- [ ] 规则列表页面（移动端 Sheet / 桌面 Modal 复用）
-- [ ] 规则卡片组件（摘要、开关、上下移动、滑动删除）
-- [ ] 规则编辑 Sheet（类型 → 目标 → 高级三步）
-- [ ] 场景模板页面（一键应用 + 撤销）
-- [ ] 规则集订阅页面（清单、勾选、更新状态）
-- [ ] Tauri / Android 命令桥接（`local_override_load` / `save` / `apply_template` 等）
+- [x] 规则列表页面（移动端 Sheet / 桌面 Modal 复用）
+- [x] 规则卡片组件（摘要、开关、上下移动、滑动删除）
+- [x] 规则编辑 Sheet（类型 → 目标 → 高级三步）
+- [x] 场景模板页面（一键应用 + 撤销）
+- [x] 规则集订阅页面（清单、勾选、更新状态）
+- [x] Tauri / Android 命令桥接（`local_override_load` / `save` / `apply_template` 等）
 
 ### 8.3 文档
 
