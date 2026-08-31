@@ -8,6 +8,8 @@ use tauri::State;
 
 use crate::commands::core_type_from_str;
 use crate::state::AppState;
+#[cfg(target_os = "android")]
+use super::require_desktop;
 
 /// External view of a local core.
 #[derive(Debug, Clone, Serialize)]

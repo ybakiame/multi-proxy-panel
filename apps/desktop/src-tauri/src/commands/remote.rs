@@ -11,6 +11,8 @@ use crate::commands::{
     remote_kind_str, script_dialect_str,
 };
 use crate::state::AppState;
+#[cfg(target_os = "android")]
+use super::require_desktop;
 
 /// External view of a remote resource.
 #[derive(Debug, Clone, Serialize, Deserialize)]

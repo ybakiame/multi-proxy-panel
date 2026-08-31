@@ -5,6 +5,8 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
+#[cfg(target_os = "android")]
+use super::require_desktop;
 
 /// External view of a traffic record.
 #[derive(Debug, Clone, Serialize)]

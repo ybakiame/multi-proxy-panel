@@ -139,6 +139,8 @@ pub fn toast_mode_override() -> Option<String> {
 }
 
 use pp_client::ClientConfig;
+#[cfg(target_os = "android")]
+use super::require_desktop;
 
 #[cfg(test)]
 mod tests {
