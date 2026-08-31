@@ -403,6 +403,17 @@ impl ClientState {
                 "Clash API 推送规则模式失败"
             );
         }
+
+        // Replay persisted group selections after core startup.
+        if self.config.clash_api_enabled {
+            crate::proxies::replay_group_selections(
+                self.config.clash_api_port,
+                &self.config.clash_api_secret,
+                &self.config.data_dir,
+            )
+            .await;
+        }
+
         Ok(())
     }
 

@@ -1,8 +1,8 @@
 //! Service startup/shutdown methods for [`ClientState`].
 
-use pp_common::PanelResult;
 #[cfg(target_os = "android")]
 use pp_common::CoreType;
+use pp_common::PanelResult;
 use std::net::{Ipv4Addr, SocketAddr};
 
 use crate::runner::CoreRunner;

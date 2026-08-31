@@ -1,5 +1,6 @@
 //! 客户端核心配置（桌面客户端核心库）。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use pp_common::{CoreType, PanelResult};
@@ -80,13 +81,20 @@ pub struct ClientConfig {
     pub github_proxy_prefix: String,
     /// 远程资源拉取是否经本地核心 mixed 端口（`http://127.0.0.1:{mixed_port}`）代理。
     pub fetch_via_local_proxy: bool,
-    /// 规则模式：`rule` / `global` / `direct`（默认 `rule`）。
+    /// Rule mode: `rule` / `global` / `direct` (default `rule`).
     ///
-    /// 持久化到 client.json；合成配置时写入 mihomo 顶层 `mode:`，sing-box 无组合层
-    /// mode 字段，运行时经 Clash API（`PATCH /configs`）热切换。非法值在读取侧
-    /// （[`Self::normalized_rule_mode`]）回退 `rule`。结构体级 `#[serde(default)]`
-    /// 保证旧版 `client.json`（无此字段）按默认 `rule` 解析。
+    /// Persisted to client.json; synthesized into mihomo top-level `mode:`, sing-box has no composition-level
+    /// mode field, runtime switched via Clash API (`PATCH /configs`). Illegal values fall back to `rule` on the read side
+    /// ([`Self::normalized_rule_mode`]). Struct-level `#[serde(default)]` ensures old version `client.json` (without this field)
+    /// parses normally.
     pub rule_mode: String,
+    /// Persisted group selections: group name -> selected node name.
+    ///
+    /// Written when user manually selects a node in a group; replayed after core startup
+    /// (see [`crate::proxies::replay_group_selections`]). `#[serde(default)]` ensures backward
+    /// compatibility with old `client.json` that lacks this field.
+    #[serde(default)]
+    pub group_selections: HashMap<String, String>,
 }
 
 impl Default for ClientConfig {
@@ -112,6 +120,7 @@ impl Default for ClientConfig {
             github_proxy_prefix: String::new(),
             fetch_via_local_proxy: false,
             rule_mode: "rule".to_string(),
+            group_selections: HashMap::new(),
         }
     }
 }
@@ -265,7 +274,9 @@ mod tests {
         assert!(!cfg.fetch_via_local_proxy);
         // 旧 client.json 缺失 active_subscription_id 时按默认值解析（未选中订阅）。
         assert_eq!(cfg.active_subscription_id, None);
-        // 旧 client.json 缺失 rule_mode 时按默认值解析（rule）。
+        // Old client.json missing group_selections should parse with default empty map.
+        assert!(cfg.group_selections.is_empty());
+        // Old client.json missing rule_mode should parse with default `rule`.
         assert_eq!(cfg.rule_mode, "rule");
         assert_eq!(cfg.normalized_rule_mode(), "rule");
     }
