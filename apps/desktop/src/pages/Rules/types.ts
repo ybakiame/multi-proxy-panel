@@ -20,9 +20,9 @@ export const ACTION_LABELS: Record<string, string> = {
 };
 
 export const TEMPLATE_DEFS: { id: string; name: string; desc: string }[] = [
-  { id: "return_to_china", name: "回国模式", desc: "海外用户访问国内服务直连" },
+  { id: "return-china", name: "回国模式", desc: "海外用户访问国内服务直连" },
   { id: "overseas", name: "海外模式", desc: "国内用户访问海外服务代理" },
-  { id: "ad_filter", name: "广告过滤", desc: "拦截常见广告域名" },
+  { id: "ad-filter", name: "广告过滤", desc: "拦截常见广告域名" },
 ];
 
 export const RULE_ACTIONS = [
