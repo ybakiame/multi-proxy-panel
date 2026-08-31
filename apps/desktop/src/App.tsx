@@ -12,6 +12,7 @@ import Logs from "./pages/Logs";
 import Mitm from "./pages/Mitm";
 import Nodes from "./pages/Nodes";
 import Override from "./pages/Override";
+import Rules from "./pages/Rules";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 
@@ -155,6 +156,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/nodes" element={<Nodes />} />
+                <Route path="/rules" element={<Rules />} />
                 <Route path="/mitm" element={<MitmGuard />} />
                 <Route path="/scripts" element={<ScriptsGuard />} />
                 <Route path="/override" element={<Override />} />

@@ -5,6 +5,7 @@ import {
   Cog6ToothIcon,
   DocumentTextIcon,
   ServerStackIcon,
+  ShieldCheckIcon,
   Squares2X2Icon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
@@ -34,6 +35,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "仪表盘", icon: Squares2X2Icon },
   { to: "/nodes", label: "订阅", icon: ServerStackIcon },
+  { to: "/rules", label: "规则", icon: ShieldCheckIcon },
   { to: "/mitm", label: "MITM", icon: BeakerIcon, requiresMitm: true },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon, requiresCronTasks: true },
   { to: "/override", label: "覆写", icon: AdjustmentsHorizontalIcon },
