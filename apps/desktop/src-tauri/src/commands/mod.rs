@@ -5,6 +5,7 @@
 
 mod config;
 mod core_mgmt;
+mod local_override;
 mod mitm;
 mod platform;
 mod preview;
@@ -16,6 +17,7 @@ mod task;
 
 pub use config::*;
 pub use core_mgmt::*;
+pub use local_override::*;
 pub use mitm::*;
 pub use platform::*;
 pub use preview::*;

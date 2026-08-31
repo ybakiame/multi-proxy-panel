@@ -356,6 +356,8 @@ impl ClientState {
                         return Err(e);
                     }
                 };
+                // [ADR-0002] Inject local override after compose, before panel features.
+                inject_local_override_warn_only(&self.config.data_dir, &mut cfg, CoreType::SingBox);
                 core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
                 cfg
             }
@@ -372,6 +374,8 @@ impl ClientState {
                         return Err(e);
                     }
                 };
+                // [ADR-0002] Inject local override after compose, before panel features.
+                inject_local_override_warn_only(&self.config.data_dir, &mut cfg, CoreType::Mihomo);
                 core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
                 cfg
             }
@@ -433,4 +437,42 @@ impl ClientState {
             clash_api_url,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Local override injection helper (ADR-0002)
+// ---------------------------------------------------------------------------
+
+/// Inject local override into composed config; failure is logged as warning only.
+///
+/// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
+/// - Injection failure → warning log, does not block startup.
+fn inject_local_override_warn_only(
+    data_dir: &std::path::Path,
+    config: &mut serde_json::Value,
+    core_type: CoreType,
+) {
+    let store = crate::local_override::LocalOverrideStore::new(data_dir.to_path_buf());
+    let ovr = match store.load() {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "failed to load local_override.json, skipping injection"
+            );
+            return;
+        }
+    };
+
+    let core_ovr = match core_type {
+        CoreType::SingBox => &ovr.singbox,
+        CoreType::Mihomo => &ovr.mihomo,
+    };
+
+    // Sync rule set refs from subscriptions.
+    let manager = crate::local_override::RuleSetManager::new(data_dir.to_path_buf());
+    let mut core_ovr = core_ovr.clone();
+    core_ovr.rule_sets = manager.build_rule_set_refs(&ovr, core_type);
+
+    crate::local_override::apply_local_override(config, core_type, &core_ovr);
 }

@@ -14,6 +14,7 @@ pub mod core_engine;
 pub mod cores;
 pub mod http_exec;
 pub mod import;
+pub mod local_override;
 #[cfg(feature = "mitm")]
 pub mod mitm;
 pub mod node_convert;
@@ -33,6 +34,7 @@ pub use core_engine::*;
 pub use cores::*;
 pub use http_exec::*;
 pub use import::*;
+pub use local_override::*;
 #[cfg(feature = "mitm")]
 pub use mitm::*;
 pub use node_convert::*;

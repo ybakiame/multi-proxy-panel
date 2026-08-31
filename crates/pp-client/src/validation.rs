@@ -47,9 +47,7 @@ pub fn validate_remote_url(url: &Option<String>) -> Result<(), String> {
     if let Some(url) = url {
         let url = url.trim();
         if !(url.is_empty() || url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(
-                "Remote override URL must start with http:// or https://".to_string(),
-            );
+            return Err("Remote override URL must start with http:// or https://".to_string());
         }
     }
     Ok(())
@@ -157,7 +155,9 @@ pub fn set_rule_mode_persist(data_dir: &std::path::Path, mode: &str) -> Result<(
     let mut config = crate::config::ClientConfig::load(data_dir)
         .map_err(|e| format!("Failed to load config: {e}"))?;
     config.rule_mode = mode.to_string();
-    config.save().map_err(|e| format!("Failed to save config: {e}"))
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {e}"))
 }
 
 #[cfg(test)]
@@ -269,9 +269,7 @@ mod tests {
 
     #[test]
     fn check_preview_core_compat_mismatches_error() {
-        assert!(
-            check_preview_core_compat(crate::SubFormat::ClashYaml, CoreType::SingBox).is_err()
-        );
+        assert!(check_preview_core_compat(crate::SubFormat::ClashYaml, CoreType::SingBox).is_err());
         assert!(
             check_preview_core_compat(crate::SubFormat::SingBoxJson, CoreType::Mihomo).is_err()
         );
@@ -279,9 +277,7 @@ mod tests {
 
     #[test]
     fn check_preview_core_compat_matching_ok() {
-        assert!(
-            check_preview_core_compat(crate::SubFormat::ClashYaml, CoreType::Mihomo).is_ok()
-        );
+        assert!(check_preview_core_compat(crate::SubFormat::ClashYaml, CoreType::Mihomo).is_ok());
         assert!(
             check_preview_core_compat(crate::SubFormat::SingBoxJson, CoreType::SingBox).is_ok()
         );
@@ -320,7 +316,10 @@ mod tests {
         for mode in ["global", "direct", "rule"] {
             set_rule_mode_persist(dir.path(), mode).unwrap();
             let saved = crate::config::ClientConfig::load(dir.path()).unwrap();
-            assert_eq!(saved.rule_mode, mode, "{mode} should persist to client.json");
+            assert_eq!(
+                saved.rule_mode, mode,
+                "{mode} should persist to client.json"
+            );
         }
     }
 }
