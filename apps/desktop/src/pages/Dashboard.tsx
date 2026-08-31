@@ -119,13 +119,17 @@ export default function Dashboard() {
     }
   }, []);
 
+  const coreMgmt = capabilities?.capabilities.core_management ?? false;
+
   const loadCores = useCallback(async () => {
+    // Android 核心为内置 panelcore，无本地二进制管理；直接跳过。
+    if (!coreMgmt) return;
     try {
       setCores(await listCores());
     } catch (err) {
       setActionError(toErrorMessage(err));
     }
-  }, []);
+  }, [coreMgmt]);
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -139,7 +143,9 @@ export default function Dashboard() {
     void loadConfig();
     void refreshStatus();
     void loadSubscriptions();
-    void loadCores();
+    if (coreMgmt) {
+      void loadCores();
+    }
     void loadProfiles();
     // 状态轮询：每 2s 刷新一次运行状态；Android 并入读取 VPN 启动错误
     // （libbox 在后台线程启动，失败不阻塞 start_proxy 返回，需轮询兜底展示）。
