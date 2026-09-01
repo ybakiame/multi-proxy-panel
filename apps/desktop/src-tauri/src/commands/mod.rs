@@ -4,6 +4,7 @@
 //! and aggregates the `generate_handler!` registration list.
 
 mod config;
+mod connections;
 mod core_mgmt;
 mod local_override;
 mod mitm;
@@ -17,6 +18,7 @@ mod subscription;
 mod task;
 
 pub use config::*;
+pub use connections::*;
 pub use core_mgmt::*;
 pub use local_override::*;
 pub use mitm::*;

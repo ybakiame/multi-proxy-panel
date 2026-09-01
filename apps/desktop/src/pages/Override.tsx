@@ -9,6 +9,7 @@ import { Alert, AlertDialog, Button, Card, Chip, Input, Label, ListBox, Modal, S
 import clsx from "clsx";
 import { createProfile, deleteProfile, getProfile, listProfiles, toErrorMessage, updateProfile } from "../api";
 import type { CoreType, ProfileDetailView, ProfileView } from "../api";
+import { MobileBackHeader } from "../layout/MobileBackHeader";
 
 const JS_PLACEHOLDER = `function main(config) {
   // 在这里修改最终生成的配置
@@ -198,6 +199,7 @@ export default function Override() {
 
   return (
     <div className="flex flex-col gap-6">
+      <MobileBackHeader title="覆写" />
       <div>
         <h1 className="text-xl font-semibold">覆写</h1>
         <p className="text-sm text-muted">

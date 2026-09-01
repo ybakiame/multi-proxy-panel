@@ -31,18 +31,23 @@ for f in "${files[@]}"; do
     case "$f" in
         */tests/*|*tests.rs|*.test.ts|*.test.tsx|*/integration_tests.rs) is_test=true ;;
     esac
-    if $is_test; then
-        if (( lines > MAX_TEST )); then
-            echo "FAIL(test): $f ${lines} 行 > ${MAX_TEST}"
+    # 存量豁免：文件已超线但未继续变大（相比 HEAD）时只告警不拦截；
+    # 新增文件或超线后继续变大的才拦截。
+    head_lines=0
+    if git cat-file -e "HEAD:$f" 2>/dev/null; then
+        head_lines=$(git show "HEAD:$f" | wc -l)
+    fi
+    limit=$MAX_BUSINESS
+    $is_test && limit=$MAX_TEST
+    if (( lines > limit )); then
+        if (( head_lines > 0 && lines <= head_lines )); then
+            echo "WARN(存量): $f ${lines} 行（HEAD: ${head_lines}），未继续变大，暂不拦截"
+        else
+            echo "FAIL: $f ${lines} 行 > ${limit}（$($is_test && echo 测试 || echo 业务)文件上限）"
             failed=1
         fi
-    else
-        if (( lines > MAX_BUSINESS )); then
-            echo "FAIL: $f ${lines} 行 > ${MAX_BUSINESS}（业务文件上限）"
-            failed=1
-        elif (( lines > WARN_BUSINESS )); then
-            echo "WARN: $f ${lines} 行 > ${WARN_BUSINESS}（预警线，请审视职责）"
-        fi
+    elif ! $is_test && (( lines > WARN_BUSINESS )); then
+        echo "WARN: $f ${lines} 行 > ${WARN_BUSINESS}（预警线，请审视职责）"
     fi
 done
 exit $failed

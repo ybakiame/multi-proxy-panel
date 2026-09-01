@@ -1,6 +1,6 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
 import { ToastProvider, useTheme } from "@heroui/react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { toastModeOverride } from "./api";
 import { Toaster } from "./components/Toaster";
 import { setToastMode } from "./toast";
@@ -17,6 +17,16 @@ import Rules from "./pages/Rules";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 import Tools from "./pages/Tools";
+import Connections from "./pages/Connections";
+
+/** 底部 TabBar 显式路由：仅这四个主 Tab 显示底部导航。 */
+const MAIN_TAB_PATHS = ["/", "/proxies", "/tools", "/settings"];
+
+/** 判断当前路由是否为主 Tab（底部 TabBar 应显示）。 */
+function useIsMainTab(): boolean {
+  const { pathname } = useLocation();
+  return useMemo(() => MAIN_TAB_PATHS.includes(pathname), [pathname]);
+}
 
 /**
  * /mitm route guard: redirects to home on Android (where mitm capability is false).
@@ -119,6 +129,52 @@ function ThemeBootstrap() {
  * react-aria UNSTABLE_ToastRegion 的 render-prop 传入，无可见 toast 时 region
  * 返回 null，若用它包裹应用内容会导致整棵 UI 树渲染为空。
  */
+/**
+ * 应用内容层：依赖 Router context（useLocation），需在 HashRouter 内部渲染。
+ *
+ * 移动端安全区适配（Tauri Android 已 enableEdgeToEdge）：
+ * - 顶部：主 Tab 页面保留原有标题区，子页由 MobileBackHeader 处理；
+ *   整体容器加 `env(safe-area-inset-top)` padding（仅移动端 lg 以下）。
+ * - 底部：主 Tab 页内容区需留出 TabBar 高度 + `env(safe-area-inset-bottom)`；
+ *   子页仅需 safe-area-inset-bottom（无 TabBar）。桌面端不受影响。
+ */
+function AppContent() {
+  const isMainTab = useIsMainTab();
+
+  return (
+    <div className="flex h-full min-h-screen bg-background text-foreground">
+      <DesktopSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main
+          className="flex-1 overflow-y-auto p-4 lg:p-6"
+          style={{
+            paddingTop: "max(1rem, env(safe-area-inset-top))",
+            paddingBottom: isMainTab
+              ? "calc(5rem + env(safe-area-inset-bottom))"
+              : "max(1rem, env(safe-area-inset-bottom))",
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/proxies" element={<Proxies />} />
+            <Route path="/nodes" element={<Nodes />} />
+            <Route path="/tools" element={<Tools />} />
+            <Route path="/rules" element={<Rules />} />
+            <Route path="/connections" element={<Connections />} />
+            <Route path="/mitm" element={<MitmGuard />} />
+            <Route path="/scripts" element={<ScriptsGuard />} />
+            <Route path="/override" element={<Override />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        {isMainTab && <MobileTabBar />}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [heroToastEnabled, setHeroToastEnabled] = useState(true);
 
@@ -147,31 +203,7 @@ export default function App() {
       <ThemeBootstrap />
       <ErrorBoundary>
         {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
-        <div className="flex h-full min-h-screen bg-background text-foreground">
-          <DesktopSidebar />
-          <div className="flex min-w-0 flex-1 flex-col">
-            {/* 移动端：底部 TabBar 需要内容区留出底部空间 */}
-            <main
-              className="flex-1 overflow-y-auto p-4 pb-20 lg:p-6 lg:pb-6"
-              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-            >
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/proxies" element={<Proxies />} />
-                <Route path="/nodes" element={<Nodes />} />
-                <Route path="/tools" element={<Tools />} />
-                <Route path="/rules" element={<Rules />} />
-                <Route path="/mitm" element={<MitmGuard />} />
-                <Route path="/scripts" element={<ScriptsGuard />} />
-                <Route path="/override" element={<Override />} />
-                <Route path="/logs" element={<Logs />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </main>
-            <MobileTabBar />
-          </div>
-        </div>
+        <AppContent />
       </ErrorBoundary>
     </HashRouter>
   );

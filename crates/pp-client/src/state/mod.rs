@@ -8,7 +8,6 @@
 //!
 //! **Stop**: Shut down in reverse order of startup (best-effort, single-item failure does not affect the rest).
 
-use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -27,35 +26,25 @@ use crate::subscription;
 use crate::sysproxy::{PlatformSystemProxy, SystemProxy};
 
 mod compat;
+mod connection_tracker;
 mod mitm;
 mod scheduler;
 mod services;
+mod types;
 #[cfg(all(test, unix))]
 mod tests;
 
-/// Current client running status.
-#[derive(Debug, Clone)]
-pub struct ClientStatus {
-    /// Whether the core is running.
-    pub core_running: bool,
-    /// MITM proxy listen address (`None` when not enabled).
-    pub mitm_addr: Option<SocketAddr>,
-    /// Whether system proxy is currently enabled.
-    pub system_proxy: bool,
-    /// Current effective rule mode (= persisted value in client.json, illegal values normalized to `rule`).
-    pub rule_mode: String,
-    /// Number of rules in the composed config (sing-box takes `route.rules`, mihomo takes `rules`
-    /// array length; 0 when not running).
-    pub rule_count: u64,
-    /// Clash dashboard API address (when core is running and `clash_api_enabled`,
-    /// `http://127.0.0.1:{clash_api_port}`, otherwise `None`).
-    pub clash_api_url: Option<String>,
-}
+pub use types::ClientStatus;
 
 /// Scheduled task scheduler running handle.
 struct SchedulerHandle {
     scheduler: Arc<ScriptScheduler>,
     handle: JoinHandle<()>,
+}
+
+/// Connection tracker running handle.
+struct ConnectionTrackerHandle {
+    tracker: crate::connections::ConnectionTrackerHandle,
 }
 
 /// Client runtime orchestrator.
@@ -71,6 +60,8 @@ pub struct ClientState {
     recorder: Arc<MemoryRecorder>,
     /// Remote subscription task script scheduler (starts after MITM ready, stops on stop).
     scheduler: Option<SchedulerHandle>,
+    /// Background connection tracker (started after core startup when Clash API is enabled, stopped on stop).
+    connection_tracker: Option<ConnectionTrackerHandle>,
     /// TUN privilege detection function (default [`tun_auth_status`]; tests can inject overrides to bypass real privilege checks).
     ///
     /// Only read on desktop builds (TUN pre-start privilege check gated by `#[cfg(not(target_os = "android"))]`
@@ -116,6 +107,7 @@ impl ClientState {
             notifier,
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
+            connection_tracker: None,
             tun_auth_check: Arc::new(tun_auth_status),
             rule_count: 0,
         }
@@ -414,6 +406,15 @@ impl ClientState {
             .await;
         }
 
+        // Start background connection tracker when Clash API is enabled.
+        if self.config.clash_api_enabled {
+            let tracker = crate::connections::start_connection_tracker(
+                self.config.clash_api_port,
+                self.config.clash_api_secret.clone(),
+            );
+            self.connection_tracker = Some(ConnectionTrackerHandle { tracker });
+        }
+
         Ok(())
     }
 
@@ -422,6 +423,7 @@ impl ClientState {
         let _ = self.sysproxy.disable().await;
         self.stop_mitm().await;
         self.stop_scheduler().await;
+        self.stop_connection_tracker().await;
         self.stop_core().await;
         // 未运行时规则条数清零。
         self.rule_count = 0;

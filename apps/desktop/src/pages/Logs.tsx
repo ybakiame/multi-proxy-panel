@@ -11,6 +11,7 @@ import {
   toErrorMessage,
 } from "../api";
 import type { LogEntry } from "../api";
+import { MobileBackHeader } from "../layout/MobileBackHeader";
 import { toastError, toastSuccess } from "../toast";
 
 /** 级别过滤选项（空串 = 不过滤；其余与后端 `min_level` 对齐，默认 info）。 */
@@ -212,6 +213,7 @@ export default function Logs() {
 
   return (
     <div className="flex flex-col gap-6">
+      <MobileBackHeader title="日志" />
       <div>
         <h1 className="text-xl font-semibold">日志</h1>
         <p className="text-sm text-muted">后端与前端错误日志（内存环形缓冲，最新在前）</p>

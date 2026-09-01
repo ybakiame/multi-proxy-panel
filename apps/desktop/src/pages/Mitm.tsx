@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
 import { getMitmCa, type MitmCaView } from "../api";
+import { MobileBackHeader } from "../layout/MobileBackHeader";
 import { useAppStore } from "../store";
 
 export default function Mitm() {
@@ -68,6 +69,7 @@ export default function Mitm() {
 
   return (
     <div className="flex flex-col gap-6">
+      <MobileBackHeader title="MITM" />
       <div>
         <h1 className="text-xl font-semibold">MITM</h1>
         <p className="text-sm text-muted">中间人代理的 CA 证书、抓包白名单与记录</p>

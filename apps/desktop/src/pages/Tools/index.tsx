@@ -1,6 +1,7 @@
 import { Card } from "@heroui/react";
 import {
   AdjustmentsHorizontalIcon,
+  ArrowPathIcon,
   DocumentTextIcon,
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
@@ -44,15 +45,24 @@ export default function Tools() {
   const showScripts = caps?.scripts_remote ?? true;
   const showOverride = true;
   const showLogs = true;
+  const showConnections = true;
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">工具</h1>
-        <p className="text-sm text-muted">规则、脚本、覆写与日志管理</p>
+        <p className="text-sm text-muted">规则、脚本、覆写、日志与连接管理</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {showConnections && (
+          <ToolCard
+            title="连接"
+            description="查看当前活跃连接与已关闭连接记录"
+            icon={ArrowPathIcon}
+            onPress={() => navigate("/connections")}
+          />
+        )}
         {showRules && (
           <ToolCard
             title="规则"

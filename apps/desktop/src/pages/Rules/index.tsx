@@ -19,6 +19,7 @@ import type {
   RuleSetStatusView,
 } from "../../api";
 import { useCapabilities } from "../../hooks/useCapabilities";
+import { MobileBackHeader } from "../../layout/MobileBackHeader";
 import { toastError, toastSuccess } from "../../toast";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
@@ -228,6 +229,7 @@ export default function Rules() {
 
   return (
     <div className="flex flex-col gap-6">
+      <MobileBackHeader title="规则" />
       <div>
         <h1 className="text-xl font-semibold">规则</h1>
         <p className="text-sm text-muted">本地规则卡片、场景模板与规则集订阅管理</p>
