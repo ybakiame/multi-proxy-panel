@@ -105,7 +105,7 @@ async fn push_clash_mode_retries_transient_failure_until_success() {
     );
 }
 
-/// Retry semantics: all 3 failures -> Err (caller best-effort logs warning without blocking).
+/// Retry semantics: all attempts fail -> Err (caller best-effort logs warning without blocking).
 #[tokio::test]
 async fn push_clash_mode_returns_err_when_all_retries_fail() {
     let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -126,7 +126,7 @@ async fn push_clash_mode_returns_err_when_all_retries_fail() {
     assert!(push_clash_mode(addr.port(), "", "global").await.is_err());
     assert_eq!(
         attempts.load(std::sync::atomic::Ordering::SeqCst),
-        3,
-        "should retry at most 3 times when all fail"
+        5,
+        "should retry at most 5 times (backoff) when all fail"
     );
 }

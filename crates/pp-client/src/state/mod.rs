@@ -25,6 +25,7 @@ use crate::runner::CoreRunner;
 use crate::subscription;
 use crate::sysproxy::{PlatformSystemProxy, SystemProxy};
 
+mod clash_setup;
 mod compat;
 mod connection_tracker;
 mod mitm;
@@ -377,43 +378,7 @@ impl ClientState {
         // 运行状态扩展：记录本次合成配置的规则条数（未运行时为 0）。
         self.rule_count = compat::config_json_rule_count(&config_json, self.config.core_type);
 
-        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：mihomo
-        // 启动配置已含顶层 `mode`，此推送冗余但无害；sing-box 无组合层 mode 字段，
-        // 完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
-        let rule_mode = self.config.normalized_rule_mode().to_string();
-        if self.config.clash_api_enabled
-            && let Err(e) = core_config::push_clash_mode(
-                self.config.clash_api_port,
-                &self.config.clash_api_secret,
-                &rule_mode,
-            )
-            .await
-        {
-            tracing::warn!(
-                error = %e,
-                rule_mode = %rule_mode,
-                "Clash API 推送规则模式失败"
-            );
-        }
-
-        // Replay persisted group selections after core startup.
-        if self.config.clash_api_enabled {
-            crate::proxies::replay_group_selections(
-                self.config.clash_api_port,
-                &self.config.clash_api_secret,
-                &self.config.data_dir,
-            )
-            .await;
-        }
-
-        // Start background connection tracker when Clash API is enabled.
-        if self.config.clash_api_enabled {
-            let tracker = crate::connections::start_connection_tracker(
-                self.config.clash_api_port,
-                self.config.clash_api_secret.clone(),
-            );
-            self.connection_tracker = Some(ConnectionTrackerHandle { tracker });
-        }
+        self.post_core_clash_setup().await;
 
         Ok(())
     }

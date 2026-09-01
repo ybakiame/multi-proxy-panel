@@ -33,9 +33,11 @@ export function RuleCard({ rule, index, total, onToggle, onMoveUp, onMoveDown, o
           onChange={() => onToggle(rule.id)}
           aria-label={`启用规则 ${ruleSummary(rule)}`}
         >
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
         </Switch>
         <Button
           size="sm"

@@ -200,16 +200,22 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     let captured_ref = Arc::clone(&captured);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let clash_addr = listener.local_addr().unwrap();
-    let app = axum::Router::new().route(
-        "/configs",
-        axum::routing::patch(
-            move |req: axum::http::Request<axum::body::Body>| async move {
-                let bytes = axum::body::to_bytes(req.into_body(), 1024).await.unwrap();
-                *captured_ref.lock().unwrap() = Some(bytes.to_vec());
-                axum::http::StatusCode::NO_CONTENT
-            },
-        ),
-    );
+    let app = axum::Router::new()
+        .route(
+            "/configs",
+            axum::routing::patch(
+                move |req: axum::http::Request<axum::body::Body>| async move {
+                    let bytes = axum::body::to_bytes(req.into_body(), 1024).await.unwrap();
+                    *captured_ref.lock().unwrap() = Some(bytes.to_vec());
+                    axum::http::StatusCode::NO_CONTENT
+                },
+            ),
+        )
+        // Readiness probe used by wait_clash_api_ready before the PATCH.
+        .route(
+            "/version",
+            axum::routing::get(|| async { axum::http::StatusCode::OK }),
+        );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });

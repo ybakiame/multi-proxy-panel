@@ -44,9 +44,11 @@ export function RuleSetTable({ ruleSets, onToggle, onUpdateNow, busy }: RuleSetT
                 onChange={() => onToggle(rs.community_id, !rs.subscribed)}
                 aria-label={`订阅 ${rs.display_name}`}
               >
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
               </Switch>
             </div>
           ))}
