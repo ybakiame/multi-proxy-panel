@@ -5,16 +5,18 @@ import { toastModeOverride } from "./api";
 import { Toaster } from "./components/Toaster";
 import { setToastMode } from "./toast";
 import { useCapabilities } from "./hooks/useCapabilities";
-import { MobileNav } from "./layout/MobileNav";
-import { Sidebar } from "./layout/Sidebar";
+import { DesktopSidebar } from "./layout/DesktopSidebar";
+import { MobileTabBar } from "./layout/MobileTabBar";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Mitm from "./pages/Mitm";
 import Nodes from "./pages/Nodes";
 import Override from "./pages/Override";
+import Proxies from "./pages/Proxies";
 import Rules from "./pages/Rules";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
+import Tools from "./pages/Tools";
 
 /**
  * /mitm route guard: redirects to home on Android (where mitm capability is false).
@@ -146,16 +148,18 @@ export default function App() {
       <ErrorBoundary>
         {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
         <div className="flex h-full min-h-screen bg-background text-foreground">
-          <Sidebar />
+          <DesktopSidebar />
           <div className="flex min-w-0 flex-1 flex-col">
-            <MobileNav />
+            {/* 移动端：底部 TabBar 需要内容区留出底部空间 */}
             <main
-              className="flex-1 overflow-y-auto p-4 lg:p-6"
+              className="flex-1 overflow-y-auto p-4 pb-20 lg:p-6 lg:pb-6"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >
               <Routes>
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/proxies" element={<Proxies />} />
                 <Route path="/nodes" element={<Nodes />} />
+                <Route path="/tools" element={<Tools />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="/mitm" element={<MitmGuard />} />
                 <Route path="/scripts" element={<ScriptsGuard />} />
@@ -165,6 +169,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>
+            <MobileTabBar />
           </div>
         </div>
       </ErrorBoundary>

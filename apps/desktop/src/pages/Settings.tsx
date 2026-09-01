@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
+import { useNavigate } from "react-router-dom";
 import {
   authorizeTun,
   deleteCore,
@@ -15,6 +16,35 @@ import {
 import type { ClientConfig, CoreType, LocalCoreView } from "../api";
 import { useAppStore } from "../store";
 import { toastError, toastSuccess, toastWarning } from "../toast";
+
+// TODO: 从 package.json 读取版本号（构建时注入或运行时读取）
+const APP_VERSION = "0.1.0";
+
+/** 通知栏设置项（Android 专属，后端暂无对应字段，先 localStorage 占位）。 */
+interface NotificationSettings {
+  showTraffic: boolean;
+  showProxyGroup: boolean;
+}
+
+function readNotificationSettings(): NotificationSettings {
+  try {
+    const raw = localStorage.getItem("pp_notification_settings");
+    if (raw) {
+      const parsed = JSON.parse(raw) as NotificationSettings;
+      return {
+        showTraffic: parsed.showTraffic ?? true,
+        showProxyGroup: parsed.showProxyGroup ?? true,
+      };
+    }
+  } catch {
+    // ignore parse error
+  }
+  return { showTraffic: true, showProxyGroup: true };
+}
+
+function saveNotificationSettings(settings: NotificationSettings) {
+  localStorage.setItem("pp_notification_settings", JSON.stringify(settings));
+}
 
 /** 兼容任务描述中的 PascalCase 值（`SingBox`/`Mihomo`）与后端 serde 值（`singbox`/`mihomo`）。 */
 function normalizeCoreType(value: string): string {
@@ -54,6 +84,7 @@ const CLASH_UI_OPTIONS = [
 ] as const;
 
 export default function Settings() {
+  const navigate = useNavigate();
   const { config, error, loadConfig, saveConfig } = useAppStore();
   // 运行平台（Android 恒由 VpnService 接管 TUN，展示静态说明并隐藏提权区域）。
   const [os, setOs] = useState<string | null>(null);
@@ -89,6 +120,9 @@ export default function Settings() {
   const [coresBusy, setCoresBusy] = useState(false);
   const [coresError, setCoresError] = useState<string | null>(null);
   const [coresMessage, setCoresMessage] = useState<string | null>(null);
+
+  // 通知栏设置（仅 Android）
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(readNotificationSettings);
 
   useEffect(() => {
     void loadConfig();
@@ -832,6 +866,87 @@ export default function Settings() {
             <Alert.Description>{error}</Alert.Description>
           </Alert.Content>
         </Alert>
+      )}
+
+      {/* 关于应用 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>关于应用</Card.Title>
+          <Card.Description>ProxyPanel 客户端信息</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted">版本号</span>
+            <span className="text-sm font-medium">{APP_VERSION}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted">项目链接</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => {
+                window.open("https://github.com/ybakiame/multi-proxy-panel", "_blank");
+              }}
+            >
+              GitHub
+            </Button>
+          </div>
+        </Card.Content>
+      </Card>
+
+      {/* 日志入口 */}
+      <Card className="cursor-pointer transition-colors hover:bg-surface-secondary" onClick={() => navigate("/logs")}>
+        <Card.Content className="flex items-center justify-between p-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">日志</span>
+            <span className="text-xs text-muted">查看后端与前端错误日志</span>
+          </div>
+          <span className="text-sm text-muted">→</span>
+        </Card.Content>
+      </Card>
+
+      {/* 通知栏设置（仅 Android） */}
+      {isAndroid && (
+        <Card>
+          <Card.Header>
+            <Card.Title>通知栏设置</Card.Title>
+            <Card.Description>自定义 Android 通知栏显示内容</Card.Description>
+          </Card.Header>
+          <Card.Content className="flex flex-col gap-4">
+            <Switch
+              isSelected={notifSettings.showTraffic}
+              onChange={(next) => {
+                const updated = { ...notifSettings, showTraffic: next };
+                setNotifSettings(updated);
+                saveNotificationSettings(updated);
+                // TODO: 等后端支持后，调用 saveConfig 持久化到 client.json
+              }}
+            >
+              <Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                显示上下行流量
+              </Switch.Content>
+            </Switch>
+            <Switch
+              isSelected={notifSettings.showProxyGroup}
+              onChange={(next) => {
+                const updated = { ...notifSettings, showProxyGroup: next };
+                setNotifSettings(updated);
+                saveNotificationSettings(updated);
+                // TODO: 等后端支持后，调用 saveConfig 持久化到 client.json
+              }}
+            >
+              <Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                显示当前代理组与节点
+              </Switch.Content>
+            </Switch>
+          </Card.Content>
+        </Card>
       )}
     </div>
   );

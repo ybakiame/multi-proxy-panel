@@ -599,6 +599,64 @@ export function openExportDir(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Proxies (代理页)
+// ---------------------------------------------------------------------------
+
+/** 代理分组视图（与 Rust 侧 `GroupView` 对齐）。 */
+export interface GroupView {
+  name: string;
+  /** 分组类型，如 `Selector`、`URLTest`、`Fallback`、`LoadBalance`。 */
+  group_type: string;
+  /** 当前选中的成员节点名。 */
+  now: string;
+  /** 成员节点名列表。 */
+  members: string[];
+}
+
+/** 代理节点视图（与 Rust 侧 `NodeView` 对齐）。 */
+export interface NodeView {
+  name: string;
+  /** 节点类型，如 `Shadowsocks`、`Vmess`、`Trojan`。 */
+  node_type: string;
+  /** 最近一次测速延迟（ms）；`null` = 未测或超时。 */
+  delay_ms: number | null;
+  /** 是否支持 UDP。 */
+  udp: boolean;
+}
+
+/** 代理列表（与 Rust 侧 `ProxyList` 对齐）。 */
+export interface ProxyList {
+  groups: GroupView[];
+  nodes: NodeView[];
+}
+
+/** 单节点延迟测试结果（与 Rust 侧 `DelayResult` 对齐）。 */
+export interface DelayResult {
+  name: string;
+  delay_ms: number | null;
+}
+
+/** 列出所有代理分组与节点（核心未运行时返回错误）。 */
+export function proxiesList(): Promise<ProxyList> {
+  return invoke<ProxyList>("proxies_list");
+}
+
+/** 在指定分组中选择节点（持久化到 client.json）。 */
+export function proxiesSelect(group: string, name: string): Promise<void> {
+  return invoke<void>("proxies_select", { group, name });
+}
+
+/** 测试单个节点延迟（返回 `null` 表示失败或超时）。 */
+export function proxiesTestDelay(name: string): Promise<number | null> {
+  return invoke<number | null>("proxies_test_delay", { name });
+}
+
+/** 测试分组内全部成员延迟（后端并发限流）。 */
+export function proxiesTestGroup(group: string): Promise<DelayResult[]> {
+  return invoke<DelayResult[]>("proxies_test_group", { group });
+}
+
+// ---------------------------------------------------------------------------
 // Local Override (Rule Management)
 // ---------------------------------------------------------------------------
 
