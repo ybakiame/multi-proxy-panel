@@ -78,6 +78,15 @@ bun run --filter pp-web verify
 
 提交前端改动前必须执行对应 app 的 `verify`（`--filter pp-web` / `--filter pp-client-ui`）并全部通过。
 
+### 2.4 Git 钩子（husky）
+
+仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**快速本地检查**：
+- `scripts/check-file-size.sh`：文件规模门禁（业务 >500 行 / 测试 >1000 行拦截，>400 行告警，规则见 `.agents/rules/code-organization.md`）
+- 暂存含 Rust 文件时 `cargo fmt --all --check`
+- 暂存含前端文件时对对应 app 跑 oxlint + oxfmt
+
+本地钩子只做快检查（秒级），完整验证（clippy/test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
+
 ---
 
 ## 3. 代码规范

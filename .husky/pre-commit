@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Fast pre-commit checks (authoritative gate remains CI):
+# 1. file-size guard on staged source files
+# 2. cargo fmt check when Rust files are staged
+# 3. oxlint/oxfmt on the affected frontend app when TS/TSX files are staged
+set -euo pipefail
+
+files=$(git diff --cached --name-only --diff-filter=ACM || true)
+src_files=$(echo "$files" | grep -E '\.(rs|ts|tsx|go|kt)$' || true)
+
+if [[ -n "$src_files" ]]; then
+    echo "$src_files" | xargs bash scripts/check-file-size.sh
+fi
+
+if echo "$files" | grep -q '\.rs$'; then
+    cargo fmt --all --check
+fi
+
+if echo "$files" | grep -qE '^apps/panel/.*\.(ts|tsx)$'; then
+    bun run --filter pp-web lint && bun run --filter pp-web format:check
+fi
+if echo "$files" | grep -qE '^apps/desktop/.*\.(ts|tsx)$'; then
+    bun run --filter pp-client-ui lint && bun run --filter pp-client-ui format:check
+fi

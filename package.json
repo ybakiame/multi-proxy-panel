@@ -1,5 +1,14 @@
 {
   "name": "proxy-panel",
   "private": true,
-  "workspaces": ["apps/panel", "apps/desktop"]
+  "workspaces": [
+    "apps/panel",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
 }
