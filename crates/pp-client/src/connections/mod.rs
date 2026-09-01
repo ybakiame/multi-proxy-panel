@@ -6,7 +6,7 @@
 mod clash;
 mod tracker;
 
-pub use clash::{clash_get_connections, clash_close_connection};
+pub use clash::{clash_close_connection, clash_get_connections};
 pub use tracker::{ConnectionTrackerHandle, start_connection_tracker};
 
 use serde::{Deserialize, Serialize};

@@ -38,7 +38,9 @@ impl ClientState {
     /// Returns error when core is not running or Clash API is unreachable.
     pub async fn close_connection(&self, id: &str) -> PanelResult<()> {
         if !self.config.clash_api_enabled {
-            return Err(pp_common::PanelError::Client("Clash API is disabled".into()));
+            return Err(pp_common::PanelError::Client(
+                "Clash API is disabled".into(),
+            ));
         }
         crate::connections::clash_close_connection(
             self.config.clash_api_port,

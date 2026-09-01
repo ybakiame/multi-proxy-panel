@@ -30,9 +30,9 @@ mod connection_tracker;
 mod mitm;
 mod scheduler;
 mod services;
-mod types;
 #[cfg(all(test, unix))]
 mod tests;
+mod types;
 
 pub use types::ClientStatus;
 

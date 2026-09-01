@@ -29,7 +29,9 @@ fn is_connection_refused(e: &reqwest::Error) -> bool {
 }
 
 /// Parse the raw `/connections` JSON into a vector of [`ConnectionView`].
-pub(crate) fn parse_connections_response(body: &serde_json::Value) -> PanelResult<Vec<ConnectionView>> {
+pub(crate) fn parse_connections_response(
+    body: &serde_json::Value,
+) -> PanelResult<Vec<ConnectionView>> {
     let conns = body
         .get("connections")
         .and_then(|c| c.as_array())

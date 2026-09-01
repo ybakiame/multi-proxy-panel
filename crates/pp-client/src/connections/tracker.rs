@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::connections::{ConnectionView, ActiveConnections};
 use crate::connections::clash::clash_get_connections;
+use crate::connections::{ActiveConnections, ConnectionView};
 
 /// Capacity of the closed-connection ring buffer.
 const CLOSED_BUFFER_CAPACITY: usize = 500;
