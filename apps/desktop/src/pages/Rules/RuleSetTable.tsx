@@ -35,7 +35,7 @@ export function RuleSetTable({ ruleSets, onToggle, onUpdateNow, busy }: RuleSetT
                   {rs.last_updated > 0 ? ` · 更新于 ${new Date(rs.last_updated * 1000).toLocaleString()}` : ""}
                 </span>
                 <span className="text-xs text-muted">
-                  sing-box: {rs.singbox_cached ? "已缓存" : "未缓存"} · mihomo: {rs.mihomo_cached ? "未缓存" : "未缓存"}
+                  sing-box: {rs.singbox_cached ? "已缓存" : "未缓存"} · mihomo: {rs.mihomo_cached ? "已缓存" : "未缓存"}
                 </span>
               </div>
               <Switch
