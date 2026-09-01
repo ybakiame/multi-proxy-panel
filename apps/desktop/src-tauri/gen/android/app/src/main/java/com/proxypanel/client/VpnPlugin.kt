@@ -26,32 +26,52 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** start 命令参数：核心配置内容（sing-box JSON / mihomo YAML）与核心类型。 */
+/** start command args: core config content (sing-box JSON / mihomo YAML), core type, and notification prefs. */
 @InvokeArg
 class StartArgs {
   var config: String? = null
 
-  /** 核心类型：`mihomo` 时走 [MihomoVpnService]，默认/其他值走 [ProxyVpnService]。 */
+  /** Core type: `mihomo` -> [MihomoVpnService], default/other -> [ProxyVpnService]. */
   var core: String? = null
+
+  /** Whether to show traffic in the VPN notification. */
+  var showTraffic: Boolean = true
+
+  /** Whether to show current proxy group & node in the VPN notification. */
+  var showSelection: Boolean = true
+}
+
+/** updateNotifyPrefs command args. */
+@InvokeArg
+class NotifyPrefsArgs {
+  var showTraffic: Boolean = true
+  var showSelection: Boolean = true
 }
 
 /**
- * Tauri 移动插件 "vpn"：暴露 prepare/start/stop/isRunning/exportLogs 五条命令。
+ * Tauri mobile plugin "vpn": exposes prepare/start/stop/isRunning/exportLogs/openLogsDir/updateNotifyPrefs commands.
  *
- * 插件注册由 Rust 侧（tauri::plugin::PluginApi::register_android_plugin）完成。
- * prepare 命令经 [VpnService.prepare] 的 Activity 跳转完成系统 VPN 授权，
- * 授权结果由 [prepareCallback]（@ActivityCallback）在用户返回后 resolve/reject。
+ * Plugin registration is done by Rust side (tauri::plugin::PluginApi::register_android_plugin).
+ * prepare command navigates to [VpnService.prepare] authorization page;
+ * authorization result is handled by [prepareCallback] (@ActivityCallback) after user returns.
  */
 @TauriPlugin
 class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   companion object {
-    /** 需要用户授权 VPN（Rust 侧透传为 `vpn_not_authorized` 前缀错误）。 */
+    /** User needs to authorize VPN (Rust side forwards as `vpn_not_authorized` prefix error). */
     const val ERROR_NOT_AUTHORIZED = "vpn_not_authorized"
-    /** 缺少 config 参数。 */
+    /** Missing config parameter. */
     const val ERROR_MISSING_CONFIG = "vpn_missing_config"
-    /** 启动服务失败。 */
+    /** Failed to start service. */
     const val ERROR_START_FAILED = "vpn_start_failed"
+
+    /** Shared notification preferences (updated by updateNotifyPrefs, read by services). */
+    @Volatile
+    var notifyShowTraffic: Boolean = true
+
+    @Volatile
+    var notifyShowSelection: Boolean = true
   }
 
   /**
@@ -89,23 +109,26 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
-    // 核心分派：`core == "mihomo"` 走 MihomoVpnService，默认/其他值走
-    // ProxyVpnService（sing-box）。（config 非空校验后 args 已 smart-cast）
+    // Core dispatch: `core == "mihomo"` -> MihomoVpnService, default/other -> ProxyVpnService.
     val useMihomo = args.core == "mihomo"
     val serviceClass: Class<*> =
       if (useMihomo) MihomoVpnService::class.java else ProxyVpnService::class.java
     val extraConfig =
       if (useMihomo) MihomoVpnService.EXTRA_CONFIG else ProxyVpnService.EXTRA_CONFIG
+    val extraShowTraffic =
+      if (useMihomo) MihomoVpnService.EXTRA_SHOW_TRAFFIC else ProxyVpnService.EXTRA_SHOW_TRAFFIC
+    val extraShowSelection =
+      if (useMihomo) MihomoVpnService.EXTRA_SHOW_SELECTION else ProxyVpnService.EXTRA_SHOW_SELECTION
 
     val prepareIntent = VpnService.prepare(activity)
     if (prepareIntent != null) {
-      // 未授权：拒绝并携带固定错误码，Rust 侧透传给前端引导先「去授权」。
+      // Not authorized: reject with fixed error code, Rust side forwards to frontend for guidance.
       invoke.reject("vpn authorization required", ERROR_NOT_AUTHORIZED)
       return
     }
 
-    // 两服务互斥 + 重启：启动前先停掉已运行的服务（自身重启 / 切换核心），
-    // 避免两个核心并发启动（running 由服务真实生命周期维护，此处仅读取判断）。
+    // Mutual exclusion + restart: stop any running service before starting new one
+    // to avoid concurrent core startup.
     if (ProxyVpnService.running) {
       activity.stopService(Intent(activity, ProxyVpnService::class.java))
     }
@@ -113,7 +136,14 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       activity.stopService(Intent(activity, MihomoVpnService::class.java))
     }
 
-    val intent = Intent(activity, serviceClass).putExtra(extraConfig, config)
+    // Persist notification prefs from start args (for initial launch).
+    notifyShowTraffic = args.showTraffic
+    notifyShowSelection = args.showSelection
+
+    val intent = Intent(activity, serviceClass)
+      .putExtra(extraConfig, config)
+      .putExtra(extraShowTraffic, args.showTraffic)
+      .putExtra(extraShowSelection, args.showSelection)
     try {
       ContextCompat.startForegroundService(activity, intent)
       invoke.resolve()
@@ -160,14 +190,48 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @Command
+  fun updateNotifyPrefs(invoke: Invoke) {
+    val args = runCatching { invoke.parseArgs(NotifyPrefsArgs::class.java) }.getOrNull()
+    if (args == null) {
+      invoke.reject("missing notify prefs args")
+      return
+    }
+    notifyShowTraffic = args.showTraffic
+    notifyShowSelection = args.showSelection
+    // Forward to running service if alive.
+    if (ProxyVpnService.instanceAlive) {
+      val intent = Intent(activity, ProxyVpnService::class.java)
+        .setAction(ProxyVpnService.ACTION_UPDATE_PREFS)
+        .putExtra(ProxyVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
+        .putExtra(ProxyVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
+      try {
+        ContextCompat.startForegroundService(activity, intent)
+      } catch (e: Exception) {
+        Log.w("VpnPlugin", "forward prefs to ProxyVpnService failed: ${e.message}")
+      }
+    }
+    if (MihomoVpnService.instanceAlive) {
+      val intent = Intent(activity, MihomoVpnService::class.java)
+        .setAction(MihomoVpnService.ACTION_UPDATE_PREFS)
+        .putExtra(MihomoVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
+        .putExtra(MihomoVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
+      try {
+        ContextCompat.startForegroundService(activity, intent)
+      } catch (e: Exception) {
+        Log.w("VpnPlugin", "forward prefs to MihomoVpnService failed: ${e.message}")
+      }
+    }
+    invoke.resolve()
+  }
+
+  @Command
   fun isRunning(invoke: Invoke) {
     val result = JSObject()
     result.put("running", ProxyVpnService.running || MihomoVpnService.running)
-    // last_error：以「当前非 running 且有错误的一方」为准（最近失败方优先）；
-    // 两者都无错误时取非空者，顺序与 ProxyVpnService.lastError ?:
-    // MihomoVpnService.lastError 反向（mihomo 优先）——P1 阶段 mihomo 是新接入
-    // 核心，其错误更值得展示。为 null 时键被 JSONObject 移除，Rust 侧
-    // `#[serde(default)]` 回退 None。
+    // last_error: prioritize the side that is not running and has an error (most recent failure);
+    // when neither has an error, take the non-null one, in reverse order of
+    // ProxyVpnService.lastError ?: MihomoVpnService.lastError (mihomo优先).
+    // When null, the key is removed by JSONObject, and Rust side `#[serde(default)]` falls back to None.
     val lastError =
       when {
         !MihomoVpnService.running && MihomoVpnService.lastError != null ->

@@ -73,34 +73,39 @@ class ProxyVpnService : VpnService() {
     private const val CHANNEL_ID = "vpn"
     private const val NOTIFICATION_ID = 1
 
-    /** Intent extra：sing-box JSON 配置内容。 */
+    /** Intent extra: sing-box JSON config content. */
     const val EXTRA_CONFIG = "config"
+    /** Intent extra: whether to show traffic in notification. */
+    const val EXTRA_SHOW_TRAFFIC = "show_traffic"
+    /** Intent extra: whether to show proxy selection in notification. */
+    const val EXTRA_SHOW_SELECTION = "show_selection"
 
     /**
-     * 显式停止 action：由 [VpnPlugin] 发送。onStartCommand 收到后有序关闭
-     * BoxService（后台线程）→ 退前台 → 自停 → 复位 running；裸 stopService 只
-     * 走 onDestroy，close 仍阻塞主线程且不记录 lastError。
+     * Explicit stop action: sent by [VpnPlugin]. onStartCommand receives it and orderly shuts down
+     * BoxService (background thread) -> exit foreground -> self-stop -> reset running.
      */
     const val ACTION_STOP = "com.proxypanel.client.action.STOP"
+    /** Update notification preferences action: sent by [VpnPlugin] when user toggles settings. */
+    const val ACTION_UPDATE_PREFS = "com.proxypanel.client.action.UPDATE_PREFS"
 
     /**
-     * 服务运行标记，由服务自身真实生命周期维护（startBox 成功后置 true，
-     * 失败 / onDestroy / onRevoke 置 false）。VpnPlugin 不乐观设置。
+     * Service running flag, maintained by the service's own real lifecycle (set true after startBox succeeds,
+     * set false on failure / onDestroy / onRevoke). VpnPlugin does not optimistically set it.
      */
     @Volatile
     var running = false
       private set
 
     /**
-     * 服务实例存活标记（onCreate 置 true，onDestroy 置 false）：启动中的服务
-     * `running` 仍为 false 但实例已在前台，VpnPlugin 据此判断能否安全派发
-     * ACTION_STOP（避免启动中被 stop 漏关）。
+     * Service instance alive flag (set true in onCreate, false in onDestroy): a starting service
+     * still has `running` false but instance is already in foreground; VpnPlugin uses this to judge
+     * whether ACTION_STOP can be safely dispatched (avoid missing stop during startup).
      */
     @Volatile
     var instanceAlive = false
       private set
 
-    /** 最近一次启动失败原因（成功启动后清空；供插件 isRunning 命令与前端轮询读取）。 */
+    /** Most recent startup failure reason (cleared after successful start; read by plugin isRunning and frontend polling). */
     @Volatile
     var lastError: String? = null
       private set
@@ -161,9 +166,22 @@ class ProxyVpnService : VpnService() {
     private var boxOwner: ProxyVpnService? = null
   }
 
-  /** 停止请求标记：startBox 在后台线程启动期间到达 stop 时，启动完成后立即有序关闭。 */
+  /** Stop request flag: when stop arrives during startBox background thread startup, orderly close after startup completes. */
   @Volatile
   private var stopRequested = false
+
+  /** Notification preference flags (read from intent extras or VpnPlugin companion). */
+  @Volatile
+  private var showTraffic = true
+
+  @Volatile
+  private var showSelection = true
+
+  /** Clash API polling state. */
+  private var clashApiPort: Int = 9090
+  private var clashApiSecret: String = ""
+  private var notificationUpdateHandler: Handler? = null
+  private var notificationUpdateRunnable: Runnable? = null
 
   private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -425,58 +443,72 @@ class ProxyVpnService : VpnService() {
       return Service.START_NOT_STICKY
     }
 
+    if (intent?.action == ACTION_UPDATE_PREFS) {
+      showTraffic = intent.getBooleanExtra(EXTRA_SHOW_TRAFFIC, showTraffic)
+      showSelection = intent.getBooleanExtra(EXTRA_SHOW_SELECTION, showSelection)
+      if (running) {
+        updateNotificationContent()
+      }
+      return Service.START_NOT_STICKY
+    }
+
     val config = intent?.getStringExtra(EXTRA_CONFIG)
     if (config.isNullOrBlank()) {
       Log.w(TAG, "start command without config, stopping")
-      lastError = "缺少 VPN 配置"
+      lastError = "Missing VPN config"
       stopSelf()
       return Service.START_NOT_STICKY
     }
+
+    // Read notification prefs from intent extras (fallback to VpnPlugin companion values).
+    showTraffic = intent.getBooleanExtra(EXTRA_SHOW_TRAFFIC, VpnPlugin.notifyShowTraffic)
+    showSelection = intent.getBooleanExtra(EXTRA_SHOW_SELECTION, VpnPlugin.notifyShowSelection)
 
     try {
       startForegroundWithNotification()
     } catch (e: Exception) {
       Log.e(TAG, "failed to start foreground service", e)
       running = false
-      lastError = "前台服务启动失败: ${e.message ?: e.javaClass.simpleName}"
+      lastError = "Foreground service start failed: ${e.message ?: e.javaClass.simpleName}"
       stopSelf()
       return Service.START_NOT_STICKY
     }
 
-    // 重复 start 防护：同一时刻只允许一个 startBox 序列（对齐 SFA onStartCommand
-    // 的 status != Stopped 守卫）。已有启动序列进行中时忽略本次 start，避免两个
-    // BoxService 并发 establish()（并发 establish 会撤销前一 tun 导致
-    // 启动期即报 file already closed）。
+    // Dedup start guard: only one startBox sequence at a time (aligns with SFA onStartCommand
+    // status != Stopped guard). Ignore this start if another sequence is in progress to avoid
+    // concurrent establish() which would revoke previous tun and cause "file already closed".
     if (startInProgress) {
       Log.w(TAG, "start ignored: another start sequence is in progress")
       return Service.START_NOT_STICKY
     }
 
-    // 新的启动序列开始，清除上一轮停止请求标记。
+    // New start sequence begins, clear previous stop request flag.
     stopRequested = false
 
-    // newService/start 为阻塞调用，放到后台线程执行（对齐 SFA：onStartCommand
-    // 立即返回，start 在 IO 后台线程异步执行，不做同步等待）。
+    // Parse Clash API config from the JSON config for notification polling.
+    parseClashApiConfig(config)
+
+    // newService/start are blocking calls, run in background thread (aligns with SFA:
+    // onStartCommand returns immediately, start runs asynchronously in IO background thread).
     startInProgress = true
     Thread {
       try {
         startBox(config)
         if (stopRequested) {
-          // 停止请求在启动期间到达：启动已完成但立即有序关闭，不置 running。
+          // Stop request arrived during startup: orderly close after startup completes, do not set running.
           Log.i(TAG, "stop requested during startup, closing service")
           stopBox()
         } else {
           running = true
           lastError = null
           Log.i(TAG, "libbox service started")
+          // Start notification content polling if needed.
+          startNotificationPolling()
         }
       } catch (e: Exception) {
         Log.e(TAG, "failed to start libbox service", e)
         running = false
-        // openTun（establish 前后）与 startBox 失败都落到这里：附带完整异常链
-        // （e.message + e.cause 逐层）+ libbox 最近日志，让前端 Alert 直接展示
-        // Go 侧错误链（如 "query tun name" / "dup tun file descriptor"），便于
-        // 定位真机 file already closed 的完整根因链。
+        // Attach full exception chain + recent libbox logs for frontend Alert display.
         lastError = withLibboxLogTail(buildExceptionChain(e))
         stopSelf()
       } finally {
@@ -488,12 +520,13 @@ class ProxyVpnService : VpnService() {
   }
 
   /**
-   * 显式停止：在后台线程有序关闭 BoxService（`close()` 为阻塞调用，放主线程会
-   * ANR），完成后经主线程退前台、自停；`running` 立即复位供状态轮询读取。
+   * Explicit stop: orderly close BoxService in background thread (`close()` blocks, avoid ANR on main thread),
+   * then exit foreground and self-stop on main thread; `running` is immediately reset for status polling.
    */
   private fun handleStop() {
     stopRequested = true
     running = false
+    stopNotificationPolling()
     Log.i(TAG, "stop requested")
     Thread {
       try {
@@ -554,6 +587,161 @@ class ProxyVpnService : VpnService() {
         0
       }
     ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+  }
+
+  /** Parse Clash API port/secret from sing-box JSON config for notification polling. */
+  private fun parseClashApiConfig(config: String) {
+    try {
+      val json = org.json.JSONObject(config)
+      // sing-box experimental.clash_api
+      val experimental = json.optJSONObject("experimental")
+      if (experimental != null) {
+        val clashApi = experimental.optJSONObject("clash_api")
+        if (clashApi != null) {
+          clashApiPort = clashApi.optInt("external_controller_port", 9090)
+          clashApiSecret = clashApi.optString("secret", "")
+          return
+        }
+      }
+      // Fallback: direct clash_api object (some configs)
+      val directClash = json.optJSONObject("clash_api")
+      if (directClash != null) {
+        clashApiPort = directClash.optInt("external_controller_port", 9090)
+        clashApiSecret = directClash.optString("secret", "")
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "failed to parse clash api config: ${e.message}")
+    }
+  }
+
+  /** Start periodic notification content update (every 4s) if traffic or selection display is enabled. */
+  private fun startNotificationPolling() {
+    stopNotificationPolling()
+    if (!showTraffic && !showSelection) {
+      return
+    }
+    notificationUpdateHandler = Handler(Looper.getMainLooper())
+    val runnable = object : Runnable {
+      override fun run() {
+        if (!running) return
+        updateNotificationContent()
+        notificationUpdateHandler?.postDelayed(this, 4000)
+      }
+    }
+    notificationUpdateRunnable = runnable
+    notificationUpdateHandler?.postDelayed(runnable, 4000)
+  }
+
+  private fun stopNotificationPolling() {
+    notificationUpdateRunnable?.let { notificationUpdateHandler?.removeCallbacks(it) }
+    notificationUpdateRunnable = null
+    notificationUpdateHandler = null
+  }
+
+  /** Update notification content from Clash API (traffic + selection). */
+  private fun updateNotificationContent() {
+    try {
+      val lines = mutableListOf<String>()
+      if (showSelection) {
+        val selection = fetchClashSelection()
+        if (selection.isNotEmpty()) {
+          lines.add(selection)
+        }
+      }
+      if (showTraffic) {
+        val traffic = fetchClashTraffic()
+        if (traffic.isNotEmpty()) {
+          lines.add(traffic)
+        }
+      }
+      val contentText = if (lines.isEmpty()) "VPN service is running" else lines.joinToString(" · ")
+      updateNotification(contentText)
+    } catch (e: Exception) {
+      Log.w(TAG, "notification update failed: ${e.message}")
+    }
+  }
+
+  /** Fetch current proxy group selection from Clash API GET /proxies. */
+  private fun fetchClashSelection(): String {
+    return try {
+      val url = java.net.URL("http://127.0.0.1:$clashApiPort/proxies")
+      val conn = url.openConnection() as java.net.HttpURLConnection
+      conn.connectTimeout = 2000
+      conn.readTimeout = 2000
+      if (clashApiSecret.isNotEmpty()) {
+        conn.setRequestProperty("Authorization", "Bearer $clashApiSecret")
+      }
+      val text = conn.inputStream.bufferedReader().use { it.readText() }
+      conn.disconnect()
+
+      val json = org.json.JSONObject(text)
+      val proxies = json.optJSONObject("proxies") ?: return ""
+      // Find the first selector group and its now node
+      val keys = proxies.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        val proxy = proxies.optJSONObject(key) ?: continue
+        if (proxy.optString("type") == "Selector") {
+          val now = proxy.optString("now", "")
+          if (now.isNotEmpty()) {
+            return "$key: $now"
+          }
+        }
+      }
+      ""
+    } catch (e: Exception) {
+      ""
+    }
+  }
+
+  /** Fetch total upload/download traffic from Clash API GET /connections. */
+  private fun fetchClashTraffic(): String {
+    return try {
+      val url = java.net.URL("http://127.0.0.1:$clashApiPort/connections")
+      val conn = url.openConnection() as java.net.HttpURLConnection
+      conn.connectTimeout = 2000
+      conn.readTimeout = 2000
+      if (clashApiSecret.isNotEmpty()) {
+        conn.setRequestProperty("Authorization", "Bearer $clashApiSecret")
+      }
+      val text = conn.inputStream.bufferedReader().use { it.readText() }
+      conn.disconnect()
+
+      val json = org.json.JSONObject(text)
+      val downloadTotal = json.optLong("downloadTotal", 0)
+      val uploadTotal = json.optLong("uploadTotal", 0)
+      if (downloadTotal == 0L && uploadTotal == 0L) return ""
+      "${formatBytes(downloadTotal)} / ${formatBytes(uploadTotal)}"
+    } catch (e: Exception) {
+      ""
+    }
+  }
+
+  private fun formatBytes(bytes: Long): String {
+    return when {
+      bytes >= 1024 * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+      bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f MB", bytes / (1024.0 * 1024.0))
+      bytes >= 1024 -> String.format(java.util.Locale.US, "%.2f KB", bytes / 1024.0)
+      else -> "$bytes B"
+    }
+  }
+
+  private fun updateNotification(contentText: String) {
+    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+    val contentIntent =
+      launchIntent?.let {
+        PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
+      }
+    val notification =
+      NotificationCompat.Builder(this, CHANNEL_ID)
+        .setContentTitle("ProxyPanel")
+        .setContentText(contentText)
+        .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentIntent(contentIntent)
+        .setOngoing(true)
+        .build()
+    val nm = getSystemService(NotificationManager::class.java)
+    nm.notify(NOTIFICATION_ID, notification)
   }
 
   private fun startBox(config: String) {

@@ -153,6 +153,7 @@ export {
   platformInfo,
   requestVpnPermission,
   vpnLastError,
+  notifyPrefsChanged,
   tunAuthStatus,
   authorizeTun,
   gpuAcceleration,

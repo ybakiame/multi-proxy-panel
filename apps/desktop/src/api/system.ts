@@ -82,6 +82,13 @@ export function toastModeOverride(): Promise<string | null> {
 }
 
 /**
+ * Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
+ */
+export function notifyPrefsChanged(showTraffic: boolean, showSelection: boolean): Promise<void> {
+  return invoke<void>("notify_prefs_changed", { showTraffic, showSelection });
+}
+
+/**
  * Probe GitHub access link availability: requests `https://api.github.com/zen` through real fetch pipeline
  * (GitHub proxy prefix / via local proxy), returns `OK（xxx ms）` style string; rejects on failure and propagates error.
  */

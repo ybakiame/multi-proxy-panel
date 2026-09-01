@@ -82,14 +82,27 @@ impl CoreEngineBridge for AndroidCoreBridge {
         config_json: &'a Value,
     ) -> BoxFuture<'a, PanelResult<()>> {
         Box::pin(async move {
-            // 与 Kotlin `StartArgs`（`config: String` + `core: String?`）对齐：
-            // 配置以 JSON 文本传递，核心类型按桥收到的 `core_type` 分派
-            // （`"singbox"` 默认 / `"mihomo"` → MihomoVpnService）。
+            // Read notification prefs from client config (default true if missing).
+            let show_traffic = config_json
+                .get("vpn_notify_show_traffic")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let show_selection = config_json
+                .get("vpn_notify_show_selection")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            // Align with Kotlin `StartArgs` (`config: String` + `core: String?` + prefs):
+            // Config passed as JSON text, core type dispatched by `core_type`.
             let core = match core_type {
                 CoreType::Mihomo => "mihomo",
                 _ => "singbox",
             };
-            let payload = serde_json::json!({ "config": config_json.to_string(), "core": core });
+            let payload = serde_json::json!({
+                "config": config_json.to_string(),
+                "core": core,
+                "showTraffic": show_traffic,
+                "showSelection": show_selection,
+            });
             self.handle
                 .run_mobile_plugin_async::<Value>("start", payload)
                 .await

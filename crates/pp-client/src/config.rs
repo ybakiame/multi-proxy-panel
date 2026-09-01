@@ -95,6 +95,18 @@ pub struct ClientConfig {
     /// compatibility with old `client.json` that lacks this field.
     #[serde(default)]
     pub group_selections: HashMap<String, String>,
+    /// Whether to show upload/download traffic in the Android VPN notification.
+    /// `#[serde(default)]` ensures backward compatibility with old `client.json`.
+    #[serde(default = "default_true")]
+    pub vpn_notify_show_traffic: bool,
+    /// Whether to show current proxy group & node in the Android VPN notification.
+    /// `#[serde(default)]` ensures backward compatibility with old `client.json`.
+    #[serde(default = "default_true")]
+    pub vpn_notify_show_selection: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ClientConfig {
@@ -121,6 +133,8 @@ impl Default for ClientConfig {
             fetch_via_local_proxy: false,
             rule_mode: "rule".to_string(),
             group_selections: HashMap::new(),
+            vpn_notify_show_traffic: true,
+            vpn_notify_show_selection: true,
         }
     }
 }
@@ -208,6 +222,9 @@ mod tests {
         // 规则模式默认 rule。
         assert_eq!(cfg.rule_mode, "rule");
         assert_eq!(cfg.normalized_rule_mode(), "rule");
+        // VPN notification defaults.
+        assert!(cfg.vpn_notify_show_traffic);
+        assert!(cfg.vpn_notify_show_selection);
     }
 
     #[test]
@@ -279,6 +296,9 @@ mod tests {
         // Old client.json missing rule_mode should parse with default `rule`.
         assert_eq!(cfg.rule_mode, "rule");
         assert_eq!(cfg.normalized_rule_mode(), "rule");
+        // Old client.json missing VPN notification fields should parse with default true.
+        assert!(cfg.vpn_notify_show_traffic);
+        assert!(cfg.vpn_notify_show_selection);
     }
 
     #[test]

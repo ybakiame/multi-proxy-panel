@@ -42,6 +42,10 @@ export interface ClientConfig {
   fetch_via_local_proxy: boolean;
   /** Rule mode: `rule` / `global` / `direct` (default `rule`). */
   rule_mode: string;
+  /** Whether to show upload/download traffic in the Android VPN notification. */
+  vpn_notify_show_traffic: boolean;
+  /** Whether to show current proxy group & node in the Android VPN notification. */
+  vpn_notify_show_selection: boolean;
 }
 
 export interface ClientStatus {

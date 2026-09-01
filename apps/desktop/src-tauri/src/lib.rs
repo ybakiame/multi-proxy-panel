@@ -222,6 +222,8 @@ pub fn run() {
             commands::request_vpn_permission,
             #[cfg(target_os = "android")]
             commands::vpn_last_error,
+            #[cfg(target_os = "android")]
+            commands::notify_prefs_changed,
             commands::platform_info,
             commands::get_capabilities,
             commands::local_override_get,
