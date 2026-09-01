@@ -35,7 +35,7 @@ set -euo pipefail
 #   GEO 数据文件总量约 25MB，构建 APK 前先运行本脚本生成 assets。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 REPO="MetaCubeX/meta-rules-dat"
 # latest 标签与 mihomo config.go 默认 GeoXUrl 下载地址一致

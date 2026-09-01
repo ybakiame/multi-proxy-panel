@@ -45,7 +45,7 @@ set -euo pipefail
 #   同样受 GPL-3.0 约束，分发应用前请确保满足开源/源码可得性要求。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # 参数（可覆盖）
 OUTPUT_AAR="${1:-$REPO_ROOT/apps/desktop/src-tauri/gen/android/app/libs/panelcore.aar}"
