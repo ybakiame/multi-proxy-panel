@@ -68,7 +68,7 @@ bun run --filter pp-client-ui dev    # desktop 开发模式
 前端代码检查与格式化已集成 oxc 工具链（也可 `cd apps/panel` 后直接 `bun run <script>`）：
 
 ```bash
-# Linter（oxlint + React / a11y / import 插件，配置在各 app 的 .oxlintrc.json）
+# Linter（oxlint + React / a11y / import 插件，配置在各 app 的 oxlint.config.ts）
 bun run --filter pp-web lint
 # 格式化（oxfmt 处理 TS/TSX）
 bun run --filter pp-web format
