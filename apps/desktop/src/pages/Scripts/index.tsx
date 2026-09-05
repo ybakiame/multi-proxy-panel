@@ -1,69 +1,56 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, Tabs } from "@heroui/react";
 import { listRemotes, listTasks, getRemoteIcon, toErrorMessage } from "../../api";
-import type { RemoteResource, TaskScriptView } from "../../api";
+import { REMOTES_KEY, TASKS_KEY } from "../../api/keys";
+import type { RemoteResource } from "../../api";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import RemotesTab from "./RemotesTab";
 import TasksTab from "./TasksTab";
 import ImportTab from "./ImportTab";
 
+async function fetchRemotesWithIcons(): Promise<{ remotes: RemoteResource[]; iconCache: Record<string, string> }> {
+  const list = await listRemotes();
+  const icons: Record<string, string> = {};
+  await Promise.allSettled(
+    list
+      .filter((r) => r.icon)
+      .map(async (r) => {
+        const dataUrl = await getRemoteIcon(r.name);
+        if (dataUrl) icons[r.name] = dataUrl;
+      }),
+  );
+  return { remotes: list, iconCache: icons };
+}
+
 export default function Scripts() {
   const { data: capabilities } = useCapabilities();
   const capScriptsRemote = capabilities?.capabilities.scripts_remote ?? true;
   const capCronTasks = capabilities?.capabilities.cron_tasks ?? true;
 
-  const [remotes, setRemotes] = useState<RemoteResource[]>([]);
-  const [iconCache, setIconCache] = useState<Record<string, string>>({});
-  const [tasks, setTasks] = useState<TaskScriptView[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fetchResult, setFetchResult] = useState<{
-    fetched: number;
-    scripts: number;
-    rewrites: number;
-    tasks: number;
-    warnings: string[];
-  } | null>(null);
-  const [runResult, setRunResult] = useState<{ name: string; output: string } | null>(null);
+  const {
+    data: remotesData,
+    isLoading: remotesLoading,
+    error: remotesError,
+  } = useQuery({
+    queryKey: REMOTES_KEY,
+    queryFn: fetchRemotesWithIcons,
+    enabled: capScriptsRemote,
+    refetchInterval: 5000,
+  });
 
-  const refreshRemotes = useCallback(async () => {
-    try {
-      const list = await listRemotes();
-      setRemotes(list);
-      const icons: Record<string, string> = {};
-      await Promise.allSettled(
-        list
-          .filter((r) => r.icon)
-          .map(async (r) => {
-            const dataUrl = await getRemoteIcon(r.name);
-            if (dataUrl) icons[r.name] = dataUrl;
-          }),
-      );
-      setIconCache(icons);
-      setError(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-  }, []);
+  const {
+    data: tasks,
+    isLoading: tasksLoading,
+    error: tasksError,
+  } = useQuery({
+    queryKey: TASKS_KEY,
+    queryFn: listTasks,
+    enabled: capCronTasks,
+    refetchInterval: 5000,
+  });
 
-  const refreshTasks = useCallback(async () => {
-    try {
-      setTasks(await listTasks());
-      setError(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (capScriptsRemote) {
-      void refreshRemotes();
-    }
-    if (capCronTasks) {
-      void refreshTasks();
-    }
-  }, [refreshRemotes, refreshTasks, capScriptsRemote, capCronTasks]);
+  const error = remotesError ? toErrorMessage(remotesError) : tasksError ? toErrorMessage(tasksError) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -100,38 +87,23 @@ export default function Scripts() {
         {capScriptsRemote && (
           <Tabs.Panel className="flex flex-col gap-4 pt-4" id="remotes">
             <RemotesTab
-              remotes={remotes}
-              setRemotes={setRemotes}
-              iconCache={iconCache}
-              setIconCache={setIconCache}
-              busy={busy}
-              setBusy={setBusy}
+              remotes={remotesData?.remotes ?? []}
+              iconCache={remotesData?.iconCache ?? {}}
+              isLoading={remotesLoading}
               error={error}
-              setError={setError}
-              fetchResult={fetchResult}
-              setFetchResult={setFetchResult}
             />
           </Tabs.Panel>
         )}
 
         {capCronTasks && (
           <Tabs.Panel className="flex flex-col gap-4 pt-4" id="tasks">
-            <TasksTab
-              tasks={tasks}
-              setTasks={setTasks}
-              busy={busy}
-              setBusy={setBusy}
-              error={error}
-              setError={setError}
-              runResult={runResult}
-              setRunResult={setRunResult}
-            />
+            <TasksTab tasks={tasks ?? []} isLoading={tasksLoading} error={error} />
           </Tabs.Panel>
         )}
 
         {capScriptsRemote && (
           <Tabs.Panel className="flex flex-col gap-4 pt-4" id="import">
-            <ImportTab busy={busy} setBusy={setBusy} error={error} setError={setError} />
+            <ImportTab />
           </Tabs.Panel>
         )}
       </Tabs>

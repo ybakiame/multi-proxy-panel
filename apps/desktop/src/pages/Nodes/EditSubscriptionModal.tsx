@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Input, Label, ListBox, Select } from "@heroui/react";
 import type { ProfileView, SubscriptionView } from "../../api";
 import { coreLabel, subCoreType, UA_PRESETS } from "./utils";
@@ -25,14 +25,18 @@ export function EditSubscriptionModal({
   const [ua, setUa] = useState("");
   const [profileId, setProfileId] = useState("");
 
-  useEffect(() => {
+  // sub 切换（含挂载与关闭后重开）时在渲染期间同步表单初始值
+  // （adjust-state-during-render，替代 effect 内同步 setState）。
+  const [prevSubId, setPrevSubId] = useState<string | undefined>(undefined);
+  if (prevSubId !== sub?.id) {
+    setPrevSubId(sub?.id);
     if (sub) {
       setName(sub.name);
       setUrl(sub.url);
       setUa(sub.user_agent ?? "");
       setProfileId(sub.profile_id ?? "");
     }
-  }, [sub?.id]);
+  }
 
   if (!sub) return null;
 

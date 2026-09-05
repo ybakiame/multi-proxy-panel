@@ -1,27 +1,38 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAtom } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, Chip, Label, ListBox, Select, Switch } from "@heroui/react";
+import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listCores,
   listProfiles,
   listSubscriptions,
+  proxyStatus,
   refreshSubscription,
   requestVpnPermission,
   setActiveCore,
   setRuleMode as setRuleModeApi,
+  startProxy,
+  stopProxy,
   toErrorMessage,
   vpnLastError,
 } from "../api";
-import type { ClientConfig, CoreType, LocalCoreView, ProfileView, SubscriptionFormat, SubscriptionView } from "../api";
+import type {
+  ClientConfig,
+  ClientStatus,
+  LocalCoreView,
+  ProfileView,
+  SubscriptionFormat,
+  SubscriptionView,
+} from "../api";
+import { CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY, SUBSCRIPTIONS_KEY, VPN_ERROR_KEY } from "../api/keys";
+import { lastActionErrorAtom } from "../atoms/ui";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
 import { useCapabilities } from "../hooks/useCapabilities";
-import { useAppStore } from "../store";
+import { useClientConfig, useSaveConfig } from "../hooks/useClientConfig";
+import { useProxyStatus } from "../hooks/useProxyStatus";
 import { toastError, toastSuccess, toastWarning } from "../toast";
-
-const CORE_LABELS: Record<CoreType, string> = {
-  singbox: "sing-box",
-  mihomo: "mihomo",
-};
+import DashboardStatusCards, { coreLabel } from "./DashboardStatusCards";
 
 /** 规则模式按钮（与后端 `rule` / `global` / `direct` 对齐）。 */
 const RULE_MODES = [
@@ -29,11 +40,6 @@ const RULE_MODES = [
   { id: "global", label: "全局" },
   { id: "direct", label: "直连" },
 ] as const;
-
-/** 核心类型展示名（兼容 `singbox` / `mihomo` 小写 serde 值）。 */
-function coreLabel(value: string): string {
-  return CORE_LABELS[(value === "SingBox" ? "singbox" : value === "Mihomo" ? "mihomo" : value) as CoreType] ?? value;
-}
 
 /** 核心类型归一化（兼容 serde PascalCase `SingBox`/`Mihomo` 与小写 `singbox`/`mihomo`，未知回退 singbox）。 */
 function coreTypeOf(value: string | undefined): "singbox" | "mihomo" {
@@ -60,22 +66,23 @@ function sleep(ms: number): Promise<void> {
 }
 
 export default function Dashboard() {
-  const { config, status, loading, error, loadConfig, refreshStatus, saveConfig, start, stop, setStatus } =
-    useAppStore();
+  const queryClient = useQueryClient();
+  const { data: config } = useClientConfig();
+  const { data: status } = useProxyStatus();
+  const saveConfigMutation = useSaveConfig();
+  // 保存进行中（替代原 store.loading；start/stop 在途由 busy 覆盖）。
+  const loading = saveConfigMutation.isPending;
+  // 跨页共享的最近操作错误（Alert 与 TUN/VPN 授权门禁消费）。
+  const [error, setLastError] = useAtom(lastActionErrorAtom);
   const { data: capabilities } = useCapabilities();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   // 选中订阅后嗅探 format 期间置忙：禁用订阅 Select 避免重复触发。
   const [refreshingSub, setRefreshingSub] = useState(false);
-  const [subs, setSubs] = useState<SubscriptionView[]>([]);
-  const [cores, setCores] = useState<LocalCoreView[]>([]);
-  const [profiles, setProfiles] = useState<ProfileView[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [vpnAuthBusy, setVpnAuthBusy] = useState(false);
-  // Android VPN 启动失败原因（非空时展示 danger Alert；来自 Kotlin ProxyVpnService.lastError）。
-  const [vpnError, setVpnError] = useState<string | null>(null);
   // capabilities 异步返回前为 undefined，用 ref 让轮询读到最新平台。
   const capsRef = useRef(capabilities);
   useEffect(() => {
@@ -84,83 +91,172 @@ export default function Dashboard() {
 
   const isAndroid = capabilities?.is_android ?? false;
 
+  // ---- TanStack Query: data fetching ----
+
+  const { data: subs = [] } = useQuery<SubscriptionView[]>({
+    queryKey: SUBSCRIPTIONS_KEY,
+    queryFn: listSubscriptions,
+    refetchInterval: 5000,
+  });
+
+  const coreMgmt = capabilities?.capabilities.core_management ?? false;
+
+  const { data: cores = [] } = useQuery<LocalCoreView[]>({
+    queryKey: CORES_KEY,
+    queryFn: listCores,
+    enabled: coreMgmt,
+  });
+
+  const { data: profiles = [] } = useQuery<ProfileView[]>({
+    queryKey: PROFILES_KEY,
+    queryFn: listProfiles,
+  });
+
+  // Android VPN 启动错误轮询（2s，与 proxy_status 轮询同频）。
+  const { data: vpnErrorData } = useQuery<string | null>({
+    queryKey: VPN_ERROR_KEY,
+    queryFn: vpnLastError,
+    enabled: isAndroid,
+    refetchInterval: 2000,
+    retry: false,
+  });
+  const vpnError = vpnErrorData ?? null;
+
+  // ---- Mutations ----
+
+  const selectSubMutation = useMutation({
+    mutationFn: async ({
+      id,
+      needSniff,
+      sub,
+    }: {
+      id: string;
+      needSniff: boolean;
+      sub: SubscriptionView | undefined;
+    }) => {
+      let derivedCore = sub ? subCoreType(sub.format) : null;
+
+      if (needSniff) {
+        setRefreshingSub(true);
+        try {
+          const sniffed = await refreshSubscription(id);
+          derivedCore = subCoreType(sniffed.format);
+          // 刷新成功：更新本地 query 缓存中的订阅数据
+          queryClient.setQueryData<SubscriptionView[]>(SUBSCRIPTIONS_KEY, (prev) =>
+            prev ? prev.map((item) => (item.id === sniffed.id ? sniffed : item)) : prev,
+          );
+        } catch {
+          setRefreshingSub(false);
+          await persistConfig({ active_subscription_id: id });
+          toastWarning("订阅格式未知，未联动切换核心");
+          await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+          throw new Error("sniff_failed");
+        }
+        setRefreshingSub(false);
+      }
+
+      const patch: Partial<ClientConfig> = { active_subscription_id: id };
+      if (derivedCore && derivedCore !== config?.core_type) {
+        patch.core_type = derivedCore;
+      }
+      await persistConfig(patch);
+      return { patch, needSniff, derivedCore };
+    },
+    onSuccess: ({ patch, needSniff, derivedCore }) => {
+      setActionError(null);
+      void queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+      if (patch.core_type) {
+        toastWarning(`已按订阅格式切换至 ${coreLabel(patch.core_type)} 核心`);
+      } else if (needSniff && derivedCore === null) {
+        toastWarning("订阅格式未知，未联动切换核心");
+      }
+      void queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_KEY });
+    },
+    onError: (err: unknown) => {
+      if (err instanceof Error && err.message === "sniff_failed") return;
+      setActionError(toErrorMessage(err));
+    },
+  });
+
+  const selectCoreMutation = useMutation({
+    mutationFn: async (path: string) => {
+      await setActiveCore(path);
+    },
+    onSuccess: () => {
+      setActionError(null);
+      void queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+      void queryClient.invalidateQueries({ queryKey: CORES_KEY });
+    },
+    onError: (err: unknown) => {
+      setActionError(toErrorMessage(err));
+    },
+  });
+
+  const ruleModeMutation = useMutation({
+    mutationFn: async (mode: string) => {
+      const next = await setRuleModeApi(mode);
+      return next;
+    },
+    onSuccess: (next) => {
+      // set_rule_mode 返回最新运行状态，直接回写缓存（不触发重读）。
+      queryClient.setQueryData(PROXY_STATUS_KEY, next);
+      setActionError(null);
+      void queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+    },
+    onError: (err: unknown) => {
+      setActionError(toErrorMessage(err));
+    },
+  });
+
   /**
-   * 运行配置开关的即时保存：从 store 取最新配置叠加补丁（避免闭包旧值）。
+   * 运行配置开关的即时保存：从 Query 缓存取最新配置叠加补丁（避免闭包旧值）。
    * 保存结果通过全局 toast 反馈：有后端非阻塞提示走 warning，否则成功提示；
-   * 失败时 store.error 由页面级 Alert 展示并 `loadConfig()` 回滚。
+   * 失败时 lastActionErrorAtom 由页面级 Alert 展示并失效 CONFIG_KEY 重读回滚。
    */
   const persistConfig = useCallback(
     async (patch: Partial<ClientConfig>) => {
-      const current = useAppStore.getState().config;
+      const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
       if (!current) {
         return;
       }
       try {
-        const warning = await saveConfig({ ...current, ...patch });
+        const { warning } = await saveConfigMutation.mutateAsync({ ...current, ...patch });
         if (warning) {
           toastWarning(warning);
         } else {
           toastSuccess("设置已保存");
         }
       } catch (err) {
-        // 保存失败仅落在 store.error（会被 Alert 展示但用户易忽略），补全局 toast 强化反馈。
+        // 保存失败仅落在 lastActionErrorAtom（会被 Alert 展示但用户易忽略），补全局 toast 强化反馈。
         toastError(toErrorMessage(err));
-        await loadConfig();
+        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
       }
     },
-    [saveConfig, loadConfig],
+    [queryClient, saveConfigMutation],
   );
 
-  const loadSubscriptions = useCallback(async () => {
-    try {
-      setSubs(await listSubscriptions());
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
-  }, []);
+  // start/stop 成功后用返回的最新状态回写缓存；失败写入共享错误（Alert / 授权门禁消费）。
+  const startMutation = useMutation({
+    mutationFn: startProxy,
+    onSuccess: (next: ClientStatus) => {
+      queryClient.setQueryData(PROXY_STATUS_KEY, next);
+      setLastError(null);
+    },
+    onError: (err: unknown) => {
+      setLastError(toErrorMessage(err));
+    },
+  });
 
-  const coreMgmt = capabilities?.capabilities.core_management ?? false;
-
-  const loadCores = useCallback(async () => {
-    // Android 核心为内置 panelcore，无本地二进制管理；直接跳过。
-    if (!coreMgmt) return;
-    try {
-      setCores(await listCores());
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
-  }, [coreMgmt]);
-
-  const loadProfiles = useCallback(async () => {
-    try {
-      setProfiles(await listProfiles());
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadConfig();
-    void refreshStatus();
-    void loadSubscriptions();
-    if (coreMgmt) {
-      void loadCores();
-    }
-    void loadProfiles();
-    // 状态轮询：每 2s 刷新一次运行状态；Android 并入读取 VPN 启动错误
-    // （libbox 在后台线程启动，失败不阻塞 start_proxy 返回，需轮询兜底展示）。
-    const timer = window.setInterval(() => {
-      void refreshStatus();
-      if (capsRef.current?.is_android) {
-        void vpnLastError()
-          .then((err) => setVpnError(err ?? null))
-          .catch(() => {
-            // 命令失败保持当前展示（非致命，避免轮询抖动）。
-          });
-      }
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [loadConfig, refreshStatus, loadSubscriptions, loadCores, loadProfiles]);
+  const stopMutation = useMutation({
+    mutationFn: stopProxy,
+    onSuccess: (next: ClientStatus) => {
+      queryClient.setQueryData(PROXY_STATUS_KEY, next);
+      setLastError(null);
+    },
+    onError: (err: unknown) => {
+      setLastError(toErrorMessage(err));
+    },
+  });
 
   /**
    * Android 启动确认：Kotlin 核心在后台线程异步启动，`start_proxy` resolve 不代表启动成功
@@ -173,18 +269,28 @@ export default function Dashboard() {
       await sleep(500);
       let lastError: string | null = null;
       try {
-        lastError = await vpnLastError();
+        // fetchQuery 拉取最新值并同步进缓存（供 VPN 启动失败 Alert 展示）。
+        lastError = await queryClient.fetchQuery<string | null>({
+          queryKey: VPN_ERROR_KEY,
+          queryFn: vpnLastError,
+          retry: false,
+        });
       } catch {
         // 命令失败保持当前展示（非致命，避免轮询抖动）。
       }
       if (lastError) {
-        setVpnError(lastError);
+        // 手动更新 query 缓存以展示错误
+        queryClient.setQueryData<string | null>(VPN_ERROR_KEY, lastError);
         toastError(lastError);
-        await refreshStatus();
+        await queryClient.invalidateQueries({ queryKey: PROXY_STATUS_KEY });
         return;
       }
-      await refreshStatus();
-      if (useAppStore.getState().status?.core_running) {
+      const status = await queryClient.fetchQuery<ClientStatus>({
+        queryKey: PROXY_STATUS_KEY,
+        queryFn: proxyStatus,
+        retry: false,
+      });
+      if (status.core_running) {
         toastSuccess("代理已启动");
         return;
       }
@@ -195,9 +301,9 @@ export default function Dashboard() {
   const handleStart = async () => {
     setBusy("start");
     // 新一次启动尝试先清掉上一次的失败展示（服务侧 lastError 成功启动后也会清空）。
-    setVpnError(null);
+    queryClient.setQueryData<string | null>(VPN_ERROR_KEY, null);
     try {
-      await start();
+      await startMutation.mutateAsync();
       if (capsRef.current?.is_android) {
         // Android：核心异步启动，轮询确认后再提示，避免「启动失败却提示成功」。
         await confirmAndroidStart();
@@ -205,7 +311,7 @@ export default function Dashboard() {
         toastSuccess("代理已启动");
       }
     } catch (err) {
-      // store 已记录 error（由页面 Alert 展示）；`tun_auth_required` / `vpn_not_authorized`
+      // mutation onError 已记录共享错误（由页面 Alert 展示）；`tun_auth_required` / `vpn_not_authorized`
       // 走现有引导（TUN 授权页 / VPN 授权按钮）不重复 toast。
       const message = toErrorMessage(err);
       if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
@@ -218,7 +324,7 @@ export default function Dashboard() {
   const handleStop = async () => {
     setBusy("stop");
     try {
-      await stop();
+      await stopMutation.mutateAsync();
       toastSuccess("代理已停止");
     } catch (err) {
       const message = toErrorMessage(err);
@@ -246,74 +352,19 @@ export default function Dashboard() {
    *  存量订阅未嗅探过 format（null/undefined）时先刷新拉取嗅探，拿到格式后再推导联动。 */
   const handleSelectSubscription = async (id: string) => {
     const sub = subs.find((item) => item.id === id);
-    // 存量订阅 format 未知（嗅探功能上线前添加、未刷新过）→ 先刷新重新拉取并嗅探 format
-    // 落盘，再推导联动；ShareLinks 等已有 format 的路径保持原逻辑不动。
     const needSniff = sub != null && sub.format == null;
-    let derivedCore = sub ? subCoreType(sub.format) : null;
-
-    if (needSniff) {
-      setRefreshingSub(true);
-      try {
-        // 刷新会重新拉取内容并嗅探 format（后端 refresh_subscription 单订阅刷新）。
-        const sniffed = await refreshSubscription(id);
-        // 局部更新订阅列表（format / 节点数 / userinfo 已重拉）并重新推导。
-        setSubs((prev) => prev.map((item) => (item.id === sniffed.id ? sniffed : item)));
-        derivedCore = subCoreType(sniffed.format);
-      } catch {
-        // 刷新失败：保持现状行为，仅写 active_subscription_id。
-        setActionError(null);
-        await persistConfig({ active_subscription_id: id });
-        toastWarning("订阅格式未知，未联动切换核心");
-        await loadConfig();
-        return;
-      }
-      setRefreshingSub(false);
-    }
-
-    // 一次 persistConfig 同时写入 active_subscription_id 与 core_type（避免两次保存与
-    // 「已启动后动态切换核心」）；推导为 null 或与当前核心一致时只写订阅。
-    const patch: Partial<ClientConfig> = { active_subscription_id: id };
-    if (derivedCore && derivedCore !== config?.core_type) {
-      patch.core_type = derivedCore;
-    }
-    try {
-      await persistConfig(patch);
-      setActionError(null);
-      await loadConfig();
-      if (patch.core_type) {
-        toastWarning(`已按订阅格式切换至 ${coreLabel(patch.core_type)} 核心`);
-      } else if (needSniff && derivedCore === null) {
-        // 刷新成功但格式仍未知（嗅探失败/非标准格式）：只写订阅，提示未联动。
-        toastWarning("订阅格式未知，未联动切换核心");
-      }
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
+    selectSubMutation.mutate({ id, needSniff, sub });
   };
 
   const handleSelectCore = async (path: string) => {
-    try {
-      await setActiveCore(path);
-      setActionError(null);
-      await loadConfig();
-      await loadCores();
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
+    selectCoreMutation.mutate(path);
   };
 
   const handleRuleMode = async (mode: string) => {
     setRuleModeBusy(mode);
-    try {
-      const next = await setRuleModeApi(mode);
-      setStatus(next);
-      setActionError(null);
-      // 同步 store.config，避免 persistConfig 用陈旧的 rule_mode 基底覆盖本次修改。
-      await loadConfig();
-    } catch (err) {
-      setActionError(toErrorMessage(err));
-    }
-    setRuleModeBusy(null);
+    ruleModeMutation.mutate(mode, {
+      onSettled: () => setRuleModeBusy(null),
+    });
   };
 
   const handleCopyLink = async () => {
@@ -651,103 +702,16 @@ export default function Dashboard() {
       </Card>
 
       {/* C. 状态卡片 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <Card.Header>
-            <Card.Title>核心状态</Card.Title>
-            <Card.Description>
-              {isAndroid
-                ? `当前运行核心：${coreLabel(config?.core_type ?? "singbox")}`
-                : config?.core_type === "mihomo"
-                  ? "mihomo"
-                  : "sing-box"}
-              {config ? ` · 混合端口 ${config.mixed_port}` : ""}
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
-            {running ? <Chip color="success">运行中</Chip> : <Chip color="danger">已停止</Chip>}
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <Card.Title>节点数量</Card.Title>
-            <Card.Description>当前生效订阅的可用节点数</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <span className="text-sm">{activeSub ? activeSub.node_count : "-"}</span>
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <Card.Title>规则数量</Card.Title>
-            <Card.Description>本次合成配置的规则条数</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <span className="text-sm">{status?.rule_count ?? 0}</span>
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <Card.Title>MITM 地址</Card.Title>
-            <Card.Description>中间人代理监听地址</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <span className="text-sm">{status?.mitm_addr ?? "未启用"}</span>
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <Card.Title>系统代理</Card.Title>
-            <Card.Description>是否已接管系统代理</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            {status?.system_proxy ? <Chip color="success">已启用</Chip> : <Chip color="danger">未启用</Chip>}
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <Card.Title>Clash 面板</Card.Title>
-            <Card.Description>面板 API 开启状态与访问入口</Card.Description>
-          </Card.Header>
-          <Card.Content className="flex flex-col gap-3">
-            {!config?.clash_api_enabled ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-sm">未启用</span>
-                <span className="text-xs text-muted">在「设置 → Clash 面板」开启</span>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  {status?.clash_api_url && running ? (
-                    <Chip color="success">运行中</Chip>
-                  ) : (
-                    <Chip color="danger">未运行</Chip>
-                  )}
-                </div>
-                <span className="break-all font-mono text-xs text-muted">
-                  http://127.0.0.1:{config.clash_api_port}/ui
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onPress={() => void handleCopyLink()}>
-                    {linkCopied ? "已复制" : "复制链接"}
-                  </Button>
-                  <Button size="sm" variant="secondary" onPress={() => void handleOpenPanel()}>
-                    打开面板
-                  </Button>
-                </div>
-                <span className="text-xs text-muted">
-                  首次打开会自动下载面板资源，需网络可达；空白时检查网络或稍候重试
-                </span>
-              </>
-            )}
-          </Card.Content>
-        </Card>
-      </div>
+      <DashboardStatusCards
+        config={config}
+        status={status}
+        isAndroid={isAndroid}
+        running={running}
+        activeSub={activeSub}
+        linkCopied={linkCopied}
+        onCopyLink={() => void handleCopyLink()}
+        onOpenPanel={() => void handleOpenPanel()}
+      />
 
       <ConfigPreviewModal isOpen={previewOpen} onClose={() => setPreviewOpen(false)} title="配置预览 — 当前生效配置" />
     </div>

@@ -3,7 +3,7 @@
  * Manages its own form state and delegates save / close to the parent.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button, Input, Label, ListBox, Modal, Select } from "@heroui/react";
 import type { RemoteResource } from "../../../api";
 import { REMOTE_DIALECT_OPTIONS, groupArgsByTag } from "../utils";
@@ -78,9 +78,15 @@ export default function RemoteFormModal({
   const [iconFailed, setIconFailed] = useState(false);
   const { detecting, detectInfo, sniff, reset: resetSniff } = useRemoteSniff();
 
-  // Initialize form when opening in edit mode
-  useEffect(() => {
-    if (!open) return;
+  // Initialize form when opening in edit mode.
+  // 渲染期按 open/mode/initialData 调整状态（替代 useEffect + setState，
+  // 满足 react(set-state-in-effect) 与 React Compiler 约束）；行为与原 effect 一致：
+  // 关闭时只记录已关闭，打开或切换编辑对象时重置表单。
+  const [inited, setInited] = useState<{ mode: "add" | "edit"; data: RemoteResource | null | undefined } | null>(null);
+  if (!open) {
+    if (inited !== null) setInited(null);
+  } else if (inited === null || inited.mode !== mode || inited.data !== initialData) {
+    setInited({ mode, data: initialData });
     if (mode === "edit" && initialData) {
       setForm({
         name: initialData.name,
@@ -106,7 +112,7 @@ export default function RemoteFormModal({
       setIconFailed(false);
     }
     resetSniff();
-  }, [open, mode, initialData, resetSniff]);
+  }
 
   const handleDetect = useCallback(async () => {
     const result = await sniff(form.url, setError);

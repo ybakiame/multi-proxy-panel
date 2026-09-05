@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getCapabilities } from "../api";
 import type { Capabilities } from "../api";
-
-const CAPABILITIES_KEY = ["capabilities"];
+import { CAPABILITIES_KEY } from "../api/keys";
 
 /**
  * Query capabilities once at app bootstrap and cache indefinitely.

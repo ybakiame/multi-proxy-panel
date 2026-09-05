@@ -1,31 +1,32 @@
 import { useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, TextArea } from "@heroui/react";
+import { useMutation } from "@tanstack/react-query";
 import { importConfig, toErrorMessage } from "../../api";
 import type { ImportSummary } from "../../api";
 import { IMPORT_DIALECT_OPTIONS } from "./utils";
 
-interface ImportTabProps {
-  busy: boolean;
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
-  error: string | null;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
-}
-
-export default function ImportTab({ busy, setBusy, setError }: ImportTabProps) {
+export default function ImportTab() {
   const [importText, setImportText] = useState("");
   const [importDialect, setImportDialect] = useState<string>("loon");
   const [importResult, setImportResult] = useState<ImportSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleImport = async () => {
-    setBusy(true);
+  const importMutation = useMutation({
+    mutationFn: ({ content, dialect }: { content: string; dialect: string }) => importConfig(content, dialect),
+    onSuccess: (result) => {
+      setImportResult(result);
+      setError(null);
+    },
+    onError: (err) => {
+      setError(toErrorMessage(err));
+      setImportResult(null);
+    },
+  });
+
+  const handleImport = () => {
     setError(null);
     setImportResult(null);
-    try {
-      setImportResult(await importConfig(importText, importDialect));
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
+    importMutation.mutate({ content: importText, dialect: importDialect });
   };
 
   return (
@@ -72,7 +73,7 @@ export default function ImportTab({ busy, setBusy, setError }: ImportTabProps) {
         <Card.Footer>
           <Button
             variant="primary"
-            isPending={busy}
+            isPending={importMutation.isPending}
             isDisabled={importText.trim().length === 0}
             onPress={() => void handleImport()}
           >
@@ -104,6 +105,16 @@ export default function ImportTab({ busy, setBusy, setError }: ImportTabProps) {
                 ))}
               </ul>
             )}
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>导入失败</Alert.Title>
+            <Alert.Description>{error}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}

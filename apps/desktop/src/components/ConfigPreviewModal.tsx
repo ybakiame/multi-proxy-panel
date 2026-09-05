@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
 import { Alert, Button, Modal } from "@heroui/react";
+import { useQuery } from "@tanstack/react-query";
 import { previewCoreConfig, toErrorMessage } from "../api";
+import { CONFIG_PREVIEW_KEY } from "../api/keys";
 
 interface ConfigPreviewModalProps {
   isOpen: boolean;
@@ -14,38 +15,16 @@ interface ConfigPreviewModalProps {
  * 打开（isOpen 变 true）或 subscriptionId 变化时重新拉取。
  */
 export default function ConfigPreviewModal({ isOpen, onClose, title, subscriptionId }: ConfigPreviewModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [content, setContent] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setContent(null);
-    void previewCoreConfig(subscriptionId)
-      .then((text) => {
-        if (!cancelled) {
-          setContent(text);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(toErrorMessage(err));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, subscriptionId]);
+  const {
+    data: content,
+    error,
+    isLoading,
+  } = useQuery<string>({
+    queryKey: [...CONFIG_PREVIEW_KEY, subscriptionId ?? null],
+    queryFn: () => previewCoreConfig(subscriptionId),
+    enabled: isOpen,
+    retry: false,
+  });
 
   return (
     <Modal.Backdrop
@@ -63,7 +42,7 @@ export default function ConfigPreviewModal({ isOpen, onClose, title, subscriptio
             <Modal.Heading>{title}</Modal.Heading>
           </Modal.Header>
           <Modal.Body className="flex flex-col gap-4">
-            {loading ? (
+            {isLoading ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                 <span className="text-sm text-muted">正在生成配置预览…</span>
                 <span className="text-xs text-muted/80">拉取订阅节点并按当前核心合成最终配置（只读）</span>
@@ -73,7 +52,7 @@ export default function ConfigPreviewModal({ isOpen, onClose, title, subscriptio
                 <Alert.Indicator />
                 <Alert.Content>
                   <Alert.Title>生成预览失败</Alert.Title>
-                  <Alert.Description>{error}</Alert.Description>
+                  <Alert.Description>{toErrorMessage(error)}</Alert.Description>
                 </Alert.Content>
               </Alert>
             ) : (

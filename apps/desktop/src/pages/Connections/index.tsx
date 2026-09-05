@@ -4,11 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { connectionsActive, connectionsClosed, connectionsClose, toErrorMessage } from "../../api";
 import type { ConnectionView } from "../../api";
+import { CONNECTIONS_KEY, CLOSED_CONNECTIONS_KEY } from "../../api/keys";
 import { toastError, toastSuccess } from "../../toast";
-import { useAppStore } from "../../store";
 
-const CONNECTIONS_KEY = ["connections_active"];
-const CLOSED_KEY = ["connections_closed"];
+const CLOSED_KEY = CLOSED_CONNECTIONS_KEY;
 const REFETCH_INTERVAL_MS = 2000;
 
 /** Format bytes to human-readable string (B / KB / MB / GB). */
@@ -48,8 +47,6 @@ function networkColor(network: string): "default" | "success" | "warning" {
 export default function Connections() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const status = useAppStore((s) => s.status);
-  const _running = status?.core_running ?? false;
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);

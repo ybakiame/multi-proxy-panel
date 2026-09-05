@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Chip, Label, ListBox, Select } from "@heroui/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { CORE_LABELS, CORE_CHIP_COLORS, normalizeCoreType } from "./useSettingsConfig";
 import {
@@ -11,6 +12,7 @@ import {
   toErrorMessage,
 } from "../../api";
 import type { CoreType, LocalCoreView } from "../../api";
+import { CORES_LIST_KEY, REMOTE_VERSIONS_KEY } from "../../api/keys";
 
 interface CoreManagementProps {
   settings: UseSettingsConfigReturn;
@@ -18,41 +20,24 @@ interface CoreManagementProps {
 
 export default function CoreManagement({ settings }: CoreManagementProps) {
   const { config } = settings;
-  const [cores, setCores] = useState<LocalCoreView[]>([]);
-  const [remoteVersions, setRemoteVersions] = useState<string[]>([]);
+  const queryClient = useQueryClient();
   const [downloadType, setDownloadType] = useState<CoreType>("singbox");
   const [downloadVersion, setDownloadVersion] = useState("");
   const [coresBusy, setCoresBusy] = useState(false);
   const [coresError, setCoresError] = useState<string | null>(null);
   const [coresMessage, setCoresMessage] = useState<string | null>(null);
 
-  const refreshCores = useCallback(async () => {
-    try {
-      setCores(await listCores());
-      setCoresError(null);
-    } catch (err) {
-      setCoresError(toErrorMessage(err));
-    }
-  }, []);
+  const { data: cores = [] } = useQuery<LocalCoreView[]>({
+    queryKey: CORES_LIST_KEY,
+    queryFn: listCores,
+    retry: false,
+  });
 
-  const refreshRemoteVersions = useCallback(async (coreType: CoreType) => {
-    try {
-      const versions = await listRemoteCoreVersions(coreType);
-      setRemoteVersions(versions);
-      setDownloadVersion(versions[0] ?? "");
-      setCoresError(null);
-    } catch (err) {
-      setCoresError(toErrorMessage(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshCores();
-  }, [refreshCores]);
-
-  useEffect(() => {
-    void refreshRemoteVersions(downloadType);
-  }, [downloadType, refreshRemoteVersions]);
+  const { data: remoteVersions = [] } = useQuery<string[]>({
+    queryKey: [...REMOTE_VERSIONS_KEY, downloadType],
+    queryFn: () => listRemoteCoreVersions(downloadType),
+    retry: false,
+  });
 
   const handleDownload = async () => {
     if (!downloadVersion) {
@@ -64,7 +49,7 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
     try {
       await downloadCore(downloadType, downloadVersion);
       setCoresMessage(`已下载 ${CORE_LABELS[downloadType]} ${downloadVersion}`);
-      await refreshCores();
+      await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
     } catch (err) {
       setCoresError(toErrorMessage(err));
     }
@@ -78,7 +63,7 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
     try {
       const detected = await detectSystemCores();
       setCoresMessage(`探测到 ${detected.length} 个系统核心`);
-      await refreshCores();
+      await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
     } catch (err) {
       setCoresError(toErrorMessage(err));
     }
@@ -93,7 +78,7 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
       await deleteCore(core.path);
       const coreLabel = CORE_LABELS[core.core_type] ?? core.core_type;
       setCoresMessage(`已删除 ${coreLabel} ${core.version}`);
-      await refreshCores();
+      await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
     } catch (err) {
       setCoresError(toErrorMessage(err));
     }
@@ -260,7 +245,11 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
                 </Select.Popover>
               </Select>
             </div>
-            <Button variant="tertiary" isDisabled={coresBusy} onPress={() => void refreshRemoteVersions(downloadType)}>
+            <Button
+              variant="tertiary"
+              isDisabled={coresBusy}
+              onPress={() => void queryClient.invalidateQueries({ queryKey: [...REMOTE_VERSIONS_KEY, downloadType] })}
+            >
               刷新版本
             </Button>
             <Button

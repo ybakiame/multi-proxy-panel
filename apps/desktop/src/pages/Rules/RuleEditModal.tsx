@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "../../api";
 import { RULE_ACTIONS } from "./types";
@@ -11,34 +11,25 @@ export interface RuleEditModalProps {
   onSave: (rule: LocalRuleInput) => void;
 }
 
-export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: RuleEditModalProps) {
-  const [matchType, setMatchType] = useState("domain");
-  const [target, setTarget] = useState("");
-  const [action, setAction] = useState("proxy");
-  const [name, setName] = useState("");
-  const [note, setNote] = useState("");
-  const [noResolve, setNoResolve] = useState(false);
-  const [invert, setInvert] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && initial) {
-      setMatchType(initial.match_type);
-      setTarget(initial.target);
-      setAction(initial.action);
-      setName(initial.name);
-      setNote(initial.note);
-      setNoResolve(initial.no_resolve);
-      setInvert(initial.invert);
-    } else if (isOpen) {
-      setMatchType("domain");
-      setTarget("");
-      setAction("proxy");
-      setName("");
-      setNote("");
-      setNoResolve(false);
-      setInvert(false);
-    }
-  }, [isOpen, initial]);
+/** 规则表单内容，key 由调用方控制，确保 initial 变化时重新挂载、状态重置。 */
+function RuleEditForm({
+  initial,
+  isAndroid,
+  onSave,
+  onClose,
+}: {
+  initial?: LocalRuleView | null;
+  isAndroid: boolean;
+  onSave: (rule: LocalRuleInput) => void;
+  onClose: () => void;
+}) {
+  const [matchType, setMatchType] = useState(initial?.match_type ?? "domain");
+  const [target, setTarget] = useState(initial?.target ?? "");
+  const [action, setAction] = useState(initial?.action ?? "proxy");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [note, setNote] = useState(initial?.note ?? "");
+  const [noResolve, setNoResolve] = useState(initial?.no_resolve ?? false);
+  const [invert, setInvert] = useState(initial?.invert ?? false);
 
   const matchTypeOptions = useMemo(() => {
     const base = [
@@ -79,6 +70,134 @@ export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: R
   const canSave = isFinal ? true : target.trim().length > 0;
 
   return (
+    <>
+      <Modal.Body className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <Label>匹配类型</Label>
+          <Select
+            aria-label="匹配类型"
+            value={matchType}
+            onChange={(value) => setMatchType(String(value ?? "domain"))}
+            fullWidth
+          >
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                {matchTypeOptions.map((opt) => (
+                  <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
+                    {opt.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
+
+        {!isFinal && (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="rule-target">匹配目标</Label>
+            <Input
+              id="rule-target"
+              aria-label="匹配目标"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder={matchType === "rule_set" ? "规则集 community_id" : "例如：googleapis.com"}
+              fullWidth
+            />
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1">
+          <Label>路由动作</Label>
+          <Select
+            aria-label="路由动作"
+            value={action}
+            onChange={(value) => setAction(String(value ?? "proxy"))}
+            fullWidth
+          >
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                {RULE_ACTIONS.map((opt) => (
+                  <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
+                    {opt.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="rule-name">规则名称（可选）</Label>
+          <Input
+            id="rule-name"
+            aria-label="规则名称"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="留空则自动生成摘要"
+            fullWidth
+          />
+        </div>
+
+        <div className="rounded-lg border border-border/40 p-3">
+          <span className="text-xs font-medium text-muted">高级选项</span>
+          <div className="mt-2 flex flex-col gap-2">
+            <Checkbox isSelected={noResolve} onChange={(next) => setNoResolve(next)}>
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                跳过 DNS 解析 (no-resolve)
+              </Checkbox.Content>
+            </Checkbox>
+            <Checkbox isSelected={invert} onChange={(next) => setInvert(next)}>
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                反选 (invert)
+              </Checkbox.Content>
+            </Checkbox>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="rule-note">备注</Label>
+              <Input
+                id="rule-note"
+                aria-label="备注"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="可选备注"
+                fullWidth
+              />
+            </div>
+          </div>
+        </div>
+      </Modal.Body>
+      <Modal.Footer>
+        <Button slot="close" variant="tertiary" onPress={onClose}>
+          取消
+        </Button>
+        <Button variant="primary" isDisabled={!canSave} onPress={handleSave}>
+          保存
+        </Button>
+      </Modal.Footer>
+    </>
+  );
+}
+
+export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: RuleEditModalProps) {
+  // key 确保 initial 变化时表单重新挂载、状态重置
+  const formKey = initial?.id ?? "__new__";
+
+  return (
     <Modal.Backdrop
       isOpen={isOpen}
       onOpenChange={(open) => {
@@ -91,124 +210,7 @@ export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: R
           <Modal.Header>
             <Modal.Heading>{initial ? "编辑规则" : "新增规则"}</Modal.Heading>
           </Modal.Header>
-          <Modal.Body className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <Label>匹配类型</Label>
-              <Select
-                aria-label="匹配类型"
-                value={matchType}
-                onChange={(value) => setMatchType(String(value ?? "domain"))}
-                fullWidth
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {matchTypeOptions.map((opt) => (
-                      <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
-                        {opt.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </div>
-
-            {!isFinal && (
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="rule-target">匹配目标</Label>
-                <Input
-                  id="rule-target"
-                  aria-label="匹配目标"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  placeholder={matchType === "rule_set" ? "规则集 community_id" : "例如：googleapis.com"}
-                  fullWidth
-                />
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1">
-              <Label>路由动作</Label>
-              <Select
-                aria-label="路由动作"
-                value={action}
-                onChange={(value) => setAction(String(value ?? "proxy"))}
-                fullWidth
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {RULE_ACTIONS.map((opt) => (
-                      <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
-                        {opt.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="rule-name">规则名称（可选）</Label>
-              <Input
-                id="rule-name"
-                aria-label="规则名称"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="留空则自动生成摘要"
-                fullWidth
-              />
-            </div>
-
-            <div className="rounded-lg border border-border/40 p-3">
-              <span className="text-xs font-medium text-muted">高级选项</span>
-              <div className="mt-2 flex flex-col gap-2">
-                <Checkbox isSelected={noResolve} onChange={(next) => setNoResolve(next)}>
-                  <Checkbox.Content>
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                    跳过 DNS 解析 (no-resolve)
-                  </Checkbox.Content>
-                </Checkbox>
-                <Checkbox isSelected={invert} onChange={(next) => setInvert(next)}>
-                  <Checkbox.Content>
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                    反选 (invert)
-                  </Checkbox.Content>
-                </Checkbox>
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="rule-note">备注</Label>
-                  <Input
-                    id="rule-note"
-                    aria-label="备注"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="可选备注"
-                    fullWidth
-                  />
-                </div>
-              </div>
-            </div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button slot="close" variant="tertiary" onPress={onClose}>
-              取消
-            </Button>
-            <Button variant="primary" isDisabled={!canSave} onPress={handleSave}>
-              保存
-            </Button>
-          </Modal.Footer>
+          <RuleEditForm key={formKey} initial={initial} isAndroid={isAndroid} onSave={onSave} onClose={onClose} />
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>

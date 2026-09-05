@@ -1,32 +1,93 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
-import { getMitmCa, type MitmCaView } from "../api";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { getMitmCa, listTraffic } from "../api";
+import type { TrafficRecord } from "../api";
+import { MITM_CA_KEY, TRAFFIC_KEY } from "../api/keys";
+import { useClientConfig, useSaveConfig } from "../hooks/useClientConfig";
 import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
-import { useAppStore } from "../store";
+
+interface HostnameEditorProps {
+  initialHostnames: string;
+  onSave: (hostnames: string) => Promise<void>;
+}
+
+/** Hostname 白名单编辑器，key 变化时重新挂载、状态重置。 */
+function HostnameEditor({ initialHostnames, onSave }: HostnameEditorProps) {
+  const [hostnames, setHostnames] = useState(initialHostnames);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: (value: string) => onSave(value),
+    onSuccess: () => setSaved(true),
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const handleSave = () => {
+    setSaved(false);
+    setError(null);
+    saveMutation.mutate(hostnames);
+  };
+
+  return (
+    <Card>
+      <Card.Header>
+        <Card.Title>Hostname 白名单</Card.Title>
+        <Card.Description>每行一个域名，仅对命中域名做中间人抓包</Card.Description>
+      </Card.Header>
+      <Card.Content>
+        <TextArea
+          aria-label="Hostname 白名单"
+          value={hostnames}
+          onChange={(event) => setHostnames(event.target.value)}
+          placeholder={"example.com\n*.example.com"}
+          rows={6}
+          fullWidth
+        />
+      </Card.Content>
+      <Card.Footer>
+        <Button variant="primary" isPending={saveMutation.isPending} onPress={handleSave}>
+          保存白名单
+        </Button>
+        {saved && <span className="text-sm text-success">已保存</span>}
+      </Card.Footer>
+
+      {error && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>保存失败</Alert.Title>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+    </Card>
+  );
+}
 
 export default function Mitm() {
-  const { config, traffic, loadConfig, refreshTraffic, saveConfig } = useAppStore();
-  const [hostnames, setHostnames] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mitmCa, setMitmCa] = useState<MitmCaView | null>(null);
+  const { data: config } = useClientConfig();
+  const saveConfigMutation = useSaveConfig();
   const [caCopied, setCaCopied] = useState(false);
 
-  useEffect(() => {
-    void loadConfig();
-    void refreshTraffic();
-    void getMitmCa()
-      .then(setMitmCa)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [loadConfig, refreshTraffic]);
+  // 抓包记录轮询（Query 缓存为唯一权威源，不再经 store 中转）
+  const {
+    data: traffic = [],
+    isLoading: trafficLoading,
+    refetch: refreshTraffic,
+  } = useQuery<TrafficRecord[]>({
+    queryKey: TRAFFIC_KEY,
+    queryFn: listTraffic,
+    refetchInterval: 2000,
+  });
 
-  // 配置加载后同步白名单文本（每行一个 hostname）。
-  // `mitm_hostnames` 在 config 未加载完成或字段缺失时可能为 undefined，
-  // 需在 join 前防御，避免渲染期 TypeError 导致整页崩溃（黑屏）。
-  useEffect(() => {
-    setHostnames(config?.mitm_hostnames?.join("\n") ?? "");
-  }, [config?.mitm_hostnames]);
+  // MITM CA 证书
+  const { data: mitmCa } = useQuery({
+    queryKey: MITM_CA_KEY,
+    queryFn: getMitmCa,
+    staleTime: Infinity,
+  });
 
   // RFC3339 时间戳转为本地可读时间；解析失败时原样展示。
   const formatTime = (iso: string) => {
@@ -44,27 +105,19 @@ export default function Mitm() {
     window.setTimeout(() => setCaCopied(false), 2000);
   };
 
-  const handleSave = async () => {
+  const handleSaveHostnames = async (hostnames: string) => {
     if (!config) {
-      return;
+      throw new Error("配置未加载");
     }
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-    try {
-      const list = hostnames
-        .split("\n")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      await saveConfig({ ...config, mitm_hostnames: list });
-      setSaved(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-    setSaving(false);
+    const list = hostnames
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    await saveConfigMutation.mutateAsync({ ...config, mitm_hostnames: list });
   };
 
   const caDir = config ? `${config.data_dir}/certs` : "-";
+  const hostnamesKey = config?.mitm_hostnames?.join("\n") ?? "";
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,38 +190,7 @@ export default function Mitm() {
             </Card.Content>
           </Card>
 
-          <Card>
-            <Card.Header>
-              <Card.Title>Hostname 白名单</Card.Title>
-              <Card.Description>每行一个域名，仅对命中域名做中间人抓包</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <TextArea
-                aria-label="Hostname 白名单"
-                value={hostnames}
-                onChange={(event) => setHostnames(event.target.value)}
-                placeholder={"example.com\n*.example.com"}
-                rows={6}
-                fullWidth
-              />
-            </Card.Content>
-            <Card.Footer>
-              <Button variant="primary" isPending={saving} onPress={() => void handleSave()}>
-                保存白名单
-              </Button>
-              {saved && <span className="text-sm text-success">已保存</span>}
-            </Card.Footer>
-          </Card>
-
-          {error && (
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>保存失败</Alert.Title>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          )}
+          <HostnameEditor key={hostnamesKey} initialHostnames={hostnamesKey} onSave={handleSaveHostnames} />
         </div>
 
         <Card>
@@ -177,7 +199,11 @@ export default function Mitm() {
             <Card.Description>MITM 捕获的 HTTP 流量，仅在代理运行时可用</Card.Description>
           </Card.Header>
           <Card.Content>
-            {traffic.length === 0 ? (
+            {trafficLoading && traffic.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <span className="text-sm text-muted">正在加载抓包记录…</span>
+              </div>
+            ) : traffic.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                 <span className="text-sm text-muted">暂无抓包记录</span>
                 <span className="text-xs text-muted/80">代理启动并命中 Hostname 白名单后，流量将显示在此</span>

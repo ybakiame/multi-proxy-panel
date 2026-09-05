@@ -1,42 +1,45 @@
-import { useCallback } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Table } from "@heroui/react";
-import { listTasks, runTask, toErrorMessage } from "../../api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { runTask, toErrorMessage } from "../../api";
+import { TASKS_KEY } from "../../api/keys";
 import type { TaskScriptView } from "../../api";
 import { formatTime } from "./utils";
 
 interface TasksTabProps {
   tasks: TaskScriptView[];
-  setTasks: React.Dispatch<React.SetStateAction<TaskScriptView[]>>;
-  busy: boolean;
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
+  isLoading: boolean;
   error: string | null;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
-  runResult: { name: string; output: string } | null;
-  setRunResult: React.Dispatch<React.SetStateAction<{ name: string; output: string } | null>>;
 }
 
-export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, runResult, setRunResult }: TasksTabProps) {
-  const refreshTasks = useCallback(async () => {
-    try {
-      setTasks(await listTasks());
-      setError(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-  }, [setTasks, setError]);
+export default function TasksTab({ tasks, isLoading, error }: TasksTabProps) {
+  const queryClient = useQueryClient();
+  const [runResult, setRunResult] = useState<{ name: string; output: string } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [runningTask, setRunningTask] = useState<string | null>(null);
 
-  const handleRunTask = async (name: string) => {
-    setBusy(true);
-    setError(null);
-    setRunResult(null);
-    try {
-      const output = await runTask(name);
+  const runMutation = useMutation({
+    mutationFn: ({ name }: { name: string }) => runTask(name),
+    onSuccess: (output, { name }) => {
       setRunResult({ name, output });
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
+      setActionError(null);
+      void queryClient.invalidateQueries({ queryKey: TASKS_KEY });
+    },
+    onError: (err) => {
+      setActionError(toErrorMessage(err));
+      setRunResult(null);
+    },
+    onSettled: () => setRunningTask(null),
+  });
+
+  const handleRunTask = (name: string) => {
+    setRunningTask(name);
+    setActionError(null);
+    setRunResult(null);
+    runMutation.mutate({ name });
   };
+
+  const displayError = error ?? actionError;
 
   return (
     <div className="flex flex-col gap-4">
@@ -46,7 +49,11 @@ export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, run
           <Card.Description>远程订阅中的 cron 任务脚本，阶段③解耦后不再依赖 MITM</Card.Description>
         </Card.Header>
         <Card.Content>
-          {tasks.length === 0 ? (
+          {isLoading && tasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="text-sm text-muted">正在加载定时任务…</span>
+            </div>
+          ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <span className="text-sm text-muted">暂无定时任务</span>
               <span className="text-xs text-muted/80">远程资源中的 [task_local] / cron 脚本会在此列出</span>
@@ -79,7 +86,8 @@ export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, run
                           <Button
                             size="sm"
                             variant="secondary"
-                            isDisabled={busy}
+                            isPending={runningTask === task.name}
+                            isDisabled={runningTask !== null}
                             onPress={() => void handleRunTask(task.name)}
                           >
                             运行
@@ -94,7 +102,11 @@ export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, run
           )}
         </Card.Content>
         <Card.Footer>
-          <Button variant="secondary" isDisabled={busy} onPress={() => void refreshTasks()}>
+          <Button
+            variant="secondary"
+            isDisabled={isLoading && tasks.length === 0}
+            onPress={() => void queryClient.invalidateQueries({ queryKey: TASKS_KEY })}
+          >
             刷新
           </Button>
         </Card.Footer>
@@ -108,6 +120,16 @@ export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, run
             <Alert.Description className="break-all font-mono text-xs">
               {runResult.output || "$done()"}
             </Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {displayError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>操作失败</Alert.Title>
+            <Alert.Description>{displayError}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}

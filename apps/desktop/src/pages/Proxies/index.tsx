@@ -4,11 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { proxiesList, proxiesSelect, proxiesTestDelay, proxiesTestGroup, toErrorMessage } from "../../api";
 import type { GroupView, NodeView, ProxyList } from "../../api";
+import { PROXIES_KEY } from "../../api/keys";
 import { toastError, toastSuccess } from "../../toast";
-import { useAppStore } from "../../store";
 import NodeItem from "./NodeItem";
 
-const PROXIES_KEY = ["proxies_list"];
 const REFETCH_INTERVAL_MS = 5000;
 
 /** 分组类型中文标签。 */
@@ -34,8 +33,6 @@ function buildNodeMap(nodes: NodeView[]): Map<string, NodeView> {
 export default function Proxies() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const status = useAppStore((s) => s.status);
-  const _running = status?.core_running ?? false;
 
   // 测速中状态：分组名 → boolean；节点名 → boolean
   const [testingGroups, setTestingGroups] = useState<Set<string>>(new Set());

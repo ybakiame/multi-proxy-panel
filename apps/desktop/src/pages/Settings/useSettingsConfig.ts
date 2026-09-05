@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAppStore } from "../../store";
+import { useCallback, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAtomValue } from "jotai";
 import { toastError, toastSuccess, toastWarning } from "../../toast";
 import { toErrorMessage, platformInfo, tunAuthStatus } from "../../api";
+import { CONFIG_KEY, NOTIF_PERM_KEY, PLATFORM_KEY, TUN_AUTH_KEY } from "../../api/keys";
+import { lastActionErrorAtom } from "../../atoms/ui";
+import { useClientConfig, useSaveConfig } from "../../hooks/useClientConfig";
 import { isPermissionGranted } from "@tauri-apps/plugin-notification";
 import type { ClientConfig } from "../../api";
 
@@ -88,19 +92,18 @@ export interface UseSettingsConfigReturn {
   setNotifPerm: (value: string) => void;
   notifPermBusy: boolean;
   setNotifPermBusy: (value: boolean) => void;
-  refreshNotifPerm: () => Promise<void>;
-  refreshTunAuth: () => Promise<void>;
-  loadConfig: () => Promise<void>;
 }
 
 export function useSettingsConfig(): UseSettingsConfigReturn {
-  const { config, error, loadConfig, saveConfig: storeSaveConfig } = useAppStore();
-  const [os, setOs] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // 配置与共享错误均以 Query 缓存 / jotai atom 为权威源（替代原 store 双写）。
+  const { data: config = null } = useClientConfig();
+  const error = useAtomValue(lastActionErrorAtom);
+  const saveConfigMutation = useSaveConfig();
   const [mixedPort, setMixedPort] = useState(1080);
   const [tunEnabled, setTunEnabled] = useState(false);
   const [tunStack, setTunStack] = useState<string>("mixed");
   const [tunAutoRoute, setTunAutoRoute] = useState(true);
-  const [tunAuth, setTunAuth] = useState<string | null>(null);
   const [tunAuthError, setTunAuthError] = useState<string | null>(null);
   const [tunAuthBusy, setTunAuthBusy] = useState(false);
   const [clashApiEnabled, setClashApiEnabled] = useState(false);
@@ -113,71 +116,82 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [proxyTestResult, setProxyTestResult] = useState<string | null>(null);
   const [proxyTestError, setProxyTestError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [notifPerm, setNotifPerm] = useState<string>("unknown");
   const [notifPermBusy, setNotifPermBusy] = useState(false);
 
-  useEffect(() => {
-    void loadConfig();
-    void platformInfo()
-      .then((info) => setOs(info.os))
-      .catch(() => {
-        // command failure keeps unknown platform (render as desktop)
-      });
-  }, [loadConfig]);
+  // 平台探测（Android 显示「打开下载目录」引导；失败按桌面渲染）。
+  const { data: platformData } = useQuery<{ os: string }>({
+    queryKey: PLATFORM_KEY,
+    queryFn: platformInfo,
+    staleTime: Infinity,
+    retry: false,
+  });
 
-  useEffect(() => {
-    if (!config) {
-      return;
+  const os = platformData?.os ?? null;
+
+  // config 变化时在渲染期间同步表单本地状态（React 推荐的 adjust-state-during-render
+  // 模式，替代 effect 内同步 setState，满足 React Compiler 的 set-state-in-effect 限制）。
+  const [prevConfig, setPrevConfig] = useState(config);
+  if (prevConfig !== config) {
+    setPrevConfig(config);
+    if (config) {
+      setMixedPort(config.mixed_port);
+      setTunEnabled(config.tun_enabled);
+      setTunStack(config.tun_stack);
+      setTunAutoRoute(config.tun_auto_route);
+      setClashApiEnabled(config.clash_api_enabled);
+      setClashApiPort(config.clash_api_port);
+      setClashApiSecret(config.clash_api_secret);
+      setClashApiUi(config.clash_api_ui || "zashboard");
+      setGithubProxyPrefix(config.github_proxy_prefix || "");
+      setFetchViaLocalProxy(config.fetch_via_local_proxy);
     }
-    setMixedPort(config.mixed_port);
-    setTunEnabled(config.tun_enabled);
-    setTunStack(config.tun_stack);
-    setTunAutoRoute(config.tun_auto_route);
-    setClashApiEnabled(config.clash_api_enabled);
-    setClashApiPort(config.clash_api_port);
-    setClashApiSecret(config.clash_api_secret);
-    setClashApiUi(config.clash_api_ui || "zashboard");
-    setGithubProxyPrefix(config.github_proxy_prefix || "");
-    setFetchViaLocalProxy(config.fetch_via_local_proxy);
-  }, [config]);
+  }
 
   const isAndroid = os === "android";
 
-  const refreshNotifPerm = useCallback(async () => {
-    try {
-      const granted = await isPermissionGranted();
-      setNotifPerm(granted ? "granted" : "denied");
-    } catch {
-      setNotifPerm("unknown");
-    }
-  }, []);
+  // Android 通知权限查询（Query 缓存为权威源；失败保持 unknown）。
+  const { data: notifPermData } = useQuery<string>({
+    queryKey: NOTIF_PERM_KEY,
+    queryFn: async () => ((await isPermissionGranted()) ? "granted" : "denied"),
+    enabled: isAndroid,
+    retry: false,
+  });
+  const notifPerm = notifPermData ?? "unknown";
+  // 申请权限后直接回写缓存（NotificationSettings 消费）。
+  const setNotifPerm = useCallback(
+    (value: string) => {
+      queryClient.setQueryData(NOTIF_PERM_KEY, value);
+    },
+    [queryClient],
+  );
 
-  useEffect(() => {
-    if (isAndroid) {
-      void refreshNotifPerm();
-    }
-  }, [isAndroid, refreshNotifPerm]);
-
+  /**
+   * 配置即时保存：从 Query 缓存取最新配置叠加补丁（避免闭包旧值）。
+   * 保存结果通过全局 toast 反馈；失败时失效 CONFIG_KEY 重读回滚。
+   */
   const persist = useCallback(
     async (patch: Partial<ClientConfig>) => {
-      const current = useAppStore.getState().config;
+      const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
       if (!current) {
         return;
       }
       try {
-        const warning = await storeSaveConfig({ ...current, ...patch });
+        const { warning } = await saveConfigMutation.mutateAsync({ ...current, ...patch });
         if (warning) {
           toastWarning(warning);
         } else {
           toastSuccess("设置已保存");
         }
-        await loadConfig();
+        // 保存成功后 useSaveConfig 已用入参回写缓存；这里失效共享的
+        // ["config"] Query 缓存让其它消费者重读，而不是再手动 invoke 一遍。
+        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
       } catch (err) {
         toastError(toErrorMessage(err));
-        await loadConfig();
+        // 保存失败回滚：失效缓存触发重读
+        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
       }
     },
-    [storeSaveConfig, loadConfig],
+    [queryClient, saveConfigMutation],
   );
 
   const persistDebounced = useCallback(
@@ -190,23 +204,22 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     [persist],
   );
 
-  const refreshTunAuth = useCallback(async () => {
-    try {
-      setTunAuth(await tunAuthStatus());
-      setTunAuthError(null);
-    } catch (err) {
-      setTunAuthError(toErrorMessage(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!tunEnabled) {
-      setTunAuth(null);
-      setTunAuthError(null);
-      return;
-    }
-    void refreshTunAuth();
-  }, [tunEnabled, refreshTunAuth]);
+  // TUN 授权状态查询（桌面端且 TUN 启用时），Query 缓存为权威源。
+  const { data: tunAuthData } = useQuery<string>({
+    queryKey: TUN_AUTH_KEY,
+    queryFn: tunAuthStatus,
+    enabled: !isAndroid && tunEnabled,
+    retry: false,
+  });
+  // TUN 关闭时不展示授权状态。
+  const tunAuth = tunEnabled ? (tunAuthData ?? null) : null;
+  // 授权操作后直接回写缓存（NetworkSettings 消费）。
+  const setTunAuth = useCallback(
+    (value: string | null) => {
+      queryClient.setQueryData(TUN_AUTH_KEY, value);
+    },
+    [queryClient],
+  );
 
   return {
     config,
@@ -251,8 +264,5 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     setNotifPerm,
     notifPermBusy,
     setNotifPermBusy,
-    refreshNotifPerm,
-    refreshTunAuth,
-    loadConfig,
   };
 }

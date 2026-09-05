@@ -2,141 +2,93 @@
  * RemotesTab page component — composition of table, modals, and fetch result.
  */
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card } from "@heroui/react";
-import {
-  addRemote,
-  fetchRemotes,
-  getRemoteIcon,
-  listRemotes,
-  removeRemote,
-  updateRemote,
-  toErrorMessage,
-} from "../../../api";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { addRemote, fetchRemotes, removeRemote, updateRemote, toErrorMessage } from "../../../api";
 import type { FetchReport, RemoteResource } from "../../../api";
+import { REMOTES_KEY } from "../../../api/keys";
 import RemoteFormModal from "./RemoteFormModal";
 import RemoteTable from "./RemoteTable";
 
 interface RemotesTabProps {
   remotes: RemoteResource[];
-  setRemotes: React.Dispatch<React.SetStateAction<RemoteResource[]>>;
   iconCache: Record<string, string>;
-  setIconCache: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  busy: boolean;
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
+  isLoading: boolean;
   error: string | null;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
-  fetchResult: FetchReport | null;
-  setFetchResult: React.Dispatch<React.SetStateAction<FetchReport | null>>;
 }
 
-export default function RemotesTab({
-  remotes,
-  setRemotes,
-  iconCache,
-  setIconCache,
-  busy,
-  setBusy,
-  setError,
-  fetchResult,
-  setFetchResult,
-}: RemotesTabProps) {
+export default function RemotesTab({ remotes, iconCache, isLoading, error }: RemotesTabProps) {
+  const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editRemote, setEditRemote] = useState<RemoteResource | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [fetchResult, setFetchResult] = useState<FetchReport | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const refreshRemotes = useCallback(async () => {
-    try {
-      const list = await listRemotes();
-      setRemotes(list);
-      const icons: Record<string, string> = {};
-      await Promise.allSettled(
-        list
-          .filter((r) => r.icon)
-          .map(async (r) => {
-            const dataUrl = await getRemoteIcon(r.name);
-            if (dataUrl) icons[r.name] = dataUrl;
-          }),
-      );
-      setIconCache(icons);
-      setError(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-  }, [setRemotes, setIconCache, setError]);
+  const invalidateRemotes = () => {
+    void queryClient.invalidateQueries({ queryKey: REMOTES_KEY });
+  };
 
-  const handleAdd = async (resource: RemoteResource) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await addRemote(resource);
+  const addMutation = useMutation({
+    mutationFn: addRemote,
+    onSuccess: () => {
       setAddOpen(false);
-      await refreshRemotes();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
-  };
+      invalidateRemotes();
+    },
+    onError: (err) => setActionError(toErrorMessage(err)),
+  });
 
-  const handleRemove = async (name: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await removeRemote(name);
-      await refreshRemotes();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
-  };
+  const removeMutation = useMutation({
+    mutationFn: removeRemote,
+    onSuccess: invalidateRemotes,
+    onError: (err) => setActionError(toErrorMessage(err)),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: updateRemote,
+    onSuccess: () => {
+      setEditOpen(false);
+      setEditRemote(null);
+      invalidateRemotes();
+    },
+    onError: (err) => setActionError(toErrorMessage(err)),
+  });
+
+  const fetchMutation = useMutation({
+    mutationFn: fetchRemotes,
+    onSuccess: (result) => {
+      setFetchResult(result);
+      invalidateRemotes();
+    },
+    onError: (err) => setActionError(toErrorMessage(err)),
+  });
 
   const handleToggle = async (remote: RemoteResource) => {
     const next = { ...remote, enabled: !remote.enabled };
     setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
       await removeRemote(remote.name);
       await addRemote(next);
-      await refreshRemotes();
+      invalidateRemotes();
     } catch (err) {
-      setError(toErrorMessage(err));
-      await refreshRemotes();
+      setActionError(toErrorMessage(err));
+      invalidateRemotes();
     }
     setBusy(false);
   };
 
   const handleOpenEdit = (remote: RemoteResource) => {
     setEditRemote(remote);
-    setError(null);
+    setActionError(null);
     setEditOpen(true);
   };
 
-  const handleEditSave = async (resource: RemoteResource) => {
-    if (!editRemote) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await updateRemote(resource);
-      setEditOpen(false);
-      setEditRemote(null);
-      await refreshRemotes();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
-  };
-
-  const handleFetch = async () => {
-    setBusy(true);
-    setError(null);
-    setFetchResult(null);
-    try {
-      setFetchResult(await fetchRemotes());
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-    setBusy(false);
-  };
+  const displayError = error ?? actionError;
+  const isBusy =
+    busy || addMutation.isPending || removeMutation.isPending || updateMutation.isPending || fetchMutation.isPending;
 
   return (
     <div className="flex flex-col gap-4">
@@ -146,26 +98,36 @@ export default function RemotesTab({
           <Card.Description>脚本 / 配置片段订阅，按间隔拉取并落盘缓存</Card.Description>
         </Card.Header>
         <Card.Content>
-          <RemoteTable
-            remotes={remotes}
-            iconCache={iconCache}
-            busy={busy}
-            onToggle={handleToggle}
-            onEdit={handleOpenEdit}
-            onRemove={handleRemove}
-          />
+          {isLoading && remotes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="text-sm text-muted">正在加载远程资源…</span>
+            </div>
+          ) : (
+            <RemoteTable
+              remotes={remotes}
+              iconCache={iconCache}
+              busy={isBusy}
+              onToggle={handleToggle}
+              onEdit={handleOpenEdit}
+              onRemove={(name) => removeMutation.mutate(name)}
+            />
+          )}
         </Card.Content>
         <Card.Footer>
           <div className="flex w-full items-center justify-between gap-3">
             <Button
               variant="secondary"
-              isPending={busy}
-              isDisabled={remotes.length === 0}
-              onPress={() => void handleFetch()}
+              isPending={fetchMutation.isPending}
+              isDisabled={remotes.length === 0 || isBusy}
+              onPress={() => {
+                setFetchResult(null);
+                setActionError(null);
+                fetchMutation.mutate();
+              }}
             >
               立即更新
             </Button>
-            <Button variant="primary" isDisabled={busy} onPress={() => setAddOpen(true)}>
+            <Button variant="primary" isDisabled={isBusy} onPress={() => setAddOpen(true)}>
               添加资源
             </Button>
           </div>
@@ -193,13 +155,23 @@ export default function RemotesTab({
         </Alert>
       )}
 
+      {displayError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>操作失败</Alert.Title>
+            <Alert.Description>{displayError}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
       <RemoteFormModal
         mode="add"
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onSave={handleAdd}
-        busy={busy}
-        setError={setError}
+        onSave={async (resource) => addMutation.mutateAsync(resource)}
+        busy={addMutation.isPending}
+        setError={setActionError}
       />
 
       <RemoteFormModal
@@ -210,9 +182,9 @@ export default function RemotesTab({
           setEditRemote(null);
           setEditOpen(false);
         }}
-        onSave={handleEditSave}
-        busy={busy}
-        setError={setError}
+        onSave={async (resource) => updateMutation.mutateAsync(resource)}
+        busy={updateMutation.isPending}
+        setError={setActionError}
       />
     </div>
   );

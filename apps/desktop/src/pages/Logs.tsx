@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   clearLogs,
   exportLogs,
@@ -11,6 +12,7 @@ import {
   toErrorMessage,
 } from "../api";
 import type { LogEntry } from "../api";
+import { LOGS_KEY, LOG_FILES_KEY, PLATFORM_KEY } from "../api/keys";
 import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 import { toastError, toastSuccess } from "../toast";
 
@@ -70,79 +72,66 @@ function beautifyAndroidPath(path: string): string {
   return path.replace(/^\/data\/user\/0\//, "/data/data/");
 }
 
+const LOGS_REFETCH_INTERVAL_MS = 2000;
+
 export default function Logs() {
-  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const queryClient = useQueryClient();
   const [minLevel, setMinLevel] = useState<string>("info");
   const [limit, setLimit] = useState(500);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [exportCopied, setExportCopied] = useState(false);
-  const [os, setOs] = useState<string | null>(null);
-  const [logFiles, setLogFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const { data: os } = useQuery<string>({
+    queryKey: PLATFORM_KEY,
+    queryFn: async () => {
+      const info = await platformInfo();
+      return info.os;
+    },
+    staleTime: Infinity,
+    retry: false,
+  });
 
   const isAndroid = os === "android";
 
-  /** 拉取日志（自动刷新静默调用，不闪烁按钮状态）。 */
-  const refresh = useCallback(async () => {
-    try {
-      setEntries(await getLogs(limit, minLevel || undefined));
-      setError(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
-  }, [limit, minLevel]);
+  const {
+    data: entries = [],
+    error: logsError,
+    isLoading: logsLoading,
+  } = useQuery<LogEntry[]>({
+    queryKey: [...LOGS_KEY, limit, minLevel],
+    queryFn: () => getLogs(limit, minLevel || undefined),
+    refetchInterval: autoRefresh ? LOGS_REFETCH_INTERVAL_MS : false,
+    retry: false,
+  });
 
-  // 初始加载 + 自动刷新（2s，默认开）。
-  useEffect(() => {
-    void refresh();
-    if (!autoRefresh) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void refresh();
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [refresh, autoRefresh]);
-
-  // 平台探测（Android 显示「打开下载目录」引导；失败按桌面渲染）。
-  useEffect(() => {
-    void platformInfo()
-      .then((info) => setOs(info.os))
-      .catch(() => {
-        // 命令失败保持未知平台（按桌面渲染）。
-      });
-  }, []);
-
-  // 历史日志文件列表初始加载。
-  const refreshLogFiles = useCallback(async () => {
-    setLogFiles(await listLogFiles());
-    setFilesError(null);
-  }, []);
-
-  useEffect(() => {
-    void refreshLogFiles().catch((err) => setFilesError(toErrorMessage(err)));
-  }, [refreshLogFiles]);
+  const { data: logFiles = [] } = useQuery<string[]>({
+    queryKey: LOG_FILES_KEY,
+    queryFn: listLogFiles,
+    retry: false,
+  });
 
   // 当前选中文件被日志滚动清理/移除时，同步清空选择与内容。
-  useEffect(() => {
+  const prevLogFilesRef = useState(logFiles);
+  if (prevLogFilesRef[0] !== logFiles) {
     if (selectedFile && !logFiles.includes(selectedFile)) {
       setSelectedFile(null);
       setFileContent(null);
     }
-  }, [logFiles, selectedFile]);
+    prevLogFilesRef[1](logFiles);
+  }
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: LOGS_KEY });
     } catch {
-      // refresh 内部已处理错误
+      // invalidateQueries 不抛异常
     }
     setRefreshing(false);
   };
@@ -170,7 +159,7 @@ export default function Logs() {
     try {
       await clearLogs();
       toastSuccess("日志已清空");
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: LOGS_KEY });
     } catch (err) {
       toastError(toErrorMessage(err));
     }
@@ -179,9 +168,9 @@ export default function Logs() {
   const handleRefreshFiles = async () => {
     setFilesLoading(true);
     try {
-      await refreshLogFiles();
-    } catch (err) {
-      setFilesError(toErrorMessage(err));
+      await queryClient.invalidateQueries({ queryKey: LOG_FILES_KEY });
+    } catch {
+      // ignore
     }
     setFilesLoading(false);
   };
@@ -194,11 +183,11 @@ export default function Logs() {
     }
     setSelectedFile(name);
     setFileContent(null);
-    setFilesError(null);
+    setFileError(null);
     try {
       setFileContent(await readLogFileTail(name, 1000));
     } catch (err) {
-      setFilesError(toErrorMessage(err));
+      setFileError(toErrorMessage(err));
       setFileContent(null);
     }
   };
@@ -285,7 +274,7 @@ export default function Logs() {
               </Switch.Content>
             </Switch>
 
-            <Button variant="secondary" isPending={refreshing} onPress={() => void handleRefresh()}>
+            <Button variant="secondary" isPending={refreshing || logsLoading} onPress={() => void handleRefresh()}>
               刷新
             </Button>
           </div>
@@ -386,12 +375,12 @@ export default function Logs() {
             </Button>
           </div>
 
-          {filesError && (
+          {fileError && (
             <Alert status="danger">
               <Alert.Indicator />
               <Alert.Content>
                 <Alert.Title>历史日志读取失败</Alert.Title>
-                <Alert.Description className="break-all">{filesError}</Alert.Description>
+                <Alert.Description className="break-all">{fileError}</Alert.Description>
               </Alert.Content>
             </Alert>
           )}
@@ -411,12 +400,12 @@ export default function Logs() {
         </Card.Content>
       </Card>
 
-      {error && (
+      {logsError && (
         <Alert status="danger">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>日志加载失败</Alert.Title>
-            <Alert.Description className="break-all">{error}</Alert.Description>
+            <Alert.Description className="break-all">{toErrorMessage(logsError)}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
