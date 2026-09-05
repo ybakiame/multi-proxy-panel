@@ -53,6 +53,7 @@ export function useRemoteSniff(): UseRemoteSniffReturn {
         }
         setDetectInfo(info);
 
+        setDetecting(false);
         return {
           kind,
           dialect,
@@ -66,9 +67,8 @@ export function useRemoteSniff(): UseRemoteSniffReturn {
         lastDetectedUrlRef.current = "";
         setDetectInfo(null);
         setError(toErrorMessage(err));
-        return null;
-      } finally {
         setDetecting(false);
+        return null;
       }
     },
     [],

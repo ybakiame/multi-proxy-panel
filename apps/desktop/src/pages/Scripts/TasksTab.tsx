@@ -34,9 +34,8 @@ export default function TasksTab({ tasks, setTasks, busy, setBusy, setError, run
       setRunResult({ name, output });
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

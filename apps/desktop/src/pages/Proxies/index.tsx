@@ -77,17 +77,16 @@ export default function Proxies() {
         const msg = toErrorMessage(err);
         setActionError(msg);
         toastError(msg);
-      } finally {
-        setSelectBusy((prev) => {
-          const next = new Set(prev);
-          next.delete(`${group}:${name}`);
-          return next;
-        });
-        // 延迟恢复轮询，让 invalidate 先完成
-        window.setTimeout(() => {
-          skipPollRef.current = false;
-        }, 1500);
       }
+      setSelectBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(`${group}:${name}`);
+        return next;
+      });
+      // 延迟恢复轮询，让 invalidate 先完成
+      window.setTimeout(() => {
+        skipPollRef.current = false;
+      }, 1500);
     },
     [queryClient],
   );
@@ -112,16 +111,15 @@ export default function Proxies() {
         const msg = toErrorMessage(err);
         setActionError(msg);
         toastError(msg);
-      } finally {
-        setTestingNodes((prev) => {
-          const next = new Set(prev);
-          next.delete(name);
-          return next;
-        });
-        window.setTimeout(() => {
-          skipPollRef.current = false;
-        }, 1500);
       }
+      setTestingNodes((prev) => {
+        const next = new Set(prev);
+        next.delete(name);
+        return next;
+      });
+      window.setTimeout(() => {
+        skipPollRef.current = false;
+      }, 1500);
     },
     [queryClient],
   );
@@ -157,16 +155,15 @@ export default function Proxies() {
         const msg = toErrorMessage(err);
         setActionError(msg);
         toastError(msg);
-      } finally {
-        setTestingGroups((prev) => {
-          const next = new Set(prev);
-          next.delete(group.name);
-          return next;
-        });
-        window.setTimeout(() => {
-          skipPollRef.current = false;
-        }, 1500);
       }
+      setTestingGroups((prev) => {
+        const next = new Set(prev);
+        next.delete(group.name);
+        return next;
+      });
+      window.setTimeout(() => {
+        skipPollRef.current = false;
+      }, 1500);
     },
     [queryClient],
   );

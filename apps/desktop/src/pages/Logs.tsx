@@ -141,9 +141,10 @@ export default function Logs() {
     setRefreshing(true);
     try {
       await refresh();
-    } finally {
-      setRefreshing(false);
+    } catch {
+      // refresh 内部已处理错误
     }
+    setRefreshing(false);
   };
 
   const handleExport = async () => {
@@ -181,9 +182,8 @@ export default function Logs() {
       await refreshLogFiles();
     } catch (err) {
       setFilesError(toErrorMessage(err));
-    } finally {
-      setFilesLoading(false);
     }
+    setFilesLoading(false);
   };
 
   const handleSelectFile = async (name: string) => {

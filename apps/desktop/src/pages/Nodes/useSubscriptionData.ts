@@ -60,9 +60,8 @@ export function useSubscriptionData() {
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleRemove = async (id: string) => {
@@ -73,9 +72,8 @@ export function useSubscriptionData() {
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleToggle = async (sub: SubscriptionView, onSuccess?: () => Promise<void>) => {
@@ -87,9 +85,8 @@ export function useSubscriptionData() {
       await onSuccess?.();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleRefresh = async (id: string) => {
@@ -102,9 +99,8 @@ export function useSubscriptionData() {
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setRefreshingId(null);
     }
+    setRefreshingId(null);
   };
 
   const handleEditSave = async (
@@ -121,9 +117,8 @@ export function useSubscriptionData() {
       await refreshSubs();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return {

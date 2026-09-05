@@ -152,9 +152,8 @@ export default function Override() {
       await refreshList();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleCreate = async () => {
@@ -171,9 +170,8 @@ export default function Override() {
       void selectProfile(created.id);
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleDelete = async () => {
@@ -192,9 +190,8 @@ export default function Override() {
       await refreshList();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

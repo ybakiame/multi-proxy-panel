@@ -38,9 +38,8 @@ export default function NetworkSettings({ settings }: NetworkSettingsProps) {
       setTunAuth(await authorizeTun());
     } catch (err) {
       setTunAuthError(toErrorMessage(err));
-    } finally {
-      setTunAuthBusy(false);
     }
+    setTunAuthBusy(false);
   };
 
   return (

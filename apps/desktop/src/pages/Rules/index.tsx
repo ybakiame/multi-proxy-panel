@@ -59,9 +59,8 @@ export default function Rules() {
       setError(null);
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -176,9 +175,8 @@ export default function Rules() {
         await loadData();
       } catch (err) {
         toastError(toErrorMessage(err));
-      } finally {
-        setBusy(false);
       }
+      setBusy(false);
     },
     [loadData],
   );
@@ -192,9 +190,8 @@ export default function Rules() {
         await loadData();
       } catch (err) {
         toastError(toErrorMessage(err));
-      } finally {
-        setBusy(false);
       }
+      setBusy(false);
     },
     [loadData],
   );
@@ -220,9 +217,8 @@ export default function Rules() {
       await loadData();
     } catch (err) {
       toastError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }, [loadData]);
 
   const appliedTemplateIds = useMemo(() => new Set(data?.applied_templates.map((t) => t.template_id) ?? []), [data]);

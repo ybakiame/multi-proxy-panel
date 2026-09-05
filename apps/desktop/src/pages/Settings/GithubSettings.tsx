@@ -32,9 +32,8 @@ export default function GithubSettings({ settings }: GithubSettingsProps) {
       setProxyTestResult(ms ? `代理可用（${ms} ms）` : result);
     } catch (err) {
       setProxyTestError(toErrorMessage(err));
-    } finally {
-      setProxyTestPending(false);
     }
+    setProxyTestPending(false);
   };
 
   return (

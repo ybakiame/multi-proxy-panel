@@ -74,9 +74,8 @@ export default function RemotesTab({
       await refreshRemotes();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleRemove = async (name: string) => {
@@ -87,9 +86,8 @@ export default function RemotesTab({
       await refreshRemotes();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleToggle = async (remote: RemoteResource) => {
@@ -103,9 +101,8 @@ export default function RemotesTab({
     } catch (err) {
       setError(toErrorMessage(err));
       await refreshRemotes();
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleOpenEdit = (remote: RemoteResource) => {
@@ -125,9 +122,8 @@ export default function RemotesTab({
       await refreshRemotes();
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const handleFetch = async () => {
@@ -138,9 +134,8 @@ export default function RemotesTab({
       setFetchResult(await fetchRemotes());
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

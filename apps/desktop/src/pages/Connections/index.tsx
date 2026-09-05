@@ -100,12 +100,11 @@ export default function Connections() {
         const msg = toErrorMessage(err);
         setActionError(msg);
         toastError(msg);
-      } finally {
-        setClosingId(null);
-        window.setTimeout(() => {
-          skipPollRef.current = false;
-        }, 1500);
       }
+      setClosingId(null);
+      window.setTimeout(() => {
+        skipPollRef.current = false;
+      }, 1500);
     },
     [queryClient],
   );

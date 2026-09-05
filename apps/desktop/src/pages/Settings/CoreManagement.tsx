@@ -67,9 +67,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
       await refreshCores();
     } catch (err) {
       setCoresError(toErrorMessage(err));
-    } finally {
-      setCoresBusy(false);
     }
+    setCoresBusy(false);
   };
 
   const handleDetectSystem = async () => {
@@ -82,9 +81,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
       await refreshCores();
     } catch (err) {
       setCoresError(toErrorMessage(err));
-    } finally {
-      setCoresBusy(false);
     }
+    setCoresBusy(false);
   };
 
   const handleDeleteCore = async (core: LocalCoreView) => {
@@ -98,9 +96,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
       await refreshCores();
     } catch (err) {
       setCoresError(toErrorMessage(err));
-    } finally {
-      setCoresBusy(false);
     }
+    setCoresBusy(false);
   };
 
   const activeCore = cores.find((core) => core.active) ?? null;

@@ -24,9 +24,8 @@ export default function ImportTab({ busy, setBusy, setError }: ImportTabProps) {
       setImportResult(await importConfig(importText, importDialect));
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

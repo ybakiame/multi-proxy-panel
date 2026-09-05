@@ -60,9 +60,8 @@ export default function Mitm() {
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
     }
+    setSaving(false);
   };
 
   const caDir = config ? `${config.data_dir}/certs` : "-";

@@ -211,9 +211,8 @@ export default function Dashboard() {
       if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
         toastError(message);
       }
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
 
   const handleStop = async () => {
@@ -226,9 +225,8 @@ export default function Dashboard() {
       if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
         toastError(message);
       }
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
 
   /** 发起系统 VPN 授权（Android）：成功后引导重新启动代理。 */
@@ -240,9 +238,8 @@ export default function Dashboard() {
       toastSuccess("VPN 授权成功，请重新启动代理");
     } catch (err) {
       toastError(toErrorMessage(err));
-    } finally {
-      setVpnAuthBusy(false);
     }
+    setVpnAuthBusy(false);
   };
 
   /** 选择生效订阅：订阅自身格式推导的核心与当前核心不一致时，同一次持久化联动切换。
@@ -269,9 +266,8 @@ export default function Dashboard() {
         toastWarning("订阅格式未知，未联动切换核心");
         await loadConfig();
         return;
-      } finally {
-        setRefreshingSub(false);
       }
+      setRefreshingSub(false);
     }
 
     // 一次 persistConfig 同时写入 active_subscription_id 与 core_type（避免两次保存与
@@ -316,9 +312,8 @@ export default function Dashboard() {
       await loadConfig();
     } catch (err) {
       setActionError(toErrorMessage(err));
-    } finally {
-      setRuleModeBusy(null);
     }
+    setRuleModeBusy(null);
   };
 
   const handleCopyLink = async () => {
