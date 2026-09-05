@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
 import { getMitmCa, type MitmCaView } from "../api";
-import { MobileBackHeader } from "../layout/MobileBackHeader";
+import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 import { useAppStore } from "../store";
 
 export default function Mitm() {

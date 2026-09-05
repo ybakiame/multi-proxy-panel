@@ -11,7 +11,7 @@ import {
   toErrorMessage,
 } from "../api";
 import type { LogEntry } from "../api";
-import { MobileBackHeader } from "../layout/MobileBackHeader";
+import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 import { toastError, toastSuccess } from "../toast";
 
 /** 级别过滤选项（空串 = 不过滤；其余与后端 `min_level` 对齐，默认 info）。 */

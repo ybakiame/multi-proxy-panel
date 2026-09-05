@@ -19,7 +19,7 @@ import type {
   RuleSetStatusView,
 } from "../../api";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { MobileBackHeader } from "../../layout/MobileBackHeader";
+import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import { toastError, toastSuccess } from "../../toast";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";

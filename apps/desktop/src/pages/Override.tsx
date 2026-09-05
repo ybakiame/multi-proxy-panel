@@ -9,7 +9,7 @@ import { Alert, AlertDialog, Button, Card, Chip, Input, Label, ListBox, Modal, S
 import clsx from "clsx";
 import { createProfile, deleteProfile, getProfile, listProfiles, toErrorMessage, updateProfile } from "../api";
 import type { CoreType, ProfileDetailView, ProfileView } from "../api";
-import { MobileBackHeader } from "../layout/MobileBackHeader";
+import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 
 const JS_PLACEHOLDER = `function main(config) {
   // 在这里修改最终生成的配置

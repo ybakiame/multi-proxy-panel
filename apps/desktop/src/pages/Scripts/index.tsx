@@ -3,7 +3,7 @@ import { Alert, Tabs } from "@heroui/react";
 import { listRemotes, listTasks, getRemoteIcon, toErrorMessage } from "../../api";
 import type { RemoteResource, TaskScriptView } from "../../api";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { MobileBackHeader } from "../../layout/MobileBackHeader";
+import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import RemotesTab from "./RemotesTab";
 import TasksTab from "./TasksTab";
 import ImportTab from "./ImportTab";

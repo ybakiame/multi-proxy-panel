@@ -1,9 +1,9 @@
 import { GlobeAltIcon } from "@heroicons/react/24/outline";
 import clsx from "clsx";
 import { NavLink } from "react-router-dom";
-import { useCapabilities } from "../hooks/useCapabilities";
-import { DESKTOP_NAV_ITEMS } from "./nav/desktop";
-import type { DesktopNavItem } from "./nav/desktop";
+import { useCapabilities } from "../../hooks/useCapabilities";
+import { DESKTOP_NAV_ITEMS } from "../config/nav/desktop";
+import type { DesktopNavItem } from "../config/nav/desktop";
 
 function visibleNavItems(capabilities: ReturnType<typeof useCapabilities>["data"]) {
   if (!capabilities) return DESKTOP_NAV_ITEMS;

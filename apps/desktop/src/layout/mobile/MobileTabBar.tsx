@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { NavLink } from "react-router-dom";
-import { useCapabilities } from "../hooks/useCapabilities";
-import { MOBILE_TAB_ITEMS } from "./nav/mobile";
+import { useCapabilities } from "../../hooks/useCapabilities";
+import { MOBILE_TAB_ITEMS } from "../config/nav/mobile";
 
 /**
  * 移动端底部 TabBar：`lg`（1024px）以下显示，桌面端隐藏。

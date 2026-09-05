@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Card } from "@heroui/react";
 import ConfigPreviewModal from "../../components/ConfigPreviewModal";
-import { MobileBackHeader } from "../../layout/MobileBackHeader";
+import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import { useAppStore } from "../../store";
 import { useSubscriptionData } from "./useSubscriptionData";
 import { SubscriptionTable } from "./SubscriptionTable";
