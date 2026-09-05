@@ -3,6 +3,7 @@ import { ToastProvider, useTheme } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { toastModeOverride } from "./api";
 import { Toaster } from "./components/Toaster";
+import { isTauriEnv } from "./env";
 import { setToastMode } from "./toast";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { DesktopSidebar } from "./layout/desktop/DesktopSidebar";
@@ -179,6 +180,10 @@ export default function App() {
   const [heroToastEnabled, setHeroToastEnabled] = useState(true);
 
   useEffect(() => {
+    // 非 Tauri 环境（浏览器直接打开 devUrl）无 IPC 桥，跳过命令调用。
+    if (!isTauriEnv) {
+      return;
+    }
     let cancelled = false;
     toastModeOverride()
       .then((mode) => {
@@ -197,6 +202,22 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // 浏览器直接打开 devUrl 时 Tauri 未注入 __TAURI_INTERNALS__，任何 invoke 都会抛
+  // "Cannot read properties of undefined (reading 'invoke')"；拦截渲染并给出引导，
+  // 避免各页面 Query 轮询反复失败、错误 Alert 刷屏。刻意用原生元素渲染（与 ErrorBoundary 同理）。
+  if (!isTauriEnv) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
+        <h1 className="text-xl font-semibold">请在客户端内运行</h1>
+        <p className="max-w-md text-center text-sm text-muted">
+          当前页面通过浏览器直接访问，缺少 Tauri 运行环境，所有本地命令不可用。 请使用{" "}
+          <code className="rounded bg-default-100 px-1 py-0.5">bun run tauri dev</code> 启动桌面客户端，或运行已构建的
+          ProxyPanel 应用。
+        </p>
+      </div>
+    );
+  }
 
   return (
     <HashRouter>
