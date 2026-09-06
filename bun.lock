@@ -49,6 +49,29 @@
         "vite": "^8.2.0",
       },
     },
+    "apps/mobile": {
+      "name": "pp-client-mobile-ui",
+      "version": "0.1.0",
+      "dependencies": {
+        "@heroui/react": "3.2.2",
+        "@heroui/styles": "^3.2.2",
+        "@pp/client-core": "workspace:*",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+      },
+      "devDependencies": {
+        "@tailwindcss/vite": "^4.3.2",
+        "@tauri-apps/cli": "^2",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^6.1.0",
+        "oxfmt": "^0.64.0",
+        "oxlint": "^1.79.0",
+        "tailwindcss": "^4.3.2",
+        "typescript": "^7.0.2",
+        "vite": "^8.2.0",
+      },
+    },
     "apps/panel": {
       "name": "pp-web",
       "version": "0.1.0",
@@ -707,6 +730,8 @@
     "picomatch": ["picomatch@4.0.7", "", {}, "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="],
 
     "postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
+
+    "pp-client-mobile-ui": ["pp-client-mobile-ui@workspace:apps/mobile"],
 
     "pp-client-ui": ["pp-client-ui@workspace:apps/desktop"],
 
