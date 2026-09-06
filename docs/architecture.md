@@ -46,7 +46,7 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩
 └─────────────────────────────────────────────────────────────┘
 ```
 
-桌面客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心并叠加 MITM 与脚本引擎，代理流量直连远端节点。
+桌面客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动 sing-box 核心并叠加 MITM 与脚本引擎，代理流量直连远端节点。
 
 > **注：MITM 为桌面端能力（Android 受系统限制不支持）。**
 
@@ -349,7 +349,7 @@ Hub 写入 host_metrics 表
 
 ## 客户端架构
 
-桌面客户端（**Client**）运行在用户设备上，是 ProxyPanel 的用户侧组件：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box / mihomo 核心，并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
+桌面客户端（**Client**）运行在用户设备上，是 ProxyPanel 的用户侧组件：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（客户端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
 
 > **注：MITM 为桌面端能力（Android 受系统限制不支持）。**
 
@@ -390,10 +390,10 @@ Hub 写入 host_metrics 表
 承载客户端全部业务逻辑，供 pp-client-ui 调用：
 
 - **配置**: `ClientConfig`（`client.json`）定义客户端配置，含 `mixed_port`（默认 17890）与 MITM 配置
-- **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅，解析 `subscription-userinfo` 响应头（upload / download / total / expire）
-- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地核心启动配置，构建 **MITM 链路**——sing-box 为双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则；mihomo 用显式 listeners 声明替代顶层 mixed-port，rules 前插 `AND((IN-NAME,main-in),(DOMAIN-SUFFIX,<suffix>)),pp-mitm` / `AND((IN-NAME,main-in),(DOMAIN,<exact>)),pp-mitm` 规则
+- **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅（Clash 节点经 `node_convert::mihomo_to_singbox` 转换为 sing-box 节点），解析 `subscription-userinfo` 响应头（upload / download / total / expire）
+- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地 sing-box 启动配置，构建 **MITM 链路**——双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则
 - **MITM 编排**（`mitm.rs`）: MITM 上游指向本机核心回流 mixed 入站端口（默认 `mixed_port + 1`），解密后的流量回流核心继续正常路由
-- **核心进程**（`runner.rs`）: `CoreRunner` 封装 pp-core 的 `CoreManagerFactory`，管理 sing-box / mihomo 子进程
+- **核心进程**（`runner.rs`）: `CoreRunner` 封装 pp-core 的 `CoreManagerFactory`，管理 sing-box 子进程
 - **系统代理**（`sysproxy.rs`）: `SystemProxy` trait + 平台实现——macOS `networksetup`、Windows `reg add`（Internet Settings）、Linux `gsettings`（GNOME），命令构造为纯函数便于单测断言，可注入 `MockSystemProxy`
 - **远程订阅**（`remote.rs`）: `RemoteManager` 定时拉取远程脚本 / 重写片段，写本地缓存（`data_dir/remote_cache/<name>.json`），运行期 `load_cached` 合并
 - **导入**（`import.rs`）: 把 QX / Surge / Loon 的 rewrite / script / task / mitm 片段经 `parse_import` 解析为 pp-mitm 规则与 pp-script 任务，未知行跳过并记 warning
@@ -417,7 +417,7 @@ App → 系统代理 → 核心主 mixed inbound (mixed_port)
 ```
 
 1. App 的请求经系统代理指向核心主 mixed 入站（`main-in`，监听 `mixed_port`）
-2. 命中 MITM 白名单的域名：由 route 白名单规则（sing-box `inbound = [main-in]` / mihomo `AND((IN-NAME,main-in),…)`）匹配，经 http outbound 转发到 `pp-mitm`
+2. 命中 MITM 白名单的域名：由 route 白名单规则（`inbound = [main-in]`）匹配，经 http outbound 转发到 `pp-mitm`
 3. pp-mitm 完成 CA 解密、脚本钩子、重写与抓包后，经 `UpstreamProxy::Http` 转发到核心回流入站（`mitm-return`，监听 `mixed_port + 1`），回到核心后走正常路由链到远端节点
 4. 其余流量（含 wss）不经过 MITM，直接正常路由到远端节点
 
