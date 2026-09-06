@@ -15,6 +15,7 @@ import {
   toErrorMessage,
   toastError,
   toastSuccess,
+  useProxyStatus,
   viewToInput,
 } from "@pp/client-core";
 import type {
@@ -60,6 +61,10 @@ async function fetchRulesData(): Promise<RulesData> {
  */
 export default function Rules() {
   const queryClient = useQueryClient();
+  const { data: status } = useProxyStatus();
+  // 本地规则 / 模板 / 规则集在核心启动时注入运行配置，运行中变更不热更新：核心运行中
+  // 成功 toast 追加「重启代理后生效」，未运行保持动作原文案（下次启动自然生效）。
+  const coreRunning = status?.core_running ?? false;
   const {
     data,
     isLoading,
@@ -100,11 +105,19 @@ export default function Rules() {
     }
   };
 
+  /**
+   * 规则变更成功 toast 分化（本地规则 / 模板 / 规则集均在核心启动时注入，运行中变更不热更新）：
+   * 核心运行中 → 追加「重启代理后生效」提示；未运行 → 保持动作原文案（下次启动自然生效）。
+   */
+  const toastRuleSaved = (base: string) => {
+    toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
+  };
+
   // ---- 总开关 / 规则列表写操作（persist 模式） ----
   const handleToggleEnabled = async (next: boolean) => {
     if (!currentCore) return;
     if (await persist({ ...viewToInput(currentCore), enabled: next })) {
-      toastSuccess(next ? "本地规则已启用" : "本地规则已关闭");
+      toastRuleSaved(next ? "本地规则已启用" : "本地规则已关闭");
     }
   };
 
@@ -112,7 +125,7 @@ export default function Rules() {
     if (!currentCore) return;
     const nextRules = currentCore.rules.map((r) => (r.id === rule.id ? { ...r, enabled: next } : r));
     if (await persist({ ...viewToInput(currentCore), rules: nextRules })) {
-      toastSuccess(next ? `已启用规则「${ruleSummary(rule)}」` : `已停用规则「${ruleSummary(rule)}」`);
+      toastRuleSaved(next ? `已启用规则「${ruleSummary(rule)}」` : `已停用规则「${ruleSummary(rule)}」`);
     }
   };
 
@@ -128,7 +141,7 @@ export default function Rules() {
       rules: rules.map((r, i) => ({ ...r, sort_order: i })),
     };
     if (await persist(next)) {
-      toastSuccess("规则顺序已更新");
+      toastRuleSaved("规则顺序已更新");
     }
   };
 
@@ -141,7 +154,7 @@ export default function Rules() {
       : [...currentCore.rules, { ...rule, sort_order: currentCore.rules.length }];
     const ok = await persist({ ...viewToInput(currentCore), rules: nextRules });
     if (ok) {
-      toastSuccess(exists ? "规则已更新" : "规则已添加");
+      toastRuleSaved(exists ? "规则已更新" : "规则已添加");
     }
     return ok;
   };
@@ -152,7 +165,7 @@ export default function Rules() {
     setPendingDelete(null);
     const nextRules = currentCore.rules.filter((r) => r.id !== target.id);
     if (await persist({ ...viewToInput(currentCore), rules: nextRules })) {
-      toastSuccess("规则已删除");
+      toastRuleSaved("规则已删除");
     }
   };
 
@@ -160,7 +173,7 @@ export default function Rules() {
   const handleApplyTemplate = async (templateId: string): Promise<boolean> => {
     try {
       await localOverrideApplyTemplate(templateId);
-      toastSuccess("模板已应用");
+      toastRuleSaved("模板已应用");
       invalidate();
       return true;
     } catch (err) {
@@ -172,7 +185,7 @@ export default function Rules() {
   const handleRevertTemplate = async (templateId: string): Promise<boolean> => {
     try {
       await localOverrideRevertTemplate(templateId);
-      toastSuccess("模板已撤销");
+      toastRuleSaved("模板已撤销");
       invalidate();
       return true;
     } catch (err) {
@@ -185,7 +198,7 @@ export default function Rules() {
   const handleToggleRuleset = async (communityId: string, subscribed: boolean): Promise<boolean> => {
     try {
       await localOverrideToggleRuleset(communityId, subscribed);
-      toastSuccess(subscribed ? "已订阅规则集" : "已取消订阅规则集");
+      toastRuleSaved(subscribed ? "已订阅规则集" : "已取消订阅规则集");
       invalidate();
       return true;
     } catch (err) {
@@ -197,7 +210,7 @@ export default function Rules() {
   const handleUpdateRulesetsNow = async (): Promise<boolean> => {
     try {
       const updated = await localOverrideUpdateRulesetsNow();
-      toastSuccess(`已更新 ${updated} 个规则集`);
+      toastRuleSaved(`已更新 ${updated} 个规则集`);
       invalidate();
       return true;
     } catch (err) {

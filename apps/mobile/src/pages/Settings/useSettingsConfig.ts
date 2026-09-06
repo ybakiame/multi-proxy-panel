@@ -89,7 +89,9 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [clashApiSecretDraft, setClashApiSecretDraft] = useState("");
   const [githubProxyPrefixDraft, setGithubProxyPrefixDraft] = useState("");
 
-  const [prevConfig, setPrevConfig] = useState(config);
+  // 初始为 undefined（而非 config）：组件重新挂载时若 config 已缓存（有值），
+  // 首渲染 prevConfig !== config 成立 → 渲染期回流执行，草稿回显初始值而非残留 false/空串。
+  const [prevConfig, setPrevConfig] = useState<ClientConfig | undefined>(undefined);
   if (prevConfig !== config) {
     setPrevConfig(config);
     if (config) {
