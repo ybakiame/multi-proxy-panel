@@ -1,7 +1,5 @@
 //! Service startup/shutdown methods for [`ClientState`].
 
-#[cfg(target_os = "android")]
-use pp_common::CoreType;
 use pp_common::PanelResult;
 use std::net::{Ipv4Addr, SocketAddr};
 
@@ -24,16 +22,10 @@ impl ClientState {
         tracing::info!("Starting core (Android built-in libbox)");
         #[cfg(not(target_os = "android"))]
         tracing::info!(binary = %self.config.core_binary.display(), "Starting core");
-        let core = CoreRunner::create(
-            self.config.core_type,
-            &self.config.core_binary,
-            &self.config.data_dir,
-        )?;
+        let core = CoreRunner::create(&self.config.core_binary, &self.config.data_dir)?;
 
         // Before Android startup, write the final config sent to core to disk with credentials redacted: uuid/password/server masked as
-        // "***" and written to data_dir/logs/, file name distinguished by core type — sing-box keeps
-        // last_start_config.json (pretty JSON), mihomo writes last_start_config.yaml
-        // (serde_yaml serialization, consistent with mihomo's actual YAML format). This file is included in log export zip,
+        // "***" and written to data_dir/logs/last_start_config.json (pretty JSON). This file is included in log export zip,
         // for troubleshooting to confirm the real config reaching the core. The whole process is best-effort: any
         // IO failure only logs a warning, never affects the startup flow.
         #[cfg(target_os = "android")]
@@ -43,25 +35,16 @@ impl ClientState {
                 std::fs::create_dir_all(&logs_dir)?;
                 let mut redacted = config_json.clone();
                 super::compat::redact_config_credentials(&mut redacted);
-                let (file_name, content) = if self.config.core_type == CoreType::Mihomo {
-                    (
-                        "last_start_config.yaml",
-                        serde_yaml::to_string(&redacted).map_err(std::io::Error::other)?,
-                    )
-                } else {
-                    (
-                        "last_start_config.json",
-                        serde_json::to_string_pretty(&redacted).map_err(std::io::Error::other)?,
-                    )
-                };
-                let path = logs_dir.join(file_name);
+                let content =
+                    serde_json::to_string_pretty(&redacted).map_err(std::io::Error::other)?;
+                let path = logs_dir.join("last_start_config.json");
                 std::fs::write(&path, content)?;
                 Ok(path)
             })();
             match result {
                 Ok(path) => tracing::info!(
                     path = %path.display(),
-                    "Wrote redacted final core config to disk (sing-box as JSON / mihomo as YAML, included in log export zip)"
+                    "Wrote redacted final core config to disk (JSON, included in log export zip)"
                 ),
                 Err(e) => tracing::warn!(
                     error = %e,

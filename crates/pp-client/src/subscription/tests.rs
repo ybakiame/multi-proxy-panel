@@ -34,99 +34,6 @@ async fn spawn_server(app: axum::Router) -> String {
     format!("http://{addr}")
 }
 
-// ---------- Legacy Hub path regression ----------
-
-#[tokio::test]
-async fn fetch_singbox_config_parses_config_and_info() {
-    let app = axum::Router::new().route(
-        "/sub/{token}",
-        axum::routing::get(|| async {
-            (
-                [(
-                    "subscription-userinfo",
-                    "upload=100; download=200; total=1000; expire=1700000000",
-                )],
-                SUB_JSON,
-            )
-        }),
-    );
-    let base = spawn_server(app).await;
-
-    let fetcher = SubscriptionFetcher::new();
-    let (config, info) = fetcher.fetch_singbox_config(&base, "tok").await.unwrap();
-
-    assert_eq!(config["outbounds"][0]["tag"], "n1");
-    assert_eq!(config["route"]["final"], "n1");
-
-    let info = info.unwrap();
-    assert_eq!(info.upload, Some(100));
-    assert_eq!(info.download, Some(200));
-    assert_eq!(info.total, Some(1000));
-    assert_eq!(info.expire, Some(1700000000));
-}
-
-#[tokio::test]
-async fn fetch_singbox_config_returns_client_error_on_4xx() {
-    let app = axum::Router::new().route(
-        "/sub/{token}",
-        axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
-    );
-    let base = spawn_server(app).await;
-
-    let fetcher = SubscriptionFetcher::new();
-    let err = fetcher
-        .fetch_singbox_config(&base, "missing")
-        .await
-        .unwrap_err();
-    assert!(matches!(err, PanelError::Client(_)));
-}
-
-#[tokio::test]
-async fn fetch_clash_config_returns_yaml_text_and_info() {
-    let app = axum::Router::new().route(
-        "/sub/{token}",
-        axum::routing::get(|| async {
-            (
-                [(
-                    "subscription-userinfo",
-                    "upload=100; download=200; total=1000; expire=1700000000",
-                )],
-                SUB_YAML,
-            )
-        }),
-    );
-    let base = spawn_server(app).await;
-
-    let fetcher = SubscriptionFetcher::new();
-    let (yaml, info) = fetcher.fetch_clash_config(&base, "tok").await.unwrap();
-
-    // YAML text returned as-is.
-    assert_eq!(yaml, SUB_YAML);
-    assert!(yaml.contains("proxies:"));
-
-    let info = info.unwrap();
-    assert_eq!(info.upload, Some(100));
-    assert_eq!(info.download, Some(200));
-    assert_eq!(info.total, Some(1000));
-    assert_eq!(info.expire, Some(1700000000));
-}
-
-#[tokio::test]
-async fn fetch_clash_config_returns_client_error_on_4xx() {
-    let app = axum::Router::new().route(
-        "/sub/{token}",
-        axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
-    );
-    let base = spawn_server(app).await;
-
-    let fetcher = SubscriptionFetcher::new();
-    let err = fetcher
-        .fetch_clash_config(&base, "missing")
-        .await
-        .unwrap_err();
-    assert!(matches!(err, PanelError::Client(_)));
-}
-
 #[test]
 fn parse_userinfo_ignores_malformed_pairs() {
     let mut headers = reqwest::header::HeaderMap::new();
@@ -149,7 +56,6 @@ fn sniff_base64_share_links() {
     let result = parse_subscription_body(&body, None).unwrap();
     assert_eq!(result.format, SubFormat::ShareLinks);
     assert_eq!(result.singbox_nodes.len(), 2);
-    assert_eq!(result.mihomo_nodes.len(), 2);
     assert_eq!(result.singbox_nodes[0]["type"], "shadowsocks");
     assert_eq!(result.singbox_nodes[1]["type"], "vless");
 }
@@ -158,8 +64,7 @@ fn sniff_base64_share_links() {
 fn sniff_clash_yaml() {
     let result = parse_subscription_body(SUB_YAML, None).unwrap();
     assert_eq!(result.format, SubFormat::ClashYaml);
-    assert_eq!(result.mihomo_nodes.len(), 2);
-    assert_eq!(result.mihomo_nodes[0]["type"], "vless");
+    // ClashYaml 转换为 sing-box 节点（ss → shadowsocks）。
     assert_eq!(result.singbox_nodes.len(), 2);
     assert_eq!(result.singbox_nodes[0]["type"], "vless");
     assert_eq!(result.singbox_nodes[1]["type"], "shadowsocks");
@@ -172,9 +77,6 @@ fn sniff_singbox_json() {
     assert_eq!(result.format, SubFormat::SingBoxJson);
     assert_eq!(result.singbox_nodes.len(), 2);
     assert_eq!(result.singbox_nodes[0]["tag"], "n1");
-    assert_eq!(result.mihomo_nodes.len(), 2);
-    assert_eq!(result.mihomo_nodes[0]["name"], "n1");
-    assert_eq!(result.mihomo_nodes[0]["type"], "vless");
 }
 
 #[test]
@@ -182,7 +84,6 @@ fn sniff_plaintext_share_links() {
     let result = parse_subscription_body(SHARE_LINKS, None).unwrap();
     assert_eq!(result.format, SubFormat::ShareLinks);
     assert_eq!(result.singbox_nodes.len(), 2);
-    assert_eq!(result.mihomo_nodes.len(), 2);
     assert!(result.warnings.is_empty());
 }
 
@@ -199,14 +100,9 @@ fn sniff_unsupported_clash_proxy_is_skipped_with_warning() {
     let yaml = "proxies:\n  - name: ok\n    type: vless\n    server: a.com\n    port: 443\n    uuid: 12345678-1234-1234-1234-123456789012\n  - name: bad\n    type: wireguard\n    server: b.com\n    port: 51820\n";
     let result = parse_subscription_body(yaml, None).unwrap();
     assert_eq!(
-        result.mihomo_nodes.len(),
-        2,
-        "mihomo side keeps original proxies"
-    );
-    assert_eq!(
         result.singbox_nodes.len(),
         1,
-        "sing-box side skips unsupported type"
+        "unsupported clash proxy type is skipped"
     );
     assert_eq!(result.singbox_nodes[0]["tag"], "ok");
     assert_eq!(result.warnings.len(), 1);
@@ -489,7 +385,6 @@ fn subscription_cache_write_read_roundtrip_and_legacy() {
     let cached = CachedSubscriptionContent {
         format: SubFormat::ShareLinks,
         singbox_nodes: vec![serde_json::json!({ "tag": "n1", "type": "vless" })],
-        mihomo_nodes: vec![serde_json::json!({ "name": "n1", "type": "vless" })],
     };
     store.write_cached_content(sub.id, &cached).unwrap();
     assert_eq!(store.load_cached_content(sub.id), Some(cached));
@@ -512,7 +407,15 @@ fn subscription_cache_write_read_roundtrip_and_legacy() {
     let legacy = store2.load_cached_content(sub2.id).unwrap();
     assert_eq!(legacy.format, SubFormat::ShareLinks);
     assert!(legacy.singbox_nodes.is_empty());
-    assert!(legacy.mihomo_nodes.is_empty());
+
+    // 旧缓存中的 mihomo_nodes 字段被静默丢弃（serde 忽略未知字段）。
+    std::fs::write(
+        &legacy_path,
+        r#"{"format":"ClashYaml","singbox_nodes":[],"mihomo_nodes":[{"name":"x","type":"ss"}]}"#,
+    )
+    .unwrap();
+    let legacy = store2.load_cached_content(sub2.id).unwrap();
+    assert_eq!(legacy.format, SubFormat::ClashYaml);
 }
 
 /// Corrupted cache file → `None` (logs warn, no error, no panic).
@@ -544,7 +447,6 @@ fn subscription_cache_cleared_on_url_change() {
             &CachedSubscriptionContent {
                 format: SubFormat::SingBoxJson,
                 singbox_nodes: vec![serde_json::json!({ "tag": "n1" })],
-                mihomo_nodes: Vec::new(),
             },
         )
         .unwrap();
@@ -563,7 +465,6 @@ fn subscription_cache_cleared_on_url_change() {
             &CachedSubscriptionContent {
                 format: SubFormat::SingBoxJson,
                 singbox_nodes: vec![serde_json::json!({ "tag": "n1" })],
-                mihomo_nodes: Vec::new(),
             },
         )
         .unwrap();

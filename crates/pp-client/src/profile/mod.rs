@@ -2,8 +2,8 @@
 //! supporting YAML deep-merge override + JS override.
 //!
 //! Aligned with Clash Verge's Merge + Script:
-//! - Subscription content is only used to extract proxy nodes (sing-box `outbounds` leaves /
-//!   mihomo `proxies`), the actual running client config is generated from local templates,
+//! - Subscription content is only used to extract proxy nodes (sing-box `outbounds` leaves),
+//!   the actual running client config is generated from local templates,
 //!   avoiding subscription-bundled groups / rules / routing overriding local settings.
 //! - YAML override ([`apply_yaml_override`]) deep-merges per RFC 7386: objects merge
 //!   recursively, arrays and scalars are replaced entirely.
@@ -28,20 +28,10 @@ mod tests;
 pub use overrides::*;
 pub use store::*;
 
-use pp_common::{CoreType, PanelError, PanelResult};
+use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
-
-/// Subscription content (two core subscription formats kept as-is), for [`build_core_config`]
-/// to extract nodes.
-#[derive(Debug, Clone)]
-pub enum SubContent {
-    /// sing-box JSON subscription config.
-    SingBox(Value),
-    /// clash/mihomo YAML subscription raw text.
-    Mihomo(String),
-}
 
 /// Profile override config: empty string = disabled.
 ///
@@ -75,17 +65,15 @@ pub struct EffectiveOverrides {
     pub local_js: String,
 }
 
-/// A Profile template (pure association model): multiple templates can be maintained for the
-/// same core type ([`CoreType`]), the runtime override = the template associated with the
-/// currently selected subscription, the template itself does not hold an enabled state.
+/// A Profile template (pure association model): multiple templates can be maintained,
+/// the runtime override = the template associated with the currently selected subscription,
+/// the template itself does not hold an enabled state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     /// Template unique identifier (application-layer generated Uuid v4).
     pub id: Uuid,
     /// Template name (unique within storage, duplicate names error).
     pub name: String,
-    /// Target core type (sing-box / mihomo).
-    pub core_type: CoreType,
     /// YAML deep-merge override (RFC 7386 style; empty string = disabled).
     pub yaml_override: String,
     /// JS override (synchronous pure function `function main(config){...; return config}`;
@@ -140,9 +128,10 @@ pub fn extract_nodes_singbox(sub: &Value) -> Vec<Value> {
     dedup_names(leaves, "tag")
 }
 
-/// Extract `proxies` nodes from clash/mihomo subscription YAML. Name deduplication:
-/// duplicate names appended with `-2` / `-3`.
-pub fn extract_nodes_mihomo(sub_yaml: &str) -> PanelResult<Vec<Value>> {
+/// Extract `proxies` nodes from clash YAML subscription text (ClashYaml subscriptions are
+/// converted to sing-box nodes via [`crate::node_convert::mihomo_to_singbox`]). Name
+/// deduplication: duplicate names appended with `-2` / `-3`.
+pub(crate) fn extract_clash_proxies(sub_yaml: &str) -> PanelResult<Vec<Value>> {
     let value: Value = serde_yaml::from_str(sub_yaml)
         .map_err(|e| PanelError::Client(format!("invalid clash config in subscription: {e}")))?;
     let proxies = value
@@ -153,7 +142,7 @@ pub fn extract_nodes_mihomo(sub_yaml: &str) -> PanelResult<Vec<Value>> {
     Ok(dedup_names(proxies, "name"))
 }
 
-/// Deduplicate by `key` (sing-box uses `tag`, mihomo uses `name`): duplicate nodes are
+/// Deduplicate by `key` (sing-box uses `tag`, clash uses `name`): duplicate nodes are
 /// appended with `-2` / `-3` … until unique; nodes missing key or with empty key are skipped
 /// (group references cannot address empty tags, skipping is safer).
 fn dedup_names(nodes: Vec<Value>, key: &str) -> Vec<Value> {
@@ -232,70 +221,21 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
     cfg
 }
 
-/// mihomo local template: dns + all proxies + `proxy` (select, includes `auto`) / `auto`
-/// (url-test, interval 300) groups + `MATCH,proxy` rule.
-///
-/// When no leaf nodes exist, the `auto` group falls back to built-in `DIRECT` to keep the
-/// config valid.
-pub fn mihomo_template(nodes: &[Value]) -> Value {
-    let names: Vec<String> = nodes
-        .iter()
-        .filter_map(|n| n["name"].as_str().map(String::from))
-        .collect();
-    let mut auto_proxies: Vec<Value> = names.iter().cloned().map(Value::String).collect();
-    if auto_proxies.is_empty() {
-        auto_proxies.push(Value::String("DIRECT".to_string()));
-    }
-    let mut proxy_proxies = vec![Value::String("auto".to_string())];
-    proxy_proxies.extend(names.iter().cloned().map(Value::String));
-
-    let mut cfg = json!({
-        "dns": {
-            "enable": true,
-            "nameserver": ["223.5.5.5"],
-            "fallback": ["dns.google"]
-        },
-        "proxy-groups": [
-            { "name": "proxy", "type": "select", "proxies": proxy_proxies },
-            {
-                "name": "auto",
-                "type": "url-test",
-                "proxies": auto_proxies,
-                "url": "https://www.gstatic.com/generate_204",
-                "interval": 300
-            }
-        ],
-        "rules": ["MATCH,proxy"]
-    });
-    cfg["proxies"] = Value::Array(nodes.to_vec());
-    cfg
-}
-
 /// Assembly (v2, supports remote override overlay): extract nodes → local template →
-/// remote YAML → local YAML → remote JS → local JS → return core-usable config.
+/// remote YAML → local YAML → remote JS → local JS → return sing-box-usable config.
+///
+/// `sub` is the sing-box subscription config (nodes extracted from `outbounds`; ClashYaml
+/// subscriptions have already been converted to sing-box nodes at fetch time).
 ///
 /// Overlay semantics: remote as base, local overrides — YAML stage applies remote first then
 /// local (two deep merges naturally satisfy local override); JS stage remote `main` executes
 /// first, local `main` executes second (chained, local sees remote result). inbounds and MITM
 /// chain are not handled in this layer, injected by `state` calling `compose_*`.
 pub async fn build_core_config_v2(
-    core_type: CoreType,
-    sub_content: &SubContent,
+    sub: &Value,
     effective: &EffectiveOverrides,
 ) -> PanelResult<Value> {
-    let config = match (core_type, sub_content) {
-        (CoreType::SingBox, SubContent::SingBox(sub)) => {
-            singbox_template(&extract_nodes_singbox(sub))
-        }
-        (CoreType::Mihomo, SubContent::Mihomo(yaml)) => {
-            mihomo_template(&extract_nodes_mihomo(yaml)?)
-        }
-        _ => {
-            return Err(PanelError::Client(
-                "core type and subscription format mismatch".to_string(),
-            ));
-        }
-    };
+    let config = singbox_template(&extract_nodes_singbox(sub));
     // YAML stage: remote as base, local overlay (two applications naturally satisfy local override).
     let merged = apply_yaml_override(config, &effective.remote_yaml)?;
     let merged = apply_yaml_override(merged, &effective.local_yaml)?;
@@ -314,14 +254,9 @@ pub async fn build_core_config_v2(
 /// Only local overrides (no remote URLs); for remote override overlay scenarios please use
 /// [`build_core_config_v2`]. inbounds and MITM chain are not handled in this layer, injected
 /// by `state` calling `compose_*`.
-pub async fn build_core_config(
-    core_type: CoreType,
-    sub_content: &SubContent,
-    overrides: &ProfileOverrides,
-) -> PanelResult<Value> {
+pub async fn build_core_config(sub: &Value, overrides: &ProfileOverrides) -> PanelResult<Value> {
     build_core_config_v2(
-        core_type,
-        sub_content,
+        sub,
         &EffectiveOverrides {
             remote_yaml: String::new(),
             local_yaml: overrides.yaml_override.clone(),

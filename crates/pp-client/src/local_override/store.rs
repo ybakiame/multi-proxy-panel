@@ -87,7 +87,7 @@ impl LocalOverrideStore {
 
 /// Built-in community rule set subscriptions (ADR-0002, section 3.4.1).
 ///
-/// | community_id | display_name | category | singbox_url_template | mihomo_url_template |
+/// | community_id | display_name | category | singbox_url_template |
 pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
     vec![
         RuleSetSubscription {
@@ -97,7 +97,6 @@ pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
             category: super::RuleSetCategory::Geoip,
             subscribed: false,
             singbox_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/sing/geo-lite/ip/{tag}.srs".to_string(),
-            mihomo_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo-lite/ip/{tag}.yaml".to_string(),
             default_interval_minutes: 1440,
         },
         RuleSetSubscription {
@@ -107,7 +106,6 @@ pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
             category: super::RuleSetCategory::Geosite,
             subscribed: false,
             singbox_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/sing/geo-lite/geosite/{tag}.srs".to_string(),
-            mihomo_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo-lite/geosite/{tag}.yaml".to_string(),
             default_interval_minutes: 1440,
         },
         RuleSetSubscription {
@@ -117,7 +115,6 @@ pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
             category: super::RuleSetCategory::Ads,
             subscribed: false,
             singbox_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/sing/geo-lite/geosite/category-ads-all.srs".to_string(),
-            mihomo_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo-lite/geosite/category-ads-all.yaml".to_string(),
             default_interval_minutes: 1440,
         },
         RuleSetSubscription {
@@ -127,7 +124,6 @@ pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
             category: super::RuleSetCategory::Geosite,
             subscribed: false,
             singbox_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/sing/geo/geosite/{tag}.srs".to_string(),
-            mihomo_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/{tag}.yaml".to_string(),
             default_interval_minutes: 1440,
         },
         RuleSetSubscription {
@@ -137,7 +133,6 @@ pub fn built_in_rule_set_subscriptions() -> Vec<RuleSetSubscription> {
             category: super::RuleSetCategory::Geoip,
             subscribed: false,
             singbox_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/sing/geo-lite/ip/{tag}.srs".to_string(),
-            mihomo_url_template: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo-lite/ip/{tag}.yaml".to_string(),
             default_interval_minutes: 1440,
         },
     ]
@@ -153,11 +148,9 @@ mod tests {
         let store = LocalOverrideStore::new(dir.path().to_path_buf());
         let ovr = store.load().unwrap();
         assert!(ovr.singbox.rules.is_empty());
-        assert!(ovr.mihomo.rules.is_empty());
         assert!(ovr.rule_set_subscriptions.is_empty());
         assert!(ovr.applied_templates.is_empty());
         assert!(ovr.singbox.enabled);
-        assert!(ovr.mihomo.enabled);
     }
 
     #[test]

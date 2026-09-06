@@ -32,6 +32,7 @@ async fn start_reloads_disk_config_so_tun_toggle_takes_effect() {
         }"#;
     let addr = spawn_server(StatusCode::OK, body).await;
     let dir = tempfile::tempdir().unwrap();
+    let sub_id = add_local_subscription(&dir, &format!("http://{addr}/sub"));
 
     // Disk config: TUN is turned off (user-reported scenario).
     let capture = dir.path().join("core-config-capture.json");
@@ -40,9 +41,9 @@ async fn start_reloads_disk_config_so_tun_toggle_takes_effect() {
         dir.path().to_path_buf(),
         format!("http://{addr}"),
         "tok",
-        CoreType::SingBox,
         core_bin,
     );
+    disk.active_subscription_id = Some(sub_id);
     disk.tun_enabled = false;
     disk.save().unwrap();
 
@@ -110,63 +111,43 @@ async fn start_requires_tun_authorization_when_tun_enabled() {
     assert_eq!(mock.calls(), vec![]);
 }
 
-/// Android semantics: `apply_android_overrides` disables desktop-exclusive features but keeps `core_type`
-/// as user config (Android now supports sing-box / mihomo dual core, no longer forces sing-box).
+/// Android semantics: `apply_android_overrides` disables desktop-exclusive features
+/// (MITM / system proxy / TUN desktop semantics).
 /// Desktop builds cannot execute Android path, so extract pure function and test its semantics on desktop.
-///
-/// Note `tun_enabled = false` only affects desktop pre-check and UI semantics: Android config composition uses
-/// `panel_features_tun_enabled` by core type for TUN toggle (see test below), the two do not conflict.
 #[test]
-fn apply_android_overrides_disables_desktop_features_but_keeps_core_type() {
+fn apply_android_overrides_disables_desktop_features() {
     let mut cfg = ClientConfig {
-        core_type: CoreType::Mihomo,
         mitm_enabled: true,
         system_proxy_enabled: true,
         tun_enabled: true,
         ..ClientConfig::default()
     };
     compat::apply_android_overrides(&mut cfg);
-    assert_eq!(
-        cfg.core_type,
-        CoreType::Mihomo,
-        "Android keeps user-configured mihomo core"
-    );
     assert!(!cfg.mitm_enabled, "Android disables MITM");
     assert!(!cfg.system_proxy_enabled, "Android disables system proxy");
     assert!(!cfg.tun_enabled, "Android disables TUN (desktop semantics)");
 }
 
-/// Android config composition TUN toggle differs by core type: sing-box needs tun inbound to callback
-/// openTun to establish VPN interface (always true); mihomo on Android is TUN-driven by wrapper with fd
-/// (wrapper already forces `Tun.Enable=false`), no tun section injected at config level (always false);
-/// desktop passes through user settings as-is.
+/// Android config composition TUN toggle: sing-box needs tun inbound to callback
+/// openTun to establish VPN interface (always true); desktop passes through user settings as-is.
 #[test]
 fn panel_features_tun_enabled_android_and_desktop_semantics() {
-    // Android + sing-box → true (needs tun inbound to trigger openTun).
+    // Android → always true (needs tun inbound to trigger openTun).
     assert!(
-        compat::panel_features_tun_enabled(true, CoreType::SingBox, false),
-        "Android + sing-box always enables TUN"
+        compat::panel_features_tun_enabled(true, false),
+        "Android always enables TUN"
     );
     assert!(
-        compat::panel_features_tun_enabled(true, CoreType::SingBox, true),
-        "Android + sing-box always enables TUN"
+        compat::panel_features_tun_enabled(true, true),
+        "Android always enables TUN"
     );
-    // Android + mihomo → false (TUN is driven by wrapper with fd, config does not inject tun section).
+    // Desktop passes through user settings as-is.
     assert!(
-        !compat::panel_features_tun_enabled(true, CoreType::Mihomo, false),
-        "Android + mihomo does not inject TUN"
-    );
-    assert!(
-        !compat::panel_features_tun_enabled(true, CoreType::Mihomo, true),
-        "Android + mihomo does not inject TUN (ignores user setting)"
-    );
-    // Desktop passes through user settings as-is (unrelated to core type).
-    assert!(
-        !compat::panel_features_tun_enabled(false, CoreType::SingBox, false),
+        !compat::panel_features_tun_enabled(false, false),
         "desktop keeps TUN off when off"
     );
     assert!(
-        compat::panel_features_tun_enabled(false, CoreType::Mihomo, true),
+        compat::panel_features_tun_enabled(false, true),
         "desktop keeps TUN on when on"
     );
 }
@@ -294,138 +275,4 @@ fn redact_config_credentials_keeps_unmatched_and_non_string_values() {
         "non-string server preserved as object"
     );
     assert_eq!(cfg["experimental"]["server"]["host"], "deep.example.com");
-}
-
-/// Phase ②: Android auto-downgrade pure logic tests (desktop-runnable).
-#[test]
-fn compat_check_sharelinks_always_compatible() {
-    let id = Some(uuid::Uuid::new_v4());
-    assert_eq!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::ShareLinks,
-            CoreType::SingBox,
-            id,
-            false
-        )
-        .unwrap(),
-        CoreType::SingBox
-    );
-    assert_eq!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::ShareLinks,
-            CoreType::Mihomo,
-            id,
-            true
-        )
-        .unwrap(),
-        CoreType::Mihomo
-    );
-}
-
-#[test]
-fn compat_check_singboxjson_only_with_singbox() {
-    let id = Some(uuid::Uuid::new_v4());
-    assert_eq!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::SingBoxJson,
-            CoreType::SingBox,
-            id,
-            false
-        )
-        .unwrap(),
-        CoreType::SingBox
-    );
-    // sing-box JSON + mihomo core → error regardless of platform
-    assert!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::SingBoxJson,
-            CoreType::Mihomo,
-            id,
-            false
-        )
-        .is_err()
-    );
-    assert!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::SingBoxJson,
-            CoreType::Mihomo,
-            id,
-            true
-        )
-        .is_err()
-    );
-}
-
-#[test]
-fn compat_check_clashyaml_with_mihomo_ok() {
-    let id = Some(uuid::Uuid::new_v4());
-    assert_eq!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::ClashYaml,
-            CoreType::Mihomo,
-            id,
-            false
-        )
-        .unwrap(),
-        CoreType::Mihomo
-    );
-    assert_eq!(
-        compat::check_subscription_core_compat_pure(
-            subscription::SubFormat::ClashYaml,
-            CoreType::Mihomo,
-            id,
-            true
-        )
-        .unwrap(),
-        CoreType::Mihomo
-    );
-}
-
-#[test]
-fn compat_check_clashyaml_with_singbox_desktop_errors() {
-    let id = Some(uuid::Uuid::new_v4());
-    let result = compat::check_subscription_core_compat_pure(
-        subscription::SubFormat::ClashYaml,
-        CoreType::SingBox,
-        id,
-        false, // desktop
-    );
-    assert!(
-        result.is_err(),
-        "desktop should hard-error on clash+singbox"
-    );
-    let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("clash"), "{msg}");
-    assert!(msg.contains("mihomo"), "{msg}");
-}
-
-#[test]
-fn compat_check_clashyaml_with_singbox_android_downgrades() {
-    let id = Some(uuid::Uuid::new_v4());
-    let result = compat::check_subscription_core_compat_pure(
-        subscription::SubFormat::ClashYaml,
-        CoreType::SingBox,
-        id,
-        true, // android
-    );
-    assert_eq!(
-        result.unwrap(),
-        CoreType::Mihomo,
-        "Android should auto-downgrade clash+singbox → mihomo"
-    );
-}
-
-#[test]
-fn compat_check_clashyaml_with_singbox_android_downgrades_without_sub_id() {
-    let result = compat::check_subscription_core_compat_pure(
-        subscription::SubFormat::ClashYaml,
-        CoreType::SingBox,
-        None,
-        true, // android
-    );
-    assert_eq!(
-        result.unwrap(),
-        CoreType::Mihomo,
-        "Android auto-downgrade works even without subscription id"
-    );
 }

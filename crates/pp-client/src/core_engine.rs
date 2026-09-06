@@ -1,8 +1,8 @@
 //! 核心引擎桥接抽象（Android VpnPlugin 接入）。
 //!
 //! 桌面端核心由 `pp-core` 的 [`pp_core::CoreManager`] 直接 spawn 二进制进程驱动；
-//! Android 上无法 spawn 进程，核心将由 Kotlin 侧 VpnPlugin（sing-box libbox /
-//! mihomo wrapper，经 panelcore.aar 合并绑定）驱动。Rust 侧需要一个「插件桥」：
+//! Android 上无法 spawn 进程，核心将由 Kotlin 侧 VpnPlugin（sing-box libbox，
+//! 经 panelcore.aar 绑定）驱动。Rust 侧需要一个「插件桥」：
 //! src-tauri 在 Android 启动时安装桥实现，[`CoreRunner`] 在 Android 下委托给该桥
 //! （本模块建抽象与接线，真正 Kotlin 通道在 src-tauri 的 core_bridge 实现）。
 //!
@@ -25,8 +25,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait CoreEngineBridge: Send + Sync {
     /// 启动核心。
     ///
-    /// `core_type` 供 Android 桥向 Kotlin 插件分派核心类型（`"singbox"` /
-    /// `"mihomo"`），桌面实现忽略；`config_json` 为 sing-box/mihomo 配置 JSON。
+    /// `core_type` 供 Android 桥向 Kotlin 插件分派核心类型（客户端仅支持 sing-box，
+    /// 当前恒为 `CoreType::SingBox`），桌面实现忽略；`config_json` 为 sing-box 配置 JSON。
     fn start<'a>(
         &'a self,
         core_type: CoreType,

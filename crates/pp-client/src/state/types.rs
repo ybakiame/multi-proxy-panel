@@ -13,8 +13,8 @@ pub struct ClientStatus {
     pub system_proxy: bool,
     /// Current effective rule mode (= persisted value in client.json, illegal values normalized to `rule`).
     pub rule_mode: String,
-    /// Number of rules in the composed config (sing-box takes `route.rules`, mihomo takes `rules`
-    /// array length; 0 when not running).
+    /// Number of rules in the composed config (sing-box takes `route.rules` array length;
+    /// 0 when not running).
     pub rule_count: u64,
     /// Clash dashboard API address (when core is running and `clash_api_enabled`,
     /// `http://127.0.0.1:{clash_api_port}`, otherwise `None`).

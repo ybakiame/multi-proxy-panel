@@ -2,8 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-use pp_common::CoreType;
-
 use crate::config::ClientConfig;
 use crate::cores::{ClientCoreInventory, CoreSource, version};
 
@@ -69,16 +67,6 @@ fn build_tgz(entries: &[(&str, &[u8])]) -> Vec<u8> {
     out
 }
 
-/// Gzip compress single file (mihomo non-Windows asset form).
-fn gzip_bytes(data: &[u8]) -> Vec<u8> {
-    use std::io::Write;
-    let mut out = Vec::new();
-    let mut enc = flate2::write::GzEncoder::new(&mut out, flate2::Compression::default());
-    enc.write_all(data).unwrap();
-    enc.finish().unwrap();
-    out
-}
-
 // ---------- ① list_installed: scan directory structure ----------
 
 #[test]
@@ -87,25 +75,36 @@ fn list_installed_scans_versioned_dirs() {
     let inv = ClientCoreInventory::new(dir.path().to_path_buf());
 
     write_executable(&dir.path().join("cores/sing-box/1.13.15/sing-box"), b"fake");
-    write_executable(&dir.path().join("cores/mihomo/1.19.29/mihomo"), b"fake");
     // Version directories without binary files should be skipped.
     std::fs::create_dir_all(dir.path().join("cores/sing-box/1.12.0")).unwrap();
 
     let cores = inv.list_installed();
-    assert_eq!(cores.len(), 2);
-    let sb = cores
-        .iter()
-        .find(|c| c.core_type == CoreType::SingBox)
-        .unwrap();
+    assert_eq!(cores.len(), 1);
+    let sb = &cores[0];
     assert_eq!(sb.version, "1.13.15");
     assert_eq!(sb.source, CoreSource::Downloaded);
     assert_eq!(sb.path, dir.path().join("cores/sing-box/1.13.15/sing-box"));
-    let mh = cores
-        .iter()
-        .find(|c| c.core_type == CoreType::Mihomo)
-        .unwrap();
-    assert_eq!(mh.version, "1.19.29");
-    assert_eq!(mh.source, CoreSource::Downloaded);
+}
+
+/// 存量清理：构造 inventory 时 best-effort 删除遗留的 `cores/mihomo/` 目录（不影响 sing-box）。
+#[test]
+fn inventory_new_removes_legacy_mihomo_cores_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    write_executable(&dir.path().join("cores/mihomo/1.19.29/mihomo"), b"fake");
+    write_executable(&dir.path().join("cores/sing-box/1.13.15/sing-box"), b"fake");
+
+    let inv = ClientCoreInventory::new(dir.path().to_path_buf());
+
+    assert!(
+        !dir.path().join("cores/mihomo").exists(),
+        "遗留 mihomo 目录应被清理"
+    );
+    assert!(
+        dir.path().join("cores/sing-box/1.13.15/sing-box").exists(),
+        "sing-box 目录不受影响"
+    );
+    // 清理后扫描不到 mihomo。
+    assert_eq!(inv.list_installed().len(), 1);
 }
 
 #[test]
@@ -122,54 +121,30 @@ fn list_downloaded_versions_sorts_semantically_descending() {
     }
     // Version directories without binary files are not counted.
     std::fs::create_dir_all(dir.path().join("cores/sing-box/1.12.0")).unwrap();
-    // Other core types are not counted.
-    write_executable(&dir.path().join("cores/mihomo/1.19.29/mihomo"), b"fake");
 
     assert_eq!(
-        inv.list_downloaded_versions(CoreType::SingBox),
+        inv.list_downloaded_versions(),
         vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]
-    );
-    assert_eq!(
-        inv.list_downloaded_versions(CoreType::Mihomo),
-        vec!["1.19.29"]
-    );
-    assert!(
-        inv.list_downloaded_versions(CoreType::SingBox)
-            .into_iter()
-            .all(|v| !v.starts_with("1.12"))
     );
 }
 
 // ---------- ② list_remote_versions: mock releases API ----------
 #[tokio::test]
-async fn list_remote_versions_parses_both_cores() {
+async fn list_remote_versions_parses_releases() {
     let singbox_releases = serde_json::json!([
         { "tag_name": "v1.13.15" },
         { "tag_name": "v1.13.14" },
         { "tag_name": "v1.12.0-alpha.1" },
     ]);
-    let mihomo_releases = serde_json::json!([
-        { "tag_name": "v1.19.29" },
-        { "tag_name": "Alpha-1.19.30" },
-        { "tag_name": "v1.19.28" },
-    ]);
-    let app = axum::Router::new()
-        .route(
-            "/repos/SagerNet/sing-box/releases",
-            axum::routing::get(move || async move { singbox_releases.to_string() }),
-        )
-        .route(
-            "/repos/MetaCubeX/mihomo/releases",
-            axum::routing::get(move || async move { mihomo_releases.to_string() }),
-        );
+    let app = axum::Router::new().route(
+        "/repos/SagerNet/sing-box/releases",
+        axum::routing::get(move || async move { singbox_releases.to_string() }),
+    );
     let base = spawn_server(app).await;
     let inv = ClientCoreInventory::with_api_base(PathBuf::new(), &base);
 
-    let sb = inv.list_remote_versions(CoreType::SingBox).await.unwrap();
+    let sb = inv.list_remote_versions().await.unwrap();
     assert_eq!(sb, vec!["1.13.15", "1.13.14", "1.12.0-alpha.1"]);
-
-    let mh = inv.list_remote_versions(CoreType::Mihomo).await.unwrap();
-    assert_eq!(mh, vec!["1.19.29", "Alpha-1.19.30", "1.19.28"]);
 }
 
 // ---------- ③ download: mock asset download + extract + chmod + --version ----------
@@ -215,9 +190,8 @@ async fn download_singbox_targz_extracts_and_verifies() {
 
     let dir = tempfile::tempdir().unwrap();
     let inv = ClientCoreInventory::with_api_base(dir.path().to_path_buf(), &base);
-    let core = inv.download(CoreType::SingBox, "1.13.15").await.unwrap();
+    let core = inv.download("1.13.15").await.unwrap();
 
-    assert_eq!(core.core_type, CoreType::SingBox);
     assert_eq!(core.version, "1.13.15");
     assert_eq!(core.source, CoreSource::Downloaded);
     assert_eq!(
@@ -230,52 +204,8 @@ async fn download_singbox_targz_extracts_and_verifies() {
         assert_ne!(mode & 0o111, 0, "binary should be executable");
     }
     // Second download hits cache.
-    let again = inv.download(CoreType::SingBox, "1.13.15").await.unwrap();
+    let again = inv.download("1.13.15").await.unwrap();
     assert_eq!(again.path, core.path);
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn download_mihomo_single_gz_extracts_and_verifies() {
-    let (arch_hint, is_windows) = version::target_spec().unwrap();
-    let ext = if is_windows { "zip" } else { "gz" };
-    let asset = format!("mihomo-{arch_hint}-v1.19.29.{ext}");
-    let fake: &[u8] = b"#!/bin/sh\necho 'Mihomo Meta v1.19.29'\n";
-    let body = gzip_bytes(fake);
-
-    let asset_for_release = asset.clone();
-    let app = axum::Router::new()
-        .route(
-            "/repos/MetaCubeX/mihomo/releases/tags/v1.19.29",
-            axum::routing::get(move |headers: axum::http::HeaderMap| async move {
-                let host = headers
-                    .get("host")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("127.0.0.1");
-                serde_json::json!({
-                    "tag_name": "v1.19.29",
-                    "assets": [
-                        { "name": asset_for_release.clone(),
-                          "browser_download_url":
-                              format!("http://{host}/assets/{asset_for_release}") },
-                    ],
-                })
-                .to_string()
-            }),
-        )
-        .route(
-            &format!("/assets/{asset}"),
-            axum::routing::get(move || async move { body.clone() }),
-        );
-    let base = spawn_server(app).await;
-
-    let dir = tempfile::tempdir().unwrap();
-    let inv = ClientCoreInventory::with_api_base(dir.path().to_path_buf(), &base);
-    let core = inv.download(CoreType::Mihomo, "1.19.29").await.unwrap();
-
-    assert_eq!(core.version, "1.19.29");
-    assert_eq!(core.path, dir.path().join("cores/mihomo/1.19.29/mihomo"));
-    assert!(core.path.is_file());
 }
 
 // ---------- ④ detect_system_cores: fake binary in temp directory added to PATH ----------
@@ -292,9 +222,7 @@ fn detect_system_cores_finds_core_on_path() {
         inv.detect_system_cores()
     });
 
-    let found = result
-        .iter()
-        .find(|c| c.core_type == CoreType::SingBox && c.path == bin);
+    let found = result.iter().find(|c| c.path == bin);
     assert!(found.is_some(), "should find fake sing-box in PATH");
     assert_eq!(found.unwrap().version, "1.19.9");
     assert_eq!(found.unwrap().source, CoreSource::System);
@@ -302,8 +230,8 @@ fn detect_system_cores_finds_core_on_path() {
 
 // ---------- ⑤ Version probe: `version` / `--version` / `-v` three forms ----------
 //
-// Three fake binaries each only support `version` subcommand (sing-box 1.14+, multi-line output),
-// `--version` flag (old sing-box), `-v` (mihomo), asserting both detection and parsing succeed.
+// Two fake binaries: one only supports `version` subcommand (sing-box 1.14+, multi-line output),
+// one only supports `--version` flag (old sing-box), asserting both detection and parsing succeed.
 
 #[test]
 fn version_probe_supports_subcommand_and_flags() {
@@ -326,32 +254,18 @@ fn version_probe_supports_subcommand_and_flags() {
     let flag = dir.path().join("sing-box-flag");
     write_executable(&flag, b"#!/bin/sh\necho 'sing-box version 1.13.15'\n");
 
-    // mihomo: only supports `-v`.
-    let mihomo = dir.path().join("mihomo-v");
-    write_executable(
-        &mihomo,
-        b"#!/bin/sh\n\
-              [ \"$1\" = \"-v\" ] || exit 1\n\
-              echo 'Mihomo Meta v1.19.29 linux/amd64 go1.23.4'\n",
-    );
-
-    // After download all three forms are detected successfully.
-    version::verify_version(&subcmd, CoreType::SingBox, "1.14.0-beta.4").unwrap();
-    version::verify_version(&flag, CoreType::SingBox, "1.13.15").unwrap();
-    version::verify_version(&mihomo, CoreType::Mihomo, "1.19.29").unwrap();
+    // After download both forms are detected successfully.
+    version::verify_version(&subcmd, "1.14.0-beta.4").unwrap();
+    version::verify_version(&flag, "1.13.15").unwrap();
 
     // detect_system_cores path: output parsing is correct.
     assert_eq!(
-        version::parse_version_from_output(CoreType::SingBox, &version::binary_output(&subcmd)),
+        version::parse_version_from_output(&version::binary_output(&subcmd)),
         Some("1.14.0-beta.4".to_string())
     );
     assert_eq!(
-        version::parse_version_from_output(CoreType::SingBox, &version::binary_output(&flag)),
+        version::parse_version_from_output(&version::binary_output(&flag)),
         Some("1.13.15".to_string())
-    );
-    assert_eq!(
-        version::parse_version_from_output(CoreType::Mihomo, &version::binary_output(&mihomo)),
-        Some("1.19.29".to_string())
     );
 }
 
@@ -371,7 +285,6 @@ fn active_core_matches_config_binary() {
         dir.path().to_path_buf(),
         "http://127.0.0.1:50052",
         "tok",
-        CoreType::SingBox,
         bin.clone(),
     );
     let active = inv.active_core(&cfg);
@@ -393,23 +306,24 @@ fn active_core_matches_config_binary() {
 fn infers_core_type_from_file_name() {
     assert_eq!(
         version::infer_core_type(Path::new("/usr/local/bin/sing-box")),
-        Some(CoreType::SingBox)
+        Some(pp_common::CoreType::SingBox)
     );
     assert_eq!(
         version::infer_core_type(Path::new("C:\\cores\\sing-box.exe")),
-        Some(CoreType::SingBox)
+        Some(pp_common::CoreType::SingBox)
     );
     assert_eq!(
         version::infer_core_type(Path::new("/usr/local/bin/singbox")),
-        Some(CoreType::SingBox)
+        Some(pp_common::CoreType::SingBox)
     );
+    // mihomo / clash 文件名不再识别（mihomo 支持已移除）。
     assert_eq!(
         version::infer_core_type(Path::new("/usr/local/bin/mihomo")),
-        Some(CoreType::Mihomo)
+        None
     );
     assert_eq!(
         version::infer_core_type(Path::new("C:\\cores\\clash.exe")),
-        Some(CoreType::Mihomo)
+        None
     );
     assert_eq!(
         version::infer_core_type(Path::new("/usr/bin/unknown")),
@@ -422,22 +336,14 @@ fn infers_core_type_from_file_name() {
 #[test]
 fn parses_version_from_output() {
     assert_eq!(
-        version::parse_version_from_output(CoreType::SingBox, "sing-box version 1.13.15"),
+        version::parse_version_from_output("sing-box version 1.13.15"),
         Some("1.13.15".to_string())
     );
     assert_eq!(
         version::parse_version_from_output(
-            CoreType::SingBox,
             "sing-box version 1.14.0-beta.4\n\nEnvironment:\n  go version go1.24.3"
         ),
         Some("1.14.0-beta.4".to_string())
-    );
-    assert_eq!(
-        version::parse_version_from_output(
-            CoreType::Mihomo,
-            "Mihomo Meta v1.19.29 linux/amd64 go1.23.4"
-        ),
-        Some("1.19.29".to_string())
     );
 }
 
@@ -456,7 +362,7 @@ fn preferred_binary_picks_newest_downloaded_version() {
     );
     let inv = ClientCoreInventory::new(dir.path().to_path_buf());
 
-    let bin = inv.preferred_binary(CoreType::SingBox);
+    let bin = inv.preferred_binary();
     // Semantic version sorting: 1.14.0-beta.4 (base 1.14.0) > 1.13.15.
     assert_eq!(
         bin,
@@ -468,11 +374,11 @@ fn preferred_binary_picks_newest_downloaded_version() {
 fn preferred_binary_falls_back_to_system_core() {
     let dir = tempfile::tempdir().unwrap();
     // No downloaded cores → fallback to system PATH detection.
-    let system_bin = dir.path().join("mihomo");
-    write_executable(&system_bin, b"#!/bin/sh\necho 'Mihomo Meta v1.19.29'\n");
+    let system_bin = dir.path().join("sing-box");
+    write_executable(&system_bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n");
     let inv = ClientCoreInventory::new(dir.path().join("cores"));
 
-    let result = with_patched_path(dir.path(), || inv.preferred_binary(CoreType::Mihomo));
+    let result = with_patched_path(dir.path(), || inv.preferred_binary());
     assert_eq!(result, Some(system_bin));
 }
 
@@ -480,9 +386,7 @@ fn preferred_binary_falls_back_to_system_core() {
 fn preferred_binary_none_when_unavailable() {
     let dir = tempfile::tempdir().unwrap();
     let inv = ClientCoreInventory::new(dir.path().to_path_buf());
-    let result = with_patched_path(Path::new("/nonexistent-bin-dir"), || {
-        inv.preferred_binary(CoreType::SingBox)
-    });
+    let result = with_patched_path(Path::new("/nonexistent-bin-dir"), || inv.preferred_binary());
     assert_eq!(result, None);
 }
 
@@ -495,7 +399,7 @@ fn delete_removes_version_dir_keeps_other_versions() {
 
     let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
     write_executable(&bin, b"fake");
-    // Other version of same type is kept; active points to it (not the deletion target).
+    // Other version is kept; active points to it (not the deletion target).
     let other = dir.path().join("cores/sing-box/1.14.0/sing-box");
     write_executable(&other, b"fake");
 
@@ -515,13 +419,13 @@ fn delete_removes_version_dir_keeps_other_versions() {
 fn delete_prunes_empty_type_dir() {
     let dir = tempfile::tempdir().unwrap();
     let inv = ClientCoreInventory::new(dir.path().to_path_buf());
-    let bin = dir.path().join("cores/mihomo/1.19.29/mihomo");
+    let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
     write_executable(&bin, b"fake");
 
     inv.delete(&bin, Path::new("/nonexistent/other")).unwrap();
 
     // Version directory and type directory are both cleaned up; cores directory itself is kept.
-    assert!(!dir.path().join("cores/mihomo").exists());
+    assert!(!dir.path().join("cores/sing-box").exists());
     assert!(dir.path().join("cores").is_dir());
 }
 
@@ -582,12 +486,12 @@ fn delete_rejects_directory_under_cores_dir() {
     let inv = ClientCoreInventory::new(dir.path().to_path_buf());
     let version_dir = dir.path().join("cores/sing-box/1.13.15/sing-box");
     write_executable(&version_dir, b"fake");
-    std::fs::create_dir_all(dir.path().join("cores/mihomo/1.19.29")).unwrap();
+    std::fs::create_dir_all(dir.path().join("cores/sing-box/1.12.0")).unwrap();
 
     // Type directory (no binary) cannot be deleted.
     let err = inv
         .delete(
-            &dir.path().join("cores/mihomo"),
+            &dir.path().join("cores/sing-box"),
             Path::new("/nonexistent/active"),
         )
         .unwrap_err();
@@ -595,12 +499,12 @@ fn delete_rejects_directory_under_cores_dir() {
         err.to_string().contains("Invalid core binary path"),
         "should reject directory: {err}"
     );
-    assert!(dir.path().join("cores/mihomo").is_dir());
+    assert!(dir.path().join("cores/sing-box").is_dir());
 
     // Version directory (no binary) cannot be deleted.
     let err = inv
         .delete(
-            &dir.path().join("cores/mihomo/1.19.29"),
+            &dir.path().join("cores/sing-box/1.12.0"),
             Path::new("/nonexistent/active"),
         )
         .unwrap_err();
@@ -608,5 +512,5 @@ fn delete_rejects_directory_under_cores_dir() {
         err.to_string().contains("Invalid core binary path"),
         "should reject directory: {err}"
     );
-    assert!(dir.path().join("cores/mihomo/1.19.29").is_dir());
+    assert!(dir.path().join("cores/sing-box/1.12.0").is_dir());
 }

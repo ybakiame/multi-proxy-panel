@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use pp_common::{CoreType, PanelResult};
+use pp_common::PanelResult;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -48,9 +48,10 @@ pub struct ClientConfig {
     /// 反序列化。
     #[serde(default)]
     pub active_subscription_id: Option<Uuid>,
-    /// 使用的核心类型。
-    pub core_type: CoreType,
     /// 核心二进制路径。
+    ///
+    /// 客户端仅支持 sing-box 核心；旧版 `client.json` 的 `core_type` 字段在反序列化时被
+    /// 忽略，`core_type: "mihomo"` 的存量配置在 [`Self::load`] 中一次性归一化（见 load）。
     pub core_binary: PathBuf,
     /// 本地 mixed 入站端口。
     pub mixed_port: u16,
@@ -83,8 +84,8 @@ pub struct ClientConfig {
     pub fetch_via_local_proxy: bool,
     /// Rule mode: `rule` / `global` / `direct` (default `rule`).
     ///
-    /// Persisted to client.json; synthesized into mihomo top-level `mode:`, sing-box has no composition-level
-    /// mode field, runtime switched via Clash API (`PATCH /configs`). Illegal values fall back to `rule` on the read side
+    /// Persisted to client.json; sing-box has no composition-level mode field, runtime switched
+    /// via Clash API (`PATCH /configs`). Illegal values fall back to `rule` on the read side
     /// ([`Self::normalized_rule_mode`]). Struct-level `#[serde(default)]` ensures old version `client.json` (without this field)
     /// parses normally.
     pub rule_mode: String,
@@ -116,7 +117,6 @@ impl Default for ClientConfig {
             hub_url: String::new(),
             sub_token: String::new(),
             active_subscription_id: None,
-            core_type: CoreType::SingBox,
             core_binary: PathBuf::new(),
             mixed_port: 17890,
             mitm_enabled: true,
@@ -145,14 +145,12 @@ impl ClientConfig {
         data_dir: PathBuf,
         hub_url: impl Into<String>,
         sub_token: impl Into<String>,
-        core_type: CoreType,
         core_binary: PathBuf,
     ) -> Self {
         let mut cfg = Self {
             data_dir,
             hub_url: hub_url.into(),
             sub_token: sub_token.into(),
-            core_type,
             core_binary,
             ..Self::default()
         };
@@ -175,9 +173,31 @@ impl ClientConfig {
     }
 
     /// 从 `data_dir/client.json` 加载配置。
+    ///
+    /// 一次性归一化（存量数据迁移）：旧版配置 `core_type: "mihomo"` 时，客户端已仅支持
+    /// sing-box——忽略该字段；若 `core_binary` 指向 mihomo 二进制则重置为空（交由核心管理
+    /// 自动选择），并将归一化结果写回磁盘（同时剔除 `core_type` 字段）。
     pub fn load(data_dir: &Path) -> PanelResult<Self> {
-        let text = std::fs::read_to_string(data_dir.join("client.json"))?;
-        Ok(serde_json::from_str(&text)?)
+        let path = data_dir.join("client.json");
+        let text = std::fs::read_to_string(&path)?;
+        let mut raw: serde_json::Value = serde_json::from_str(&text)?;
+        let legacy_mihomo = raw.get("core_type").and_then(|v| v.as_str()) == Some("mihomo");
+        if legacy_mihomo {
+            let mihomo_binary = raw
+                .get("core_binary")
+                .and_then(|v| v.as_str())
+                .is_some_and(|p| p.to_lowercase().contains("mihomo"));
+            if mihomo_binary {
+                raw["core_binary"] = serde_json::Value::String(String::new());
+            }
+            // 写回读取路径（不能用 `Self::save`：其目标取自配置内的 data_dir 字段）。
+            if let Some(obj) = raw.as_object_mut() {
+                obj.remove("core_type");
+            }
+            std::fs::write(&path, serde_json::to_string_pretty(&raw)?)?;
+            tracing::info!("旧版 mihomo 配置已归一化为 sing-box 并写回 client.json");
+        }
+        Ok(serde_json::from_value(raw)?)
     }
 
     /// 将配置保存到 `data_dir/client.json`。
@@ -233,7 +253,6 @@ mod tests {
             PathBuf::from("/tmp/pp-client-test"),
             "http://127.0.0.1:50052",
             "abc123",
-            CoreType::SingBox,
             PathBuf::from("/usr/local/bin/sing-box"),
         );
         assert_eq!(cfg.mitm.ca_dir, PathBuf::from("/tmp/pp-client-test/certs"));
@@ -245,8 +264,7 @@ mod tests {
             PathBuf::from("/tmp/pp-client-test"),
             "http://127.0.0.1:50052",
             "abc123",
-            CoreType::Mihomo,
-            PathBuf::from("/usr/local/bin/mihomo"),
+            PathBuf::from("/usr/local/bin/sing-box"),
         );
         cfg.tun_enabled = true;
         cfg.tun_stack = "system".to_string();
@@ -329,7 +347,6 @@ mod tests {
             dir.path().to_path_buf(),
             "http://127.0.0.1:50052",
             "tok",
-            CoreType::SingBox,
             PathBuf::from("/usr/local/bin/sing-box"),
         );
         cfg.hub_url = "http://localhost:50052".to_string();
@@ -341,5 +358,78 @@ mod tests {
 
         let loaded = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(cfg, loaded);
+    }
+
+    /// 存量归一化：旧版 `core_type: "mihomo"` 的 client.json 加载时归一化——`core_type`
+    /// 字段被忽略；`core_binary` 指向 mihomo 二进制时重置为空并写回磁盘。
+    #[test]
+    fn load_normalizes_legacy_mihomo_config_and_writes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("client.json"),
+            r#"{
+                "data_dir": "",
+                "core_type": "mihomo",
+                "core_binary": "/home/u/.proxy-panel-client/cores/mihomo/1.19.29/mihomo",
+                "mixed_port": 17890
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = ClientConfig::load(dir.path()).unwrap();
+        assert!(
+            loaded.core_binary.as_os_str().is_empty(),
+            "mihomo 二进制应重置为自动选择"
+        );
+
+        // 已写回：再次读取磁盘文件，core_type 字段被剔除、core_binary 为空。
+        let text = std::fs::read_to_string(dir.path().join("client.json")).unwrap();
+        let raw: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(raw.get("core_type").is_none());
+        assert_eq!(raw["core_binary"], "");
+
+        // 再次加载幂等（不报错）。
+        let again = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(again, loaded);
+    }
+
+    /// 存量归一化：旧版 `core_type: "mihomo"` 但 core_binary 指向非 mihomo 路径时，
+    /// 保留 core_binary 原值。
+    #[test]
+    fn load_normalizes_legacy_mihomo_keeps_non_mihomo_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("client.json"),
+            r#"{
+                "data_dir": "",
+                "core_type": "mihomo",
+                "core_binary": "/usr/local/bin/sing-box"
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(loaded.core_binary, PathBuf::from("/usr/local/bin/sing-box"));
+    }
+
+    /// 旧版 `core_type: "singbox"` 配置正常加载，字段被忽略、core_binary 不受影响。
+    #[test]
+    fn load_tolerates_legacy_singbox_core_type_field() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("client.json"),
+            r#"{
+                "data_dir": "",
+                "core_type": "singbox",
+                "core_binary": "/usr/local/bin/sing-box"
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = ClientConfig::load(dir.path()).unwrap();
+        assert_eq!(loaded.core_binary, PathBuf::from("/usr/local/bin/sing-box"));
+        // 非 mihomo 存量不回写（core_type 字段在下次 save 时自然剔除）。
+        let text = std::fs::read_to_string(dir.path().join("client.json")).unwrap();
+        assert!(text.contains("core_type"));
     }
 }

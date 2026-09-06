@@ -11,9 +11,8 @@ impl ClientState {
     /// persisted group selections, and starts the connection tracker.
     /// All steps are best-effort: failures are logged, never fatal.
     pub(crate) async fn post_core_clash_setup(&mut self) {
-        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：mihomo
-        // 启动配置已含顶层 `mode`，此推送冗余但无害；sing-box 无组合层 mode 字段，
-        // 完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
+        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：sing-box
+        // 无组合层 mode 字段，完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
         if self.config.clash_api_enabled {
             // The Clash API may lag behind core startup (notably Android's async
             // VPN boot); wait for readiness so the mode push and the selection

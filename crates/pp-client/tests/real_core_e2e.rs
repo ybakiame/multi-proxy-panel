@@ -27,7 +27,6 @@ use axum::routing::get;
 use pp_client::config::ClientConfig;
 use pp_client::state::ClientState;
 use pp_client::sysproxy::MockSystemProxy;
-use pp_common::CoreType;
 use pp_mitm::recorder::TrafficRecorder;
 
 /// 客户端 mixed 主入口端口（与 core_config 测试一致）。
@@ -138,16 +137,17 @@ async fn real_singbox_full_chain_mitm_records_whitelisted_traffic() {
 
     // 2) ClientState：MITM 启用、白名单 `*.example.com`、不启用系统代理。
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = ClientConfig::new(
-        dir.path().to_path_buf(),
-        hub_url,
-        "tok",
-        CoreType::SingBox,
-        binary,
-    );
+    // 订阅走 subscriptions.json（本地订阅 server），client.json 选中该订阅。
+    let sub_store = pp_client::subscription::SubscriptionStore::new(dir.path().to_path_buf());
+    let sub = sub_store
+        .add("local", &format!("{hub_url}/sub/tok"), true, None)
+        .unwrap();
+    let mut cfg = ClientConfig::new(dir.path().to_path_buf(), "", "", binary);
+    cfg.active_subscription_id = Some(sub.id);
     cfg.mitm_enabled = true;
     cfg.mitm.hostnames = vec![WHITELIST_SUFFIX.to_string()];
     cfg.system_proxy_enabled = false;
+    cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
     let mut state = ClientState::with_system_proxy(cfg, mock.clone());

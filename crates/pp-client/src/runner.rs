@@ -18,20 +18,20 @@ pub struct CoreRunner {
 }
 
 impl CoreRunner {
-    /// 基于核心类型 / 二进制路径 / 配置目录创建运行器。
+    /// 基于二进制路径 / 配置目录创建运行器（客户端仅支持 sing-box 核心）。
     ///
     /// Android 下无法 spawn 核心二进制（核心由 Kotlin 侧 libbox 驱动），
     /// 忽略 `binary_path` / `config_dir`，改为委托给已安装的核心引擎桥
-    /// （见 [`crate::core_engine`]；P1c 前为占位桥，未安装时报明确错误）。
-    pub fn create(core_type: CoreType, binary_path: &Path, config_dir: &Path) -> PanelResult<Self> {
+    /// （见 [`crate::core_engine`]；未安装时报明确错误）。
+    pub fn create(binary_path: &Path, config_dir: &Path) -> PanelResult<Self> {
         #[cfg(target_os = "android")]
         {
             let _ = (binary_path, config_dir);
-            return Self::create_from_bridge(core_type);
+            return Self::create_from_bridge();
         }
         #[cfg(not(target_os = "android"))]
         {
-            let inner = CoreManagerFactory::create(core_type, binary_path, config_dir)?;
+            let inner = CoreManagerFactory::create(CoreType::SingBox, binary_path, config_dir)?;
             Ok(Self { inner })
         }
     }
@@ -41,16 +41,16 @@ impl CoreRunner {
     /// 未安装桥时返回明确错误「Android 核心引擎桥未初始化」，避免 P0 启动代理时
     /// 出现 spawn 失败乱码。仅在 Android 或测试构建下编译（桌面生产构建无此路径）。
     #[cfg(any(target_os = "android", test))]
-    fn create_from_bridge(core_type: CoreType) -> PanelResult<Self> {
+    fn create_from_bridge() -> PanelResult<Self> {
         use crate::core_engine::{CoreEngineBridgeAdapter, core_engine_bridge};
         let bridge = core_engine_bridge()
             .ok_or_else(|| pp_common::PanelError::Client("Android 核心引擎桥未初始化".into()))?;
         let inner: Box<dyn pp_core::CoreManager> =
-            Box::new(CoreEngineBridgeAdapter::new(core_type, bridge));
+            Box::new(CoreEngineBridgeAdapter::new(CoreType::SingBox, bridge));
         Ok(Self { inner })
     }
 
-    /// 启动核心（`config_json` 为 sing-box/mihomo 配置）。
+    /// 启动核心（`config_json` 为 sing-box 配置）。
     pub async fn start(&self, config_json: &Value) -> PanelResult<()> {
         self.inner.start(config_json).await
     }
@@ -112,7 +112,7 @@ mod tests {
     #[tokio::test]
     async fn bridge_registry_install_and_lifecycle_forwarding() {
         // 未安装：create_from_bridge 报明确错误。
-        let err = match CoreRunner::create_from_bridge(CoreType::SingBox) {
+        let err = match CoreRunner::create_from_bridge() {
             Ok(_) => panic!("未安装桥时 create_from_bridge 应报错"),
             Err(e) => e,
         };
@@ -125,7 +125,7 @@ mod tests {
         let mock = Arc::new(MockBridge::default());
         install_core_engine_bridge(mock.clone()).unwrap();
 
-        let runner = CoreRunner::create_from_bridge(CoreType::SingBox).unwrap();
+        let runner = CoreRunner::create_from_bridge().unwrap();
         let config = serde_json::json!({"tag": "mock-config"});
         assert!(!runner.is_running().await);
         runner.start(&config).await.unwrap();

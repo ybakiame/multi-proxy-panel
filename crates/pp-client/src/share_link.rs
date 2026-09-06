@@ -1,6 +1,6 @@
 //! 分享链接解析：ss / vmess / vless / trojan / hysteria2 / tuic / anytls。
 //!
-//! 按行解析，每条链接同时产出 sing-box outbound 与 clash/mihomo proxy 双核心节点。
+//! 按行解析，每条链接产出 sing-box outbound 节点。
 //! 单行解析失败跳过并记 warning；非分享链接行（无 `://` 或未知 scheme）静默跳过。
 
 use std::collections::HashMap;
@@ -9,17 +9,13 @@ use base64::Engine as _;
 use pp_common::{PanelError, PanelResult};
 use serde_json::{Map, Value, json};
 
-use crate::node_convert::singbox_to_mihomo;
-
-/// 单个解析出的分享链接节点（双核心表示）。
+/// 单个解析出的分享链接节点。
 #[derive(Debug, Clone)]
 pub struct ShareNode {
     /// 节点名称（分享链接 `#name`，缺省为 `host:port`）。
     pub name: String,
     /// sing-box outbound（含 `tag`）。
     pub outbound_singbox: Value,
-    /// clash/mihomo proxy（含 `name`）。
-    pub proxy_mihomo: Value,
 }
 
 /// 分享链接解析结果：节点列表 + 每行失败时的 warning。
@@ -66,13 +62,9 @@ fn parse_share_link(line: &str) -> PanelResult<Option<ShareNode>> {
     let outbound = outbound
         .ok_or_else(|| PanelError::Client(format!("failed to parse {scheme}:// share link")))?;
     let name = outbound["tag"].as_str().unwrap_or_default().to_string();
-    let proxy_mihomo = singbox_to_mihomo(&outbound).ok_or_else(|| {
-        PanelError::Client(format!("unsupported share link protocol: {scheme}://"))
-    })?;
     Ok(Some(ShareNode {
         name,
         outbound_singbox: outbound,
-        proxy_mihomo,
     }))
 }
 
@@ -870,10 +862,10 @@ mod tests {
         );
     }
 
-    // ---------- 双核心产出 ----------
+    // ---------- 双核心产出（已移除，仅保留 sing-box） ----------
 
     #[test]
-    fn each_node_produces_both_singbox_and_mihomo() {
+    fn each_node_produces_singbox_outbound() {
         let link = format!(
             "vless://{UUID}@example.com:443?security=reality&sni=example.com&fp=chrome&pbk=PK&sid=ab#dual"
         );
@@ -883,12 +875,6 @@ mod tests {
         assert_eq!(node.name, "dual");
         assert_eq!(node.outbound_singbox["type"], "vless");
         assert_eq!(node.outbound_singbox["tag"], "dual");
-        assert_eq!(node.proxy_mihomo["type"], "vless");
-        assert_eq!(node.proxy_mihomo["name"], "dual");
-        assert_eq!(node.proxy_mihomo["server"], "example.com");
-        assert_eq!(node.proxy_mihomo["port"], 443);
-        assert_eq!(node.proxy_mihomo["servername"], "example.com");
-        assert_eq!(node.proxy_mihomo["reality-opts"]["public-key"], "PK");
     }
 
     // ---------- 失败行 warning / 跳过 ----------

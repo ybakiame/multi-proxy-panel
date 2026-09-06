@@ -48,14 +48,13 @@ pub fn apply_template(
 
     let rule_ids: Vec<String> = generated.iter().map(|r| r.id.clone()).collect();
 
-    // Insert generated rules into singbox and mihomo cores.
-    let min_order = min_sort_order(&ovr.singbox.rules).min(min_sort_order(&ovr.mihomo.rules));
+    // Insert generated rules.
+    let min_order = min_sort_order(&ovr.singbox.rules);
     let base_order = min_order.saturating_sub(100);
 
     for (i, mut rule) in generated.into_iter().enumerate() {
         rule.sort_order = base_order + i as i32;
-        ovr.singbox.rules.push(rule.clone());
-        ovr.mihomo.rules.push(rule);
+        ovr.singbox.rules.push(rule);
     }
 
     // Record applied template.
@@ -87,7 +86,6 @@ pub fn revert_template(ovr: &mut LocalOverride, template_id: &str) -> bool {
     let ids_to_remove: HashSet<String> = record.generated_rule_ids.into_iter().collect();
 
     ovr.singbox.rules.retain(|r| !ids_to_remove.contains(&r.id));
-    ovr.mihomo.rules.retain(|r| !ids_to_remove.contains(&r.id));
 
     true
 }
@@ -279,7 +277,6 @@ mod tests {
         let ids = apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 1000).unwrap();
         assert!(!ids.is_empty());
         assert_eq!(ovr.singbox.rules.len(), ids.len());
-        assert_eq!(ovr.mihomo.rules.len(), ids.len());
         assert_eq!(ovr.applied_templates.len(), 1);
         assert_eq!(ovr.applied_templates[0].template_id, TEMPLATE_RETURN_CHINA);
     }
@@ -335,7 +332,6 @@ mod tests {
         let reverted = revert_template(&mut ovr, TEMPLATE_RETURN_CHINA);
         assert!(reverted);
         assert_eq!(ovr.singbox.rules.len(), before_count);
-        assert_eq!(ovr.mihomo.rules.len(), before_count);
         assert!(ovr.applied_templates.is_empty());
     }
 

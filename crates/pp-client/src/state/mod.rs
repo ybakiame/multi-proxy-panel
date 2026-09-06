@@ -11,7 +11,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use pp_common::{CoreType, PanelError, PanelResult};
+use pp_common::{PanelError, PanelResult};
 use pp_mitm::{MemoryRecorder, RunningProxy};
 use pp_script::{Notifier, ScriptScheduler};
 use tokio::task::JoinHandle;
@@ -136,7 +136,7 @@ impl ClientState {
     /// Runtime model (pure association): the subscription selected on the home page (`active_subscription_id`) is the only one effective,
     /// subscription `enabled` only means "can be selected on home page"; the override used at runtime = the override template associated with the currently effective subscription
     /// (no association = no override). Any exception in subscription selection or template association returns a clear error without starting.
-    /// When no subscription is selected, fall back to the legacy Hub subscription path (deprecated, no override).
+    /// When no subscription is selected, start fails with a clear error.
     ///
     /// Startup order: first pull subscription and generate base config through Profile layer (subscription only takes nodes → local template →
     /// remote YAML → local YAML → remote JS → local JS overlay override, remote URL fetch failure falls back to cache, no cache skips with warning),
@@ -153,8 +153,7 @@ impl ClientState {
         loaded.data_dir = data_dir;
         self.config = loaded;
 
-        // Android forced override: Android now supports dual cores (panelcore.aar bundles sing-box libbox + mihomo),
-        // core_type respects user config; MITM / system proxy / TUN are desktop-exclusive features,
+        // Android forced override: MITM / system proxy / TUN are desktop-exclusive features,
         // no corresponding implementation on Android or would incorrectly block startup (TUN privilege check,
         // system proxy stub). Normalize immediately after config load to avoid startup failure from persisted desktop config.
         #[cfg(target_os = "android")]
@@ -187,13 +186,15 @@ impl ClientState {
         tracing::info!("客户端启动：解析订阅");
         let sub_store = subscription::SubscriptionStore::new(self.config.data_dir.clone());
 
-        // Subscription selection (new model): the subscription selected on home page (config.active_subscription_id) is the only one effective.
-        // Selected subscription must exist and be enabled (can be selected on home page); when no subscription is selected, fall back to legacy Hub
-        // subscription path (hub_url/sub_token non-empty, deprecated).
+        // Subscription selection: the subscription selected on home page (config.active_subscription_id) is the only one effective.
+        // Selected subscription must exist and be enabled (can be selected on home page).
         //
         // Subscription → Profile layer: subscription content is only used to extract nodes, local template generates groups/routing; override
         // template takes the currently effective subscription's `profile_id` (see override parsing below).
-        let mut linked_profile_id = None;
+        //
+        // 订阅格式兼容：ClashYaml 订阅在拉取时已转换为 sing-box 节点（见
+        // [`subscription::parse_subscription_body`] 的 `singbox_nodes`），三种格式统一走
+        // sing-box 本地模板路径。
         let active_sub = match self.config.active_subscription_id {
             Some(id) => Some(
                 sub_store
@@ -206,90 +207,32 @@ impl ClientState {
             ),
             None => None,
         };
-        let sub_content = if let Some(sub) = active_sub {
+        let (linked_profile_id, sub_content) = if let Some(sub) = active_sub {
             if !sub.enabled {
                 return Err(PanelError::Client(
                     "所选订阅已停用，请在订阅页启用或在首页重新选择".to_string(),
                 ));
             }
-            linked_profile_id = sub.profile_id;
             let fetch =
                 subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                     .await?;
-            let effective_core = compat::check_subscription_core_compat(
-                fetch.format,
-                self.config.core_type,
-                Some(sub.id),
-            )?;
-            // Android auto-downgrade: if compat check returns a different core_type,
-            // update config in-memory for this start cycle and persist it so that
-            // subsequent starts use the downgraded core without re-deriving.
-            // Desktop always returns the same core_type.
-            if effective_core != self.config.core_type {
-                tracing::info!(
-                    "Auto-downgrade 已应用: core_type {:?} → {:?} (subscription {})",
-                    self.config.core_type,
-                    effective_core,
-                    sub.id
-                );
-                self.config.core_type = effective_core;
-                // 持久化降级后的 core_type，下次启动直接使用。
-                if let Err(e) = self.config.save() {
-                    tracing::warn!(error = %e, "持久化降级后的 core_type 失败");
-                }
-            }
-            match self.config.core_type {
-                CoreType::SingBox => profile::SubContent::SingBox(serde_json::json!({
-                    "outbounds": fetch.singbox_nodes,
-                })),
-                CoreType::Mihomo => {
-                    let yaml = serde_yaml::to_string(&serde_json::json!({
-                        "proxies": fetch.mihomo_nodes,
-                    }))?;
-                    profile::SubContent::Mihomo(yaml)
-                }
-            }
-        } else if !self.config.hub_url.is_empty() && !self.config.sub_token.is_empty() {
-            tracing::warn!(
-                hub_url = %self.config.hub_url,
-                "未配置选中订阅，回退到旧版 Hub 订阅路径（deprecated）"
-            );
-            let fetcher = subscription::SubscriptionFetcher::new();
-            match self.config.core_type {
-                CoreType::SingBox => {
-                    let (sub_config, _info) = fetcher
-                        .fetch_singbox_config(&self.config.hub_url, &self.config.sub_token)
-                        .await?;
-                    profile::SubContent::SingBox(sub_config)
-                }
-                CoreType::Mihomo => {
-                    let (yaml, _info) = fetcher
-                        .fetch_clash_config(&self.config.hub_url, &self.config.sub_token)
-                        .await?;
-                    profile::SubContent::Mihomo(yaml)
-                }
-            }
+            let content = serde_json::json!({
+                "outbounds": fetch.singbox_nodes,
+            });
+            (sub.profile_id, content)
         } else {
             return Err(PanelError::Client("请先在首页选择要使用的订阅".to_string()));
         };
         let store = profile::ProfileStoreV2::new(self.config.data_dir.clone());
         // Override parsing (pure association): the override used at runtime = the override template associated with the currently effective subscription;
-        // when subscription is not associated (or legacy Hub fallback path), no override is used. When template does not exist or core type does not match,
-        // return clear error. When matched, parse remote override (fetch/cache fallback/skip) → remote as base, local overlay v2 build flow.
+        // when subscription is not associated, no override is used. When template does not exist, return clear error.
+        // When matched, parse remote override (fetch/cache fallback/skip) → remote as base, local overlay v2 build flow.
         let (effective, warnings) = match linked_profile_id {
             Some(pid) => {
                 let profiles = store.load()?;
                 let linked = profiles.iter().find(|p| p.id == pid).ok_or_else(|| {
                     PanelError::Client("订阅关联的覆写模板不存在，请在订阅页重新关联".to_string())
                 })?;
-                if linked.core_type != self.config.core_type {
-                    return Err(PanelError::Client(format!(
-                        "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
-                        linked.name,
-                        compat::core_type_display_name(linked.core_type),
-                        compat::core_type_display_name(self.config.core_type),
-                    )));
-                }
                 profile::resolve_remote_overrides(
                     &self.config.data_dir.join("profile_cache"),
                     linked,
@@ -301,8 +244,7 @@ impl ClientState {
         for warning in &warnings {
             tracing::warn!(warning, "profile remote override");
         }
-        let profile_cfg =
-            profile::build_core_config_v2(self.config.core_type, &sub_content, &effective).await?;
+        let profile_cfg = profile::build_core_config_v2(&sub_content, &effective).await?;
 
         // MITM starts before core: need listen address to inject core routing rules.
         let chain = self.start_mitm_chain().await?;
@@ -318,14 +260,12 @@ impl ClientState {
         // override), same-name fields in template/override are replaced as a whole by settings.
         //
         // Android's TUN toggle is decoupled from desktop semantics: Android traffic is taken over by VpnService (i.e. TUN),
-        // injection strategy differs by core type — sing-box needs config-level tun inbound to trigger libbox callback `openTun()`
-        // to establish VPN interface (core shows running but no interface without it), so Android + sing-box always forces `tun_enabled=true`;
-        // mihomo on Android is TUN-driven by wrapper with fd (wrapper Setup already forces `Tun.Enable=false`), no tun section injected at config level,
-        // so Android + mihomo is always false. Desktop passes through user settings as-is.
+        // sing-box needs config-level tun inbound to trigger libbox callback `openTun()` to establish VPN interface
+        // (core shows running but no interface without it), so Android always forces `tun_enabled=true`.
+        // Desktop passes through user settings as-is.
         let features = core_config::PanelFeatures {
             tun_enabled: compat::panel_features_tun_enabled(
                 cfg!(target_os = "android"),
-                self.config.core_type,
                 self.config.tun_enabled,
             ),
             tun_stack: self.config.tun_stack.clone(),
@@ -336,47 +276,24 @@ impl ClientState {
             clash_api_ui: self.config.clash_api_ui.clone(),
             rule_mode: self.config.normalized_rule_mode().to_string(),
         };
-        let config_json = match self.config.core_type {
-            CoreType::SingBox => {
-                let mut cfg = match core_config::compose_singbox_config(
-                    &profile_cfg,
-                    self.config.mixed_port,
-                    chain,
-                ) {
-                    Ok(cfg) => cfg,
-                    Err(e) => {
-                        self.rollback_mitm_started().await;
-                        return Err(e);
-                    }
-                };
-                // [ADR-0002] Inject local override after compose, before panel features.
-                inject_local_override_warn_only(&self.config.data_dir, &mut cfg, CoreType::SingBox);
-                core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
-                cfg
-            }
-            CoreType::Mihomo => {
-                let yaml = serde_yaml::to_string(&profile_cfg)?;
-                let mut cfg = match core_config::compose_mihomo_config(
-                    &yaml,
-                    self.config.mixed_port,
-                    chain,
-                ) {
-                    Ok(cfg) => cfg,
-                    Err(e) => {
-                        self.rollback_mitm_started().await;
-                        return Err(e);
-                    }
-                };
-                // [ADR-0002] Inject local override after compose, before panel features.
-                inject_local_override_warn_only(&self.config.data_dir, &mut cfg, CoreType::Mihomo);
-                core_config::apply_panel_features(&mut cfg, self.config.core_type, &features);
-                cfg
+        let mut config_json = match core_config::compose_singbox_config(
+            &profile_cfg,
+            self.config.mixed_port,
+            chain,
+        ) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                self.rollback_mitm_started().await;
+                return Err(e);
             }
         };
+        // [ADR-0002] Inject local override after compose, before panel features.
+        inject_local_override_warn_only(&self.config.data_dir, &mut config_json);
+        core_config::apply_panel_features(&mut config_json, &features);
         self.start_services(&config_json).await?;
 
         // 运行状态扩展：记录本次合成配置的规则条数（未运行时为 0）。
-        self.rule_count = compat::config_json_rule_count(&config_json, self.config.core_type);
+        self.rule_count = compat::config_json_rule_count(&config_json);
 
         self.post_core_clash_setup().await;
 
@@ -425,11 +342,7 @@ impl ClientState {
 ///
 /// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
 /// - Injection failure → warning log, does not block startup.
-fn inject_local_override_warn_only(
-    data_dir: &std::path::Path,
-    config: &mut serde_json::Value,
-    core_type: CoreType,
-) {
+fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut serde_json::Value) {
     let store = crate::local_override::LocalOverrideStore::new(data_dir.to_path_buf());
     let ovr = match store.load() {
         Ok(o) => o,
@@ -442,15 +355,10 @@ fn inject_local_override_warn_only(
         }
     };
 
-    let core_ovr = match core_type {
-        CoreType::SingBox => &ovr.singbox,
-        CoreType::Mihomo => &ovr.mihomo,
-    };
-
     // Sync rule set refs from subscriptions.
     let manager = crate::local_override::RuleSetManager::new(data_dir.to_path_buf());
-    let mut core_ovr = core_ovr.clone();
-    core_ovr.rule_sets = manager.build_rule_set_refs(&ovr, core_type);
+    let mut core_ovr = ovr.singbox.clone();
+    core_ovr.rule_sets = manager.build_rule_set_refs(&ovr);
 
-    crate::local_override::apply_local_override(config, core_type, &core_ovr);
+    crate::local_override::apply_local_override(config, &core_ovr);
 }

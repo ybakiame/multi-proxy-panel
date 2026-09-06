@@ -1,4 +1,4 @@
-//! Version-related free functions for core management.
+//! Version-related free functions for core management (sing-box only).
 
 use std::path::Path;
 use std::process::Command;
@@ -6,16 +6,13 @@ use std::process::Command;
 use pp_common::{CoreType, PanelError, PanelResult};
 
 /// Core directory / binary base name.
-pub(super) fn binary_name(core_type: CoreType) -> &'static str {
-    match core_type {
-        CoreType::SingBox => "sing-box",
-        CoreType::Mihomo => "mihomo",
-    }
+pub(super) fn binary_name() -> &'static str {
+    "sing-box"
 }
 
 /// On-disk binary file name (append `.exe` on Windows).
-pub(super) fn binary_name_on_disk(core_type: CoreType) -> String {
-    let base = binary_name(core_type);
+pub(super) fn binary_name_on_disk() -> String {
+    let base = binary_name();
     if std::env::consts::OS == "windows" {
         format!("{base}.exe")
     } else {
@@ -24,8 +21,8 @@ pub(super) fn binary_name_on_disk(core_type: CoreType) -> String {
 }
 
 /// Infer core type from file name: file name (case-insensitive) contains `sing-box` / `singbox` →
-/// [`CoreType::SingBox`], contains `mihomo` / `clash` → [`CoreType::Mihomo`];
-/// returns `None` when unrecognized (command layer prompts user to manually select).
+/// [`CoreType::SingBox`]; returns `None` when unrecognized (command layer prompts user to
+/// manually select).
 ///
 /// Used by command layer (`set_active_core` fallback when path not in inventory) and tests.
 #[allow(dead_code)]
@@ -33,8 +30,6 @@ pub fn infer_core_type(path: &Path) -> Option<CoreType> {
     let name = path.file_name()?.to_string_lossy().to_lowercase();
     if name.contains("sing-box") || name.contains("singbox") {
         Some(CoreType::SingBox)
-    } else if name.contains("mihomo") || name.contains("clash") {
-        Some(CoreType::Mihomo)
     } else {
         None
     }
@@ -55,39 +50,29 @@ pub(super) fn target_spec() -> PanelResult<(&'static str, bool)> {
     }
 }
 
-/// Normalize version to GitHub tag (stable versions get `v` prefix; mihomo Alpha channel etc.
-/// keep their own prefix).
+/// Normalize version to GitHub tag (stable versions get `v` prefix).
 pub(super) fn github_tag(version: &str) -> String {
-    let prefixed = version.starts_with('v')
-        || version.starts_with("Alpha")
-        || version.starts_with("alpha")
-        || version.starts_with("Release")
-        || version.starts_with("release");
-    if prefixed {
+    if version.starts_with('v') {
         version.to_string()
     } else {
         format!("v{version}")
     }
 }
 
-/// Whether asset extension matches current core / platform.
-pub(super) fn ext_ok(core_type: CoreType, is_windows: bool, name: &str) -> bool {
+/// Whether asset extension matches current platform.
+pub(super) fn ext_ok(is_windows: bool, name: &str) -> bool {
     if is_windows {
         name.ends_with(".zip")
     } else {
-        match core_type {
-            CoreType::SingBox => name.ends_with(".tar.gz"),
-            CoreType::Mihomo => name.ends_with(".gz") && !name.ends_with(".tar.gz"),
-        }
+        name.ends_with(".tar.gz")
     }
 }
 
 /// Try `version` subcommand / `--version` / `-v` in sequence, take first output with exit code 0
 /// (concatenate stdout / stderr).
 ///
-/// sing-box 1.14+ removed `--version` flag, using `version` subcommand instead; mihomo traditionally
-/// supports `-v`. Unified probing order: `version` → `--version` → `-v`, compatible with both old
-/// and new cores.
+/// sing-box 1.14+ removed `--version` flag, using `version` subcommand instead. Unified probing
+/// order: `version` → `--version` → `-v`, compatible with both old and new cores.
 pub(super) fn binary_output(binary: &Path) -> String {
     for arg in ["version", "--version", "-v"] {
         if let Ok(output) = Command::new(binary).arg(arg).output() {
@@ -109,15 +94,10 @@ pub(super) fn binary_output(binary: &Path) -> String {
 /// sing-box: `sing-box version 1.13.15`; `version` subcommand output may contain multiple lines
 /// (first line `sing-box version 1.14.0-beta.4` + environment info), take first line containing
 /// "version".
-/// mihomo:   `Mihomo Meta v1.19.29 linux/amd64 go1.23.4`
-pub(super) fn parse_version_from_output(core_type: CoreType, output: &str) -> Option<String> {
-    let pattern = match core_type {
-        CoreType::SingBox => r"sing-box\s+version\s+v?([0-9][0-9A-Za-z.\-]*)",
-        CoreType::Mihomo => r"(?i)mihomo[^\n]*?\bv?([0-9][0-9A-Za-z.\-]*)",
-    };
-    let re = regex::Regex::new(pattern).ok()?;
+pub(super) fn parse_version_from_output(output: &str) -> Option<String> {
+    let re = regex::Regex::new(r"sing-box\s+version\s+v?([0-9][0-9A-Za-z.\-]*)").ok()?;
     // Subcommand output may contain multiple lines: prefer first line containing "version"
-    // (sing-box 1.14+), fallback to full text match for other formats (e.g. mihomo single line).
+    // (sing-box 1.14+), fallback to full text match.
     if let Some(line) = output.lines().find(|l| l.contains("version"))
         && let Some(m) = re.captures(line).and_then(|c| c.get(1))
     {
@@ -129,16 +109,16 @@ pub(super) fn parse_version_from_output(core_type: CoreType, output: &str) -> Op
 }
 
 /// Verify version probe output contains target version (allow `v` prefix, or parsed version equal).
-pub(super) fn verify_version(binary: &Path, core_type: CoreType, version: &str) -> PanelResult<()> {
+pub(super) fn verify_version(binary: &Path, version: &str) -> PanelResult<()> {
     let text = binary_output(binary);
-    let parsed = parse_version_from_output(core_type, &text).unwrap_or_default();
+    let parsed = parse_version_from_output(&text).unwrap_or_default();
     if !version.is_empty()
         && (text.contains(version) || text.contains(&format!("v{version}")) || parsed == version)
     {
         return Ok(());
     }
     Err(PanelError::Core(format!(
-        "Core {core_type} version verification failed: requested {version}, version probe output: {text}"
+        "Core sing-box version verification failed: requested {version}, version probe output: {text}"
     )))
 }
 
@@ -148,8 +128,6 @@ pub(super) fn verify_version(binary: &Path, core_type: CoreType, version: &str) 
 /// - Numeric segments (`.` separated) compared numerically: `1.14.0` > `1.13.15`;
 /// - Versions with same numeric segments but prerelease suffix are lower than stable
 ///   (`1.14.0-beta.4` < `1.14.0`);
-/// - mihomo self-named channels (`Alpha-` / `Release-` prefix, e.g. `Alpha-1.19.30`) participate
-///   in sorting as "prerelease marker + subsequent numeric segments";
 /// - Strings that cannot be parsed into version segments (e.g. `unknown`) are treated as empty
 ///   segments → oldest.
 pub(super) fn compare_core_versions(a: &str, b: &str) -> std::cmp::Ordering {
@@ -169,7 +147,7 @@ pub(super) fn compare_core_versions(a: &str, b: &str) -> std::cmp::Ordering {
     if len_cmp != std::cmp::Ordering::Equal {
         return len_cmp;
     }
-    // Numeric segments equal: stable > prerelease; prereleases compared by channel prefix + tail.
+    // Numeric segments equal: stable > prerelease; prereleases compared by marker + tail.
     match (a_pre, b_pre) {
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -181,19 +159,9 @@ pub(super) fn compare_core_versions(a: &str, b: &str) -> std::cmp::Ordering {
 /// Split version into (prerelease prefix, numeric core).
 ///
 /// `1.14.0-beta.4` → `(Some("beta.4"), "1.14.0")`;
-/// `Alpha-1.19.30` → `(Some("alpha"), "1.19.30")`;
 /// `1.13.15` → `(None, "1.13.15")`.
 fn split_version_identity(v: &str) -> (Option<String>, String) {
     let v = v.trim();
-    // mihomo own prefix channels (`Alpha` / `Release`, case-insensitive).
-    if let Some(rest) = v
-        .strip_prefix("Alpha-")
-        .or_else(|| v.strip_prefix("alpha-"))
-        .or_else(|| v.strip_prefix("Release-"))
-        .or_else(|| v.strip_prefix("release-"))
-    {
-        return (Some("alpha".to_string()), rest.to_string());
-    }
     // Standard `number[.number].prerelease`: after `-` is prerelease marker.
     if let Some(idx) = v.find('-') {
         let (core, pre) = v.split_at(idx);
@@ -212,15 +180,6 @@ fn parse_numeric_segments(s: &str) -> Vec<u64> {
         .filter(|seg| !seg.is_empty())
         .filter_map(|seg| seg.parse::<u64>().ok())
         .collect()
-}
-
-/// Map core name string to CoreType.
-pub(super) fn core_type_from_name(name: &str) -> PanelResult<CoreType> {
-    match name {
-        "sing-box" => Ok(CoreType::SingBox),
-        "mihomo" => Ok(CoreType::Mihomo),
-        _ => Err(PanelError::Core(format!("Unknown core name: {name}"))),
-    }
 }
 
 #[cfg(test)]
@@ -253,18 +212,6 @@ mod version_tests {
         // Prerelease base version higher than old stable: 1.14.0-beta.4 > 1.13.15.
         assert_eq!(
             compare_core_versions("1.13.15", "1.14.0-beta.4"),
-            Ordering::Less
-        );
-    }
-
-    #[test]
-    fn mihomo_alpha_channel_sorts_by_numeric_after_prefix() {
-        assert_eq!(
-            compare_core_versions("Alpha-1.19.30", "1.19.29"),
-            Ordering::Greater
-        );
-        assert_eq!(
-            compare_core_versions("Alpha-1.19.30", "1.19.30"),
             Ordering::Less
         );
     }

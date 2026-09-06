@@ -1,10 +1,10 @@
 //! pp-client — 桌面客户端核心库。
 //!
-//! 提供客户端配置（[`config`]）、分享链接解析（[`share_link`]）、双核心节点转换
+//! 提供客户端配置（[`config`]）、分享链接解析（[`share_link`]）、Clash→sing-box 节点转换
 //! （[`node_convert`]）、通用订阅管理（[`subscription`]）、三方配置片段导入
 //! （[`import`]）、Profile 模板与复写（[`profile`]）、核心配置合成（[`core_config`]）、
 //! 系统代理（[`sysproxy`]）、核心运行器（[`runner`]）、核心引擎桥（[`core_engine`]）、
-//! MITM 构建（[`mitm`]）与运行状态编排（[`state`]）。
+//! MITM 构建（[`mitm`]）与运行状态编排（[`state`]）。仅支持 sing-box 核心。
 
 #![allow(clippy::result_large_err)]
 

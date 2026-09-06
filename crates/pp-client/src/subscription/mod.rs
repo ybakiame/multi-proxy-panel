@@ -3,10 +3,9 @@
 //!
 //! Subscriptions are no longer bound to Hub: `fetch_subscription` accepts any
 //! subscription URL, sniffs content for share links / clash YAML / sing-box JSON
-//! three formats, and uniformly produces dual-core nodes.
-//! The legacy Hub path (`/sub/{token}?format=...`) is retained as
-//! [`SubscriptionFetcher`] compatibility methods, used by `state` as fallback
-//! when no generic subscription is configured.
+//! three formats, and uniformly produces sing-box nodes (clash YAML proxies are
+//! converted via [`mihomo_to_singbox`]; unsupported proxy types are skipped with
+//! warnings).
 
 use std::time::Duration;
 
@@ -15,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::node_convert::{mihomo_to_singbox, singbox_to_mihomo};
-use crate::profile::{extract_nodes_mihomo, extract_nodes_singbox};
+use crate::node_convert::mihomo_to_singbox;
+use crate::profile::{extract_clash_proxies, extract_nodes_singbox};
 use crate::share_link::{ShareLinkParseResult, parse_share_links};
 
 mod fetch;
@@ -100,31 +99,31 @@ pub enum SubFormat {
 }
 
 impl Default for SubFormat {
-    /// Default format is share links (both cores support it, used as fallback
+    /// Default format is share links (used as fallback
     /// when old cache lacks `format` field).
     fn default() -> Self {
         Self::ShareLinks
     }
 }
 
-/// Subscription fetch result: sniffed format + dual-core nodes + user info +
+/// Subscription fetch result: sniffed format + sing-box nodes + user info +
 /// line-level warnings.
 #[derive(Debug, Clone)]
 pub struct FetchResult {
     pub format: SubFormat,
     pub singbox_nodes: Vec<Value>,
-    pub mihomo_nodes: Vec<Value>,
     pub userinfo: Option<SubscriptionInfo>,
     pub warnings: Vec<String>,
 }
 
 /// Subscription content cache: written to disk
 /// (`data_dir/subscription_cache/<id>.json`) on successful refresh with
-/// dual-core nodes + sniffed format.
+/// sing-box nodes + sniffed format.
 ///
 /// Used for config preview etc. to assemble locally and avoid remote fetching
 /// every time. All fields have `#[serde(default)]` to ensure compatibility
-/// with old cache files missing fields.
+/// with old cache files missing fields; the legacy `mihomo_nodes` field in old
+/// cache files is silently dropped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CachedSubscriptionContent {
     /// Sniffed subscription format (same as [`Subscription::format`]).
@@ -133,9 +132,6 @@ pub struct CachedSubscriptionContent {
     /// sing-box side available nodes (`outbounds` array elements).
     #[serde(default)]
     pub singbox_nodes: Vec<Value>,
-    /// mihomo side nodes (`proxies` array elements).
-    #[serde(default)]
-    pub mihomo_nodes: Vec<Value>,
 }
 
 /// Generic subscription fetch (module-level entry): GET (no_proxy, 30s timeout)
@@ -186,11 +182,12 @@ pub fn parse_subscription_userinfo(
     Some(info)
 }
 
-/// Sniff subscription content format and convert to dual-core nodes:
+/// Sniff subscription content format and convert to sing-box nodes:
 ///
 /// ① Overall base64 decode succeeds and contains `://` → share links
-/// ② Contains `proxies:` → clash YAML (proxies → dual format)
-/// ③ JSON contains `outbounds` → sing-box JSON (extract then convert to mihomo)
+/// ② Contains `proxies:` → clash YAML (proxies converted to sing-box via
+///   [`mihomo_to_singbox`], unsupported types skipped with warning)
+/// ③ JSON contains `outbounds` → sing-box JSON (leaf nodes extracted)
 /// ④ Lines contain `://` → plaintext share links
 pub fn parse_subscription_body(
     text: &str,
@@ -212,9 +209,10 @@ pub fn parse_subscription_body(
         ));
     }
 
-    // ② clash YAML.
+    // ② clash YAML（ClashYaml 订阅放行 sing-box：proxies 转 sing-box 节点，
+    // 不支持的协议类型跳过并记 warning）。
     if trimmed.contains("proxies:") {
-        let proxies = extract_nodes_mihomo(trimmed)?;
+        let proxies = extract_clash_proxies(trimmed)?;
         let mut singbox_nodes = Vec::with_capacity(proxies.len());
         let mut warnings = Vec::new();
         for p in &proxies {
@@ -230,7 +228,6 @@ pub fn parse_subscription_body(
         return Ok(FetchResult {
             format: SubFormat::ClashYaml,
             singbox_nodes,
-            mihomo_nodes: proxies,
             userinfo: info,
             warnings,
         });
@@ -241,25 +238,11 @@ pub fn parse_subscription_body(
         && let Ok(parsed) = serde_json::from_str::<Value>(trimmed)
         && parsed.get("outbounds").and_then(Value::as_array).is_some()
     {
-        let outbounds = extract_nodes_singbox(&parsed);
-        let mut mihomo_nodes = Vec::with_capacity(outbounds.len());
-        let mut warnings = Vec::new();
-        for o in &outbounds {
-            match singbox_to_mihomo(o) {
-                Some(p) => mihomo_nodes.push(p),
-                None => {
-                    if let Some(t) = o.get("tag").and_then(Value::as_str) {
-                        warnings.push(format!("unsupported sing-box outbound type skipped: {t}"));
-                    }
-                }
-            }
-        }
         return Ok(FetchResult {
             format: SubFormat::SingBoxJson,
-            singbox_nodes: outbounds,
-            mihomo_nodes,
+            singbox_nodes: extract_nodes_singbox(&parsed),
             userinfo: info,
-            warnings,
+            warnings: Vec::new(),
         });
     }
 
@@ -283,16 +266,14 @@ fn share_links_result(
     info: Option<SubscriptionInfo>,
     format: SubFormat,
 ) -> FetchResult {
-    let mut singbox_nodes = Vec::with_capacity(parsed.nodes.len());
-    let mut mihomo_nodes = Vec::with_capacity(parsed.nodes.len());
-    for node in &parsed.nodes {
-        singbox_nodes.push(node.outbound_singbox.clone());
-        mihomo_nodes.push(node.proxy_mihomo.clone());
-    }
+    let singbox_nodes = parsed
+        .nodes
+        .iter()
+        .map(|node| node.outbound_singbox.clone())
+        .collect();
     FetchResult {
         format,
         singbox_nodes,
-        mihomo_nodes,
         userinfo: info,
         warnings: parsed.warnings,
     }

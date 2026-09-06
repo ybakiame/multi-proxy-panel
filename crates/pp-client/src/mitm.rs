@@ -97,7 +97,6 @@ pub fn build_mitm_proxy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pp_common::CoreType;
     use pp_mitm::MemoryRecorder;
     use std::path::PathBuf;
 
@@ -110,7 +109,6 @@ mod tests {
             dir.path().to_path_buf(),
             "http://127.0.0.1:50052",
             "tok",
-            CoreType::SingBox,
             PathBuf::from("/bin/sleep"),
         );
         let recorder: Arc<dyn TrafficRecorder> = Arc::new(MemoryRecorder::new(2048));

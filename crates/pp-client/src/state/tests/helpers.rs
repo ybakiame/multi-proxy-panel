@@ -10,7 +10,6 @@ pub use std::time::Duration;
 
 pub use axum::http::StatusCode;
 pub use base64::Engine as _;
-pub use pp_common::CoreType;
 pub use tempfile::TempDir;
 
 pub use crate::config::ClientConfig;
@@ -94,10 +93,16 @@ pub fn test_config(dir: &TempDir, hub_url: String) -> ClientConfig {
         dir.path().to_path_buf(),
         hub_url,
         "tok",
-        CoreType::SingBox,
         fake_core_script(dir),
     );
     // start now always reloads config from disk: test config must first write client.json to disk.
     cfg.save().unwrap();
     cfg
+}
+
+/// 向 subscriptions.json 添加指向 `url` 的订阅并返回其 id（供测试设为 active_subscription_id；
+/// 旧版 Hub 回退路径已移除，启动必须选中订阅）。
+pub fn add_local_subscription(dir: &TempDir, url: &str) -> uuid::Uuid {
+    let store = crate::subscription::SubscriptionStore::new(dir.path().to_path_buf());
+    store.add("local", url, true, None).unwrap().id
 }

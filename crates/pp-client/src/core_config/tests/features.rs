@@ -1,5 +1,4 @@
 use super::*;
-use pp_common::CoreType;
 use serde_json::json;
 
 fn singbox_features() -> PanelFeatures {
@@ -22,7 +21,7 @@ fn apply_singbox_panel_features_injects_tun_and_clash_api() {
         "outbounds": [{ "type": "direct", "tag": "direct" }]
     });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
-    apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+    apply_panel_features(&mut cfg, &singbox_features());
 
     // tun inbound appended: tag / address / mtu / auto_route / stack.
     let inbounds = cfg["inbounds"].as_array().unwrap();
@@ -64,7 +63,7 @@ fn apply_singbox_panel_features_overrides_template_tun() {
         "outbounds": [{ "type": "direct", "tag": "direct" }]
     });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
-    apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+    apply_panel_features(&mut cfg, &singbox_features());
 
     let inbounds = cfg["inbounds"].as_array().unwrap();
     let tun: Vec<_> = inbounds.iter().filter(|i| i["type"] == "tun").collect();
@@ -145,7 +144,7 @@ fn android_tun_inbound_passes_real_singbox_check() {
         tun_enabled: false,
         ..singbox_features()
     };
-    apply_panel_features(&mut cfg, CoreType::SingBox, &clash_only);
+    apply_panel_features(&mut cfg, &clash_only);
     // Android field set tun inbound: strict_route.
     let tun = build_singbox_tun_inbound(&singbox_features(), true);
     cfg["inbounds"].as_array_mut().unwrap().push(tun);
@@ -380,7 +379,7 @@ fn android_config_with_injected_dns_passes_real_singbox_check() {
     });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     // Simulate Android panel injection path: tun inbound (Android field set) + clash_api + explicit DNS.
-    apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+    apply_panel_features(&mut cfg, &singbox_features());
     inject_android_dns(&mut cfg);
 
     // Composed config main selector tag is `proxy` (singbox_template fixed group name).
@@ -420,7 +419,7 @@ fn android_config_without_direct_outbound_passes_real_singbox_check() {
         "route": { "final": "proxy" }
     });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
-    apply_panel_features(&mut cfg, CoreType::SingBox, &singbox_features());
+    apply_panel_features(&mut cfg, &singbox_features());
     inject_android_dns(&mut cfg);
 
     // No direct outbound -> local DNS has no detour, and outbounds contains no created direct outbound.
@@ -466,7 +465,7 @@ fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
         clash_api_enabled: false,
         ..disabled
     };
-    apply_panel_features(&mut cfg, CoreType::SingBox, &disabled);
+    apply_panel_features(&mut cfg, &disabled);
 
     assert!(
         !cfg["inbounds"]
@@ -476,154 +475,4 @@ fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
             .any(|i| i["type"] == "tun")
     );
     assert!(cfg.get("experimental").is_none());
-}
-
-#[test]
-fn apply_mihomo_panel_features_injects_tun_and_external_controller() {
-    let yaml =
-        "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-    apply_panel_features(&mut cfg, CoreType::Mihomo, &singbox_features());
-
-    // tun map injection.
-    assert_eq!(cfg["tun"]["enable"], true);
-    assert_eq!(cfg["tun"]["stack"], "mixed");
-    assert_eq!(cfg["tun"]["auto-route"], true);
-    assert_eq!(cfg["tun"]["auto-detect-interface"], true);
-    assert_eq!(cfg["tun"]["dns-hijack"], json!(["any:53"]));
-    // external-controller + secret injection.
-    assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
-    assert_eq!(cfg["secret"], "sekret");
-}
-
-#[test]
-fn apply_mihomo_panel_features_overrides_and_omits_empty_secret() {
-    let yaml = r#"
-mixed-port: 17890
-tun:
-  enable: false
-  stack: system
-external-controller: 0.0.0.0:60000
-proxies:
-  - name: n1
-    type: direct
-rules:
-  - MATCH,DIRECT
-"#;
-    let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-    let features = PanelFeatures {
-        tun_stack: "gvisor".to_string(),
-        tun_auto_route: false,
-        clash_api_secret: String::new(), // empty secret -> omit this key
-        ..singbox_features()
-    };
-    apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
-
-    // Template tun / external-controller replaced by settings.
-    assert_eq!(cfg["tun"]["enable"], true);
-    assert_eq!(cfg["tun"]["stack"], "gvisor");
-    assert_eq!(cfg["tun"]["auto-route"], false);
-    assert_eq!(cfg["external-controller"], "127.0.0.1:9090");
-    // secret empty string -> omitted in output.
-    assert!(cfg.get("secret").is_none());
-}
-
-#[test]
-fn apply_mihomo_panel_features_disabled_leaves_config_untouched() {
-    let yaml =
-        "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-    let disabled = PanelFeatures {
-        tun_enabled: false,
-        tun_stack: String::new(),
-        clash_api_enabled: false,
-        clash_api_secret: String::new(),
-        ..singbox_features()
-    };
-    apply_panel_features(&mut cfg, CoreType::Mihomo, &disabled);
-
-    assert!(cfg.get("tun").is_none());
-    assert!(cfg.get("external-controller").is_none());
-    assert!(cfg.get("secret").is_none());
-    assert!(cfg.get("external-ui").is_none());
-    assert!(cfg.get("external-ui-url").is_none());
-}
-
-// ---------- Rule mode (mihomo top-level mode injection / sing-box not written) ----------
-
-#[test]
-fn apply_mihomo_panel_features_injects_rule_mode() {
-    let yaml =
-        "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-    let features = PanelFeatures {
-        rule_mode: "global".to_string(),
-        ..singbox_features()
-    };
-    apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
-
-    assert_eq!(
-        cfg["mode"], "global",
-        "mihomo top-level should write persisted rule mode"
-    );
-}
-
-/// Invalid values (including empty string) normalize back to `rule` before writing.
-#[test]
-fn apply_mihomo_panel_features_falls_back_to_rule_for_invalid_mode() {
-    let yaml =
-        "mixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    for invalid in ["", "bogus", "Rule", "direct2"] {
-        let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-        let features = PanelFeatures {
-            rule_mode: invalid.to_string(),
-            ..singbox_features()
-        };
-        apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
-        assert_eq!(
-            cfg["mode"], "rule",
-            "invalid value {invalid:?} should fall back to rule"
-        );
-    }
-}
-
-/// Template/override already has `mode` -> replaced by settings.
-#[test]
-fn apply_mihomo_panel_features_mode_overrides_template() {
-    let yaml = "mode: global\nmixed-port: 17890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    let mut cfg = compose_mihomo_config(yaml, 17890, None).unwrap();
-    assert_eq!(
-        cfg["mode"], "global",
-        "template's own mode should be preserved before injection"
-    );
-    let features = PanelFeatures {
-        rule_mode: "direct".to_string(),
-        ..singbox_features()
-    };
-    apply_panel_features(&mut cfg, CoreType::Mihomo, &features);
-
-    assert_eq!(
-        cfg["mode"], "direct",
-        "settings value should override template mode"
-    );
-}
-
-/// sing-box has no composition-level mode field: even if rule mode is set, not written to config (runtime
-/// switched via Clash API `PATCH /configs`).
-#[test]
-fn apply_singbox_panel_features_does_not_inject_mode() {
-    let sub = json!({
-        "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
-    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
-    let features = PanelFeatures {
-        rule_mode: "global".to_string(),
-        ..singbox_features()
-    };
-    apply_panel_features(&mut cfg, CoreType::SingBox, &features);
-
-    assert!(
-        cfg.get("mode").is_none(),
-        "sing-box config should not write top-level mode: {cfg}"
-    );
 }

@@ -88,7 +88,6 @@ fn build_singbox_rule_set_entry(rs: &super::LocalRuleSetRef) -> Option<Value> {
     let format = match rs.kind {
         super::RuleSetKind::SingBoxRemote => "binary",
         super::RuleSetKind::SingBoxLocal => "source",
-        _ => "binary",
     };
 
     Some(json!({

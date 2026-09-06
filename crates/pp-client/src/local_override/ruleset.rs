@@ -28,20 +28,14 @@ impl RuleSetManager {
         self.data_dir.join(RULE_SET_CACHE_DIR)
     }
 
-    /// Cached file path for a community rule set.
-    ///
-    /// sing-box uses `.srs`, mihomo uses `.yaml`.
-    pub fn cache_file_path(&self, community_id: &str, core_type: pp_common::CoreType) -> PathBuf {
-        let ext = match core_type {
-            pp_common::CoreType::SingBox => "srs",
-            pp_common::CoreType::Mihomo => "yaml",
-        };
-        self.cache_dir().join(format!("{community_id}.{ext}"))
+    /// Cached file path for a community rule set (sing-box `.srs`).
+    pub fn cache_file_path(&self, community_id: &str) -> PathBuf {
+        self.cache_dir().join(format!("{community_id}.srs"))
     }
 
     /// Check if a cached file exists.
-    pub fn is_cached(&self, community_id: &str, core_type: pp_common::CoreType) -> bool {
-        self.cache_file_path(community_id, core_type).exists()
+    pub fn is_cached(&self, community_id: &str) -> bool {
+        self.cache_file_path(community_id).exists()
     }
 
     /// Toggle subscription state for a rule set.
@@ -82,16 +76,14 @@ impl RuleSetManager {
         Ok(changed)
     }
 
-    /// Download a single rule set for both cores.
+    /// Download a single rule set (sing-box `.srs` variant).
     ///
-    /// - Downloads sing-box `.srs` and mihomo `.yaml` variants.
     /// - On failure, preserves existing cache (graceful degradation).
     /// - Updates `last_updated` timestamp on success.
     pub async fn download_rule_set(&self, sub: &RuleSetSubscription) -> PanelResult<()> {
         let cache_dir = self.cache_dir();
         std::fs::create_dir_all(&cache_dir)?;
 
-        // Download sing-box variant.
         let singbox_url = sub.singbox_url_template.replace("{tag}", &sub.community_id);
         let singbox_path = cache_dir.join(format!("{}.srs", sub.community_id));
         if let Err(e) = self.download_file(&singbox_url, &singbox_path).await {
@@ -100,18 +92,6 @@ impl RuleSetManager {
                 url = %singbox_url,
                 error = %e,
                 "sing-box rule set download failed, keeping old cache if any"
-            );
-        }
-
-        // Download mihomo variant.
-        let mihomo_url = sub.mihomo_url_template.replace("{tag}", &sub.community_id);
-        let mihomo_path = cache_dir.join(format!("{}.yaml", sub.community_id));
-        if let Err(e) = self.download_file(&mihomo_url, &mihomo_path).await {
-            tracing::warn!(
-                community_id = %sub.community_id,
-                url = %mihomo_url,
-                error = %e,
-                "mihomo rule set download failed, keeping old cache if any"
             );
         }
 
@@ -142,43 +122,30 @@ impl RuleSetManager {
         Ok(updated)
     }
 
-    /// Build [`LocalRuleSetRef`] entries from subscribed rule sets for a given core.
+    /// Build [`LocalRuleSetRef`] entries from subscribed rule sets.
     ///
     /// Only includes subscribed rule sets that have a cached file.
-    pub fn build_rule_set_refs(
-        &self,
-        ovr: &LocalOverride,
-        core_type: pp_common::CoreType,
-    ) -> Vec<LocalRuleSetRef> {
+    pub fn build_rule_set_refs(&self, ovr: &LocalOverride) -> Vec<LocalRuleSetRef> {
         let mut refs = Vec::new();
         for sub in &ovr.rule_set_subscriptions {
             if !sub.subscribed {
                 continue;
             }
-            let cache_path = self.cache_file_path(&sub.community_id, core_type);
+            let cache_path = self.cache_file_path(&sub.community_id);
             if !cache_path.exists() {
                 tracing::debug!(
                     community_id = %sub.community_id,
-                    core = ?core_type,
                     "rule set cache missing, skipping"
                 );
                 continue;
             }
 
-            let (kind, source) = match core_type {
-                pp_common::CoreType::SingBox => (
-                    RuleSetKind::SingBoxRemote,
-                    RuleSetSource::Local {
-                        path: cache_path.to_string_lossy().to_string(),
-                    },
-                ),
-                pp_common::CoreType::Mihomo => (
-                    RuleSetKind::MihomoFile,
-                    RuleSetSource::Local {
-                        path: cache_path.to_string_lossy().to_string(),
-                    },
-                ),
-            };
+            let (kind, source) = (
+                RuleSetKind::SingBoxRemote,
+                RuleSetSource::Local {
+                    path: cache_path.to_string_lossy().to_string(),
+                },
+            );
 
             refs.push(LocalRuleSetRef {
                 id: format!("rs-ref-{}", sub.community_id),
@@ -213,7 +180,6 @@ pub struct RuleSetStatusView {
     pub category: String,
     pub subscribed: bool,
     pub singbox_cached: bool,
-    pub mihomo_cached: bool,
     pub last_updated: u64,
 }
 
@@ -226,8 +192,7 @@ impl RuleSetStatusView {
             display_name: sub.display_name.clone(),
             category: format!("{:?}", sub.category).to_lowercase(),
             subscribed: sub.subscribed,
-            singbox_cached: manager.is_cached(&sub.community_id, pp_common::CoreType::SingBox),
-            mihomo_cached: manager.is_cached(&sub.community_id, pp_common::CoreType::Mihomo),
+            singbox_cached: manager.is_cached(&sub.community_id),
             last_updated: 0, // TODO: read from file mtime or stored timestamp.
         }
     }
@@ -242,10 +207,8 @@ mod tests {
     fn cache_file_path_formats_correctly() {
         let dir = tempfile::tempdir().unwrap();
         let mgr = RuleSetManager::new(dir.path().to_path_buf());
-        let p1 = mgr.cache_file_path("geoip-cn", pp_common::CoreType::SingBox);
+        let p1 = mgr.cache_file_path("geoip-cn");
         assert_eq!(p1.file_name().unwrap(), "geoip-cn.srs");
-        let p2 = mgr.cache_file_path("geoip-cn", pp_common::CoreType::Mihomo);
-        assert_eq!(p2.file_name().unwrap(), "geoip-cn.yaml");
     }
 
     #[test]
@@ -257,7 +220,7 @@ mod tests {
             ..Default::default()
         };
         // None subscribed, none cached.
-        let refs = mgr.build_rule_set_refs(&ovr, pp_common::CoreType::SingBox);
+        let refs = mgr.build_rule_set_refs(&ovr);
         assert!(refs.is_empty());
     }
 
@@ -273,13 +236,9 @@ mod tests {
         };
         // Create fake cache.
         std::fs::create_dir_all(mgr.cache_dir()).unwrap();
-        std::fs::write(
-            mgr.cache_file_path("geoip-cn", pp_common::CoreType::SingBox),
-            "fake",
-        )
-        .unwrap();
+        std::fs::write(mgr.cache_file_path("geoip-cn"), "fake").unwrap();
 
-        let refs = mgr.build_rule_set_refs(&ovr, pp_common::CoreType::SingBox);
+        let refs = mgr.build_rule_set_refs(&ovr);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].tag, "geoip-cn");
         assert!(matches!(refs[0].kind, RuleSetKind::SingBoxRemote));

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use pp_common::{PanelError, PanelResult};
 
-use super::version::{binary_name_on_disk, core_type_from_name};
+use super::version::binary_name_on_disk;
 
 /// Extract `.tar.gz` and retrieve target binary.
 pub(super) fn extract_tgz(
@@ -20,7 +20,7 @@ pub(super) fn extract_tgz(
         let path = entry.path()?;
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if file_name == target_name || file_name == format!("{target_name}.exe") {
-            let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
+            let dest = dest_dir.join(binary_name_on_disk());
             entry.unpack(&dest)?;
             return Ok(dest);
         }
@@ -51,7 +51,7 @@ pub(super) fn extract_zip(
         if file_name.eq_ignore_ascii_case(target_name)
             || file_name.eq_ignore_ascii_case(&format!("{target_name}.exe"))
         {
-            let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
+            let dest = dest_dir.join(binary_name_on_disk());
             let mut out = std::fs::File::create(&dest)?;
             std::io::copy(&mut entry, &mut out)?;
             binary_dest = Some(dest);
@@ -59,20 +59,6 @@ pub(super) fn extract_zip(
     }
     binary_dest
         .ok_or_else(|| PanelError::Core(format!("Binary {target_name} not found in archive")))
-}
-
-/// Extract single gzip file (mihomo non-Windows asset is a single binary gz).
-pub(super) fn extract_gzip(
-    archive: &Path,
-    dest_dir: &Path,
-    target_name: &str,
-) -> PanelResult<PathBuf> {
-    let file = std::fs::File::open(archive)?;
-    let mut decoder = flate2::read::GzDecoder::new(file);
-    let dest = dest_dir.join(binary_name_on_disk(core_type_from_name(target_name)?));
-    let mut out = std::fs::File::create(&dest)?;
-    std::io::copy(&mut decoder, &mut out)?;
-    Ok(dest)
 }
 
 /// chmod 755 (Unix).

@@ -6,17 +6,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::http::StatusCode;
-use pp_common::{CoreType, PanelError};
+use pp_common::PanelError;
 use pp_script::{HttpExecutor, HttpRequestSpec};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::core_config::{MitmChain, compose_mihomo_config, compose_singbox_config};
+use crate::core_config::{MitmChain, compose_singbox_config};
 use crate::profile::{
     DenyHttpExecutor, EffectiveOverrides, Profile, ProfileOverrides, ProfileStore, ProfileStoreV2,
-    SubContent, apply_js_override, apply_yaml_override, build_core_config, build_core_config_v2,
-    extract_nodes_mihomo, extract_nodes_singbox, mihomo_template, resolve_remote_overrides,
-    singbox_template,
+    apply_js_override, apply_yaml_override, build_core_config, build_core_config_v2,
+    extract_nodes_singbox, resolve_remote_overrides, singbox_template,
 };
 
 fn sample_singbox_sub() -> Value {
@@ -35,28 +34,6 @@ fn sample_singbox_sub() -> Value {
     })
 }
 
-fn sample_mihomo_yaml() -> &'static str {
-    r#"
-proxies:
-  - name: n1
-    type: vless
-    server: example.com
-    port: 443
-    uuid: 12345678-1234-1234-1234-123456789012
-  - name: n2
-    type: hysteria2
-    server: example.org
-    port: 8443
-    password: pw
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies: [n1]
-rules:
-  - MATCH,DIRECT
-"#
-}
-
 fn mitm_chain() -> MitmChain {
     MitmChain {
         proxy_addr: "127.0.0.1:34567".parse().unwrap(),
@@ -73,19 +50,6 @@ fn test_core_dir() -> std::path::PathBuf {
 
 fn sing_box_binary() -> Option<std::path::PathBuf> {
     let p = test_core_dir().join("sing-box");
-    p.is_file().then_some(p)
-}
-
-fn mihomo_binary() -> Option<std::path::PathBuf> {
-    let p = test_core_dir().join("mihomo");
-    p.is_file().then_some(p)
-}
-
-/// Locally downloaded mihomo geoip.metadb (`~/.config/mihomo`), avoids `mihomo -t` downloading
-/// geo data from the network.
-fn geoip_metadb() -> Option<std::path::PathBuf> {
-    let p = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/mihomo/geoip.metadb");
     p.is_file().then_some(p)
 }
 
@@ -191,74 +155,6 @@ fn singbox_template_empty_nodes_falls_back_to_direct() {
         .find(|o| o["tag"] == "auto")
         .unwrap();
     assert_eq!(auto["outbounds"], json!(["direct"]));
-}
-
-// ---------- ③ mihomo extraction + template ----------
-
-#[test]
-fn extract_nodes_mihomo_reads_proxies_and_dedups_names() {
-    let nodes = extract_nodes_mihomo(sample_mihomo_yaml()).unwrap();
-    assert_eq!(nodes.len(), 2);
-    assert_eq!(nodes[0]["name"], "n1");
-    assert_eq!(nodes[1]["name"], "n2");
-
-    let yaml = "proxies:\n  - name: x\n    type: vless\n    server: a.com\n    port: 443\n  - name: x\n    type: vmess\n    server: b.com\n    port: 443\n";
-    let nodes = extract_nodes_mihomo(yaml).unwrap();
-    let names: Vec<&str> = nodes.iter().map(|n| n["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["x", "x-2"]);
-
-    let err = extract_nodes_mihomo("port: [unclosed").unwrap_err();
-    assert!(matches!(err, PanelError::Client(_)));
-}
-
-#[test]
-fn mihomo_template_builds_groups_and_rules() {
-    let nodes = extract_nodes_mihomo(sample_mihomo_yaml()).unwrap();
-    let cfg = mihomo_template(&nodes);
-
-    assert_eq!(cfg["dns"]["enable"], true);
-    assert_eq!(cfg["dns"]["nameserver"], json!(["223.5.5.5"]));
-
-    let proxies = cfg["proxies"].as_array().unwrap();
-    assert!(proxies.iter().any(|p| p["name"] == "n1"));
-    assert!(proxies.iter().any(|p| p["name"] == "n2"));
-
-    let groups = cfg["proxy-groups"].as_array().unwrap();
-    let proxy = groups.iter().find(|g| g["name"] == "proxy").unwrap();
-    assert_eq!(proxy["type"], "select");
-    let proxy_list: Vec<&str> = proxy["proxies"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert_eq!(proxy_list, vec!["auto", "n1", "n2"]);
-
-    let auto = groups.iter().find(|g| g["name"] == "auto").unwrap();
-    assert_eq!(auto["type"], "url-test");
-    assert_eq!(auto["url"], "https://www.gstatic.com/generate_204");
-    assert_eq!(auto["interval"], 300);
-    let auto_list: Vec<&str> = auto["proxies"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert_eq!(auto_list, vec!["n1", "n2"]);
-
-    assert_eq!(cfg["rules"], json!(["MATCH,proxy"]));
-}
-
-#[test]
-fn mihomo_template_empty_nodes_falls_back_to_direct() {
-    let cfg = mihomo_template(&[]);
-    let auto = cfg["proxy-groups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|g| g["name"] == "auto")
-        .unwrap();
-    assert_eq!(auto["proxies"], json!(["DIRECT"]));
 }
 
 // ---------- ④ YAML deep-merge override ----------
@@ -395,9 +291,9 @@ async fn js_override_invalid_script_errors() {
 #[test]
 fn build_core_config_future_is_send() {
     fn assert_send<T: Send>(_: &T) {}
-    let sub = SubContent::SingBox(sample_singbox_sub());
+    let sub = sample_singbox_sub();
     let overrides = ProfileOverrides::default();
-    let fut = build_core_config(CoreType::SingBox, &sub, &overrides);
+    let fut = build_core_config(&sub, &overrides);
     assert_send(&fut);
 }
 
@@ -409,13 +305,9 @@ async fn build_core_config_singbox_end_to_end() {
         yaml_override: "route:\n  final: direct\n".to_string(),
         js_override: r#"function main(c) { c.log.level = "error"; return c; }"#.to_string(),
     };
-    let cfg = build_core_config(
-        CoreType::SingBox,
-        &SubContent::SingBox(sample_singbox_sub()),
-        &overrides,
-    )
-    .await
-    .unwrap();
+    let cfg = build_core_config(&sample_singbox_sub(), &overrides)
+        .await
+        .unwrap();
 
     // Nodes present.
     let outbounds = cfg["outbounds"].as_array().unwrap();
@@ -436,52 +328,13 @@ async fn build_core_config_singbox_end_to_end() {
     assert_eq!(cfg["log"]["level"], "error");
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn build_core_config_mihomo_end_to_end() {
-    let overrides = ProfileOverrides {
-        yaml_override: "rules:\n  - DOMAIN-SUFFIX,example.com,auto\n".to_string(),
-        js_override: String::new(),
-    };
-    let cfg = build_core_config(
-        CoreType::Mihomo,
-        &SubContent::Mihomo(sample_mihomo_yaml().to_string()),
-        &overrides,
-    )
-    .await
-    .unwrap();
-
-    let proxies = cfg["proxies"].as_array().unwrap();
-    assert!(proxies.iter().any(|p| p["name"] == "n1"));
-    assert!(proxies.iter().any(|p| p["name"] == "n2"));
-    let rules = cfg["rules"].as_array().unwrap();
-    // YAML override replaces array entirely (original MATCH,proxy is replaced by override).
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0], "DOMAIN-SUFFIX,example.com,auto");
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn build_core_config_rejects_format_mismatch() {
-    let err = build_core_config(
-        CoreType::SingBox,
-        &SubContent::Mihomo("proxies: []".to_string()),
-        &ProfileOverrides::default(),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(err, PanelError::Client(_)));
-}
-
 // ---------- ⑧ Regression: compose_* injection (template route.rules empty array prepending OK) ----------
 
 #[tokio::test(flavor = "current_thread")]
 async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
-    let cfg = build_core_config(
-        CoreType::SingBox,
-        &SubContent::SingBox(sample_singbox_sub()),
-        &ProfileOverrides::default(),
-    )
-    .await
-    .unwrap();
+    let cfg = build_core_config(&sample_singbox_sub(), &ProfileOverrides::default())
+        .await
+        .unwrap();
     assert_eq!(cfg["route"]["rules"], json!([]));
 
     let composed = compose_singbox_config(&cfg, 17890, Some(mitm_chain())).unwrap();
@@ -504,32 +357,6 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     assert!(outbounds.iter().any(|o| o["tag"] == "n1"));
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn compose_mihomo_injects_listeners_and_rules_into_profile_output() {
-    let cfg = build_core_config(
-        CoreType::Mihomo,
-        &SubContent::Mihomo(sample_mihomo_yaml().to_string()),
-        &ProfileOverrides::default(),
-    )
-    .await
-    .unwrap();
-    let yaml = serde_yaml::to_string(&cfg).unwrap();
-    let composed = compose_mihomo_config(&yaml, 17890, Some(mitm_chain())).unwrap();
-
-    assert!(composed.get("mixed-port").is_none());
-    let listeners = composed["listeners"].as_array().unwrap();
-    assert_eq!(listeners.len(), 2);
-    let rules = composed["rules"].as_array().unwrap();
-    assert_eq!(
-        rules[0],
-        "AND,((IN-NAME,main-in),(DOMAIN-SUFFIX,example.com)),pp-mitm"
-    );
-    assert_eq!(rules[1], "MATCH,proxy");
-    let proxies = composed["proxies"].as_array().unwrap();
-    assert!(proxies.iter().any(|p| p["name"] == "n1"));
-    assert!(proxies.iter().any(|p| p["name"] == "pp-mitm"));
-}
-
 // ---------- Real core check (when test-cores exists, must verify template field compatibility) ----------
 
 #[test]
@@ -550,39 +377,6 @@ fn singbox_template_passes_real_singbox_check() {
     assert!(
         out.status.success(),
         "sing-box check failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-#[test]
-fn mihomo_template_passes_real_mihomo_check() {
-    let Some(bin) = mihomo_binary() else {
-        return;
-    };
-    let nodes = extract_nodes_mihomo(sample_mihomo_yaml()).unwrap();
-    let cfg = compose_mihomo_config(
-        &serde_yaml::to_string(&mihomo_template(&nodes)).unwrap(),
-        17890,
-        Some(mitm_chain()),
-    )
-    .unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    // Pre-place geoip.metadb (when exists) to avoid `mihomo -t` downloading geo data.
-    if let Some(mmdb) = geoip_metadb() {
-        std::fs::copy(mmdb, dir.path().join("geoip.metadb")).unwrap();
-    }
-    let path = dir.path().join("config.yaml");
-    std::fs::write(&path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
-    let out = std::process::Command::new(&bin)
-        .args(["-t", "-f"])
-        .arg(&path)
-        .arg("-d")
-        .arg(dir.path())
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "mihomo check failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
@@ -624,7 +418,7 @@ fn profile_store_v2_loads_empty_when_no_files() {
     assert!(!store.profiles_file().exists());
 }
 
-/// ① Migration: old profile.json → default Profile (SingBox, enabled, overrides preserved)
+/// ① Migration: old profile.json → default Profile (overrides preserved)
 /// and old file deleted.
 #[test]
 fn profile_store_v2_migrates_legacy_profile_json_once() {
@@ -644,7 +438,6 @@ fn profile_store_v2_migrates_legacy_profile_json_once() {
 
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].name, "Default");
-    assert_eq!(profiles[0].core_type, CoreType::SingBox);
     assert_eq!(profiles[0].yaml_override, "route:\n  final: direct\n");
     assert_eq!(profiles[0].js_override, "function main(c) { return c; }");
 
@@ -668,29 +461,54 @@ fn profile_store_v2_migrates_corrupted_legacy_with_empty_overrides() {
     assert!(!dir.path().join("profile.json").exists());
 }
 
+/// 存量归一化：`profiles.json` 中旧版 `core_type: "mihomo"` 的模板在 load 时剔除并写回；
+/// `core_type: "singbox"` 的模板保留（core_type 字段被 serde 忽略）。
+#[test]
+fn profile_store_v2_load_drops_legacy_mihomo_profiles_and_writes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("profiles.json"),
+        r#"[
+            {"id":"00000000-0000-0000-0000-000000000001","name":"sb","core_type":"singbox","yaml_override":"","js_override":""},
+            {"id":"00000000-0000-0000-0000-000000000002","name":"mh","core_type":"mihomo","yaml_override":"mode: global","js_override":""}
+        ]"#,
+    )
+    .unwrap();
+
+    let store = ProfileStoreV2::new(dir.path().to_path_buf());
+    let profiles = store.load().unwrap();
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].name, "sb");
+
+    // 已写回：再次读取磁盘文件只剩 sing-box 模板。
+    let text = std::fs::read_to_string(dir.path().join("profiles.json")).unwrap();
+    assert!(text.contains("\"sb\""));
+    assert!(!text.contains("\"mh\""));
+
+    // 再次加载幂等。
+    assert_eq!(store.load().unwrap().len(), 1);
+}
+
 /// ② add: new template does not carry enabled state (pure association model); duplicate name
-/// errors (across cores too).
+/// errors.
 #[test]
 fn profile_store_v2_add_creates_profiles_without_enabled() {
     let dir = tempfile::tempdir().unwrap();
     let store = ProfileStoreV2::new(dir.path().to_path_buf());
 
-    let a = store.add("A", CoreType::SingBox).unwrap();
+    let a = store.add("A").unwrap();
     assert!(!a.id.is_nil());
 
-    let b = store.add("B", CoreType::SingBox).unwrap();
+    let b = store.add("B").unwrap();
     assert_ne!(a.id, b.id);
 
-    let c = store.add("C", CoreType::Mihomo).unwrap();
-    assert_ne!(a.id, c.id);
-
-    // Duplicate name errors (across cores too).
-    let err = store.add("A", CoreType::Mihomo).unwrap_err();
+    // Duplicate name errors.
+    let err = store.add("A").unwrap_err();
     assert!(matches!(err, PanelError::Client(_)));
 
     // Disk state consistent with memory.
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.len(), 3);
+    assert_eq!(loaded.len(), 2);
 }
 
 /// ④ update/remove semantics: update updates name/yaml/js by id, remove deletes by id;
@@ -699,7 +517,7 @@ fn profile_store_v2_add_creates_profiles_without_enabled() {
 fn profile_store_v2_update_and_remove() {
     let dir = tempfile::tempdir().unwrap();
     let store = ProfileStoreV2::new(dir.path().to_path_buf());
-    let mut p = store.add("A", CoreType::SingBox).unwrap();
+    let mut p = store.add("A").unwrap();
 
     p.name = "A-renamed".to_string();
     p.yaml_override = "route:\n  final: direct\n".to_string();
@@ -721,7 +539,6 @@ fn profile_store_v2_update_and_remove() {
         loaded[0].js_url.as_deref(),
         Some("https://example.com/r.js")
     );
-    assert_eq!(loaded[0].core_type, CoreType::SingBox);
 
     // update on non-existent id errors.
     let ghost = Profile {
@@ -751,7 +568,6 @@ fn remote_test_profile(yaml_url: Option<String>, js_url: Option<String>) -> Prof
     Profile {
         id: Uuid::new_v4(),
         name: "Remote".to_string(),
-        core_type: CoreType::SingBox,
         yaml_override: String::new(),
         js_override: String::new(),
         yaml_url,
@@ -808,13 +624,12 @@ async fn spawn_500_server() -> SocketAddr {
 /// ① Remote YAML + local YAML overlay: remote a=1, b=1; local b=2 → final a=1, b=2.
 #[tokio::test(flavor = "current_thread")]
 async fn v2_yaml_remote_then_local_overlay() {
-    let sub = SubContent::SingBox(sample_singbox_sub());
     let effective = EffectiveOverrides {
         remote_yaml: "a: 1\nb: 1\n".to_string(),
         local_yaml: "b: 2\n".to_string(),
         ..EffectiveOverrides::default()
     };
-    let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
         .await
         .unwrap();
     assert_eq!(cfg["a"], 1, "remote new key should be kept");
@@ -825,13 +640,12 @@ async fn v2_yaml_remote_then_local_overlay() {
 /// remote result.
 #[tokio::test(flavor = "current_thread")]
 async fn v2_js_remote_then_local_chain() {
-    let sub = SubContent::SingBox(sample_singbox_sub());
     let effective = EffectiveOverrides {
         remote_js: "function main(c) { c.x = 1; return c; }".to_string(),
         local_js: "function main(c) { c.y = c.x + 1; return c; }".to_string(),
         ..EffectiveOverrides::default()
     };
-    let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
         .await
         .unwrap();
     assert_eq!(cfg["x"], 1, "remote main should take effect");
@@ -887,8 +701,7 @@ async fn resolve_remote_overrides_fetches_writes_cache_and_falls_back() {
         local_yaml: "route:\n  final: block\n".to_string(),
         ..effective
     };
-    let sub = SubContent::SingBox(sample_singbox_sub());
-    let cfg = build_core_config_v2(CoreType::SingBox, &sub, &effective)
+    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
         .await
         .unwrap();
     assert_eq!(
@@ -943,9 +756,8 @@ async fn resolve_remote_overrides_pure_local_regression() {
     assert_eq!(effective.local_yaml, profile.yaml_override);
     assert_eq!(effective.local_js, profile.js_override);
 
-    let sub = SubContent::SingBox(sample_singbox_sub());
+    let sub = sample_singbox_sub();
     let legacy = build_core_config(
-        CoreType::SingBox,
         &sub,
         &ProfileOverrides {
             yaml_override: profile.yaml_override.clone(),
@@ -954,9 +766,7 @@ async fn resolve_remote_overrides_pure_local_regression() {
     )
     .await
     .unwrap();
-    let v2 = build_core_config_v2(CoreType::SingBox, &sub, &effective)
-        .await
-        .unwrap();
+    let v2 = build_core_config_v2(&sub, &effective).await.unwrap();
     assert_eq!(
         legacy, v2,
         "v2 pure local should be consistent with old signature"
@@ -969,9 +779,9 @@ async fn resolve_remote_overrides_pure_local_regression() {
 #[test]
 fn remote_overrides_futures_are_send() {
     fn assert_send<T: Send>(_: &T) {}
-    let sub = SubContent::SingBox(sample_singbox_sub());
+    let sub = sample_singbox_sub();
     let effective = EffectiveOverrides::default();
-    let fut = build_core_config_v2(CoreType::SingBox, &sub, &effective);
+    let fut = build_core_config_v2(&sub, &effective);
     assert_send(&fut);
     let profile = remote_test_profile(None, None);
     let fut = resolve_remote_overrides(Path::new("/tmp"), &profile);

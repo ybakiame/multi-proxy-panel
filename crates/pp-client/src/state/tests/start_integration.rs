@@ -7,8 +7,7 @@ use super::helpers::*;
 async fn fake_core_binary_starts_and_stops() {
     let dir = tempfile::tempdir().unwrap();
     let core_bin = fake_core_script(&dir);
-    let runner =
-        crate::runner::CoreRunner::create(CoreType::SingBox, &core_bin, dir.path()).unwrap();
+    let runner = crate::runner::CoreRunner::create(&core_bin, dir.path()).unwrap();
     let config = serde_json::json!({"log": {"level": "info"}});
     runner.start(&config).await.unwrap();
     assert!(runner.is_running().await);
@@ -21,7 +20,9 @@ async fn fake_core_binary_starts_and_stops() {
 async fn start_rolls_back_on_subscription_failure() {
     let addr = spawn_server(StatusCode::INTERNAL_SERVER_ERROR, "oops").await;
     let dir = tempfile::tempdir().unwrap();
+    let sub_id = add_local_subscription(&dir, &format!("http://{addr}/sub"));
     let mut cfg = test_config(&dir, format!("http://{addr}"));
+    cfg.active_subscription_id = Some(sub_id);
     cfg.system_proxy_enabled = true;
     cfg.save().unwrap();
 
@@ -46,7 +47,9 @@ async fn start_rolls_back_when_mitm_build_fails() {
         }"#;
     let addr = spawn_server(StatusCode::OK, body).await;
     let dir = tempfile::tempdir().unwrap();
+    let sub_id = add_local_subscription(&dir, &format!("http://{addr}/sub"));
     let mut cfg = test_config(&dir, format!("http://{addr}"));
+    cfg.active_subscription_id = Some(sub_id);
     cfg.system_proxy_enabled = true;
     cfg.mitm_enabled = true;
     cfg.save().unwrap();
@@ -140,7 +143,9 @@ async fn start_with_remote_snippet_runs_mitm_and_scheduler() {
     let report = remote.fetch_all(&remotes).await;
     assert_eq!(report.fetched, 1, "snippet fetch should succeed");
 
+    let sub_id = add_local_subscription(&dir, &format!("{base}/sub/tok"));
     let mut cfg = test_config(&dir, base);
+    cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
     cfg.save().unwrap();
     let mock = Arc::new(MockSystemProxy::new());
@@ -161,32 +166,6 @@ async fn start_with_remote_snippet_runs_mitm_and_scheduler() {
     state.stop().await;
     let status = state.status().await;
     assert!(status.mitm_addr.is_none());
-    assert!(!status.core_running);
-}
-
-/// core_type=Mihomo: fetch clash subscription + mihomo config composition, fake core starts successfully.
-#[tokio::test]
-async fn start_with_mihomo_core_fetches_clash_and_starts() {
-    let yaml = "port: 7890\nproxies:\n  - name: n1\n    type: direct\nrules:\n  - MATCH,DIRECT\n";
-    let addr = spawn_server(StatusCode::OK, yaml).await;
-    let dir = tempfile::tempdir().unwrap();
-    let mut cfg = test_config(&dir, format!("http://{addr}"));
-    cfg.core_type = CoreType::Mihomo;
-    cfg.save().unwrap();
-
-    let mock = Arc::new(MockSystemProxy::new());
-    let mut state = ClientState::with_system_proxy(cfg, mock.clone());
-    state.start().await.unwrap();
-
-    let status = state.status().await;
-    assert!(status.core_running, "mihomo core should start");
-    assert_eq!(status.rule_mode, "rule", "default rule mode is rule");
-    // yaml contains 1 `MATCH,DIRECT` rule; clash_api is disabled by default → no API address.
-    assert_eq!(status.rule_count, 1);
-    assert_eq!(status.clash_api_url, None);
-
-    state.stop().await;
-    let status = state.status().await;
     assert!(!status.core_running);
 }
 
@@ -227,7 +206,9 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
         }"#;
     let addr = spawn_server(StatusCode::OK, sub_body).await;
     let dir = tempfile::tempdir().unwrap();
+    let sub_id = add_local_subscription(&dir, &format!("http://{addr}/sub"));
     let mut cfg = test_config(&dir, format!("http://{addr}"));
+    cfg.active_subscription_id = Some(sub_id);
     cfg.clash_api_enabled = true;
     cfg.clash_api_port = clash_addr.port();
     cfg.clash_api_secret = "sekret".to_string();
@@ -262,15 +243,15 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     assert_eq!(status.clash_api_url, None);
 }
 
-/// Item 1: clash format subscription + sing-box core → start returns clear format/core mismatch error,
-/// core does not start, system proxy zero calls.
+/// ClashYaml 订阅放行 sing-box：clash YAML 订阅的 proxies 在拉取时转换为 sing-box 节点，
+/// 启动成功（不支持的协议类型跳过并记 warning）。
 #[tokio::test]
-async fn start_rejects_clash_format_with_singbox_core() {
+async fn start_accepts_clash_format_with_singbox_core() {
     const YAML: &str = "port: 7890\nproxies:\n  - name: n1\n    type: ss\n    server: example.com\n    port: 8388\n    cipher: aes-256-gcm\n    password: pw\nrules:\n  - MATCH,DIRECT\n";
     let addr = spawn_server(StatusCode::OK, YAML).await;
     let dir = tempfile::tempdir().unwrap();
-    // Generic subscription path: subscriptions.json points to local server (clash format),
-    // client.json selects this subscription (new model: selected subscription is the only effective one).
+    // subscriptions.json points to local server (clash format),
+    // client.json selects this subscription (selected subscription is the only effective one).
     let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
     let sub = store
         .add("clash-sub", &format!("http://{addr}/sub"), true, None)
@@ -280,7 +261,6 @@ async fn start_rejects_clash_format_with_singbox_core() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         fake_core_script(&dir),
     );
     cfg.active_subscription_id = Some(sub.id);
@@ -290,25 +270,14 @@ async fn start_rejects_clash_format_with_singbox_core() {
 
     let mock = Arc::new(MockSystemProxy::new());
     let mut state = ClientState::with_system_proxy(cfg, mock.clone());
-    let err = state.start().await.unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("clash"),
-        "should contain detected format clash: {msg}"
-    );
-    assert!(
-        msg.contains("mihomo"),
-        "should contain supported core mihomo: {msg}"
-    );
-    assert!(
-        msg.contains("切换核心类型"),
-        "should prompt to switch core type: {msg}"
-    );
+    state.start().await.unwrap();
 
-    // Core not started, system proxy zero calls.
     let status = state.status().await;
-    assert!(!status.core_running);
-    assert_eq!(mock.calls(), vec![]);
+    assert!(status.core_running, "clash 订阅应能以 sing-box 核心启动");
+    assert_eq!(mock.enable_count(), 1, "系统代理应启用一次");
+
+    state.stop().await;
+    assert!(!state.status().await.core_running);
 }
 
 /// Generic subscription integration: subscriptions.json points to local server (base64 share links) → start succeeds.
@@ -347,7 +316,6 @@ async fn start_with_subscription_store_fetches_and_starts() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         fake_core_script(&dir),
     );
     cfg.active_subscription_id = Some(sub.id);
@@ -390,13 +358,9 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     // Fake core copies received composed config out, for asserting core actual config.
     let capture = dir.path().join("core-config-capture.json");
     let core_bin = fake_core_capturing_args(&dir, &capture);
-    let mut cfg = ClientConfig::new(
-        dir.path().to_path_buf(),
-        base,
-        "tok",
-        CoreType::SingBox,
-        core_bin,
-    );
+    let sub_id = add_local_subscription(&dir, &format!("{base}/sub/tok"));
+    let mut cfg = ClientConfig::new(dir.path().to_path_buf(), base, "tok", core_bin);
+    cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
     cfg.system_proxy_enabled = true;
     cfg.save().unwrap();
@@ -500,7 +464,6 @@ async fn start_with_profile_applies_template_groups_and_js_override() {
         .save(&[crate::profile::Profile {
             id: profile_id,
             name: "Default".to_string(),
-            core_type: pp_common::CoreType::SingBox,
             yaml_override: String::new(),
             js_override: r#"function main(c) { c.dns.strategy = "ipv4_only"; return c; }"#
                 .to_string(),
@@ -523,7 +486,6 @@ async fn start_with_profile_applies_template_groups_and_js_override() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         core_bin,
     );
     cfg.active_subscription_id = Some(sub.id);
@@ -601,7 +563,6 @@ async fn start_rolls_back_on_invalid_profile_js_override() {
         .save(&[crate::profile::Profile {
             id: profile_id,
             name: "Default".to_string(),
-            core_type: pp_common::CoreType::SingBox,
             yaml_override: String::new(),
             js_override: "function main(c) { return c;".to_string(),
             yaml_url: None,
@@ -618,7 +579,6 @@ async fn start_rolls_back_on_invalid_profile_js_override() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         fake_core_script(&dir),
     );
     cfg.active_subscription_id = Some(sub.id);
@@ -646,7 +606,6 @@ async fn start_requires_active_subscription_selection() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         fake_core_script(&dir),
     );
     cfg.mitm_enabled = false;
@@ -673,7 +632,6 @@ async fn start_rejects_disabled_selected_subscription() {
         dir.path().to_path_buf(),
         String::new(),
         String::new(),
-        CoreType::SingBox,
         fake_core_script(&dir),
     );
     cfg.active_subscription_id = Some(sub.id);
@@ -684,52 +642,6 @@ async fn start_rejects_disabled_selected_subscription() {
     let mut state = ClientState::with_system_proxy(cfg, mock.clone());
     let err = state.start().await.unwrap_err();
     assert!(err.to_string().contains("已停用"), "{err}");
-    assert_eq!(mock.calls(), vec![]);
-}
-
-/// New model: subscription-associated override template core type does not match current core → clear error (contains sing-box /
-/// mihomo display names), core does not start.
-#[tokio::test]
-async fn start_rejects_profile_core_type_mismatch() {
-    let body = r#"{ "outbounds": [] }"#;
-    let addr = spawn_server(StatusCode::OK, body).await;
-    let dir = tempfile::tempdir().unwrap();
-
-    let profile_id = uuid::Uuid::new_v4();
-    crate::profile::ProfileStoreV2::new(dir.path().to_path_buf())
-        .save(&[crate::profile::Profile {
-            id: profile_id,
-            name: "mihomo template".to_string(),
-            core_type: pp_common::CoreType::Mihomo,
-            yaml_override: String::new(),
-            js_override: String::new(),
-            yaml_url: None,
-            js_url: None,
-        }])
-        .unwrap();
-    let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
-    let sub = store
-        .add("local", &format!("http://{addr}/sub"), true, None)
-        .unwrap();
-    store.set_profile_id(sub.id, Some(profile_id)).unwrap();
-
-    let mut cfg = ClientConfig::new(
-        dir.path().to_path_buf(),
-        String::new(),
-        String::new(),
-        CoreType::SingBox,
-        fake_core_script(&dir),
-    );
-    cfg.active_subscription_id = Some(sub.id);
-    cfg.mitm_enabled = false;
-    cfg.save().unwrap();
-
-    let mock = Arc::new(MockSystemProxy::new());
-    let mut state = ClientState::with_system_proxy(cfg, mock.clone());
-    let err = state.start().await.unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("不匹配"), "{msg}");
-    assert!(msg.contains("sing-box") && msg.contains("mihomo"), "{msg}");
     assert_eq!(mock.calls(), vec![]);
 }
 
@@ -752,7 +664,9 @@ async fn injected_notifier_receives_task_notify() {
     let report = remote.fetch_all(&remotes).await;
     assert_eq!(report.fetched, 1, "snippet fetch should succeed");
 
+    let sub_id = add_local_subscription(&dir, &format!("{base}/sub/tok"));
     let mut cfg = test_config(&dir, base);
+    cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
     cfg.save().unwrap();
     let notifier = Arc::new(RecordingNotifier::new());

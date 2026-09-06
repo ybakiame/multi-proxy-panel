@@ -11,18 +11,6 @@ fn sing_box_binary() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
-fn mihomo_binary() -> Option<PathBuf> {
-    let p = test_core_dir().join("mihomo");
-    p.is_file().then_some(p)
-}
-
-/// Locally downloaded mihomo geoip.metadb (`~/.config/mihomo`), avoid `mihomo -t` downloading geo data.
-fn geoip_metadb() -> Option<PathBuf> {
-    let p = PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/mihomo/geoip.metadb");
-    p.is_file().then_some(p)
-}
-
 #[cfg(test)]
 mod clash_api;
 #[cfg(test)]

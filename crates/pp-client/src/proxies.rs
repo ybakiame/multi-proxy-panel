@@ -483,7 +483,6 @@ mod tests {
             std::path::PathBuf::from("/tmp/pp-client-test"),
             "http://127.0.0.1:50052",
             "tok",
-            pp_common::CoreType::SingBox,
             std::path::PathBuf::from("/usr/local/bin/sing-box"),
         );
         cfg.group_selections.insert("Auto".into(), "Node-A".into());

@@ -1,9 +1,6 @@
-use std::time::Duration;
-
 use pp_common::{PanelError, PanelResult};
-use serde_json::Value;
 
-use super::{FetchResult, SubscriptionInfo, parse_subscription_body, parse_subscription_userinfo};
+use super::{FetchResult, parse_subscription_body};
 
 /// Subscription fetcher.
 #[derive(Debug, Clone)]
@@ -22,7 +19,7 @@ impl SubscriptionFetcher {
     /// system proxy).
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(15))
             .no_proxy()
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -32,89 +29,6 @@ impl SubscriptionFetcher {
     /// Create fetcher with custom HTTP client.
     pub fn with_client(client: reqwest::Client) -> Self {
         Self { client }
-    }
-
-    /// Fetch sing-box subscription config, return config JSON and optional user
-    /// info.
-    ///
-    /// Legacy Hub path, retained for compatibility (new path see
-    /// [`fetch_subscription`](super::fetch_subscription)).
-    pub async fn fetch_singbox_config(
-        &self,
-        hub_url: &str,
-        token: &str,
-    ) -> PanelResult<(Value, Option<SubscriptionInfo>)> {
-        let url = format!(
-            "{}/sub/{}?format=singbox",
-            hub_url.trim_end_matches('/'),
-            token
-        );
-        tracing::debug!(url = %url, "fetching subscription sing-box config");
-
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| PanelError::Client(format!("subscription request failed: {e}")))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(PanelError::Client(format!(
-                "subscription request returned HTTP {status}"
-            )));
-        }
-
-        let info = parse_subscription_userinfo(resp.headers());
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| PanelError::Client(format!("failed to read subscription body: {e}")))?;
-        let config: Value = serde_json::from_str(&text).map_err(|e| {
-            PanelError::Client(format!("invalid sing-box config in subscription: {e}"))
-        })?;
-
-        Ok((config, info))
-    }
-
-    /// Fetch clash/mihomo subscription config, return YAML text and optional
-    /// user info.
-    ///
-    /// Legacy Hub path, retained for compatibility (new path see
-    /// [`fetch_subscription`](super::fetch_subscription)).
-    pub async fn fetch_clash_config(
-        &self,
-        hub_url: &str,
-        token: &str,
-    ) -> PanelResult<(String, Option<SubscriptionInfo>)> {
-        let url = format!(
-            "{}/sub/{}?format=clash",
-            hub_url.trim_end_matches('/'),
-            token
-        );
-        tracing::debug!(url = %url, "fetching subscription clash config");
-
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| PanelError::Client(format!("subscription request failed: {e}")))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(PanelError::Client(format!(
-                "subscription request returned HTTP {status}"
-            )));
-        }
-
-        let info = parse_subscription_userinfo(resp.headers());
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| PanelError::Client(format!("failed to read subscription body: {e}")))?;
-
-        Ok((text, info))
     }
 
     /// Generic subscription fetch: any URL, auto sniff format (see
@@ -137,7 +51,7 @@ impl SubscriptionFetcher {
                 "subscription request returned HTTP {status}"
             )));
         }
-        let info = parse_subscription_userinfo(resp.headers());
+        let info = super::parse_subscription_userinfo(resp.headers());
         let text = resp
             .text()
             .await
