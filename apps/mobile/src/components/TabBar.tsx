@@ -2,7 +2,7 @@ import { Cog6ToothIcon, ListBulletIcon, Squares2X2Icon } from "@heroicons/react/
 import { NavLink } from "react-router-dom";
 
 /** 底部导航 Tab（`end` 仅用于根路径：`/` 精确匹配，避免「/rules」「/settings」前缀命中）。 */
-const TABS = [
+export const TABS = [
   { to: "/", label: "首页", icon: Squares2X2Icon, end: true },
   { to: "/rules", label: "规则", icon: ListBulletIcon, end: false },
   { to: "/settings", label: "设置", icon: Cog6ToothIcon, end: false },

@@ -20,6 +20,7 @@ import {
 } from "@pp/client-core";
 import type { ClientStatus, SubscriptionView } from "@pp/client-core";
 import { ConfigPreviewModal } from "../components/ConfigPreviewModal";
+import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
 import { RuleModeSwitch } from "../components/RuleModeSwitch";
 import { StatusCard } from "../components/StatusCard";
@@ -33,10 +34,11 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 首页（仪表盘，ADR-0003 M5）。区块自上而下：
  *
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
- * 2. 状态卡（StatusCard）；3. 流量统计卡（TrafficCard，2s 轮询）；
- * 4. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；
- * 5. VPN 授权引导（自 M3.6 Home 完整迁移：同步 reject + vpnLastError 轮询双来源）；
- * 6. 出站模式分段控件（RuleModeSwitch）；7. 快捷入口：配置预览。
+ * 2. 状态卡（StatusCard）；3. 当前节点卡（CurrentNodeCard，点击进代理选择页）；
+ * 4. 流量统计卡（TrafficCard，2s 轮询）；
+ * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；
+ * 6. VPN 授权引导（自 M3.6 Home 完整迁移：同步 reject + vpnLastError 轮询双来源）；
+ * 7. 出站模式分段控件（RuleModeSwitch）；8. 快捷入口：配置预览。
  */
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -161,10 +163,13 @@ export default function Dashboard() {
       {/* 2. 状态卡 */}
       <StatusCard running={running} ruleMode={ruleMode} />
 
-      {/* 3. 流量统计卡 */}
+      {/* 3. 当前节点卡（点击进入代理选择页） */}
+      <CurrentNodeCard running={running} />
+
+      {/* 4. 流量统计卡 */}
       <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
 
-      {/* 4+5. 主操作 + VPN 授权引导 */}
+      {/* 5+6. 主操作 + VPN 授权引导 */}
       <Card>
         <Card.Content className="flex flex-col gap-4">
           {vpnAuthRequired && (
@@ -237,10 +242,10 @@ export default function Dashboard() {
         </Card.Content>
       </Card>
 
-      {/* 6. 出站模式 */}
+      {/* 7. 出站模式 */}
       <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={config?.clash_api_enabled ?? false} />
 
-      {/* 7. 快捷入口：配置预览 */}
+      {/* 8. 快捷入口：配置预览 */}
       <Card>
         <Card.Header>
           <Card.Title>快捷入口</Card.Title>
