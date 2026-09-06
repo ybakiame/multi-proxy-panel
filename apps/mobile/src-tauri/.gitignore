@@ -1,0 +1,5 @@
+# Rust 编译产物
+/target/
+
+# Tauri 构建时自动生成的权限 schema（gen/android 由 tauri android init 生成并纳入版本库）
+/gen/schemas/

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "默认能力集：移动端 core 能力（对齐 desktop 壳声明）",
+  "windows": ["main"],
+  "permissions": ["core:default", "notification:default", "opener:default"]
+}
