@@ -1,8 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button, ListBox, Modal, Select, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "@pp/client-core";
+
+/** 规则集选择器选项（rule_set 匹配目标）：已订阅社区规则集或启用的自定义规则集。 */
+export interface RuleSetOption {
+  /** 写入 `rule.target` 的原始值：社区 `community_id` 或自定义 `tag`。 */
+  value: string;
+  /** 下拉显示名（社区用 display_name，自定义用 tag）。 */
+  label: string;
+  /** 可选说明行（如不可用原值的提示）。 */
+  hint?: string;
+}
 
 /** 移动可编辑匹配类型：与 desktop RuleEditModal 对齐但按平台收敛——不含 `process_name`（仅 desktop），app_package 标注 Android 专属。 */
 const MATCH_TYPE_OPTIONS = [
@@ -49,6 +59,8 @@ interface RuleEditSheetProps {
   onSave: (rule: LocalRuleInput) => Promise<boolean>;
   /** 编辑模式点「删除规则」：父层收起 Sheet 并弹 AlertDialog 确认。 */
   onDeleteRequest: (rule: LocalRuleView) => void;
+  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先添加/订阅。 */
+  ruleSetOptions?: RuleSetOption[];
 }
 
 /** 底部 Sheet 内的高级选项开关行。 */
@@ -84,7 +96,14 @@ function SheetSwitchRow({
  * final 隐藏目标输入且保存时目标写空串；名称/备注 trim。保存由父层统一
  * persist 落盘（已存在替换 / 新建追加 sort_order），成功后 toast 并收起。
  */
-export function RuleEditSheet({ isOpen, editing, onClose, onSave, onDeleteRequest }: RuleEditSheetProps) {
+export function RuleEditSheet({
+  isOpen,
+  editing,
+  onClose,
+  onSave,
+  onDeleteRequest,
+  ruleSetOptions = [],
+}: RuleEditSheetProps) {
   const [matchType, setMatchType] = useState("domain");
   const [target, setTarget] = useState("");
   const [action, setAction] = useState("proxy");
@@ -114,6 +133,21 @@ export function RuleEditSheet({ isOpen, editing, onClose, onSave, onDeleteReques
 
   const isFinal = matchType === "final";
   const canSave = isFinal ? true : target.trim().length > 0;
+
+  /**
+   * 规则集选择器候选：父层传入选项（已订阅社区 + 启用自定义）。
+   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（内置已取消订阅 / 自定义已删除或停用），
+   * 追加为「原值保留」项——Select 显示原值且不强清，由用户决定改选或保留（保留保存时后端会校验失败）。
+   */
+  const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
+    const stale =
+      matchType === "rule_set" &&
+      editing?.match_type === "rule_set" &&
+      target.trim() !== "" &&
+      !ruleSetOptions.some((opt) => opt.value === target);
+    if (!stale) return ruleSetOptions;
+    return [...ruleSetOptions, { value: target, label: target, hint: "当前不可用（原值保留）" }];
+  }, [matchType, editing, target, ruleSetOptions]);
 
   const handleSave = async () => {
     if (!canSave || saving) return;
@@ -184,28 +218,68 @@ export function RuleEditSheet({ isOpen, editing, onClose, onSave, onDeleteReques
               )}
             </div>
 
-            {/* 匹配目标（final 隐藏） */}
-            {!isFinal && (
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="rule-target" className="text-sm font-medium text-foreground">
-                  匹配目标
-                </label>
-                <input
-                  id="rule-target"
-                  aria-required="true"
-                  aria-label="匹配目标"
-                  value={target}
-                  onChange={(event) => setTarget(event.target.value)}
-                  placeholder={TARGET_PLACEHOLDER[matchType] ?? "请输入目标值"}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  disabled={saving}
-                  className={inputClass}
-                />
-                {TARGET_HINT[matchType] && <span className="text-xs text-muted">{TARGET_HINT[matchType]}</span>}
-              </div>
-            )}
+            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入） */}
+            {!isFinal &&
+              (matchType === "rule_set" ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-foreground">规则集</span>
+                  <Select
+                    aria-label="规则集"
+                    value={target}
+                    onChange={(value) => setTarget(String(value ?? ""))}
+                    isDisabled={saving}
+                    fullWidth
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {effectiveRuleSetOptions.length === 0 && (
+                          <ListBox.Item id="__no-rule-set" textValue="暂无可用规则集" isDisabled>
+                            暂无可用规则集
+                          </ListBox.Item>
+                        )}
+                        {effectiveRuleSetOptions.map((opt) => (
+                          <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                            <span className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate">{opt.label}</span>
+                              {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
+                            </span>
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                  {effectiveRuleSetOptions.length === 0 ? (
+                    <span className="text-xs text-muted">当前没有可用的规则集，请先在「规则集管理」中添加或订阅</span>
+                  ) : (
+                    <span className="text-xs text-muted">选择已订阅的社区规则集或已启用的自定义规则集</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="rule-target" className="text-sm font-medium text-foreground">
+                    匹配目标
+                  </label>
+                  <input
+                    id="rule-target"
+                    aria-required="true"
+                    aria-label="匹配目标"
+                    value={target}
+                    onChange={(event) => setTarget(event.target.value)}
+                    placeholder={TARGET_PLACEHOLDER[matchType] ?? "请输入目标值"}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    disabled={saving}
+                    className={inputClass}
+                  />
+                  {TARGET_HINT[matchType] && <span className="text-xs text-muted">{TARGET_HINT[matchType]}</span>}
+                </div>
+              ))}
 
             {/* 路由动作分段控件 */}
             <div className="flex flex-col gap-1.5">
