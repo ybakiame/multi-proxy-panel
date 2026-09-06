@@ -20,6 +20,7 @@ pub struct LocalOverrideView {
     pub rule_set_subscriptions: Vec<RuleSetSubscriptionView>,
     pub applied_templates: Vec<AppliedTemplateView>,
     pub custom_rule_sets: Vec<CustomRuleSetView>,
+    pub custom_templates: Vec<CustomTemplateView>,
 }
 
 /// Per-core local override view.
@@ -95,6 +96,19 @@ pub struct CustomRuleSetView {
     pub cached: bool,
 }
 
+/// User-defined scenario template view.
+///
+/// `rules` are the template's snapshot of the selected rule cards (displayed
+/// in the create form's checklist and echoed back on the card).
+#[derive(Debug, Clone, Serialize)]
+pub struct CustomTemplateView {
+    pub id: String,
+    pub name: String,
+    pub desc: String,
+    pub rules: Vec<LocalRuleView>,
+    pub created_at: u64,
+}
+
 /// Rule set status view (with cache info).
 #[derive(Debug, Clone, Serialize)]
 pub struct RuleSetStatusView {
@@ -129,6 +143,11 @@ impl LocalOverrideView {
                 .custom_rule_sets
                 .iter()
                 .map(|rs| CustomRuleSetView::from_model(rs, manager))
+                .collect(),
+            custom_templates: model
+                .custom_templates
+                .iter()
+                .map(CustomTemplateView::from_model)
                 .collect(),
         }
     }
@@ -226,6 +245,18 @@ impl CustomRuleSetView {
     }
 }
 
+impl CustomTemplateView {
+    pub(crate) fn from_model(model: &pp_client::local_override::CustomTemplate) -> Self {
+        Self {
+            id: model.id.clone(),
+            name: model.name.clone(),
+            desc: model.desc.clone(),
+            rules: model.rules.iter().map(LocalRuleView::from_model).collect(),
+            created_at: model.created_at,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Input types
 // ---------------------------------------------------------------------------
@@ -241,6 +272,23 @@ pub struct SaveLocalOverrideInput {
     /// url+format round-trips unchanged.
     #[serde(default)]
     pub custom_rule_sets: Vec<pp_client::local_override::CustomRuleSet>,
+    /// Full replacement of the custom template segment (semantics identical to
+    /// `rules`). Rules carry the flattened `LocalRuleInput` field shape.
+    #[serde(default)]
+    pub custom_templates: Vec<CustomTemplateInput>,
+}
+
+/// Input for one custom scenario template (full rule snapshot).
+#[derive(Debug, Deserialize)]
+pub struct CustomTemplateInput {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub desc: String,
+    #[serde(default)]
+    pub rules: Vec<LocalRuleInput>,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Deserialize)]

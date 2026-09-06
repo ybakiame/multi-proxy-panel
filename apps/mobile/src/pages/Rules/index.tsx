@@ -15,7 +15,7 @@ import {
   useProxyStatus,
   viewToInput,
 } from "@pp/client-core";
-import type { LocalOverrideView } from "@pp/client-core";
+import type { CustomTemplateInput, CustomTemplateView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { PageShell } from "../../components/PageShell";
 import { EntryLinkCard } from "./EntryLinkCard";
@@ -97,6 +97,39 @@ export default function Rules() {
     }
   };
 
+  // ---- 自定义场景模板（custom_templates 段追加/移除落盘） ----
+  const persistTemplates = async (next: CustomTemplateView[]): Promise<boolean> => {
+    if (!overrideData) return false;
+    try {
+      await localOverrideSave({ ...buildSaveInput(overrideData), custom_templates: next });
+      invalidate();
+      return true;
+    } catch (err) {
+      toastError(toErrorMessage(err));
+      invalidate();
+      return false;
+    }
+  };
+
+  const handleCreateTemplate = async (template: CustomTemplateInput): Promise<boolean> => {
+    if (!overrideData) return false;
+    const ok = await persistTemplates([...overrideData.custom_templates, template]);
+    if (ok) {
+      toastRuleSaved("场景模板已保存");
+    }
+    return ok;
+  };
+
+  const handleDeleteTemplate = async (template: CustomTemplateView): Promise<boolean> => {
+    if (!overrideData) return false;
+    const next = overrideData.custom_templates.filter((t) => t.id !== template.id);
+    const ok = await persistTemplates(next);
+    if (ok) {
+      toastRuleSaved(`已删除模板「${template.name.trim() || template.id}」`);
+    }
+    return ok;
+  };
+
   return (
     <PageShell>
       <div>
@@ -132,11 +165,15 @@ export default function Rules() {
           {/* 1. 总开关 */}
           <MasterSwitchCard enabled={currentCore.enabled} onToggle={(next) => void handleToggleEnabled(next)} />
 
-          {/* 2. 场景模板 */}
+          {/* 2. 场景模板（内置 + 自定义） */}
           <TemplateSection
             appliedIds={appliedTemplateIds}
+            customTemplates={overrideData.custom_templates}
+            ruleOptions={currentCore.rules}
             onApply={(id) => handleApplyTemplate(id)}
             onRevert={(id) => handleRevertTemplate(id)}
+            onCreate={(template) => handleCreateTemplate(template)}
+            onDelete={(template) => handleDeleteTemplate(template)}
           />
 
           {/* 3. 二级页入口 */}

@@ -76,6 +76,28 @@ fn local_override_serde_roundtrip() {
                 last_updated: 0,
             },
         ],
+        custom_templates: vec![CustomTemplate {
+            id: "tpl1".to_string(),
+            name: "我的场景".to_string(),
+            desc: "规则组合快照".to_string(),
+            rules: vec![LocalRule {
+                id: "r1".to_string(),
+                name: "google proxy".to_string(),
+                enabled: true,
+                match_type: RuleMatchType::DomainSuffix,
+                target: "google.com".to_string(),
+                action: RuleAction::Proxy,
+                advanced: RuleAdvancedOptions {
+                    no_resolve: false,
+                    invert: false,
+                    _sniff: false,
+                },
+                note: "snapshot".to_string(),
+                created_at: 1234567890,
+                sort_order: 5,
+            }],
+            created_at: 1234567890,
+        }],
     };
 
     let json = serde_json::to_string(&orig).unwrap();
@@ -148,7 +170,51 @@ fn serde_missing_fields_defaults() {
     assert!(parsed.rule_set_subscriptions.is_empty());
     assert!(parsed.applied_templates.is_empty());
     assert!(parsed.custom_rule_sets.is_empty());
+    assert!(parsed.custom_templates.is_empty());
     assert!(parsed.singbox.enabled); // default_true
+}
+
+/// 旧版文件（无 `custom_templates` 段）反序列化为空 Vec。
+#[test]
+fn custom_templates_default_empty_for_legacy_file() {
+    let json = r#"{
+            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
+            "rule_set_subscriptions": [],
+            "applied_templates": [],
+            "custom_rule_sets": []
+        }"#;
+    let parsed: LocalOverride = serde_json::from_str(json).unwrap();
+    assert!(parsed.custom_templates.is_empty());
+
+    // 显式写入后 roundtrip 完整（含规则快照全字段）。
+    let mut ovr = parsed;
+    ovr.custom_templates.push(CustomTemplate {
+        id: "tpl1".to_string(),
+        name: "我的场景".to_string(),
+        desc: String::new(),
+        rules: vec![LocalRule {
+            id: "r1".to_string(),
+            name: String::new(),
+            enabled: true,
+            match_type: RuleMatchType::RuleSet,
+            target: "geoip-cn".to_string(),
+            action: RuleAction::Direct,
+            advanced: RuleAdvancedOptions::default(),
+            note: "n".to_string(),
+            created_at: 1,
+            sort_order: 0,
+        }],
+        created_at: 100,
+    });
+    let saved = serde_json::to_string(&ovr).unwrap();
+    let back: LocalOverride = serde_json::from_str(&saved).unwrap();
+    assert_eq!(back.custom_templates.len(), 1);
+    assert_eq!(back.custom_templates[0].id, "tpl1");
+    assert_eq!(
+        back.custom_templates[0].rules[0].match_type,
+        RuleMatchType::RuleSet
+    );
+    assert_eq!(back.custom_templates[0].rules[0].target, "geoip-cn");
 }
 
 /// 旧版文件（无 `custom_rule_sets` 段）反序列化为空 Vec。

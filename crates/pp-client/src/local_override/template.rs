@@ -1,10 +1,17 @@
-//! Scenario templates: return-china, overseas, ad-filter.
+//! Scenario templates: built-in (return-china, overseas, ad-filter) plus
+//! user-defined custom templates ([`CustomTemplate`]).
 //!
-//! Templates are pre-defined rule combinations. Applying a template
-//! auto-subscribes the community rule sets it depends on
-//! ([`template_rule_set_dependencies`]), then generates multiple [`LocalRule`]
-//! entries (including the `rule_set` rules, unconditionally) and records an
-//! [`AppliedTemplate`] for revert.
+//! Applying a template auto-subscribes the community rule sets it depends on
+//! (built-ins via [`template_rule_set_dependencies`]; custom templates by
+//! scanning their snapshot rules for `rule_set` targets that match a built-in
+//! subscription `community_id`), then generates multiple [`LocalRule`] entries
+//! and records an [`AppliedTemplate`] for revert.
+//!
+//! Custom templates are addressed with the `"custom:"` prefix
+//! ([`CUSTOM_TEMPLATE_PREFIX`]) so they share the apply / revert command path
+//! with built-in templates; [`revert_template`] only consults the recorded
+//! `generated_rule_ids`, so removing a custom template never breaks the revert
+//! of rules it previously generated.
 //!
 //! ADR-0002, section 3.3.
 
@@ -12,7 +19,12 @@ use std::collections::HashSet;
 
 use pp_common::{PanelError, PanelResult};
 
-use super::{AppliedTemplate, LocalOverride, LocalRule, RuleAction, RuleMatchType};
+use super::{AppliedTemplate, CustomTemplate, LocalOverride, LocalRule, RuleAction, RuleMatchType};
+
+/// Prefix distinguishing a user-defined template ID from built-in ones.
+///
+/// Apply / revert commands receive `"custom:<id>"` as the `template_id`.
+pub const CUSTOM_TEMPLATE_PREFIX: &str = "custom:";
 
 /// Built-in template identifiers.
 pub const TEMPLATE_RETURN_CHINA: &str = "return-china";
@@ -39,8 +51,74 @@ pub fn template_rule_set_dependencies(template_id: &str) -> &'static [&'static s
     }
 }
 
+/// Community rule set ids that applying `template_id` auto-subscribes.
+///
+/// - Built-ins: the static dependency map ([`template_rule_set_dependencies`]).
+/// - Custom (`"custom:<id>"`): the `rule_set` targets of the template's
+///   snapshot rules that match an entry in `rule_set_subscriptions` (i.e. a
+///   built-in community id). Custom rule set tags are **not** subscribed —
+///   they only need their own rule set to be enabled.
+///
+/// Used by the command layer to trigger best-effort downloads after an apply.
+/// Returns ids in stable (definition) order with duplicates removed.
+pub fn template_auto_subscribed_community_ids(
+    ovr: &LocalOverride,
+    template_id: &str,
+) -> Vec<String> {
+    match template_id.strip_prefix(CUSTOM_TEMPLATE_PREFIX) {
+        Some(custom_id) => {
+            let Some(tpl) = ovr.custom_templates.iter().find(|t| t.id == custom_id) else {
+                return Vec::new();
+            };
+            let subscribed: HashSet<&str> = ovr
+                .rule_set_subscriptions
+                .iter()
+                .map(|s| s.community_id.as_str())
+                .collect();
+            let mut seen = HashSet::new();
+            tpl.rules
+                .iter()
+                .filter(|r| {
+                    r.match_type == RuleMatchType::RuleSet
+                        && subscribed.contains(r.target.as_str())
+                        && seen.insert(r.target.as_str())
+                })
+                .map(|r| r.target.clone())
+                .collect()
+        }
+        None => template_rule_set_dependencies(template_id)
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    }
+}
+
+/// Mark the built-in community rule sets referenced by `rule_set` rules as
+/// subscribed. Targets not present in `rule_set_subscriptions` (e.g. custom
+/// rule set tags) are skipped defensively.
+fn auto_subscribe_rule_set_targets(ovr: &mut LocalOverride, rules: &[LocalRule]) {
+    for rule in rules {
+        if rule.match_type != RuleMatchType::RuleSet {
+            continue;
+        }
+        if let Some(sub) = ovr
+            .rule_set_subscriptions
+            .iter_mut()
+            .find(|s| s.community_id == rule.target)
+        {
+            sub.subscribed = true;
+        } else {
+            tracing::debug!(
+                target = %rule.target,
+                "template rule_set target not in subscription list, skipping"
+            );
+        }
+    }
+}
+
 /// Apply a scenario template to the given [`LocalOverride`].
 ///
+/// Built-in templates:
 /// - Auto-subscribes the community rule sets the template depends on
 ///   ([`template_rule_set_dependencies`]); IDs not present in
 ///   `rule_set_subscriptions` are skipped defensively.
@@ -50,14 +128,24 @@ pub fn template_rule_set_dependencies(template_id: &str) -> &'static [&'static s
 /// - Records the applied template for later revert.
 /// - Returns the generated rule IDs.
 ///
+/// Custom templates (`template_id = "custom:<id>"`, [`CUSTOM_TEMPLATE_PREFIX`]):
+/// copies the snapshot rules with fresh UUIDs, auto-subscribes the built-in
+/// community rule sets their `rule_set` rules reference, head-inserts them and
+/// records `applied_templates` with `template_id = "custom:<id>"`.
+///
 /// # Errors
 ///
-/// Returns error if `template_id` is unknown.
+/// Returns error if `template_id` is neither a known built-in nor an existing
+/// custom template.
 pub fn apply_template(
     ovr: &mut LocalOverride,
     template_id: &str,
     now_sec: u64,
 ) -> PanelResult<Vec<String>> {
+    if template_id.starts_with(CUSTOM_TEMPLATE_PREFIX) {
+        return apply_custom_template(ovr, template_id, now_sec);
+    }
+
     // Auto-subscribe the dependency rule sets so the generated rule_set rules
     // take effect once the rule sets are downloaded. Unknown IDs are skipped
     // (the built-in list covers every dependency, so this is only defensive).
@@ -99,6 +187,60 @@ pub fn apply_template(
     }
 
     // Record applied template.
+    ovr.applied_templates.push(AppliedTemplate {
+        template_id: template_id.to_string(),
+        applied_at: now_sec,
+        generated_rule_ids: rule_ids.clone(),
+    });
+
+    Ok(rule_ids)
+}
+
+/// Apply a user-defined custom template (addressed as `"custom:<id>"`).
+///
+/// - Looks the template up in `ovr.custom_templates` (errors if missing).
+/// - Auto-subscribes built-in community rule sets referenced by the snapshot's
+///   `rule_set` rules ([`auto_subscribe_rule_set_targets`]).
+/// - Copies the snapshot rules with **fresh UUIDs**, head-inserts them
+///   (`sort_order = min - 100`, preserving snapshot order), and records an
+///   [`AppliedTemplate`] with `template_id = "custom:<id>"`.
+fn apply_custom_template(
+    ovr: &mut LocalOverride,
+    template_id: &str,
+    now_sec: u64,
+) -> PanelResult<Vec<String>> {
+    let Some(custom_id) = template_id.strip_prefix(CUSTOM_TEMPLATE_PREFIX) else {
+        return Err(PanelError::Client(format!(
+            "malformed custom template id: {template_id}"
+        )));
+    };
+    let template: CustomTemplate = ovr
+        .custom_templates
+        .iter()
+        .find(|t| t.id == custom_id)
+        .cloned()
+        .ok_or_else(|| PanelError::Client(format!("custom template not found: {custom_id}")))?;
+
+    auto_subscribe_rule_set_targets(ovr, &template.rules);
+
+    let min_order = min_sort_order(&ovr.singbox.rules);
+    let base_order = min_order.saturating_sub(100);
+
+    let generated: Vec<LocalRule> = template
+        .rules
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut rule)| {
+            rule.id = uuid::Uuid::new_v4().to_string();
+            rule.created_at = now_sec;
+            rule.sort_order = base_order + i as i32;
+            rule
+        })
+        .collect();
+    let rule_ids: Vec<String> = generated.iter().map(|r| r.id.clone()).collect();
+
+    ovr.singbox.rules.extend(generated);
+
     ovr.applied_templates.push(AppliedTemplate {
         template_id: template_id.to_string(),
         applied_at: now_sec,
@@ -277,159 +419,5 @@ fn min_sort_order(rules: &[LocalRule]) -> i32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::local_override::store::built_in_rule_set_subscriptions;
-
-    fn empty_override() -> LocalOverride {
-        LocalOverride {
-            rule_set_subscriptions: built_in_rule_set_subscriptions(),
-            ..Default::default()
-        }
-    }
-
-    fn is_subscribed_to(ovr: &LocalOverride, community_id: &str) -> bool {
-        ovr.rule_set_subscriptions
-            .iter()
-            .any(|s| s.community_id == community_id && s.subscribed)
-    }
-
-    fn rule_set_rules(ovr: &LocalOverride) -> impl Iterator<Item = &LocalRule> + '_ {
-        ovr.singbox
-            .rules
-            .iter()
-            .filter(|r| r.match_type == RuleMatchType::RuleSet)
-    }
-
-    #[test]
-    fn template_dependency_mapping() {
-        assert_eq!(
-            template_rule_set_dependencies(TEMPLATE_RETURN_CHINA),
-            &["geoip-cn", "geosite-cn"]
-        );
-        assert_eq!(
-            template_rule_set_dependencies(TEMPLATE_OVERSEAS),
-            &["geosite-geolocation-!cn"]
-        );
-        assert_eq!(
-            template_rule_set_dependencies(TEMPLATE_AD_FILTER),
-            &["geosite-ads"]
-        );
-        assert!(template_rule_set_dependencies("unknown").is_empty());
-    }
-
-    #[test]
-    fn apply_return_china_template_generates_rules() {
-        // Not pre-subscribed: apply must still generate the rule_set rules and
-        // auto-subscribe the dependency rule sets.
-        let mut ovr = empty_override();
-        assert!(!is_subscribed_to(&ovr, "geoip-cn"));
-        assert!(!is_subscribed_to(&ovr, "geosite-cn"));
-
-        let ids = apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 1000).unwrap();
-        assert!(!ids.is_empty());
-        assert_eq!(ovr.singbox.rules.len(), ids.len());
-        assert_eq!(ovr.applied_templates.len(), 1);
-        assert_eq!(ovr.applied_templates[0].template_id, TEMPLATE_RETURN_CHINA);
-
-        let rs_targets: Vec<&str> = rule_set_rules(&ovr).map(|r| r.target.as_str()).collect();
-        assert!(rs_targets.contains(&"geoip-cn"));
-        assert!(rs_targets.contains(&"geosite-cn"));
-    }
-
-    #[test]
-    fn apply_overseas_template_generates_rules() {
-        let mut ovr = empty_override();
-
-        let ids = apply_template(&mut ovr, TEMPLATE_OVERSEAS, 2000).unwrap();
-        assert!(!ids.is_empty());
-        assert!(ovr.singbox.rules.iter().any(|r| r.target == "google.com"));
-        assert!(ovr.singbox.rules.iter().any(|r| r.target == "youtube.com"));
-        assert!(ovr.singbox.rules.iter().any(|r| r.target == "github.com"));
-        assert!(rule_set_rules(&ovr).any(|r| r.target == "geosite-geolocation-!cn"));
-    }
-
-    #[test]
-    fn apply_ad_filter_template_generates_rules() {
-        // Regression: previously unsubscribed ad-filter generated 0 rules.
-        let mut ovr = empty_override();
-
-        let ids = apply_template(&mut ovr, TEMPLATE_AD_FILTER, 3000).unwrap();
-        assert!(!ids.is_empty());
-        assert_eq!(ids.len(), 1);
-        let reject = rule_set_rules(&ovr)
-            .find(|r| r.target == "geosite-ads" && r.action == RuleAction::Reject);
-        assert!(reject.is_some());
-    }
-
-    #[test]
-    fn apply_template_auto_subscribes_dependency_rule_sets() {
-        // return-china → geoip-cn + geosite-cn.
-        let mut ovr = empty_override();
-        apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 1000).unwrap();
-        assert!(is_subscribed_to(&ovr, "geoip-cn"));
-        assert!(is_subscribed_to(&ovr, "geosite-cn"));
-
-        // overseas → geosite-geolocation-!cn.
-        let mut ovr = empty_override();
-        apply_template(&mut ovr, TEMPLATE_OVERSEAS, 2000).unwrap();
-        assert!(is_subscribed_to(&ovr, "geosite-geolocation-!cn"));
-
-        // ad-filter → geosite-ads.
-        let mut ovr = empty_override();
-        apply_template(&mut ovr, TEMPLATE_AD_FILTER, 3000).unwrap();
-        assert!(is_subscribed_to(&ovr, "geosite-ads"));
-
-        // Unknown templates subscribe nothing.
-        let mut ovr = empty_override();
-        assert!(apply_template(&mut ovr, "unknown", 1000).is_err());
-        assert!(ovr.rule_set_subscriptions.iter().all(|s| !s.subscribed));
-    }
-
-    #[test]
-    fn revert_template_removes_generated_rules() {
-        let mut ovr = empty_override();
-
-        let before_count = ovr.singbox.rules.len();
-        apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 1000).unwrap();
-        assert!(ovr.singbox.rules.len() > before_count);
-        assert!(is_subscribed_to(&ovr, "geoip-cn"));
-
-        let reverted = revert_template(&mut ovr, TEMPLATE_RETURN_CHINA);
-        assert!(reverted);
-        assert_eq!(ovr.singbox.rules.len(), before_count);
-        assert!(ovr.applied_templates.is_empty());
-
-        // Revert only removes generated rules; re-apply works normally.
-        let ids = apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 2000).unwrap();
-        assert!(!ids.is_empty());
-        assert!(
-            ovr.applied_templates
-                .iter()
-                .any(|t| t.template_id == TEMPLATE_RETURN_CHINA)
-        );
-    }
-
-    #[test]
-    fn revert_unknown_template_returns_false() {
-        let mut ovr = empty_override();
-        let reverted = revert_template(&mut ovr, "nonexistent");
-        assert!(!reverted);
-    }
-
-    #[test]
-    fn apply_unknown_template_errors() {
-        let mut ovr = empty_override();
-        let result = apply_template(&mut ovr, "unknown", 1000);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn template_rules_have_unique_ids() {
-        let mut ovr = empty_override();
-
-        let ids = apply_template(&mut ovr, TEMPLATE_RETURN_CHINA, 1000).unwrap();
-        let unique: std::collections::HashSet<_> = ids.iter().collect();
-        assert_eq!(unique.len(), ids.len());
-    }
-}
+#[path = "tests/template_tests.rs"]
+mod tests;

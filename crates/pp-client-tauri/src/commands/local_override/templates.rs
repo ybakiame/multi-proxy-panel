@@ -1,7 +1,7 @@
 //! Scenario template commands (apply / revert with auto rule-set subscription).
 
 use pp_client::local_override::{
-    LocalOverrideStore, RuleSetManager, RuleSetSubscription, template_rule_set_dependencies,
+    LocalOverrideStore, RuleSetManager, RuleSetSubscription, template_auto_subscribed_community_ids,
 };
 use tauri::State;
 
@@ -39,9 +39,11 @@ pub async fn local_override_apply_template(
 
     // Best-effort, non-blocking download of the template's dependency rule
     // sets: failures are logged and retried on the next "update now".
-    let deps: Vec<RuleSetSubscription> = template_rule_set_dependencies(&template_id)
-        .iter()
-        .filter_map(|&community_id| {
+    // Built-ins come from the static dependency map; custom templates
+    // (`"custom:<id>"`) are scanned from their snapshot rules.
+    let deps: Vec<RuleSetSubscription> = template_auto_subscribed_community_ids(&ovr, &template_id)
+        .into_iter()
+        .filter_map(|community_id| {
             ovr.rule_set_subscriptions
                 .iter()
                 .find(|s| s.community_id == community_id)

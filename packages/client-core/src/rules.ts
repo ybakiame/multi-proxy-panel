@@ -118,5 +118,13 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       enabled: rs.enabled,
       last_updated: rs.last_updated,
     })),
+    // 自定义场景模板整段透传（规则快照 LocalRuleView / LocalRuleInput 同构）。
+    custom_templates: view.custom_templates.map((t) => ({
+      id: t.id,
+      name: t.name,
+      desc: t.desc,
+      rules: t.rules,
+      created_at: t.created_at,
+    })),
   };
 }

@@ -73,11 +73,26 @@ export interface CustomRuleSetView {
   cached: boolean;
 }
 
+/**
+ * User-defined scenario template view (from `local_override_get`).
+ *
+ * `rules` is the template's snapshot of the selected rule cards at creation
+ * time (displayed back in the create form and used as the apply source).
+ */
+export interface CustomTemplateView {
+  id: string;
+  name: string;
+  desc: string;
+  rules: LocalRuleView[];
+  created_at: number;
+}
+
 export interface LocalOverrideView {
   singbox: CoreLocalOverrideView;
   rule_set_subscriptions: RuleSetSubscriptionView[];
   applied_templates: AppliedTemplateView[];
   custom_rule_sets: CustomRuleSetView[];
+  custom_templates: CustomTemplateView[];
 }
 
 export interface RuleSetStatusView {
@@ -96,6 +111,8 @@ export interface SaveLocalOverrideInput {
   applied_templates: AppliedTemplateInput[];
   /** Full-replacement custom rule set segment (same semantics as rules). */
   custom_rule_sets: CustomRuleSetInput[];
+  /** Full-replacement custom template segment (same semantics as rules). */
+  custom_templates: CustomTemplateInput[];
 }
 
 /** Custom rule set save payload (same shape as the view minus `cached`). */
@@ -106,6 +123,21 @@ export interface CustomRuleSetInput {
   source: CustomRuleSetSource;
   enabled: boolean;
   last_updated: number;
+}
+
+/**
+ * Custom template save payload.
+ *
+ * `rules` is a full snapshot of the selected rule cards. `LocalRuleView` and
+ * `LocalRuleInput` share the same field shape, so a template saved from the
+ * current rule list round-trips through `buildSaveInput` unchanged.
+ */
+export interface CustomTemplateInput {
+  id: string;
+  name: string;
+  desc: string;
+  rules: LocalRuleInput[];
+  created_at: number;
 }
 
 export interface CoreLocalOverrideInput {

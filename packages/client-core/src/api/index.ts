@@ -120,6 +120,8 @@ export type {
   CustomRuleSetView,
   CustomRuleSetInput,
   CustomRuleSetSource,
+  CustomTemplateView,
+  CustomTemplateInput,
   LocalOverrideView,
   RuleSetStatusView,
   SaveLocalOverrideInput,

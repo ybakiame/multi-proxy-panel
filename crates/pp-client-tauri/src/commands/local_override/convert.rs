@@ -1,7 +1,7 @@
 //! Conversion and validation helpers for local override commands.
 
 use pp_client::local_override::{
-    AppliedTemplate, CoreLocalOverride, LocalOverride, LocalRule, RuleSetManager,
+    AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalRule, RuleSetManager,
     RuleSetSubscription,
 };
 
@@ -63,6 +63,8 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
 
     validate_custom_rule_sets(ovr)?;
 
+    validate_custom_templates(ovr)?;
+
     Ok(())
 }
 
@@ -113,6 +115,42 @@ pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), Strin
     Ok(())
 }
 
+/// Custom template segment validation:
+/// - IDs unique, non-empty and must not carry the reserved `custom:` prefix
+///   (apply addresses custom templates as `"custom:<id>"`, see template.rs);
+/// - snapshot rule IDs within one template are unique (apply assigns fresh
+///   UUIDs, but a consistent snapshot avoids confusion).
+pub(super) fn validate_custom_templates(ovr: &LocalOverride) -> Result<(), String> {
+    let prefix = pp_client::local_override::CUSTOM_TEMPLATE_PREFIX;
+    let mut seen_ids = std::collections::HashSet::new();
+    for tpl in &ovr.custom_templates {
+        if tpl.id.trim().is_empty() {
+            return Err("custom template has an empty id".to_string());
+        }
+        if tpl.id.starts_with(prefix) {
+            return Err(format!(
+                "custom template id '{}' must not start with reserved prefix '{prefix}'",
+                tpl.id
+            ));
+        }
+        if !seen_ids.insert(tpl.id.clone()) {
+            return Err(format!("duplicate custom template id '{}'", tpl.id));
+        }
+
+        let mut seen_rule_ids = std::collections::HashSet::new();
+        for rule in &tpl.rules {
+            if !seen_rule_ids.insert(rule.id.clone()) {
+                return Err(format!(
+                    "custom template '{}' contains duplicate snapshot rule id '{}'",
+                    tpl.id, rule.id
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -133,6 +171,25 @@ pub(super) fn convert_input_to_model(
             .map(convert_applied_template_input)
             .collect(),
         custom_rule_sets: input.custom_rule_sets,
+        custom_templates: input
+            .custom_templates
+            .into_iter()
+            .map(convert_custom_template_input)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn convert_custom_template_input(input: CustomTemplateInput) -> Result<CustomTemplate, String> {
+    Ok(CustomTemplate {
+        id: input.id,
+        name: input.name,
+        desc: input.desc,
+        rules: input
+            .rules
+            .into_iter()
+            .map(convert_rule_input)
+            .collect::<Result<Vec<_>, _>>()?,
+        created_at: input.created_at,
     })
 }
 
