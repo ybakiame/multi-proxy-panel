@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CONFIG_KEY,
@@ -56,16 +56,25 @@ export interface UseSettingsConfigReturn {
 }
 
 /**
- * 设置页表单状态 + 保存（对齐 desktop `useSettingsConfig`/persistConfig）：
+ * 表单状态 + 保存（对齐 desktop `useSettingsConfig`/persistConfig）：
  *
  * - 单一 Query 缓存（CONFIG_KEY）为权威源，config 变化时在渲染期同步各字段草稿
  *   （adjust-state-during-render，替代 effect 内 setState）；
  * - 保存：读缓存最新配置叠加补丁 → `useSaveConfig`（内部串行化）→ 成功 toast +
  *   失效 CONFIG_KEY 重读；失败 toast + 失效缓存回滚（草稿经 config 回流复位）；
+ *   persist 自身再经本地串行链排队，后一次保存叠加在前一次结果上（不丢并发修改）；
  * - 文本/数字字段走 500ms 防抖，端口仅在 1-65535 合法时才落库（非法输入只提示不保存）；
+ * - 组件卸载（切页）时 flush 未落库的防抖修改，立即保存，不依赖悬空 timer；
  * - VPN 通知开关保存成功后追加 `notifyPrefsChanged` 热更新通知栏（仅核心运行中有效，
  *   失败 toast 警告不阻塞）。
  */
+
+/** 某字段待落库的防抖保存：timer 句柄 + 执行时刻最新草稿的补丁工厂。 */
+interface PendingSave {
+  timer: ReturnType<typeof setTimeout>;
+  makePatch: () => Partial<ClientConfig>;
+}
+
 export function useSettingsConfig(): UseSettingsConfigReturn {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
@@ -95,58 +104,102 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   }
 
   // 各防抖字段独立计时（字段级 key），避免互相清掉对方待落库的保存。
-  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // 每条 pending 记录同时持有补丁工厂，供卸载 flush 读取最新草稿。
+  const pendingRef = useRef<Map<string, PendingSave>>(new Map());
+
+  /** persist 串行链：前一次落库并回写缓存后再读基底，避免并发保存互相覆盖。 */
+  const persistChainRef = useRef<Promise<void>>(Promise.resolve());
 
   /**
    * 配置即时保存：从 Query 缓存取最新配置叠加补丁（避免闭包旧值）。
    * 保存结果通过全局 toast 反馈；失败时失效 CONFIG_KEY 触发重读回滚。返回是否成功。
+   *
+   * 入队到 persistChainRef 串行执行：每次执行都先等前一次 persist 完成
+   * （useSaveConfig 的 onSuccess 已用其入参回写 CONFIG_KEY 缓存）再读基底，
+   * 保证后一次保存永远叠加在前一次结果之上，不会用旧基底整对象覆盖新修改。
    */
-  const persist = async (patch: Partial<ClientConfig>): Promise<boolean> => {
-    const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
-    if (!current) {
-      return false;
-    }
-    try {
-      const { warning } = await saveConfigMutation.mutateAsync({ ...current, ...patch });
-      if (warning) {
-        toastWarning(warning);
-      } else {
-        toastSuccess("设置已保存");
+  const persist = (patch: Partial<ClientConfig>): Promise<boolean> => {
+    const run = persistChainRef.current.then(async () => {
+      const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
+      if (!current) {
+        return false;
       }
-      // useSaveConfig 已用入参回写缓存；失效共享 CONFIG_KEY 让其它消费者重读后端权威值。
-      await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
-      return true;
-    } catch (err) {
-      toastError(toErrorMessage(err));
-      // 保存失败回滚：失效缓存触发重读。
-      await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
-      return false;
-    }
+      try {
+        const { warning } = await saveConfigMutation.mutateAsync({ ...current, ...patch });
+        if (warning) {
+          toastWarning(warning);
+        } else {
+          toastSuccess("设置已保存");
+        }
+        // useSaveConfig 已用入参回写缓存；失效共享 CONFIG_KEY 让其它消费者重读后端权威值。
+        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+        return true;
+      } catch (err) {
+        toastError(toErrorMessage(err));
+        // 保存失败回滚：失效缓存触发重读。
+        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+        return false;
+      }
+    });
+    // 链吞掉异常保证后续排队任务不被中断；返回值仍保留给调用方。
+    persistChainRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
+
+  // persist 每次渲染重建；每次 commit 后在 effect 中经 ref 暴露最新实例
+  // （供防抖回调与卸载 flush 使用；ref 只允许在 effect/handler 内读写）。
+  const persistRef = useRef(persist);
+  useEffect(() => {
+    persistRef.current = persist;
+  });
 
   /** 500ms 防抖保存；patch 以工厂形式读取执行时刻的最新草稿。 */
   const schedulePersist = (key: string, makePatch: () => Partial<ClientConfig>) => {
-    const pending = timersRef.current.get(key);
+    const pending = pendingRef.current.get(key);
     if (pending) {
-      clearTimeout(pending);
+      clearTimeout(pending.timer);
     }
-    timersRef.current.set(
-      key,
-      setTimeout(() => {
-        timersRef.current.delete(key);
-        void persist(makePatch());
+    pendingRef.current.set(key, {
+      makePatch,
+      timer: setTimeout(() => {
+        pendingRef.current.delete(key);
+        void persistRef.current(makePatch());
       }, 500),
-    );
+    });
   };
 
   /** 取消某字段尚未落库的防抖保存（端口变非法时丢弃旧值）。 */
   const cancelPersist = (key: string) => {
-    const pending = timersRef.current.get(key);
+    const pending = pendingRef.current.get(key);
     if (pending) {
-      clearTimeout(pending);
-      timersRef.current.delete(key);
+      clearTimeout(pending.timer);
+      pendingRef.current.delete(key);
     }
   };
+
+  // 卸载时 flush 未落库的防抖修改：路由切页/组件销毁不再依赖悬空 timer 存活
+  // （真机 WebView 上 timer 随页面销毁/后台可能被丢弃），而是立即执行保存，
+  // 修复「修改字段 → 500ms 内切页 → 保存从未发生 → 切回页面回显旧值」的竞态。
+  useEffect(() => {
+    return () => {
+      const pending = pendingRef.current;
+      if (pending.size === 0) {
+        return;
+      }
+      pendingRef.current = new Map();
+      const patches: Partial<ClientConfig>[] = [];
+      pending.forEach(({ timer, makePatch }) => {
+        clearTimeout(timer);
+        patches.push(makePatch());
+      });
+      // 字段补丁互不重叠，合并为单次保存（单一 toast，也避免分次落库互相覆盖）。
+      const merged = Object.assign({}, ...patches) as Partial<ClientConfig>;
+      void persistRef.current(merged);
+    };
+  }, []);
 
   /** 保存 VPN 通知偏好成功后的通知栏热更新（失败仅 toast 警告，不阻塞主流程）。 */
   const notifyVpnPrefs = async (showTraffic: boolean, showSelection: boolean) => {
