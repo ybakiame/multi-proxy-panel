@@ -11,9 +11,10 @@
 3. [开发工作流](#开发工作流)
 4. [数据库开发](#数据库开发)
 5. [前端开发](#前端开发)
-6. [测试](#测试)
-7. [调试技巧](#调试技巧)
-8. [代码审查清单](#代码审查清单)
+6. [Android 客户端构建](#android-客户端构建)
+7. [测试](#测试)
+8. [调试技巧](#调试技巧)
+9. [代码审查清单](#代码审查清单)
 
 ---
 
@@ -394,6 +395,80 @@ export function MyPage() {
   return <h1>{t('my-page.title')}</h1>;
 }
 ```
+
+---
+
+## Android 客户端构建
+
+`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/android/panel-core`（Go 模块，gomobile 合并 sing-box libbox + mihomo 为单一 `panelcore.aar`）提供。
+
+### 构建链路总览
+
+```
+update-android-geodata.sh   # 1. GEO 数据三件套 → app/src/main/assets/geo/
+build-panel-core.sh         # 2. gomobile bind → app/libs/panelcore.aar
+tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
+```
+
+### 环境要求
+
+| 工具 | 版本要求 | 说明 |
+|------|----------|------|
+| Go | **1.24.5**（推荐 `~/go-sdk/go`） | ⚠️ 系统 go1.26.x 与 sagernet gomobile v0.1.8 不兼容（`os.checkPidfdOnce` 链接错误） |
+| JDK | 17 或 21（`JAVA_HOME`） | gomobile 生成 Java 绑定 + Gradle |
+| Android SDK + NDK | NDK 27.2+（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 含 clang 交叉编译工具链 |
+| gh CLI | 已登录 | GEO 脚本读取 MetaCubeX/meta-rules-dat 的 latest release 元数据 |
+| Bun | 1.3+ | 前端与 tauri CLI |
+
+### 完整步骤
+
+```bash
+export ANDROID_NDK_HOME=~/Android/Sdk/ndk/27.2.12479018  # 按本机实际版本
+
+# 1. GEO 数据（mihomo 启动必需；APK 内置避免首启无代理下载失败）
+./apps/mobile/scripts/update-android-geodata.sh
+
+# 2. 构建 panelcore.aar（libbox + mihomocore 一次 bind 合并，避免双 AAR 的 go.* 运行时冲突）
+./apps/mobile/scripts/build-panel-core.sh
+
+# 3. 打包 APK（debug）
+cd apps/mobile
+bun run tauri android build --debug --apk --target aarch64
+
+# 发布构建（双架构 + 签名 keystore 配置后）
+bun run tauri android build --apk --target aarch64 --target x86_64
+```
+
+产物：`apps/mobile/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+
+> 注意：`panelcore.aar` 与 GEO 数据均为本地产物、不入库；克隆仓库后必须先跑步骤 1+2 才能打包。
+
+### ⚠️ 关键隐藏配置：`.cargo/config.toml`
+
+`apps/mobile/.cargo/config.toml` 是 Android 交叉编译的**必需**配置，缺失会导致难以排查的构建失败：
+
+- `CC_*` / `AR_*` / `linker`：cc-rs 编译 C 依赖（ring / aws-lc-sys 等）需要 NDK 工具链
+- `BINDGEN_EXTRA_CLANG_ARGS_*`：`rquickjs-sys` 的 bindgen 需要 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
+
+要点：
+
+- cargo 只沿**当前工作目录**向上查找 `.cargo/config.toml`；tauri CLI 从前端项目根（`apps/mobile`）调 cargo，所以配置必须放 `apps/mobile/.cargo/`（`src-tauri/.cargo/` 下的副本仅供裸 `cargo check --target aarch64-linux-android` 用）
+- 配置值不支持环境变量展开，NDK 绝对路径按本机写死；NDK 版本变更需同步修改
+- **迁移/新建 app 目录时务必随迁该配置**（本次 apps/mobile 迁移就曾因遗漏导致构建失败）
+
+### 常见问题
+
+| 症状 | 原因 | 处理 |
+|------|------|------|
+| `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
+| `gnu/stubs-32.h not found` | 缺 `.cargo/config.toml` 的 bindgen sysroot | 见上一节 |
+| `invalid reference to os.checkPidfdOnce` | 用了系统 go1.26 构建 gomobile | 换 `~/go-sdk/go`（1.24.5） |
+| Gradle 下载依赖超时 | 网络受限 | 配代理（`~/.gradle/gradle.properties` 的 `systemProp.http(s).proxy*`） |
+| mihomo 首启失败 | GEO 数据缺失 | 跑 `update-android-geodata.sh` 后重新打包 |
+
+### 许可注意
+
+sing-box 与 mihomo 均为 GPL-3.0，合并产物 `panelcore.aar` 同样受 GPL-3.0 约束；分发应用前请确保满足源码可得性要求。
 
 ---
 
