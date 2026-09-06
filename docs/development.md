@@ -400,7 +400,7 @@ export function MyPage() {
 
 ## Android 客户端构建
 
-`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/android/panel-core`（Go 模块，gomobile 合并 sing-box libbox + mihomo 为单一 `panelcore.aar`）提供。
+`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/mobile/panel-core`（Go 模块，gomobile 合并 sing-box libbox + mihomo 为单一 `panelcore.aar`）提供。
 
 ### 构建链路总览
 

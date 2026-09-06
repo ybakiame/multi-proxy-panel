@@ -19,7 +19,8 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **桌面客户端**: 基于 Tauri 的跨平台桌面应用，内置脚本引擎与 HTTPS MITM 抓包重写（MITM 为桌面端能力，Android 受系统限制不支持）
+- **桌面客户端**: 基于 Tauri 的跨平台桌面应用（Linux/Windows/macOS），内置脚本引擎与 HTTPS MITM 抓包重写（MITM 为桌面端能力，移动端不支持）
+- **移动客户端**: 基于 Tauri 的 Android 客户端，核心由内置 Go 引擎驱动（VPN 模式，无 MITM）
 - **脚本引擎**: 兼容 Quantumult X / Surge / Loon 三方言 API 的 JS 脚本运行时（QuickJS）
 - **HTTPS 解密与重写**: URL / Header / Body 重写、Reject / Mock、请求响应脚本钩子、流量抓包（桌面端专属）
 - **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
@@ -66,7 +67,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-桌面客户端（`pp-client-ui`，Tauri）运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，Android 受系统限制不支持）：
+客户端分桌面（`apps/desktop`，`pp-client-ui`）与移动（`apps/mobile`，`pp-client-mobile-ui`）两个独立 Tauri 应用，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -199,42 +200,9 @@ bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
 ```
 
-#### Android 构建
+#### Android（移动客户端）构建
 
-桌面客户端同时维护 Android 工程（`src-tauri/gen/android/`，Gradle + Kotlin 壳，minSdk 26）。构建 Debug APK：
-
-**环境要求**
-
-- JDK 17+：AGP 8.11 最低要求 17，推荐 21 LTS；Gradle 8.14 不支持在 JDK 25+ 上运行，请勿使用 25/26
-  - Arch Linux：`sudo pacman -S jdk21-openjdk`；多版本共存时用 `archlinux-java status` 查看、`sudo archlinux-java set java-21-openjdk` 切换默认（参见 [Arch Wiki: Java](https://wiki.archlinux.org.cn/title/Java)）
-  - Debian / Ubuntu：`sudo apt install openjdk-21-jdk`；多版本用 `sudo update-alternatives --config java` 切换
-  - Fedora：`sudo dnf install java-21-openjdk-devel`；多版本用 `sudo alternatives --config java` 切换
-- Android SDK：compileSdk 为 36，需安装 `platforms;android-36`（`sdkmanager "platforms;android-36"`）
-- Android NDK：`*-android26-clang` 工具链（minSdk 26 对应），路径见下方配置
-- Rust Android targets（`rustup target add ...`）：ABI 裁剪后只需 `aarch64-linux-android`、`x86_64-linux-android` 两个 target（保留全部 4 个 target 也无害，未裁剪 ABI 对应的 target 产物不会进入 APK）
-- 环境变量：`ANDROID_HOME`、`NDK_HOME`，并将 `$JAVA_HOME/bin`、`sdkmanager`、`platform-tools` 加入 `PATH`。`JAVA_HOME`：Gradle 默认使用 `archlinux-java`/系统默认 JDK，也可用 `JAVA_HOME` 显式指定（如 `/usr/lib/jvm/java-21-openjdk`）；多 JDK 共存但不想改系统默认时，构建命令前内联 `JAVA_HOME=...` 即可
-- 交叉编译工具链（CC/AR/linker 与 rquickjs bindgen 的 NDK sysroot）配置在 `apps/desktop/.cargo/config.toml`——cargo 沿「当前工作目录」向上发现配置，而 tauri CLI 从前端项目根调用 cargo，故该配置放在 `pp-client-ui/.cargo/` 而非 `src-tauri/.cargo/`；其中的 NDK 路径按本机写死，路径变更时需同步修改
-
-**构建命令**
-
-```bash
-cd apps/desktop
-# Debug APK（--target 为 tauri CLI 的 ABI 别名，可重复传参；对应 Rust target
-# aarch64-linux-android / x86_64-linux-android）
-bunx tauri android build --debug --apk --target aarch64 --target x86_64
-# Release APK
-bunx tauri android build --apk --target aarch64 --target x86_64
-```
-
-`beforeBuildCommand` 会先执行 `bun run build` 构建前端，随后 gradle 仅为 arm64-v8a 与 x86_64 两个 ABI 编译 Rust 动态库并打包（配合 `build.gradle.kts` 中 `abiFilters` 剔除 AAR 内多余 ABI 的 `.so`）。
-
-**产物位置**
-
-```text
-src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
-```
-
-APK 为 universal flavor，仅含 `arm64-v8a` 与 `x86_64` 两个 ABI，包名 `com.proxypanel.client`，`minSdk=26`、`targetSdk=36`。该目录（`gen/android` 下）已被内部 `.gitignore` 覆盖，构建产物不会进入版本库。
+Android 客户端自 desktop 拆分独立为 `apps/mobile`（Tauri 2 移动应用）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
 
 ## 项目结构
 
@@ -252,15 +220,18 @@ proxy-panel/
 │   ├── pp-core/            # 核心进程管理抽象
 │   ├── pp-subscription/    # 订阅链接生成器
 │   ├── pp-script/          # 客户端脚本引擎（QuickJS + QX/Surge/Loon 方言）
-│   ├── pp-mitm/            # HTTPS MITM 引擎（hudsucker 封装 + 重写/抓包）
-│   ├── pp-client/          # 桌面客户端核心库（订阅/配置合成/系统代理）
+│   ├── pp-mitm/            # HTTPS MITM 引擎（hudsucker 封装 + 重写/抓包，桌面专属）
+│   ├── pp-client/          # 客户端核心库（订阅/配置合成/系统代理）
+│   ├── pp-client-tauri/    # 双端共享 Tauri 命令层（state/logs/capabilities/命令 + android core_bridge）
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
 │   ├── pp-agent/           # 节点代理程序
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
-│   ├── desktop/            # 客户端：Tauri 2 桌面/安卓应用（React 前端 + 独立 cargo 项目）
-│   └── mobile/             # 客户端：Tauri 移动应用 + 安卓核心 Go 模块（panel-core）与构建脚本（自 android/ 并入）
+│   ├── desktop/            # 客户端：Tauri 2 桌面应用（Linux/Windows/macOS，React 前端 + 独立 cargo 项目）
+│   └── mobile/             # 客户端：Tauri 2 移动应用（Android）+ 安卓核心 Go 模块（panel-core）与构建脚本
+├── packages/
+│   └── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
 ├── docs/                   # 项目文档
 └── scripts/                # 辅助脚本
 ```
@@ -280,9 +251,12 @@ proxy-panel/
 | `pp-core` | 核心进程管理：启动、停止、重载、流量采集 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
 | `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
-| `pp-mitm` | HTTPS MITM 引擎（桌面端专属，Android 不支持）：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
-| `pp-client` | 桌面客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
-| `apps/desktop` | Tauri 2 桌面/安卓客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员） | 桌面/安卓应用 |
+| `pp-mitm` | HTTPS MITM 引擎（桌面端专属，移动端不支持）：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
+| `pp-client` | 客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
+| `pp-client-tauri` | 双端共享 Tauri 命令层：state / logs / capabilities / 35 条通用命令单份实现，Android 专属 core_bridge（cfg 门控） | 库 |
+| `@pp/client-core` | desktop/mobile 共享前端库：api 的 invoke 封装 + hooks + atoms + 纯工具（bun workspaces 成员） | 库 |
+| `apps/desktop` | Tauri 2 桌面客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员；壳为退出根 workspace 的独立 cargo 项目） | 桌面应用 |
+| `apps/mobile` | Tauri 2 移动客户端（Android：移动 UI + 壳 + Go 核心 `panel-core`，bun workspaces 成员） | Android 应用 |
 
 ## 支持的协议
 
