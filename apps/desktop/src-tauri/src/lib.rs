@@ -1,7 +1,6 @@
 //! ProxyPanel Client 桌面壳（Tauri 2 命令层）。
 //!
-//! 同时作为 lib 与 bin 构建：桌面端 `main` 调用 [`run`]；Android/iOS 端由
-//! [`tauri::mobile_entry_point`] 注入移动入口，`main` 不参与编译。
+//! 以 lib + bin 构建：桌面端 `main` 调用 [`run`] 启动 Tauri 应用。
 
 pub mod commands;
 mod state;
@@ -112,46 +111,7 @@ fn configure_wsl_webkit_workaround() {
     );
 }
 
-/// 解析应用数据目录。
-///
-/// - 桌面：沿用 [`state::default_data_dir`]（`$HOME/.proxy-panel-client`），
-///   行为与既有版本完全一致，不迁移已有数据；
-/// - Android：`HOME` 为只读 `/`，写 `$HOME/.proxy-panel-client` 必然失败；改用
-///   Tauri path resolver 的应用私有可写目录 `app_data_dir()`（如
-///   `/data/user/0/com.proxypanel.client/files`，随应用卸载清除，属移动端预期语义），
-///   不可用时回退 `app_local_data_dir()`，仍失败视为配置错误，终止启动并报错。
-fn resolve_data_dir(app: &tauri::App) -> std::path::PathBuf {
-    #[cfg(target_os = "android")]
-    {
-        match app.path().app_data_dir() {
-            Ok(dir) => return dir,
-            Err(app_data_err) => {
-                // tracing 尚未初始化（见 `run()`：日志初始化紧随本函数），此处的
-                // 告警用 eprintln 直出 stderr，保证诊断可见。
-                eprintln!(
-                    "[pp-client-ui] Android app_data_dir() 解析失败：{app_data_err}，回退 app_local_data_dir()"
-                );
-                match app.path().app_local_data_dir() {
-                    Ok(dir) => return dir,
-                    Err(local_data_err) => panic!(
-                        "Android 应用数据目录解析失败：app_data_dir {app_data_err}，app_local_data_dir {local_data_err}"
-                    ),
-                }
-            }
-        }
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let _ = app;
-        state::default_data_dir()
-    }
-}
-
-/// 应用入口。
-///
-/// Android/iOS 构建时经 `#[cfg_attr(mobile, tauri::mobile_entry_point)]` 生成
-/// 移动端 JNI/入口；桌面构建时由 `main` 调用本函数。
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// 应用入口，由 `main` 调用。
 pub fn run() {
     // 必须在任何 WebKit 相关初始化之前执行。
     #[cfg(target_os = "linux")]
@@ -161,9 +121,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Android 上 HOME 为只读 `/`，数据目录须在 setup 阶段经 AppHandle
-            // 的 path resolver 解析应用私有目录（桌面仍走 default_data_dir）。
-            let data_dir = resolve_data_dir(app);
+            let data_dir = state::default_data_dir();
             // tracing 全局 subscriber 只能初始化一次；日志初始化紧随 data_dir
             // 解析，guard 存入 AppState 持有，保证进程生命周期内文件写入线程存活。
             let log_guard = pp_client_tauri::logs::init_logging(&data_dir);
@@ -215,14 +173,6 @@ pub fn run() {
             commands::delete_core,
             commands::gpu_acceleration,
             commands::toast_mode_override,
-            // Android 专属三命令已上移共享层 pp-client-tauri::core_bridge（ADR-0003
-            // M3.5）；desktop 壳 android 编译经 cfg 保持注册可用（过渡态，M4 删除）。
-            #[cfg(target_os = "android")]
-            pp_client_tauri::core_bridge::request_vpn_permission,
-            #[cfg(target_os = "android")]
-            pp_client_tauri::core_bridge::vpn_last_error,
-            #[cfg(target_os = "android")]
-            pp_client_tauri::core_bridge::notify_prefs_changed,
             pp_client_tauri::capabilities::platform_info,
             pp_client_tauri::capabilities::get_capabilities,
             pp_client_tauri::commands::local_override_get,
@@ -247,14 +197,6 @@ pub fn run() {
             pp_client_tauri::logs::clear_logs,
             pp_client_tauri::logs::log_frontend,
         ]);
-
-    // Android 核心由 Kotlin 侧 libbox 驱动：`vpn` 插件 setup 中注册 VpnPlugin
-    // 并安装真实核心引擎桥（P1c-2）。桌面端不注册插件，行为零变化。插件实现随
-    // ADR-0003 M3.5 上移共享层 pp-client-tauri::core_bridge（setup 内部已有
-    // `#[cfg(target_os = "android")]` 保护，桌面编译为空操作）；此处 cfg 包裹保留
-    // desktop 壳 android 编译的可用过渡态（M4 删除）。
-    #[cfg(target_os = "android")]
-    let builder = builder.plugin(pp_client_tauri::core_bridge::vpn_plugin());
 
     builder
         .run(tauri::generate_context!())

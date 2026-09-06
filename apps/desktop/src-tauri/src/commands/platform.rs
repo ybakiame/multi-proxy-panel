@@ -18,17 +18,9 @@ pub async fn tun_auth_status(state: State<'_, AppState>) -> Result<String, Strin
 /// Execute TUN authorization.
 #[tauri::command]
 pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("TUN authorization");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
-        pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
-        Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
-    }
+    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
+    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
 }
 
 /// GPU acceleration detection.
@@ -66,8 +58,6 @@ pub fn toast_mode_override() -> Option<String> {
         .filter(|v| !v.trim().is_empty())
 }
 
-#[cfg(target_os = "android")]
-use super::require_desktop;
 use pp_client::ClientConfig;
 
 #[cfg(test)]

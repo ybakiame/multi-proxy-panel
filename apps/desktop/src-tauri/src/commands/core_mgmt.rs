@@ -8,8 +8,6 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
-#[cfg(target_os = "android")]
-use super::require_desktop;
 
 /// External view of a local core.
 #[derive(Debug, Clone, Serialize)]
@@ -58,38 +56,22 @@ pub(crate) fn active_binary(data_dir: &std::path::Path) -> std::path::PathBuf {
 /// List local available cores (installed + system-detected, with active flag).
 #[tauri::command]
 pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("core management");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
-        let active = active_binary(&state.data_dir);
-        Ok(cores
-            .iter()
-            .map(|c| LocalCoreView::from_core(c, &active))
-            .collect())
-    }
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
+    let active = active_binary(&state.data_dir);
+    Ok(cores
+        .iter()
+        .map(|c| LocalCoreView::from_core(c, &active))
+        .collect())
 }
 
 /// List recent 10 remote releases (GitHub releases, `v` prefix stripped).
 #[tauri::command]
 pub async fn list_remote_core_versions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("core version listing");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        inv.list_remote_versions()
-            .await
-            .map_err(|e| format!("拉取远端版本失败: {e}"))
-    }
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    inv.list_remote_versions()
+        .await
+        .map_err(|e| format!("拉取远端版本失败: {e}"))
 }
 
 /// List downloaded versions (semantic version descending).
@@ -99,9 +81,8 @@ pub async fn list_downloaded_versions(state: State<'_, AppState>) -> Result<Vec<
     Ok(inv.list_downloaded_versions())
 }
 
-/// Auto-select downloaded core as the active binary (desktop only; sing-box only,
-/// downloads take effect immediately).
-#[cfg(not(target_os = "android"))]
+/// Auto-select downloaded core as the active binary (sing-box only; downloads take
+/// effect immediately).
 pub(crate) fn auto_select_downloaded_core(data_dir: &std::path::Path, core_path: &std::path::Path) {
     let Ok(mut config) = pp_client::ClientConfig::load(data_dir) else {
         return;
@@ -118,78 +99,54 @@ pub async fn download_core(
     state: State<'_, AppState>,
     version: String,
 ) -> Result<LocalCoreView, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = (state, version);
-        return require_desktop("core download");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        let core = inv
-            .download(&version)
-            .await
-            .map_err(|e| format!("下载核心失败: {e}"))?;
-        auto_select_downloaded_core(&state.data_dir, &core.path);
-        let active = active_binary(&state.data_dir);
-        Ok(LocalCoreView::from_core(&core, &active))
-    }
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let core = inv
+        .download(&version)
+        .await
+        .map_err(|e| format!("下载核心失败: {e}"))?;
+    auto_select_downloaded_core(&state.data_dir, &core.path);
+    let active = active_binary(&state.data_dir);
+    Ok(LocalCoreView::from_core(&core, &active))
 }
 
 /// Set a path as the active core binary.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = (state, path);
-        return require_desktop("core selection");
+    let bin = PathBuf::from(&path);
+    if !bin.is_file() {
+        return Err(format!("核心二进制不存在: {path}"));
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(unix)]
     {
-        let bin = PathBuf::from(&path);
-        if !bin.is_file() {
-            return Err(format!("核心二进制不存在: {path}"));
+        use std::os::unix::fs::PermissionsExt;
+        let meta = std::fs::metadata(&bin).map_err(|e| format!("读取核心信息失败: {e}"))?;
+        if meta.permissions().mode() & 0o111 == 0 {
+            return Err(format!("核心二进制不可执行: {path}"));
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let meta = std::fs::metadata(&bin).map_err(|e| format!("读取核心信息失败: {e}"))?;
-            if meta.permissions().mode() & 0o111 == 0 {
-                return Err(format!("核心二进制不可执行: {path}"));
-            }
-        }
-        let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
-            Ok(cfg) => cfg,
-            Err(_) => pp_client::ClientConfig::new(
-                state.data_dir.clone(),
-                String::new(),
-                String::new(),
-                PathBuf::new(),
-            ),
-        };
-        config.core_binary = bin;
-        config.save().map_err(|e| format!("保存配置失败: {e}"))
     }
+    let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
+        Ok(cfg) => cfg,
+        Err(_) => pp_client::ClientConfig::new(
+            state.data_dir.clone(),
+            String::new(),
+            String::new(),
+            PathBuf::new(),
+        ),
+    };
+    config.core_binary = bin;
+    config.save().map_err(|e| format!("保存配置失败: {e}"))
 }
 
 /// Refresh system core detection.
 #[tauri::command]
 pub async fn detect_system_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("system core detection");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        let active = active_binary(&state.data_dir);
-        Ok(inv
-            .detect_system_cores()
-            .iter()
-            .map(|c| LocalCoreView::from_core(c, &active))
-            .collect())
-    }
+    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
+    let active = active_binary(&state.data_dir);
+    Ok(inv
+        .detect_system_cores()
+        .iter()
+        .map(|c| LocalCoreView::from_core(c, &active))
+        .collect())
 }
 
 /// Delete core implementation (testable pure logic).
@@ -213,15 +170,7 @@ pub(crate) fn delete_core_impl(data_dir: &std::path::Path, path: &str) -> Result
 /// Delete a downloaded core (system source / currently active cores cannot be deleted).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn delete_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = (state, path);
-        return require_desktop("core deletion");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        delete_core_impl(&state.data_dir, &path)
-    }
+    delete_core_impl(&state.data_dir, &path)
 }
 
 #[cfg(test)]
@@ -293,7 +242,6 @@ mod tests {
         assert_eq!(versions, vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]);
     }
 
-    #[cfg(not(target_os = "android"))]
     #[test]
     fn auto_select_downloaded_core_updates_core_binary() {
         let dir = TestDir::new();
@@ -312,7 +260,6 @@ mod tests {
         assert_eq!(saved.core_binary, downloaded);
     }
 
-    #[cfg(not(target_os = "android"))]
     #[test]
     fn auto_select_downloaded_core_without_config_does_not_create_one() {
         let dir = TestDir::new();

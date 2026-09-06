@@ -24,9 +24,6 @@
   "bundle": {
     "active": false,
     "targets": "all",
-    "icon": [],
-    "android": {
-      "minSdkVersion": 26
-    }
+    "icon": []
   }
 }

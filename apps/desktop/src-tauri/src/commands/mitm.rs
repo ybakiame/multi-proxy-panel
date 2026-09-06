@@ -5,8 +5,6 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
-#[cfg(target_os = "android")]
-use super::require_desktop;
 
 /// External view of a traffic record.
 #[derive(Debug, Clone, Serialize)]
@@ -43,20 +41,12 @@ impl TrafficRecordView {
 /// List MITM traffic records.
 #[tauri::command]
 pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecordView>, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("MITM traffic recording");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let lock = state.client.lock().await;
-        let Some(client) = lock.as_ref() else {
-            return Ok(Vec::new());
-        };
-        let records = client.recorder().list();
-        Ok(records.iter().map(TrafficRecordView::from_record).collect())
-    }
+    let lock = state.client.lock().await;
+    let Some(client) = lock.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let records = client.recorder().list();
+    Ok(records.iter().map(TrafficRecordView::from_record).collect())
 }
 
 /// External view of MITM CA certificate.
@@ -71,15 +61,7 @@ pub struct MitmCaView {
 /// Get MITM CA certificate (`data_dir/certs/ca.{crt,key}`).
 #[tauri::command]
 pub fn get_mitm_ca(state: State<'_, AppState>) -> Result<MitmCaView, String> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = state;
-        return require_desktop("MITM CA certificate");
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        get_mitm_ca_impl(&state.data_dir)
-    }
+    get_mitm_ca_impl(&state.data_dir)
 }
 
 /// Implementation of `get_mitm_ca` (testable pure logic).

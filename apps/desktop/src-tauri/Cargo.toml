@@ -8,12 +8,9 @@ authors = ["ProxyPanel Contributors"]
 repository = "https://github.com/ybakiame/multi-proxy-panel"
 rust-version = "1.86"
 
-# Tauri 2 移动端（Android/iOS）构建要求 crate 提供 lib target：
-# gradle 侧的 tauri rust 插件以 `cargo build --lib` 产出共享库并由
-# `tauri::mobile_entry_point` 注入 JNI 入口；桌面端由 main 调用 `run()`。
+# lib 供 `src/main.rs` 的 bin target 调用 `run()`。
 [lib]
 name = "pp_client_ui_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -40,24 +37,3 @@ pp-script = { path = "../../../crates/pp-script" }
 
 # 退出根 workspace，作为独立 cargo 项目构建（避免与根 workspace 冲突）。
 [workspace]
-
-# Android release 体积优化：strip 符号 + LTO + 单 codegen unit + size 优化。
-# 移动端 APK 中 lib/*.so 占 96%+ 体积，此配置对四 ABI 平均可再压缩约 30-40%。
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
-opt-level = "z"
-
-# ------------------------------------------------------------------------------
-# Feature-gating for Android builds
-# ------------------------------------------------------------------------------
-# Cargo features cannot be conditioned on target_os at the dependency level.
-# To build Android without MITM, use:
-#   cargo build --lib -p pp-client-ui --no-default-features --features scripts
-# or set CARGO_BUILD_TARGET before invoking tauri android build.
-#
-# Tauri CLI does not expose per-target feature flags. The recommended approach
-# is to use a build script or CI matrix that sets the feature flags explicitly
-# for Android targets. Desktop builds keep default features (mitm + scripts).
-# ------------------------------------------------------------------------------
