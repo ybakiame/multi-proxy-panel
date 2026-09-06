@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListBulletIcon, SwatchIcon } from "@heroicons/react/24/outline";
-import { Alert, Card, Spinner } from "@heroui/react";
+import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
   buildSaveInput,
@@ -18,6 +18,7 @@ import {
 import type { CustomTemplateInput, CustomTemplateView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { PageShell } from "../../components/PageShell";
+import { isLocalOverrideView } from "./localOverrideGuards";
 import { EntryLinkCard } from "./EntryLinkCard";
 import { MasterSwitchCard } from "./MasterSwitchCard";
 import { TemplateSection } from "./TemplateSection";
@@ -40,7 +41,7 @@ export default function Rules() {
   // 本地规则 / 模板在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
   const {
-    data: overrideData,
+    data: rawOverride,
     isLoading,
     error: queryError,
   } = useQuery<LocalOverrideView>({
@@ -48,11 +49,15 @@ export default function Rules() {
     queryFn: localOverrideGet,
   });
 
+  // 结构守卫（见 localOverrideGuards.ts）：缓存中残留异构形态（如历史版本规则集
+  // 管理页写入的 { override, ruleSets }）一律视为未加载 → 渲染可恢复的空态，避免
+  // 访问 undefined 字段（如 applied_templates.map）导致整页崩溃黑屏。
+  const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const currentCore = overrideData ? overrideData.singbox : null;
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
   const appliedTemplateIds = useMemo(
-    () => new Set(overrideData?.applied_templates.map((t) => t.template_id) ?? []),
+    () => new Set((overrideData?.applied_templates ?? []).map((t) => t.template_id)),
     [overrideData],
   );
 
@@ -156,6 +161,17 @@ export default function Rules() {
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
             <span className="text-sm text-muted">正在加载规则配置…</span>
+          </Card.Content>
+        </Card>
+      )}
+
+      {!isLoading && !queryError && !overrideData && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">规则数据不可用</span>
+            <Button variant="secondary" className="min-h-10 shrink-0 px-4" onPress={() => void invalidate()}>
+              重新加载
+            </Button>
           </Card.Content>
         </Card>
       )}

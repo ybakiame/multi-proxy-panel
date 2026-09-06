@@ -17,19 +17,19 @@ import {
 } from "@pp/client-core";
 import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView, RuleSetStatusView } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
+import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
 
-interface RuleSetsData {
-  override: LocalOverrideView;
-  ruleSets: RuleSetStatusView[];
-}
-
-/** 规则集管理页一次取数：本地 Override 全量 + 规则集订阅/缓存状态。 */
-async function fetchRuleSetsData(): Promise<RuleSetsData> {
-  const [override, ruleSets] = await Promise.all([localOverrideGet(), localOverrideRulesets()]);
-  return { override, ruleSets };
-}
+/**
+ * 规则集订阅/缓存状态查询键。
+ *
+ * 与 `LOCAL_OVERRIDE_KEY` 共用前缀：任何 `invalidateQueries(LOCAL_OVERRIDE_KEY)`
+ * （前缀匹配）都会连带重拉本查询；同时避免把 `{override, ruleSets}` 复合形态
+ * 写进 `LOCAL_OVERRIDE_KEY`——那是规则主页/自定义规则页黑屏（异构缓存下访问
+ * `applied_templates.map` 崩溃）的根因。
+ */
+const RULE_SETS_STATUS_KEY = [...LOCAL_OVERRIDE_KEY, "rule_sets_status"] as const;
 
 function formatUpdated(lastUpdated: number): string {
   if (lastUpdated <= 0) return "从未更新";
@@ -52,17 +52,26 @@ export default function RuleSetsPage() {
   // 本地规则 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
   const {
-    data,
-    isLoading,
-    error: queryError,
-  } = useQuery<RuleSetsData>({
+    data: rawOverride,
+    isLoading: overrideLoading,
+    error: overrideError,
+  } = useQuery<LocalOverrideView>({
     queryKey: LOCAL_OVERRIDE_KEY,
-    queryFn: fetchRuleSetsData,
+    queryFn: localOverrideGet,
+  });
+  const {
+    data: ruleSets,
+    isLoading: ruleSetsLoading,
+    error: ruleSetsError,
+  } = useQuery<RuleSetStatusView[]>({
+    queryKey: RULE_SETS_STATUS_KEY,
+    queryFn: localOverrideRulesets,
   });
 
-  const overrideData = data?.override ?? null;
-  const communitySets = data?.ruleSets ?? [];
-  const customSets = overrideData?.custom_rule_sets ?? [];
+  // 结构守卫：缓存残留异构形态（历史复合查询）时视为未加载，渲染空态而非崩溃。
+  const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
+  const communitySets = asArray(ruleSets);
+  const customSets = asArray(overrideData?.custom_rule_sets);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
   // ---- 局部 UI 状态 ----
@@ -207,7 +216,7 @@ export default function RuleSetsPage() {
           </Button>
         </div>
 
-        {isLoading && !overrideData && (
+        {((overrideLoading && !overrideData) || (ruleSetsLoading && ruleSets === undefined)) && (
           <Card>
             <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
               <Spinner aria-hidden="true" />
@@ -216,14 +225,14 @@ export default function RuleSetsPage() {
           </Card>
         )}
 
-        {!isLoading && queryError && (
+        {!overrideData && !overrideLoading && overrideError && (
           <Card>
             <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
               <Alert status="danger">
                 <Alert.Indicator />
                 <Alert.Content>
                   <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+                  <Alert.Description>{toErrorMessage(overrideError)}</Alert.Description>
                 </Alert.Content>
               </Alert>
             </Card.Content>
@@ -235,7 +244,19 @@ export default function RuleSetsPage() {
             {/* 社区规则集（内置，不可删除） */}
             <section className="flex flex-col gap-3">
               <span className="text-sm font-medium text-foreground">社区规则集</span>
-              {communitySets.length === 0 ? (
+              {ruleSetsError && communitySets.length === 0 ? (
+                <Card>
+                  <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+                    <Alert status="danger">
+                      <Alert.Indicator />
+                      <Alert.Content>
+                        <Alert.Title>订阅状态加载失败</Alert.Title>
+                        <Alert.Description>{toErrorMessage(ruleSetsError)}</Alert.Description>
+                      </Alert.Content>
+                    </Alert>
+                  </Card.Content>
+                </Card>
+              ) : communitySets.length === 0 ? (
                 <Card>
                   <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
                     <span className="text-sm text-muted">暂无社区规则集</span>

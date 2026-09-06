@@ -1,6 +1,6 @@
+import { Component, useEffect, useRef, type ErrorInfo, type ReactNode } from "react";
 import { ToastProvider } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useEffect, useRef } from "react";
 import { isTauriEnv } from "@pp/client-core";
 import { TABS, TabBar } from "./components/TabBar";
 import Dashboard from "./pages/Dashboard";
@@ -10,6 +10,56 @@ import CustomRulesPage from "./pages/Rules/CustomRulesPage";
 import RuleSetsPage from "./pages/Rules/RuleSetsPage";
 import Settings from "./pages/Settings";
 import Subscriptions from "./pages/Subscriptions";
+
+/**
+ * 渲染期错误兜底：捕获子组件渲染时的未处理异常，展示错误信息与
+ * 「重新加载」按钮，避免页面异常后整页黑屏无法恢复（对齐 desktop App.tsx）。
+ *
+ * 错误路径刻意不依赖 HeroUI 组件（若异常来自 HeroUI 本身会二次崩溃），
+ * 使用原生 button + Tailwind 类渲染；深色背景直接取 `bg-background`/`text-foreground`。
+ */
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[ErrorBoundary] 页面渲染异常:", error, info);
+  }
+
+  private handleReload = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
+          <h1 className="text-xl font-semibold">页面渲染出错</h1>
+          <p className="max-w-md break-all text-center text-sm text-muted">{this.state.error.message}</p>
+          <button
+            type="button"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            onClick={this.handleReload}
+          >
+            重新加载
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /** 非 Tauri 环境拦截：浏览器打开 devUrl 无 IPC 桥，任何 invoke 都失败；用原生元素渲染避免轮询失败刷屏（与 desktop 同理）。 */
 function TauriRequired() {
@@ -74,8 +124,10 @@ export default function App() {
   }
   return (
     <HashRouter>
-      <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
-      <AppContent />
+      <ErrorBoundary>
+        <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
+        <AppContent />
+      </ErrorBoundary>
     </HashRouter>
   );
 }

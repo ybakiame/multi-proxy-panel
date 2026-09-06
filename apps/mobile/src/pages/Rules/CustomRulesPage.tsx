@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Card, Spinner } from "@heroui/react";
+import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
   buildSaveInput,
@@ -15,6 +15,7 @@ import {
 } from "@pp/client-core";
 import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
+import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
 import type { RuleSetOption } from "./RuleEditSheet";
@@ -35,7 +36,7 @@ export default function CustomRulesPage() {
   // 规则在核心启动时注入运行配置，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
   const {
-    data: overrideData,
+    data: rawOverride,
     isLoading,
     error: queryError,
   } = useQuery<LocalOverrideView>({
@@ -43,6 +44,8 @@ export default function CustomRulesPage() {
     queryFn: localOverrideGet,
   });
 
+  // 结构守卫（见 localOverrideGuards.ts）：异构/异常缓存视为未加载，渲染空态而非崩溃。
+  const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const currentCore = overrideData ? overrideData.singbox : null;
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
@@ -54,10 +57,10 @@ export default function CustomRulesPage() {
   /** 规则集选择器候选：已订阅社区规则集 + 已启用自定义规则集。 */
   const ruleSetOptions = useMemo<RuleSetOption[]>(() => {
     if (!overrideData) return [];
-    const community = overrideData.rule_set_subscriptions
+    const community = asArray(overrideData.rule_set_subscriptions)
       .filter((s) => s.subscribed)
       .map((s) => ({ value: s.community_id, label: s.display_name }));
-    const custom = overrideData.custom_rule_sets
+    const custom = asArray(overrideData.custom_rule_sets)
       .filter((rs) => rs.enabled)
       .map((rs) => ({ value: rs.tag, label: rs.tag, hint: rs.name.trim() || undefined }));
     return [...community, ...custom];
@@ -174,6 +177,17 @@ export default function CustomRulesPage() {
                   <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
                 </Alert.Content>
               </Alert>
+            </Card.Content>
+          </Card>
+        )}
+
+        {!isLoading && !queryError && !overrideData && (
+          <Card>
+            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+              <span className="text-sm text-muted">规则数据不可用</span>
+              <Button variant="secondary" className="min-h-10 shrink-0 px-4" onPress={() => void invalidate()}>
+                重新加载
+              </Button>
             </Card.Content>
           </Card>
         )}
