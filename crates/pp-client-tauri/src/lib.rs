@@ -17,6 +17,8 @@
 
 pub mod capabilities;
 pub mod commands;
+#[cfg(target_os = "android")]
+pub mod core_bridge;
 pub mod logs;
 pub mod state;
 

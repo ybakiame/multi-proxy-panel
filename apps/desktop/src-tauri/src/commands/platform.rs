@@ -31,48 +31,6 @@ pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String>
     }
 }
 
-/// Request VPN permission (Android only).
-#[cfg(target_os = "android")]
-#[tauri::command]
-pub async fn request_vpn_permission() -> Result<(), String> {
-    let handle = crate::core_bridge::vpn_plugin_handle()
-        .ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
-    handle
-        .run_mobile_plugin_async::<serde_json::Value>("prepare", ())
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("VPN 授权失败: {e}"))
-}
-
-/// Read last VPN start error (Android only).
-#[cfg(target_os = "android")]
-#[tauri::command]
-pub async fn vpn_last_error() -> Option<String> {
-    let handle = crate::core_bridge::vpn_plugin_handle()?;
-    let resp = handle
-        .run_mobile_plugin_async::<crate::core_bridge::IsRunningResponse>("isRunning", ())
-        .await
-        .ok()?;
-    resp.last_error
-}
-
-/// Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
-#[cfg(target_os = "android")]
-#[tauri::command]
-pub async fn notify_prefs_changed(show_traffic: bool, show_selection: bool) -> Result<(), String> {
-    let handle = crate::core_bridge::vpn_plugin_handle()
-        .ok_or_else(|| "VPN plugin not initialized, please restart the app".to_string())?;
-    let payload = serde_json::json!({
-        "showTraffic": show_traffic,
-        "showSelection": show_selection,
-    });
-    handle
-        .run_mobile_plugin_async::<serde_json::Value>("updateNotifyPrefs", payload)
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("Failed to update notification preferences: {e}"))
-}
-
 /// GPU acceleration detection.
 #[tauri::command]
 pub fn gpu_acceleration() -> bool {

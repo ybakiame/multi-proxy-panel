@@ -7,8 +7,8 @@
 //! - 日志：初始化共享日志系统并把保活 guard 存入 [`AppState`]；
 //! - 插件：通知（`tauri-plugin-notification`）与 opener（`tauri-plugin-opener`）；
 //! - 命令：按全路径注册共享 crate 的全部命令（35 条 commands + 2 capabilities +
-//!   7 logs），不注册 desktop 专属（MITM/核心管理/远程资源等）与 Android 专属三命令
-//!   （`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`，M3.5 引入）。
+//!   7 logs + Android 专属三命令，M3.5 引入），不注册 desktop 专属（MITM/核心管理/
+//!   远程资源等）。
 //!
 //! 同时作为 lib 与 bin 构建：Android/iOS 端由 [`tauri::mobile_entry_point`] 注入移动
 //! 入口（`main` 不参与编译）；host（桌面）构建时由 `main` 调用 [`run`]。
@@ -53,7 +53,7 @@ fn resolve_data_dir(app: &tauri::App) -> PathBuf {
 /// 移动端 JNI/入口；host（桌面）构建时由 `main` 调用本函数。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -112,7 +112,23 @@ pub fn run() {
             pp_client_tauri::commands::local_override_rulesets,
             pp_client_tauri::commands::local_override_toggle_ruleset,
             pp_client_tauri::commands::local_override_update_rulesets_now,
-        ])
+            // Android 专属三命令来自共享层 pp-client-tauri::core_bridge（ADR-0003
+            // M3.5）。mobile 壳只编 android target，host 构建仅供编译检查，模块在
+            // host 不可见，故以 cfg 显式包裹（桌面构建裁剪）。
+            #[cfg(target_os = "android")]
+            pp_client_tauri::core_bridge::request_vpn_permission,
+            #[cfg(target_os = "android")]
+            pp_client_tauri::core_bridge::vpn_last_error,
+            #[cfg(target_os = "android")]
+            pp_client_tauri::core_bridge::notify_prefs_changed,
+        ]);
+
+    // Android 核心由 Kotlin 侧 libbox 驱动：注册 `vpn` 插件（VpnPlugin 真实桥，setup
+    // 内注册 Kotlin 插件并安装核心引擎桥，见 pp-client-tauri::core_bridge::vpn_plugin）。
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(pp_client_tauri::core_bridge::vpn_plugin());
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

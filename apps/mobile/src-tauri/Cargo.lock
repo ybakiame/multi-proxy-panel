@@ -4243,9 +4243,7 @@ dependencies = [
 name = "pp-client-mobile-ui"
 version = "0.1.0"
 dependencies = [
- "pp-client",
  "pp-client-tauri",
- "pp-common",
  "tauri",
  "tauri-build",
  "tauri-plugin-notification",

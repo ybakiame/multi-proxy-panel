@@ -22,15 +22,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
-pp-client = { path = "../../../crates/pp-client" }
 pp-client-tauri = { path = "../../../crates/pp-client-tauri" }
-pp-common = { path = "../../../crates/pp-common" }
 tracing = "0.1"
 
-# ADR-0003 收益：移动壳依赖表不直接列出 pp-mitm / pp-script（Android 无 MITM；
-# pp-script 经 pp-client-tauri 间接使用），也无需 desktop 壳的 feature-gating 注释。
-# 注：crates/pp-client 的 default features 当前仍含 mitm，pp-mitm 尚以传递依赖进入
-# 构建图；待共享层将 mitm 移出 default features（M4 范围）后彻底移除。
+# ADR-0003 收益：移动壳依赖表不直接列出 pp-client / pp-common / pp-mitm / pp-script
+# （M3.5 清理：pp-client/pp-common 为壳骨架遗留冗余边，mobile 源码零直接引用，经
+# pp-client-tauri 传递即可），也无需 desktop 壳的 feature-gating 注释。
+# 注：pp-client-tauri 依赖的 crates/pp-client default features 当前仍含 mitm，
+# pp-mitm 尚以传递依赖（经共享层边）进入构建图；待 pp-client 将 mitm 移出 default
+# features 并完成模块解耦（后续独立任务，原 M4 范围）后彻底移除。
 
 # 退出根 workspace，作为独立 cargo 项目构建（避免与根 workspace 冲突）。
 [workspace]

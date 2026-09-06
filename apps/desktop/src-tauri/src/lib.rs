@@ -4,8 +4,6 @@
 //! [`tauri::mobile_entry_point`] 注入移动入口，`main` 不参与编译。
 
 pub mod commands;
-#[cfg(target_os = "android")]
-mod core_bridge;
 mod state;
 
 use tauri::Manager;
@@ -217,12 +215,14 @@ pub fn run() {
             commands::delete_core,
             commands::gpu_acceleration,
             commands::toast_mode_override,
+            // Android 专属三命令已上移共享层 pp-client-tauri::core_bridge（ADR-0003
+            // M3.5）；desktop 壳 android 编译经 cfg 保持注册可用（过渡态，M4 删除）。
             #[cfg(target_os = "android")]
-            commands::request_vpn_permission,
+            pp_client_tauri::core_bridge::request_vpn_permission,
             #[cfg(target_os = "android")]
-            commands::vpn_last_error,
+            pp_client_tauri::core_bridge::vpn_last_error,
             #[cfg(target_os = "android")]
-            commands::notify_prefs_changed,
+            pp_client_tauri::core_bridge::notify_prefs_changed,
             pp_client_tauri::capabilities::platform_info,
             pp_client_tauri::capabilities::get_capabilities,
             pp_client_tauri::commands::local_override_get,
@@ -249,9 +249,12 @@ pub fn run() {
         ]);
 
     // Android 核心由 Kotlin 侧 libbox 驱动：`vpn` 插件 setup 中注册 VpnPlugin
-    // 并安装真实核心引擎桥（P1c-2）。桌面端不注册插件，行为零变化。
+    // 并安装真实核心引擎桥（P1c-2）。桌面端不注册插件，行为零变化。插件实现随
+    // ADR-0003 M3.5 上移共享层 pp-client-tauri::core_bridge（setup 内部已有
+    // `#[cfg(target_os = "android")]` 保护，桌面编译为空操作）；此处 cfg 包裹保留
+    // desktop 壳 android 编译的可用过渡态（M4 删除）。
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(core_bridge::vpn_plugin());
+    let builder = builder.plugin(pp_client_tauri::core_bridge::vpn_plugin());
 
     builder
         .run(tauri::generate_context!())

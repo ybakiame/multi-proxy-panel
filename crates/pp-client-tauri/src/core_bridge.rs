@@ -1,7 +1,8 @@
-//! Android 核心引擎桥（真实实现：Rust ↔ Kotlin VpnPlugin/libbox 通道）。
+//! Android 核心引擎桥与 Android 专属命令（真实实现：Rust ↔ Kotlin
+//! VpnPlugin/libbox 通道）。
 //!
 //! Android 上核心由 Kotlin 侧 VpnPlugin 驱动（sing-box libbox，经 panelcore.aar
-//! 绑定），Rust 侧无法 spawn 二进制。本模块在 `run()` 的 `vpn` 插件 setup 中经
+//! 绑定），Rust 侧无法 spawn 二进制。本模块在壳 `run()` 的 `vpn` 插件 setup 中经
 //! `tauri::plugin::PluginApi::register_android_plugin` 注册
 //! `com.proxypanel.client` 的 `VpnPlugin`，拿到 `PluginHandle` 后安装真实桥：
 //! `start` / `stop` / `is_running` 通过 `run_mobile_plugin_async` 转发给
@@ -14,17 +15,23 @@
 //! 错误透传：Kotlin 侧 `invoke.reject(..., "vpn_not_authorized")` 的拒绝
 //! 在 [`plugin_error`] 中被规范为可识别前缀 `vpn_not_authorized: ...` 上抛，
 //! 前端据此展示「需要 VPN 授权」引导。
+//!
+//! 本模块还承载 Android 专属三命令（[`request_vpn_permission`] /
+//! [`vpn_last_error`] / [`notify_prefs_changed`]，ADR-0003 M3.5 自 desktop 壳
+//! `commands/platform.rs` 上移）。模块整体以 `#[cfg(target_os = "android")]`
+//! 编译裁剪，桌面构建不含任何本模块代码；壳层注册 `vpn` 插件与三命令时仍以
+//! `#[cfg(target_os = "android")]` 显式包裹（过渡态，M4 清理）。
 
 use std::sync::Arc;
 
-use pp_client::core_engine::{install_core_engine_bridge, BoxFuture, CoreEngineBridge};
+use pp_client::core_engine::{BoxFuture, CoreEngineBridge, install_core_engine_bridge};
 use pp_common::{CoreType, PanelError, PanelResult};
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::plugin::mobile::PluginInvokeError;
 use tauri::plugin::PluginHandle;
+use tauri::plugin::mobile::PluginInvokeError;
 
-/// VpnPlugin `isRunning` 命令的响应体（`pub` 供 `commands::vpn_last_error` 读取）。
+/// VpnPlugin `isRunning` 命令的响应体（`pub` 供 [`vpn_last_error`] 读取）。
 #[derive(Deserialize)]
 pub struct IsRunningResponse {
     pub running: bool,
@@ -160,4 +167,52 @@ pub fn vpn_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             Ok(())
         })
         .build()
+}
+
+/// Request VPN permission (Android only).
+///
+/// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5），逻辑原样：向已注册的
+/// Kotlin VpnPlugin 发起 `prepare` 触发系统 VPN 授权。
+#[tauri::command]
+pub async fn request_vpn_permission() -> Result<(), String> {
+    let handle =
+        vpn_plugin_handle().ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
+    handle
+        .run_mobile_plugin_async::<serde_json::Value>("prepare", ())
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("VPN 授权失败: {e}"))
+}
+
+/// Read last VPN start error (Android only).
+///
+/// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5），逻辑原样：经 `isRunning`
+/// 响应读取最近一次启动失败原因。
+#[tauri::command]
+pub async fn vpn_last_error() -> Option<String> {
+    let handle = vpn_plugin_handle()?;
+    let resp = handle
+        .run_mobile_plugin_async::<IsRunningResponse>("isRunning", ())
+        .await
+        .ok()?;
+    resp.last_error
+}
+
+/// Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
+///
+/// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5），逻辑原样：把通知偏好
+/// （`showTraffic` / `showSelection`）经 `updateNotifyPrefs` 下发给 Kotlin VpnPlugin。
+#[tauri::command]
+pub async fn notify_prefs_changed(show_traffic: bool, show_selection: bool) -> Result<(), String> {
+    let handle = vpn_plugin_handle()
+        .ok_or_else(|| "VPN plugin not initialized, please restart the app".to_string())?;
+    let payload = serde_json::json!({
+        "showTraffic": show_traffic,
+        "showSelection": show_selection,
+    });
+    handle
+        .run_mobile_plugin_async::<serde_json::Value>("updateNotifyPrefs", payload)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("Failed to update notification preferences: {e}"))
 }
