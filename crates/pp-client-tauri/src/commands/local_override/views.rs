@@ -4,7 +4,8 @@
 //! application, and rule set subscription control.
 
 use pp_client::local_override::{
-    AppliedTemplate, CoreLocalOverride, LocalOverride, LocalRule, RuleSetSubscription,
+    AppliedTemplate, CoreLocalOverride, CustomRuleSetSource, LocalOverride, LocalRule,
+    RuleSetManager, RuleSetSubscription,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,7 @@ pub struct LocalOverrideView {
     pub singbox: CoreLocalOverrideView,
     pub rule_set_subscriptions: Vec<RuleSetSubscriptionView>,
     pub applied_templates: Vec<AppliedTemplateView>,
+    pub custom_rule_sets: Vec<CustomRuleSetView>,
 }
 
 /// Per-core local override view.
@@ -77,6 +79,22 @@ pub struct AppliedTemplateView {
     pub generated_rule_ids: Vec<String>,
 }
 
+/// User-defined custom rule set view.
+///
+/// `source` keeps the model shape (remote url+format / manual content) so the
+/// editor can echo the content back; `cached` reflects whether the backing
+/// file (manual 落盘 or remote cache) currently exists on disk.
+#[derive(Debug, Clone, Serialize)]
+pub struct CustomRuleSetView {
+    pub id: String,
+    pub name: String,
+    pub tag: String,
+    pub source: CustomRuleSetSource,
+    pub enabled: bool,
+    pub last_updated: u64,
+    pub cached: bool,
+}
+
 /// Rule set status view (with cache info).
 #[derive(Debug, Clone, Serialize)]
 pub struct RuleSetStatusView {
@@ -94,7 +112,7 @@ pub struct RuleSetStatusView {
 // ---------------------------------------------------------------------------
 
 impl LocalOverrideView {
-    pub(crate) fn from_model(model: &LocalOverride) -> Self {
+    pub(crate) fn from_model(model: &LocalOverride, manager: &RuleSetManager) -> Self {
         Self {
             singbox: CoreLocalOverrideView::from_model(&model.singbox),
             rule_set_subscriptions: model
@@ -106,6 +124,11 @@ impl LocalOverrideView {
                 .applied_templates
                 .iter()
                 .map(AppliedTemplateView::from_model)
+                .collect(),
+            custom_rule_sets: model
+                .custom_rule_sets
+                .iter()
+                .map(|rs| CustomRuleSetView::from_model(rs, manager))
                 .collect(),
         }
     }
@@ -186,6 +209,23 @@ impl AppliedTemplateView {
     }
 }
 
+impl CustomRuleSetView {
+    pub(crate) fn from_model(
+        model: &pp_client::local_override::CustomRuleSet,
+        manager: &RuleSetManager,
+    ) -> Self {
+        Self {
+            id: model.id.clone(),
+            name: model.name.clone(),
+            tag: model.tag.clone(),
+            source: model.source.clone(),
+            enabled: model.enabled,
+            last_updated: model.last_updated,
+            cached: manager.has_custom_rule_set_file(model),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Input types
 // ---------------------------------------------------------------------------
@@ -196,6 +236,11 @@ pub struct SaveLocalOverrideInput {
     pub singbox: CoreLocalOverrideInput,
     pub rule_set_subscriptions: Vec<RuleSetSubscriptionInput>,
     pub applied_templates: Vec<AppliedTemplateInput>,
+    /// Full replacement of the custom rule set segment (semantics identical
+    /// to `rules`). Uses the shared model type so the manual content / remote
+    /// url+format round-trips unchanged.
+    #[serde(default)]
+    pub custom_rule_sets: Vec<pp_client::local_override::CustomRuleSet>,
 }
 
 #[derive(Debug, Deserialize)]

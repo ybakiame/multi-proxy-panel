@@ -109,5 +109,14 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       applied_at: t.applied_at,
       generated_rule_ids: t.generated_rule_ids,
     })),
+    // 自定义规则集整段透传（View/Input 同构，去掉只读的 cached 字段）。
+    custom_rule_sets: view.custom_rule_sets.map((rs) => ({
+      id: rs.id,
+      name: rs.name,
+      tag: rs.tag,
+      source: rs.source,
+      enabled: rs.enabled,
+      last_updated: rs.last_updated,
+    })),
   };
 }

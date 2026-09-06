@@ -53,10 +53,31 @@ export interface AppliedTemplateView {
   generated_rule_ids: string[];
 }
 
+/**
+ * Custom rule set source. Mirrors the Rust `CustomRuleSetSource` (internal
+ * `kind` tag): `remote` URL + format, or `manual` pasted source JSON.
+ */
+export type CustomRuleSetSource =
+  | { kind: "remote"; url: string; format: "source" | "binary" }
+  | { kind: "manual"; content: string };
+
+/** User-defined custom rule set view (from `local_override_get`). */
+export interface CustomRuleSetView {
+  id: string;
+  name: string;
+  tag: string;
+  source: CustomRuleSetSource;
+  enabled: boolean;
+  last_updated: number;
+  /** Whether the backing file (manual 落盘 / remote cache) exists on disk. */
+  cached: boolean;
+}
+
 export interface LocalOverrideView {
   singbox: CoreLocalOverrideView;
   rule_set_subscriptions: RuleSetSubscriptionView[];
   applied_templates: AppliedTemplateView[];
+  custom_rule_sets: CustomRuleSetView[];
 }
 
 export interface RuleSetStatusView {
@@ -73,6 +94,18 @@ export interface SaveLocalOverrideInput {
   singbox: CoreLocalOverrideInput;
   rule_set_subscriptions: RuleSetSubscriptionInput[];
   applied_templates: AppliedTemplateInput[];
+  /** Full-replacement custom rule set segment (same semantics as rules). */
+  custom_rule_sets: CustomRuleSetInput[];
+}
+
+/** Custom rule set save payload (same shape as the view minus `cached`). */
+export interface CustomRuleSetInput {
+  id: string;
+  name: string;
+  tag: string;
+  source: CustomRuleSetSource;
+  enabled: boolean;
+  last_updated: number;
 }
 
 export interface CoreLocalOverrideInput {

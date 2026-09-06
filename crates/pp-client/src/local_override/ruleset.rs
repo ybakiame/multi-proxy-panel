@@ -6,10 +6,22 @@ use std::path::PathBuf;
 
 use pp_common::{PanelError, PanelResult};
 
-use super::{LocalOverride, LocalRuleSetRef, RuleSetKind, RuleSetSource, RuleSetSubscription};
+use super::{
+    CustomRuleSet, CustomRuleSetSource, LocalOverride, LocalRuleSetRef, RuleSetFormat, RuleSetKind,
+    RuleSetSource, RuleSetSubscription,
+};
 
 /// Rule set cache directory name under data_dir.
 pub const RULE_SET_CACHE_DIR: &str = "rule_sets";
+
+/// Custom rule set storage root under data_dir (`rulesets/custom/`).
+///
+/// Deliberately separate from the built-in community cache directory
+/// (`rule_sets/`): user custom file names are `<id>.srs|json` and share no
+/// namespace with community ids, so mixing the two roots would risk collisions.
+pub const CUSTOM_RULE_SET_ROOT_DIR: &str = "rulesets";
+/// Custom rule set sub-directory under [`CUSTOM_RULE_SET_ROOT_DIR`].
+pub const CUSTOM_RULE_SET_SUB_DIR: &str = "custom";
 
 /// Rule set manager handles download, cache, and subscription state.
 #[derive(Debug, Clone)]
@@ -36,6 +48,130 @@ impl RuleSetManager {
     /// Check if a cached file exists.
     pub fn is_cached(&self, community_id: &str) -> bool {
         self.cache_file_path(community_id).exists()
+    }
+
+    // -----------------------------------------------------------------------
+    // Custom rule sets (user-defined: remote URL / manual JSON)
+    // -----------------------------------------------------------------------
+
+    /// Custom rule set storage directory: `data_dir/rulesets/custom/`.
+    pub fn custom_rule_set_dir(&self) -> PathBuf {
+        self.data_dir
+            .join(CUSTOM_RULE_SET_ROOT_DIR)
+            .join(CUSTOM_RULE_SET_SUB_DIR)
+    }
+
+    /// Backing file path for a custom rule set:
+    /// `<custom_dir>/<id>.srs` (binary) or `<custom_dir>/<id>.json` (source).
+    pub fn custom_rule_set_file_path(&self, id: &str, format: RuleSetFormat) -> PathBuf {
+        let ext = match format {
+            RuleSetFormat::Source => "json",
+            RuleSetFormat::Binary => "srs",
+        };
+        self.custom_rule_set_dir().join(format!("{id}.{ext}"))
+    }
+
+    /// Whether the backing file of a custom rule set exists on disk.
+    ///
+    /// - Remote: cache file for its declared format must exist.
+    /// - Manual: the persisted `<id>.json` file must exist.
+    pub fn has_custom_rule_set_file(&self, rs: &CustomRuleSet) -> bool {
+        let format = rs.file_format();
+        self.custom_rule_set_file_path(&rs.id, format).exists()
+    }
+
+    /// Persist Manual custom rule set contents to `<custom_dir>/<id>.json`
+    /// and best-effort remove backing files of custom rule sets that are no
+    /// longer present in `custom_sets` (deleted rule sets or format switches).
+    ///
+    /// Called on save so the injected local rule_set paths always resolve.
+    pub fn sync_custom_rule_set_files(&self, custom_sets: &[CustomRuleSet]) -> PanelResult<()> {
+        let dir = self.custom_rule_set_dir();
+        std::fs::create_dir_all(&dir)?;
+
+        // Collect the exact file names the given list should keep on disk.
+        let keep: std::collections::HashSet<String> = custom_sets
+            .iter()
+            .map(|rs| {
+                let path = self.custom_rule_set_file_path(&rs.id, rs.file_format());
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+
+        // Write manual contents (overwrites on re-save with edited content).
+        for rs in custom_sets {
+            if let CustomRuleSetSource::Manual { content } = &rs.source {
+                let path = self.custom_rule_set_file_path(&rs.id, RuleSetFormat::Source);
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, content)?;
+            }
+        }
+
+        // Best-effort cleanup of orphaned backing files (deleted rule sets and
+        // stale files left behind by a source kind/format switch).
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !keep.contains(&name)
+                    && let Err(e) = std::fs::remove_file(entry.path())
+                {
+                    tracing::warn!(
+                        path = %entry.path().display(),
+                        error = %e,
+                        "failed to remove orphaned custom rule set file"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Download a Remote custom rule set to `<custom_dir>/<id>.<ext>`.
+    ///
+    /// No-op for Manual sources. On failure preserves any existing file.
+    pub async fn download_custom_rule_set(&self, rs: &CustomRuleSet) -> PanelResult<()> {
+        let CustomRuleSetSource::Remote { url, format } = &rs.source else {
+            return Ok(());
+        };
+        let path = self.custom_rule_set_file_path(&rs.id, *format);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        self.download_file(url, &path).await
+    }
+
+    /// Build custom rule set entries matching the given IDs (subset download).
+    ///
+    /// Returns the number of successfully downloaded rule sets.
+    async fn download_custom_many(
+        &self,
+        sets: impl Iterator<Item = &mut CustomRuleSet>,
+        now_sec: u64,
+    ) -> usize {
+        let mut updated = 0;
+        for rs in sets {
+            match self.download_custom_rule_set(rs).await {
+                Ok(()) => {
+                    rs.last_updated = now_sec;
+                    updated += 1;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        id = %rs.id,
+                        tag = %rs.tag,
+                        error = %e,
+                        "custom rule set update failed"
+                    );
+                }
+            }
+        }
+        updated
     }
 
     /// Toggle subscription state for a rule set.
@@ -100,8 +236,10 @@ impl RuleSetManager {
 
     /// Update all subscribed rule sets now.
     ///
-    /// Iterates all subscribed rule sets and attempts download.
-    /// Logs warnings for individual failures but does not fail the batch.
+    /// Iterates all subscribed community rule sets and all **enabled Remote
+    /// custom rule sets**, attempting download of each. Logs warnings for
+    /// individual failures but does not fail the batch. Manual custom rule
+    /// sets have no remote source and are skipped.
     pub async fn update_all_subscribed(&self, ovr: &mut LocalOverride) -> PanelResult<usize> {
         let mut updated = 0;
         for sub in &ovr.rule_set_subscriptions {
@@ -119,6 +257,18 @@ impl RuleSetManager {
                 }
             }
         }
+        let now_sec = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        updated += self
+            .download_custom_many(
+                ovr.custom_rule_sets.iter_mut().filter(|rs| {
+                    rs.enabled && matches!(rs.source, CustomRuleSetSource::Remote { .. })
+                }),
+                now_sec,
+            )
+            .await;
         Ok(updated)
     }
 
@@ -199,48 +349,5 @@ impl RuleSetStatusView {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::local_override::store::built_in_rule_set_subscriptions;
-
-    #[test]
-    fn cache_file_path_formats_correctly() {
-        let dir = tempfile::tempdir().unwrap();
-        let mgr = RuleSetManager::new(dir.path().to_path_buf());
-        let p1 = mgr.cache_file_path("geoip-cn");
-        assert_eq!(p1.file_name().unwrap(), "geoip-cn.srs");
-    }
-
-    #[test]
-    fn build_rule_set_refs_skips_unsubscribed() {
-        let dir = tempfile::tempdir().unwrap();
-        let mgr = RuleSetManager::new(dir.path().to_path_buf());
-        let ovr = LocalOverride {
-            rule_set_subscriptions: built_in_rule_set_subscriptions(),
-            ..Default::default()
-        };
-        // None subscribed, none cached.
-        let refs = mgr.build_rule_set_refs(&ovr);
-        assert!(refs.is_empty());
-    }
-
-    #[test]
-    fn build_rule_set_refs_includes_cached_subscribed() {
-        let dir = tempfile::tempdir().unwrap();
-        let mgr = RuleSetManager::new(dir.path().to_path_buf());
-        let mut subs = built_in_rule_set_subscriptions();
-        subs[0].subscribed = true;
-        let ovr = LocalOverride {
-            rule_set_subscriptions: subs,
-            ..Default::default()
-        };
-        // Create fake cache.
-        std::fs::create_dir_all(mgr.cache_dir()).unwrap();
-        std::fs::write(mgr.cache_file_path("geoip-cn"), "fake").unwrap();
-
-        let refs = mgr.build_rule_set_refs(&ovr);
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].tag, "geoip-cn");
-        assert!(matches!(refs[0].kind, RuleSetKind::SingBoxRemote));
-    }
-}
+#[path = "tests/ruleset_tests.rs"]
+mod tests;

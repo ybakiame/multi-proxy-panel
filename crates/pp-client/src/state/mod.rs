@@ -391,4 +391,9 @@ fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut serd
     core_ovr.rule_sets = manager.build_rule_set_refs(&ovr);
 
     crate::local_override::apply_local_override(config, &core_ovr);
+
+    // Inject user-defined custom rule sets (remote URL cache / manual JSON)
+    // as local rule_set entries. Rule cards referencing their tags are
+    // injected together with the local rules above.
+    crate::local_override::apply_custom_rule_sets(config, &manager, &ovr.custom_rule_sets);
 }

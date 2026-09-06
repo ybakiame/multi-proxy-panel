@@ -13,6 +13,8 @@ use super::views::*;
 /// - Rule IDs are unique.
 /// - Targets are non-empty for non-Final rules.
 /// - RuleSet references point to subscribed rule sets.
+/// - Custom rule set IDs/tags are unique and do not collide with built-in
+///   `community_id`s; Remote URLs / Manual contents are non-empty.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
     let core_ovr = &ovr.singbox;
     // Check rule ID uniqueness.
@@ -34,7 +36,8 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
         }
     }
 
-    // Check RuleSet references are subscribed.
+    // Check RuleSet references resolve to a subscribed community rule set or
+    // an enabled custom rule set.
     for rule in &core_ovr.rules {
         if matches!(
             rule.match_type,
@@ -44,11 +47,65 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
                 .rule_set_subscriptions
                 .iter()
                 .any(|s| s.community_id == rule.target && s.subscribed);
-            if !subscribed {
+            let custom_enabled = ovr
+                .custom_rule_sets
+                .iter()
+                .any(|rs| rs.tag == rule.target && rs.enabled);
+            if !subscribed && !custom_enabled {
                 return Err(format!(
-                    "rule '{}' references unsubscribed rule set '{}'",
+                    "rule '{}' references unavailable rule set '{}' \
+                     (need a subscribed community rule set or an enabled custom rule set)",
                     rule.id, rule.target
                 ));
+            }
+        }
+    }
+
+    validate_custom_rule_sets(ovr)?;
+
+    Ok(())
+}
+
+/// Custom rule set segment validation:
+/// - unique IDs;
+/// - tags non-empty, unique among custom rule sets and non-conflicting with
+///   built-in `community_id`s;
+/// - Remote URL / Manual content non-empty.
+pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), String> {
+    let builtin_tags: std::collections::HashSet<&str> = ovr
+        .rule_set_subscriptions
+        .iter()
+        .map(|s| s.community_id.as_str())
+        .collect();
+
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut seen_tags = std::collections::HashSet::new();
+    for rs in &ovr.custom_rule_sets {
+        if !seen_ids.insert(rs.id.clone()) {
+            return Err(format!("duplicate custom rule set id '{}'", rs.id));
+        }
+        let tag = rs.tag.trim();
+        if tag.is_empty() {
+            return Err(format!("custom rule set '{}' has an empty tag", rs.id));
+        }
+        if builtin_tags.contains(tag) {
+            return Err(format!(
+                "custom rule set tag '{tag}' conflicts with a built-in community rule set id"
+            ));
+        }
+        if !seen_tags.insert(rs.tag.clone()) {
+            return Err(format!("duplicate custom rule set tag '{}'", rs.tag));
+        }
+        match &rs.source {
+            pp_client::local_override::CustomRuleSetSource::Remote { url, .. } => {
+                if url.trim().is_empty() {
+                    return Err(format!("custom rule set '{}' has an empty URL", rs.id));
+                }
+            }
+            pp_client::local_override::CustomRuleSetSource::Manual { content } => {
+                if content.trim().is_empty() {
+                    return Err(format!("custom rule set '{}' has empty content", rs.id));
+                }
             }
         }
     }
@@ -75,6 +132,7 @@ pub(super) fn convert_input_to_model(
             .into_iter()
             .map(convert_applied_template_input)
             .collect(),
+        custom_rule_sets: input.custom_rule_sets,
     })
 }
 
