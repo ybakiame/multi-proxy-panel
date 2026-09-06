@@ -1,13 +1,19 @@
 //! Scenario template commands (apply / revert with auto rule-set subscription).
 
-use pp_client::local_override::{LocalOverrideStore, RuleMatchType, RuleSetManager};
+use pp_client::local_override::{
+    LocalOverrideStore, RuleSetManager, RuleSetSubscription, template_rule_set_dependencies,
+};
 use tauri::State;
 
 use crate::state::AppState;
 /// Apply a scenario template.
 ///
-/// Also auto-subscribes (and downloads) the community rule sets referenced by
-/// the generated rules, per ADR-0002 section 3.3.3.
+/// `apply_template` auto-subscribes the community rule sets the template
+/// depends on and always generates the `rule_set` rules (ADR-0002 §3.3.3).
+/// After the overrides are persisted we trigger a best-effort download of
+/// those dependency rule sets so the generated rules can resolve; a download
+/// failure is only logged and retried by the next manual "update now" — it
+/// never fails the apply command.
 #[tauri::command]
 pub async fn local_override_apply_template(
     state: State<'_, AppState>,
@@ -26,31 +32,37 @@ pub async fn local_override_apply_template(
     let ids = pp_client::local_override::apply_template(&mut ovr, &template_id, now_sec)
         .map_err(|e| format!("failed to apply template: {e}"))?;
 
-    // Auto-subscribe community rule sets referenced by generated rules.
-    let mut referenced: Vec<String> = Vec::new();
-    for rule in &ovr.singbox.rules {
-        if rule.match_type == RuleMatchType::RuleSet && !referenced.contains(&rule.target) {
-            referenced.push(rule.target.clone());
-        }
-    }
-    let manager = RuleSetManager::new(state.data_dir.clone());
-    for tag in referenced {
-        let needs_subscribe = ovr
-            .rule_set_subscriptions
-            .iter()
-            .any(|sub| sub.community_id == tag && !sub.subscribed);
-        if needs_subscribe {
-            // Failure to download is non-fatal; subscription stays on and the
-            // next update retries (same semantics as manual toggle).
-            if let Err(e) = manager.toggle_subscription(&mut ovr, &tag, true).await {
-                tracing::warn!(rule_set = %tag, error = %e, "auto-subscribe rule set failed");
-            }
-        }
-    }
-
+    // Persist (subscriptions were already marked subscribed by apply_template).
     store
         .save(&ovr)
         .map_err(|e| format!("failed to save after template apply: {e}"))?;
+
+    // Best-effort, non-blocking download of the template's dependency rule
+    // sets: failures are logged and retried on the next "update now".
+    let deps: Vec<RuleSetSubscription> = template_rule_set_dependencies(&template_id)
+        .iter()
+        .filter_map(|&community_id| {
+            ovr.rule_set_subscriptions
+                .iter()
+                .find(|s| s.community_id == community_id)
+                .cloned()
+        })
+        .collect();
+    if !deps.is_empty() {
+        let data_dir = state.data_dir.clone();
+        tokio::spawn(async move {
+            let manager = RuleSetManager::new(data_dir);
+            for sub in deps {
+                if let Err(e) = manager.download_rule_set(&sub).await {
+                    tracing::warn!(
+                        community_id = %sub.community_id,
+                        error = %e,
+                        "template dependency rule set download failed, retry via update-now"
+                    );
+                }
+            }
+        });
+    }
 
     Ok(ids)
 }
