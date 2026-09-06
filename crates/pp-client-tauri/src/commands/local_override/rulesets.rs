@@ -8,7 +8,6 @@ use tauri::State;
 
 use crate::state::AppState;
 
-
 use super::views::*;
 
 /// List all rule sets with subscription and cache status.

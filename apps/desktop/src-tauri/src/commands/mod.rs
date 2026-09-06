@@ -1,27 +1,19 @@
-//! Tauri command modules organized by functional domain.
+//! Desktop-only Tauri command modules.
 //!
-//! Each submodule owns a distinct feature area; `mod.rs` only declares modules
-//! and aggregates the `generate_handler!` registration list.
+//! 双端通用命令已迁移至 `pp-client-tauri` 共享层（见 ADR-0003 §3.2/§3.3），本壳仅
+//! 保留桌面专属模块（mitm / core_mgmt / remote / platform）与 `require_desktop`
+//! Android 守卫。双端通用命令经 `generate_handler!` 以 `pp_client_tauri::commands::
+//! <name>` 全路径注册（Tauri 2 支持跨 crate 注册）。
 
-mod connections;
 mod core_mgmt;
-mod local_override;
 mod mitm;
 mod platform;
-mod proxies;
-mod proxy;
 mod remote;
-mod task;
 
-pub use connections::*;
 pub use core_mgmt::*;
-pub use local_override::*;
 pub use mitm::*;
 pub use platform::*;
-pub use proxies::*;
-pub use proxy::*;
 pub use remote::*;
-pub use task::*;
 
 /// Unified error prefix for commands unavailable on Android.
 #[cfg(target_os = "android")]

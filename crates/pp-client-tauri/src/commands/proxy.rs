@@ -110,16 +110,16 @@ pub async fn set_rule_mode(
     };
     client.config.rule_mode = mode.clone();
     let status = client.status().await;
-    if status.core_running && client.config.clash_api_enabled {
-        if let Err(e) = pp_client::push_clash_mode(
+    if status.core_running
+        && client.config.clash_api_enabled
+        && let Err(e) = pp_client::push_clash_mode(
             client.config.clash_api_port,
             &client.config.clash_api_secret,
             &mode,
         )
         .await
-        {
-            tracing::warn!(error = %e, mode = %mode, "Clash API hot-switch rule mode failed");
-        }
+    {
+        tracing::warn!(error = %e, mode = %mode, "Clash API hot-switch rule mode failed");
     }
     let status = client.status().await;
     Ok(ClientStatusView::from_status(&status))
@@ -190,7 +190,10 @@ mod tests {
         for mode in ["global", "direct", "rule"] {
             pp_client::set_rule_mode_persist(dir.path(), mode).unwrap();
             let saved = ClientConfig::load(dir.path()).unwrap();
-            assert_eq!(saved.rule_mode, mode, "{mode} should persist to client.json");
+            assert_eq!(
+                saved.rule_mode, mode,
+                "{mode} should persist to client.json"
+            );
         }
     }
 

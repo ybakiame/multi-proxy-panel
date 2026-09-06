@@ -18,9 +18,13 @@ pub struct ConnectionsActiveView {
 ///
 /// Returns error when core is not running or Clash API is disabled / unreachable.
 #[tauri::command]
-pub async fn connections_active(state: State<'_, AppState>) -> Result<ConnectionsActiveView, String> {
+pub async fn connections_active(
+    state: State<'_, AppState>,
+) -> Result<ConnectionsActiveView, String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
@@ -41,7 +45,9 @@ pub async fn connections_active(state: State<'_, AppState>) -> Result<Connection
 #[tauri::command]
 pub async fn connections_closed(state: State<'_, AppState>) -> Result<Vec<ConnectionView>, String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
@@ -57,9 +63,14 @@ pub async fn connections_closed(state: State<'_, AppState>) -> Result<Vec<Connec
 #[tauri::command]
 pub async fn connections_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
-    client.close_connection(&id).await.map_err(|e| e.to_string())
+    client
+        .close_connection(&id)
+        .await
+        .map_err(|e| e.to_string())
 }

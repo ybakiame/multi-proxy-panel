@@ -156,9 +156,7 @@ fn convert_rule_set_ref_input(
     input: LocalRuleSetRefInput,
 ) -> Result<pp_client::local_override::LocalRuleSetRef, String> {
     let kind = parse_rule_set_kind(&input.kind)?;
-    let source = pp_client::local_override::RuleSetSource::Remote {
-        url: input.source,
-    };
+    let source = pp_client::local_override::RuleSetSource::Remote { url: input.source };
     Ok(pp_client::local_override::LocalRuleSetRef {
         id: input.id,
         name: input.name,

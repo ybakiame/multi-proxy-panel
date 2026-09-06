@@ -20,13 +20,18 @@ pub struct DelayResult {
 #[tauri::command]
 pub async fn proxies_list(state: State<'_, AppState>) -> Result<ProxyList, String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
-    pp_client::clash_get_proxies(client.config.clash_api_port, &client.config.clash_api_secret)
-        .await
-        .map_err(|e| e.to_string())
+    pp_client::clash_get_proxies(
+        client.config.clash_api_port,
+        &client.config.clash_api_secret,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Select a proxy in a group.
@@ -39,7 +44,9 @@ pub async fn proxies_select(
     name: String,
 ) -> Result<(), String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
@@ -69,7 +76,9 @@ pub async fn proxies_test_delay(
     name: String,
 ) -> Result<Option<u16>, String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
@@ -94,7 +103,9 @@ pub async fn proxies_test_group(
     group: String,
 ) -> Result<Vec<DelayResult>, String> {
     let lock = state.client.lock().await;
-    let client = lock.as_ref().ok_or_else(|| "core not running".to_string())?;
+    let client = lock
+        .as_ref()
+        .ok_or_else(|| "core not running".to_string())?;
     if !client.config.clash_api_enabled {
         return Err("Clash API is disabled".to_string());
     }
@@ -130,7 +141,10 @@ pub async fn proxies_test_group(
                 .await
                 .ok()
                 .flatten();
-            Some(DelayResult { name, delay_ms: delay })
+            Some(DelayResult {
+                name,
+                delay_ms: delay,
+            })
         });
         handles.push(handle);
     }

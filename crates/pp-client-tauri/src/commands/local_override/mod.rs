@@ -9,7 +9,7 @@ mod rulesets;
 mod templates;
 mod views;
 
-pub(crate) use views::default_true;
 pub use rules::*;
 pub use rulesets::*;
 pub use templates::*;
+pub(crate) use views::default_true;
