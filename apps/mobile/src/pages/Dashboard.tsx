@@ -38,7 +38,8 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 4. 流量统计卡（TrafficCard，2s 轮询）；
  * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；
  * 6. VPN 授权引导（自 M3.6 Home 完整迁移：同步 reject + vpnLastError 轮询双来源）；
- * 7. 出站模式分段控件（RuleModeSwitch）；8. 快捷入口：配置预览。
+ * 7. 出站模式分段控件（RuleModeSwitch，仅核心运行中渲染；未运行时由状态卡 chip 展示已保存模式）；
+ * 8. 快捷入口：配置预览。
  */
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -242,8 +243,10 @@ export default function Dashboard() {
         </Card.Content>
       </Card>
 
-      {/* 7. 出站模式 */}
-      <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={config?.clash_api_enabled ?? false} />
+      {/* 7. 出站模式（仅核心运行中渲染；未运行时状态卡仍展示已保存模式，切换仅运行期有意义） */}
+      {running && (
+        <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={config?.clash_api_enabled ?? false} />
+      )}
 
       {/* 8. 快捷入口：配置预览 */}
       <Card>

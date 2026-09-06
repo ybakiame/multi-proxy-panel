@@ -31,6 +31,9 @@ function TauriRequired() {
  *   `/proxies` 代理选择页为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
  * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
+ *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
+ *   `env(safe-area-inset-top)`：通过 `ToastProvider` 的 `className`（透传至 region 并参与
+ *   slots.region 合并）追加 utilities 层任意值类覆盖其 `top`。
  * `QueryClientProvider` 保持挂在 main.tsx（不动）。
  */
 function AppContent() {
@@ -64,7 +67,7 @@ export default function App() {
   }
   return (
     <HashRouter>
-      <ToastProvider placement="top" maxVisibleToasts={3} />
+      <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
       <AppContent />
     </HashRouter>
   );
