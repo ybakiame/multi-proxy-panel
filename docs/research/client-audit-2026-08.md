@@ -1,6 +1,6 @@
 # 客户端审计与平台策略（2026-08）
 
-> 输入：pp-client 核心库 / apps/desktop / apps/android 三份只读审计 + husi、FlClash 等参考项目调研
+> 输入：pp-client 核心库 / apps/desktop / apps/mobile 三份只读审计 + husi、FlClash 等参考项目调研
 > 结论先行：**桌面/移动不拆分代码库、Android 放弃 MITM、移动端收敛 sing-box 单核（mihomo 转为静默 fallback）**
 
 ---

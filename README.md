@@ -260,7 +260,7 @@ proxy-panel/
 ├── apps/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
 │   ├── desktop/            # 客户端：Tauri 2 桌面/安卓应用（React 前端 + 独立 cargo 项目）
-│   └── android/            # 安卓核心 Go 模块（panel-core）与构建脚本
+│   └── mobile/             # 客户端：Tauri 移动应用 + 安卓核心 Go 模块（panel-core）与构建脚本（自 android/ 并入）
 ├── docs/                   # 项目文档
 └── scripts/                # 辅助脚本
 ```

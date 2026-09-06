@@ -74,7 +74,7 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     // panelcore Android 库（sing-box libbox 的 gomobile 绑定），由
-    // apps/android/scripts/build-panel-core.sh 构建，本地构建产物，不入库。
+    // apps/mobile/scripts/build-panel-core.sh 构建，本地构建产物，不入库。
     implementation(files("libs/panelcore.aar"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
