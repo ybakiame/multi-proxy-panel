@@ -1,8 +1,19 @@
-//! Shared command helpers for the `pp-client-tauri` command layer.
+//! Shared command layer for the `pp-client-tauri` crate.
 //!
-//! Desktop / Mobile 壳以路径注册双端通用命令（见 ADR-0003 §3.2）；本模块承载命令
-//! 实现的共享辅助：桌面通知器（[`TauriNotifier`]）与纯转换/解析函数。壳内命令模块
-//! 通过 `pub use pp_client_tauri::commands::{...}` 维持既有 `commands::*` 引用。
+//! Desktop / Mobile 壳以路径注册双端通用命令（见 ADR-0003 §3.2）：[`config`] /
+//! [`profile`] / [`subscription`] / [`preview`] 为迁移自桌面壳的双端通用命令模块，
+//! 经 `pub use` glob 聚合到本层，壳以 `pp_client_tauri::commands::<name>` 注册。
+//! 其余为命令共享辅助：桌面通知器（[`TauriNotifier`]）与纯转换/解析函数。
+
+mod config;
+mod preview;
+mod profile;
+mod subscription;
+
+pub use config::*;
+pub use preview::*;
+pub use profile::*;
+pub use subscription::*;
 
 use pp_client::SubFormat;
 use pp_script::ScriptDialect;

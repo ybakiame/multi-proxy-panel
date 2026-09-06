@@ -260,7 +260,11 @@ mod tests {
         view.rule_mode = "direct".to_string();
 
         let result = save_config_impl(dir.path(), view.clone()).unwrap();
-        assert!(result.warning.is_none(), "full payload should not warn: {:?}", result.warning);
+        assert!(
+            result.warning.is_none(),
+            "full payload should not warn: {:?}",
+            result.warning
+        );
 
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.mixed_port, 20000);
@@ -305,20 +309,30 @@ mod tests {
             "mitm_script_dialect": "Surge",
         });
         let view: ClientConfigView = serde_json::from_value(json).unwrap();
-        assert_eq!(view.clash_api_ui, "zashboard", "missing fields should default");
-        assert!(view.github_proxy_prefix.is_empty() && !view.fetch_via_local_proxy,
-            "old frontend missing GitHub fields should default");
+        assert_eq!(
+            view.clash_api_ui, "zashboard",
+            "missing fields should default"
+        );
+        assert!(
+            view.github_proxy_prefix.is_empty() && !view.fetch_via_local_proxy,
+            "old frontend missing GitHub fields should default"
+        );
         let result = save_config_impl(dir.path(), view).unwrap();
 
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.mixed_port, 12345);
         assert!(!saved.mitm_enabled);
-        assert!(!saved.system_proxy_enabled, "missing bool fields should default");
+        assert!(
+            !saved.system_proxy_enabled,
+            "missing bool fields should default"
+        );
         assert_eq!(saved.clash_api_ui, "zashboard");
 
         if let Some(w) = &result.warning {
-            assert!(!w.contains("hub_url") && !w.contains("sub_token"),
-                "empty hub_url/sub_token should not warn: {w}");
+            assert!(
+                !w.contains("hub_url") && !w.contains("sub_token"),
+                "empty hub_url/sub_token should not warn: {w}"
+            );
         }
     }
 
@@ -336,6 +350,10 @@ mod tests {
 
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.mixed_port, 30000, "basic settings should save");
-        assert!(result.warning.is_none(), "empty hub_url/sub_token should not warn: {:?}", result.warning);
+        assert!(
+            result.warning.is_none(),
+            "empty hub_url/sub_token should not warn: {:?}",
+            result.warning
+        );
     }
 }

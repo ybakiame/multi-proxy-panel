@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use pp_client::{
-    fetch_subscription_with_ua, CachedSubscriptionContent, ClientConfig, Subscription,
-    SubscriptionStore,
+    CachedSubscriptionContent, ClientConfig, Subscription, SubscriptionStore,
+    fetch_subscription_with_ua,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -130,7 +130,10 @@ pub(crate) async fn apply_fetch(store: &SubscriptionStore, sub: &mut Subscriptio
 }
 
 /// Write updated subscription back to store.
-pub(crate) fn write_subscription(store: &SubscriptionStore, sub: &Subscription) -> Result<(), String> {
+pub(crate) fn write_subscription(
+    store: &SubscriptionStore,
+    sub: &Subscription,
+) -> Result<(), String> {
     let mut subs = store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
     if let Some(existing) = subs.iter_mut().find(|s| s.id == sub.id) {
         *existing = sub.clone();
@@ -159,8 +162,7 @@ pub async fn add_subscription(
         return Err("名称不能为空".to_string());
     }
     let url = input.url.trim().to_string();
-    pp_client::validate_subscription_url(&url)
-        .map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
+    pp_client::validate_subscription_url(&url).map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
     let ua = input
         .user_agent
         .as_deref()
@@ -228,13 +230,12 @@ pub(crate) fn set_subscription_enabled_impl(
     store
         .set_enabled(id, enabled)
         .map_err(|e| format!("保存订阅失败: {e}"))?;
-    if !enabled {
-        if let Ok(mut config) = ClientConfig::load(data_dir) {
-            if config.active_subscription_id == Some(id) {
-                config.active_subscription_id = None;
-                config.save().map_err(|e| format!("保存配置失败: {e}"))?;
-            }
-        }
+    if !enabled
+        && let Ok(mut config) = ClientConfig::load(data_dir)
+        && config.active_subscription_id == Some(id)
+    {
+        config.active_subscription_id = None;
+        config.save().map_err(|e| format!("保存配置失败: {e}"))?;
     }
     Ok(())
 }
@@ -299,8 +300,7 @@ pub async fn update_subscription(
         return Err("名称不能为空".to_string());
     }
     let url = pp_client::normalize_resource_url(url.trim());
-    pp_client::validate_subscription_url(&url)
-        .map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
+    pp_client::validate_subscription_url(&url).map_err(|e| format!("订阅 URL 校验失败: {e}"))?;
     let ua = user_agent
         .as_deref()
         .map(str::trim)
@@ -396,15 +396,20 @@ mod tests {
         );
         cfg.save().unwrap();
 
-        let err = set_active_subscription_impl(dir.path(), Some(Uuid::new_v4().to_string())).unwrap_err();
+        let err =
+            set_active_subscription_impl(dir.path(), Some(Uuid::new_v4().to_string())).unwrap_err();
         assert!(err.contains("不存在"), "{err}");
 
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let off = store.add("off", "https://example.com/sub", false, None).unwrap();
+        let off = store
+            .add("off", "https://example.com/sub", false, None)
+            .unwrap();
         let err = set_active_subscription_impl(dir.path(), Some(off.id.to_string())).unwrap_err();
         assert!(err.contains("已停用"), "{err}");
 
-        let on = store.add("on", "https://example.com/sub2", true, None).unwrap();
+        let on = store
+            .add("on", "https://example.com/sub2", true, None)
+            .unwrap();
         set_active_subscription_impl(dir.path(), Some(on.id.to_string())).unwrap();
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.active_subscription_id, Some(on.id));
@@ -418,7 +423,9 @@ mod tests {
     fn disabling_selected_subscription_clears_active_selection() {
         let dir = TestDir::new();
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let sub = store.add("sub", "https://example.com/sub", true, None).unwrap();
+        let sub = store
+            .add("sub", "https://example.com/sub", true, None)
+            .unwrap();
         let mut cfg = ClientConfig::new(
             dir.path().to_path_buf(),
             String::new(),
@@ -436,7 +443,9 @@ mod tests {
         let saved = ClientConfig::load(dir.path()).unwrap();
         assert_eq!(saved.active_subscription_id, None);
 
-        let other = store.add("other", "https://example.com/other", false, None).unwrap();
+        let other = store
+            .add("other", "https://example.com/other", false, None)
+            .unwrap();
         let mut cfg = ClientConfig::load(dir.path()).unwrap();
         cfg.active_subscription_id = Some(sub.id);
         cfg.save().unwrap();

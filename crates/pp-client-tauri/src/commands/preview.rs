@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use pp_client::{
-    apply_panel_features, build_core_config_v2, compose_singbox_config, fetch_subscription_with_ua,
-    resolve_remote_overrides, ClientConfig, EffectiveOverrides, PanelFeatures, SubscriptionStore,
+    ClientConfig, EffectiveOverrides, PanelFeatures, SubscriptionStore, apply_panel_features,
+    build_core_config_v2, compose_singbox_config, fetch_subscription_with_ua,
+    resolve_remote_overrides,
 };
 use tauri::State;
 
@@ -164,7 +165,9 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { continue; };
+                let Ok(mut stream) = stream else {
+                    continue;
+                };
                 let mut buf = [0u8; 8192];
                 let _ = stream.read(&mut buf);
                 let response = format!(
@@ -199,12 +202,15 @@ mod tests {
 
         let base = spawn_sub_server(PREVIEW_SUB_JSON);
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let sub = store.add("spec", &format!("{base}/sub"), false, None).unwrap();
+        let sub = store
+            .add("spec", &format!("{base}/sub"), false, None)
+            .unwrap();
 
         let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
             .await
             .expect("specified subscription preview should succeed");
-        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box preview should be JSON");
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("sing-box preview should be JSON");
         assert!(value.get("outbounds").is_some());
         assert!(value.get("inbounds").is_some());
     }
@@ -230,7 +236,9 @@ mod tests {
     async fn preview_core_config_none_uses_active_subscription_selection() {
         let dir = TestDir::new();
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let off = store.add("off", "https://example.com/sub", false, None).unwrap();
+        let off = store
+            .add("off", "https://example.com/sub", false, None)
+            .unwrap();
         let mut cfg = ClientConfig::new(
             dir.path().to_path_buf(),
             String::new(),
@@ -270,26 +278,31 @@ mod tests {
         cfg.save().unwrap();
 
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let sub = store.add("spec", "http://127.0.0.1:1/unreachable", false, None).unwrap();
-        store.write_cached_content(
-            sub.id,
-            &CachedSubscriptionContent {
-                format: SubFormat::SingBoxJson,
-                singbox_nodes: vec![serde_json::json!({
-                    "type": "vless",
-                    "tag": "n1",
-                    "server": "example.com",
-                    "server_port": 443,
-                    "uuid": "12345678-1234-1234-1234-123456789012",
-                    "tls": { "enabled": true, "server_name": "example.com" },
-                })],
-            },
-        ).unwrap();
+        let sub = store
+            .add("spec", "http://127.0.0.1:1/unreachable", false, None)
+            .unwrap();
+        store
+            .write_cached_content(
+                sub.id,
+                &CachedSubscriptionContent {
+                    format: SubFormat::SingBoxJson,
+                    singbox_nodes: vec![serde_json::json!({
+                        "type": "vless",
+                        "tag": "n1",
+                        "server": "example.com",
+                        "server_port": 443,
+                        "uuid": "12345678-1234-1234-1234-123456789012",
+                        "tls": { "enabled": true, "server_name": "example.com" },
+                    })],
+                },
+            )
+            .unwrap();
 
         let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
             .await
             .expect("cached preview should succeed");
-        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box preview should be JSON");
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("sing-box preview should be JSON");
         assert!(value.get("outbounds").is_some());
     }
 
@@ -306,14 +319,19 @@ mod tests {
 
         let base = spawn_sub_server(PREVIEW_SUB_JSON);
         let store = SubscriptionStore::new(dir.path().to_path_buf());
-        let sub = store.add("spec", &format!("{base}/sub"), false, None).unwrap();
+        let sub = store
+            .add("spec", &format!("{base}/sub"), false, None)
+            .unwrap();
 
         let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
             .await
             .expect("fallback fetch preview should succeed");
-        let value: serde_json::Value = serde_json::from_str(&text).expect("sing-box preview should be JSON");
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("sing-box preview should be JSON");
         assert!(value.get("outbounds").is_some());
-        let cached = store.load_cached_content(sub.id).expect("fallback should write cache");
+        let cached = store
+            .load_cached_content(sub.id)
+            .expect("fallback should write cache");
         assert_eq!(cached.format, SubFormat::SingBoxJson);
         assert!(!cached.singbox_nodes.is_empty());
     }
