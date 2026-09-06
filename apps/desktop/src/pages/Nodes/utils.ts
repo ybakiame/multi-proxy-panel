@@ -1,4 +1,4 @@
-import type { SubscriptionUserInfo, SubscriptionFormat } from "../../api";
+import type { SubscriptionUserInfo, SubscriptionFormat } from "@pp/client-core";
 
 /** Format bytes to GB (2 decimal places). */
 export function formatGb(bytes: number | null | undefined): string {

@@ -3,7 +3,7 @@
  */
 
 import { Avatar, Button, Switch, Table } from "@heroui/react";
-import type { RemoteResource } from "../../../api";
+import type { RemoteResource } from "@pp/client-core";
 import { formatInterval, normalizeDialect } from "../utils";
 
 interface RemoteTableProps {

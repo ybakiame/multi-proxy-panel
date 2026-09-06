@@ -1,5 +1,5 @@
 import { Button, Card, Chip } from "@heroui/react";
-import type { ClientConfig, ClientStatus, SubscriptionView } from "../api";
+import type { ClientConfig, ClientStatus, SubscriptionView } from "@pp/client-core";
 
 interface DashboardStatusCardsProps {
   config: ClientConfig | null | undefined;

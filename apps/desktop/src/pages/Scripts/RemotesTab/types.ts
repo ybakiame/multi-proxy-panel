@@ -2,7 +2,7 @@
  * Shared types for the RemotesTab split.
  */
 
-import type { ArgSpecView } from "../../../api";
+import type { ArgSpecView } from "@pp/client-core";
 
 /** Form state shared between add and edit modals. */
 export interface RemoteFormState {

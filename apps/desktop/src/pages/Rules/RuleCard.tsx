@@ -1,6 +1,6 @@
 import { Button, Switch } from "@heroui/react";
 import { ArrowDownIcon, ArrowUpIcon, ShieldCheckIcon, TrashIcon } from "@heroicons/react/24/outline";
-import type { LocalRuleView } from "../../api";
+import type { LocalRuleView } from "@pp/client-core";
 import { ruleDetailLine, ruleSummary } from "./types";
 
 export interface RuleCardProps {

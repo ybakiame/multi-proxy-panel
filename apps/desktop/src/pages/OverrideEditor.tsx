@@ -6,7 +6,7 @@ import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
 import { Alert, Button, Card, Input, Label, Tabs } from "@heroui/react";
-import type { ProfileDetailView, ProfileView } from "../api";
+import type { ProfileDetailView, ProfileView } from "@pp/client-core";
 
 export const JS_PLACEHOLDER = `function main(config) {
   // 在这里修改最终生成的配置

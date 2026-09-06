@@ -11,18 +11,18 @@ import {
   localOverrideToggleRuleset,
   localOverrideUpdateRulesetsNow,
   toErrorMessage,
-} from "../../api";
-import { LOCAL_OVERRIDE_KEY } from "../../api/keys";
+} from "@pp/client-core";
+import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
 import type {
   CoreLocalOverrideInput,
   LocalOverrideView,
   LocalRuleInput,
   LocalRuleView,
   RuleSetStatusView,
-} from "../../api";
-import { useCapabilities } from "../../hooks/useCapabilities";
+} from "@pp/client-core";
+import { useCapabilities } from "@pp/client-core";
 import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
-import { toastError, toastSuccess } from "../../toast";
+import { toastError, toastSuccess } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
 import { RuleSetTable } from "./RuleSetTable";

@@ -1,4 +1,4 @@
-import type { CoreLocalOverrideInput, CoreLocalOverrideView, LocalOverrideView, LocalRuleView } from "../../api";
+import type { CoreLocalOverrideInput, CoreLocalOverrideView, LocalOverrideView, LocalRuleView } from "@pp/client-core";
 
 export const MATCH_TYPE_LABELS: Record<string, string> = {
   domain: "域名",

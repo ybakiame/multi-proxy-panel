@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "apps/panel",
-    "apps/desktop"
+    "apps/desktop",
+    "packages/*"
   ],
   "scripts": {
     "prepare": "husky"

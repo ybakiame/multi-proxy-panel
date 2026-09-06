@@ -1,4 +1,4 @@
-import { useToastStore, type ToastKind } from "../toast";
+import { useToastStore, type ToastKind } from "@pp/client-core";
 
 /**
  * 轻量 toast 渲染组件。

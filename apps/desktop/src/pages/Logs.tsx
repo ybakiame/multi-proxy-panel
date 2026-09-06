@@ -10,11 +10,11 @@ import {
   platformInfo,
   readLogFileTail,
   toErrorMessage,
-} from "../api";
-import type { LogEntry } from "../api";
-import { LOGS_KEY, LOG_FILES_KEY, PLATFORM_KEY } from "../api/keys";
+} from "@pp/client-core";
+import type { LogEntry } from "@pp/client-core";
+import { LOGS_KEY, LOG_FILES_KEY, PLATFORM_KEY } from "@pp/client-core";
 import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
-import { toastError, toastSuccess } from "../toast";
+import { toastError, toastSuccess } from "@pp/client-core";
 
 /** 级别过滤选项（空串 = 不过滤；其余与后端 `min_level` 对齐，默认 info）。 */
 const LEVEL_OPTIONS = [

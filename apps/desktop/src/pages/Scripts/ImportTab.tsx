@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, TextArea } from "@heroui/react";
 import { useMutation } from "@tanstack/react-query";
-import { importConfig, toErrorMessage } from "../../api";
-import type { ImportSummary } from "../../api";
+import { importConfig, toErrorMessage } from "@pp/client-core";
+import type { ImportSummary } from "@pp/client-core";
 import { IMPORT_DIALECT_OPTIONS } from "./utils";
 
 export default function ImportTab() {

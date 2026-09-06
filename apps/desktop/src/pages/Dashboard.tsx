@@ -3,27 +3,14 @@ import { useAtom } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  listCores,
-  listProfiles,
-  listSubscriptions,
-  proxyStatus,
-  requestVpnPermission,
-  setActiveCore,
-  setRuleMode as setRuleModeApi,
-  startProxy,
-  stopProxy,
-  toErrorMessage,
-  vpnLastError,
-} from "../api";
-import type { ClientConfig, ClientStatus, LocalCoreView, ProfileView, SubscriptionView } from "../api";
-import { CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY, SUBSCRIPTIONS_KEY, VPN_ERROR_KEY } from "../api/keys";
-import { lastActionErrorAtom } from "../atoms/ui";
+import { listCores, listProfiles, listSubscriptions, proxyStatus, requestVpnPermission } from "@pp/client-core";
+import { setActiveCore, setRuleMode as setRuleModeApi, startProxy, stopProxy, toErrorMessage } from "@pp/client-core";
+import { vpnLastError, CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY } from "@pp/client-core";
+import { SUBSCRIPTIONS_KEY, VPN_ERROR_KEY, lastActionErrorAtom } from "@pp/client-core";
+import type { ClientConfig, ClientStatus, LocalCoreView, ProfileView, SubscriptionView } from "@pp/client-core";
+import { useCapabilities, useClientConfig, useProxyStatus, useSaveConfig } from "@pp/client-core";
+import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
-import { useCapabilities } from "../hooks/useCapabilities";
-import { useClientConfig, useSaveConfig } from "../hooks/useClientConfig";
-import { useProxyStatus } from "../hooks/useProxyStatus";
-import { toastError, toastSuccess, toastWarning } from "../toast";
 import DashboardStatusCards from "./DashboardStatusCards";
 
 /** 规则模式按钮（与后端 `rule` / `global` / `direct` 对齐）。 */

@@ -1,8 +1,8 @@
 /**
- * Desktop client Tauri API layer.
+ * 客户端 Tauri API 层（客户端核心库 api 目录入口）。
  *
- * Re-exports all domain-specific API modules to preserve existing import paths
- * (e.g. `from "../../api"`).
+ * 聚合导出各领域 API 模块（types + functions），供包根统一导出
+ * （`packages/client-core/src/index.ts`）后由消费方经 `@pp/client-core` 引用。
  */
 
 // ---------------------------------------------------------------------------

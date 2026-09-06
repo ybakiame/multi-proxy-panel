@@ -5,7 +5,7 @@
 
 import { useCallback, useState } from "react";
 import { Button, Input, Label, ListBox, Modal, Select } from "@heroui/react";
-import type { RemoteResource } from "../../../api";
+import type { RemoteResource } from "@pp/client-core";
 import { REMOTE_DIALECT_OPTIONS, groupArgsByTag } from "../utils";
 import { useRemoteSniff } from "./useRemoteSniff";
 import type { ArgEdit, RemoteFormState } from "./types";

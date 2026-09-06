@@ -9,9 +9,9 @@ import {
   listCores,
   listRemoteCoreVersions,
   toErrorMessage,
-} from "../../api";
-import type { LocalCoreView } from "../../api";
-import { CORES_LIST_KEY, REMOTE_VERSIONS_KEY } from "../../api/keys";
+} from "@pp/client-core";
+import type { LocalCoreView } from "@pp/client-core";
+import { CORES_LIST_KEY, REMOTE_VERSIONS_KEY } from "@pp/client-core";
 
 interface CoreManagementProps {
   settings: UseSettingsConfigReturn;

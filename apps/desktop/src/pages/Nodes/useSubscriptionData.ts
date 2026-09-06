@@ -9,9 +9,9 @@ import {
   setSubscriptionEnabled,
   toErrorMessage,
   updateSubscription,
-} from "../../api";
-import type { ProfileView, SubscriptionView } from "../../api";
-import { PROFILES_KEY, SUBSCRIPTIONS_KEY } from "../../api/keys";
+} from "@pp/client-core";
+import type { ProfileView, SubscriptionView } from "@pp/client-core";
+import { PROFILES_KEY, SUBSCRIPTIONS_KEY } from "@pp/client-core";
 
 export type OpResult = { sub: SubscriptionView; kind: "add" | "refresh" };
 

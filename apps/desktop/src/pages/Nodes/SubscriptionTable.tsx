@@ -1,5 +1,5 @@
 import { Button, Chip, Meter, Switch, Table } from "@heroui/react";
-import type { ProfileView, SubscriptionView } from "../../api";
+import type { ProfileView, SubscriptionView } from "@pp/client-core";
 import { formatLabel, formatColor, usageText, usagePercent, usageColor, formatExpire } from "./utils";
 
 interface SubscriptionTableProps {

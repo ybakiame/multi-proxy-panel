@@ -1,8 +1,8 @@
 import { Alert, Button, Card, Chip, Input, Label, ListBox, Select, Switch } from "@heroui/react";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { TUN_STACK_OPTIONS } from "./useSettingsConfig";
-import { authorizeTun } from "../../api";
-import { toErrorMessage } from "../../api";
+import { authorizeTun } from "@pp/client-core";
+import { toErrorMessage } from "@pp/client-core";
 
 interface NetworkSettingsProps {
   settings: UseSettingsConfigReturn;

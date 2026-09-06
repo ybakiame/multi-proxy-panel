@@ -5,9 +5,9 @@
 import { useState } from "react";
 import { Alert, Button, Card } from "@heroui/react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { addRemote, fetchRemotes, removeRemote, updateRemote, toErrorMessage } from "../../../api";
-import type { FetchReport, RemoteResource } from "../../../api";
-import { REMOTES_KEY } from "../../../api/keys";
+import { addRemote, fetchRemotes, removeRemote, updateRemote, toErrorMessage } from "@pp/client-core";
+import type { FetchReport, RemoteResource } from "@pp/client-core";
+import { REMOTES_KEY } from "@pp/client-core";
 import RemoteFormModal from "./RemoteFormModal";
 import RemoteTable from "./RemoteTable";
 

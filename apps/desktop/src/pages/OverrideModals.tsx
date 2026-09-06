@@ -1,5 +1,5 @@
 import { AlertDialog, Button, Input, Label, Modal } from "@heroui/react";
-import type { ProfileView } from "../api";
+import type { ProfileView } from "@pp/client-core";
 
 interface CreateProfileModalProps {
   open: boolean;

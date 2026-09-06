@@ -1,11 +1,11 @@
 import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
 import { ToastProvider, useTheme } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { toastModeOverride } from "./api";
+import { toastModeOverride } from "@pp/client-core";
 import { Toaster } from "./components/Toaster";
-import { isTauriEnv } from "./env";
-import { setToastMode } from "./toast";
-import { useCapabilities } from "./hooks/useCapabilities";
+import { isTauriEnv } from "@pp/client-core";
+import { setToastMode } from "@pp/client-core";
+import { useCapabilities } from "@pp/client-core";
 import { DesktopSidebar } from "./layout/desktop/DesktopSidebar";
 import { MobileTabBar } from "./layout/mobile/MobileTabBar";
 import Dashboard from "./pages/Dashboard";

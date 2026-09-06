@@ -7,7 +7,7 @@ import {
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
-import { useCapabilities } from "../../hooks/useCapabilities";
+import { useCapabilities } from "@pp/client-core";
 
 interface ToolCardProps {
   title: string;

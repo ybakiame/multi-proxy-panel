@@ -1,6 +1,6 @@
 import { Button, Card, Input, Label, Switch } from "@heroui/react";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { testGithubProxy, toErrorMessage } from "../../api";
+import { testGithubProxy, toErrorMessage } from "@pp/client-core";
 
 interface GithubSettingsProps {
   settings: UseSettingsConfigReturn;

@@ -1,7 +1,7 @@
 import { Alert, Button, Modal } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
-import { previewCoreConfig, toErrorMessage } from "../api";
-import { CONFIG_PREVIEW_KEY } from "../api/keys";
+import { previewCoreConfig, toErrorMessage } from "@pp/client-core";
+import { CONFIG_PREVIEW_KEY } from "@pp/client-core";
 
 interface ConfigPreviewModalProps {
   isOpen: boolean;

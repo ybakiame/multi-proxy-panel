@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Button, Card } from "@heroui/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CONFIG_KEY } from "../../api/keys";
+import { CONFIG_KEY } from "@pp/client-core";
 import ConfigPreviewModal from "../../components/ConfigPreviewModal";
 import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import { useSubscriptionData } from "./useSubscriptionData";
@@ -29,8 +29,8 @@ export default function Nodes() {
   } = useSubscriptionData();
 
   const [addOpen, setAddOpen] = useState(false);
-  const [editSub, setEditSub] = useState<import("../../api").SubscriptionView | null>(null);
-  const [previewSub, setPreviewSub] = useState<import("../../api").SubscriptionView | null>(null);
+  const [editSub, setEditSub] = useState<import("@pp/client-core").SubscriptionView | null>(null);
+  const [previewSub, setPreviewSub] = useState<import("@pp/client-core").SubscriptionView | null>(null);
 
   const queryClient = useQueryClient();
   // toggle 订阅后失效配置缓存触发重读（替代原 store.loadConfig）。
@@ -40,12 +40,12 @@ export default function Nodes() {
 
   const anyEnabled = subs.some((sub) => sub.enabled);
 
-  const onToggle = async (sub: import("../../api").SubscriptionView) => {
+  const onToggle = async (sub: import("@pp/client-core").SubscriptionView) => {
     await handleToggle(sub, reloadConfig);
   };
 
   const onEditSave = async (
-    sub: import("../../api").SubscriptionView,
+    sub: import("@pp/client-core").SubscriptionView,
     name: string,
     url: string,
     profileId: string | null,

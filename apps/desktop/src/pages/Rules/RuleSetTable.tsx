@@ -1,5 +1,5 @@
 import { Button, Switch } from "@heroui/react";
-import type { RuleSetStatusView } from "../../api";
+import type { RuleSetStatusView } from "@pp/client-core";
 
 export interface RuleSetTableProps {
   ruleSets: RuleSetStatusView[];

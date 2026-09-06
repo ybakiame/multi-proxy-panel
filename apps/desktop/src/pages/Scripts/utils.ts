@@ -2,7 +2,7 @@
  * Shared types, constants, and utility functions for the Scripts page.
  */
 
-import type { ArgSpecView } from "../../api";
+import type { ArgSpecView } from "@pp/client-core";
 
 /** Dialect options for remote resource add form (Surge / Loon only). */
 export const REMOTE_DIALECT_OPTIONS = [

@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { toastError, toastSuccess, toastWarning } from "../../toast";
-import { toErrorMessage, platformInfo, tunAuthStatus } from "../../api";
-import { CONFIG_KEY, NOTIF_PERM_KEY, PLATFORM_KEY, TUN_AUTH_KEY } from "../../api/keys";
-import { lastActionErrorAtom } from "../../atoms/ui";
-import { useClientConfig, useSaveConfig } from "../../hooks/useClientConfig";
+import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
+import { toErrorMessage, platformInfo, tunAuthStatus } from "@pp/client-core";
+import { CONFIG_KEY, NOTIF_PERM_KEY, PLATFORM_KEY, TUN_AUTH_KEY } from "@pp/client-core";
+import { lastActionErrorAtom } from "@pp/client-core";
+import { useClientConfig, useSaveConfig } from "@pp/client-core";
 import { isPermissionGranted } from "@tauri-apps/plugin-notification";
-import type { ClientConfig } from "../../api";
+import type { ClientConfig } from "@pp/client-core";
 
 // TODO: read version from package.json (build-time injection or runtime read)
 export const APP_VERSION = "0.1.0";

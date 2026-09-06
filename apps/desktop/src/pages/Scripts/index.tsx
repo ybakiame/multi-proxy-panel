@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Tabs } from "@heroui/react";
-import { listRemotes, listTasks, getRemoteIcon, toErrorMessage } from "../../api";
-import { REMOTES_KEY, TASKS_KEY } from "../../api/keys";
-import type { RemoteResource } from "../../api";
-import { useCapabilities } from "../../hooks/useCapabilities";
+import { listRemotes, listTasks, getRemoteIcon, toErrorMessage } from "@pp/client-core";
+import { REMOTES_KEY, TASKS_KEY } from "@pp/client-core";
+import type { RemoteResource } from "@pp/client-core";
+import { useCapabilities } from "@pp/client-core";
 import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import RemotesTab from "./RemotesTab";
 import TasksTab from "./TasksTab";

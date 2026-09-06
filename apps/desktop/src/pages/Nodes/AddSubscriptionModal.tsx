@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Input, Label, ListBox, Select } from "@heroui/react";
-import type { ProfileView } from "../../api";
+import type { ProfileView } from "@pp/client-core";
 import { UA_PRESETS } from "./utils";
 
 interface AddSubscriptionModalProps {

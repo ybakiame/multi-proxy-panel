@@ -1,7 +1,7 @@
 import { GlobeAltIcon } from "@heroicons/react/24/outline";
 import clsx from "clsx";
 import { NavLink } from "react-router-dom";
-import { useCapabilities } from "../../hooks/useCapabilities";
+import { useCapabilities } from "@pp/client-core";
 import { DESKTOP_NAV_ITEMS } from "../config/nav/desktop";
 import type { DesktopNavItem } from "../config/nav/desktop";
 

@@ -2,10 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import { Alert, Button, Card, Chip, Spinner } from "@heroui/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { proxiesList, proxiesSelect, proxiesTestDelay, proxiesTestGroup, toErrorMessage } from "../../api";
-import type { GroupView, NodeView, ProxyList } from "../../api";
-import { PROXIES_KEY } from "../../api/keys";
-import { toastError, toastSuccess } from "../../toast";
+import { proxiesList, proxiesSelect, proxiesTestDelay, proxiesTestGroup, toErrorMessage } from "@pp/client-core";
+import type { GroupView, NodeView, ProxyList } from "@pp/client-core";
+import { PROXIES_KEY } from "@pp/client-core";
+import { toastError, toastSuccess } from "@pp/client-core";
 import NodeItem from "./NodeItem";
 
 const REFETCH_INTERVAL_MS = 5000;

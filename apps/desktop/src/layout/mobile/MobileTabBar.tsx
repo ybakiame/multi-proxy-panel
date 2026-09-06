@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { NavLink } from "react-router-dom";
-import { useCapabilities } from "../../hooks/useCapabilities";
+import { useCapabilities } from "@pp/client-core";
 import { MOBILE_TAB_ITEMS } from "../config/nav/mobile";
 
 /**

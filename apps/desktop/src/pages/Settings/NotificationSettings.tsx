@@ -1,8 +1,8 @@
 import { Button, Card, Chip, Switch } from "@heroui/react";
 import { requestPermission } from "@tauri-apps/plugin-notification";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { toErrorMessage } from "../../api";
-import { toastError } from "../../toast";
+import { toErrorMessage } from "@pp/client-core";
+import { toastError } from "@pp/client-core";
 
 interface NotificationSettingsProps {
   settings: UseSettingsConfigReturn;

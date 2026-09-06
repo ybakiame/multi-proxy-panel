@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { getMitmCa, listTraffic } from "../api";
-import type { TrafficRecord } from "../api";
-import { MITM_CA_KEY, TRAFFIC_KEY } from "../api/keys";
-import { useClientConfig, useSaveConfig } from "../hooks/useClientConfig";
+import { getMitmCa, listTraffic } from "@pp/client-core";
+import type { TrafficRecord } from "@pp/client-core";
+import { MITM_CA_KEY, TRAFFIC_KEY } from "@pp/client-core";
+import { useClientConfig, useSaveConfig } from "@pp/client-core";
 import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 
 interface HostnameEditorProps {

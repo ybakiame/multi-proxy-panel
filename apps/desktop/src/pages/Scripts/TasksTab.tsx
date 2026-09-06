@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Alert, Button, Card, Table } from "@heroui/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { runTask, toErrorMessage } from "../../api";
-import { TASKS_KEY } from "../../api/keys";
-import type { TaskScriptView } from "../../api";
+import { runTask, toErrorMessage } from "@pp/client-core";
+import { TASKS_KEY } from "@pp/client-core";
+import type { TaskScriptView } from "@pp/client-core";
 import { formatTime } from "./utils";
 
 interface TasksTabProps {

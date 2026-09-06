@@ -1,5 +1,5 @@
 import { Button, Chip } from "@heroui/react";
-import type { NodeView } from "../../api";
+import type { NodeView } from "@pp/client-core";
 
 interface NodeItemProps {
   name: string;

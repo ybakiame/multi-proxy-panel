@@ -2,10 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import { Alert, Button, Card, Chip, Spinner, Table } from "@heroui/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { connectionsActive, connectionsClosed, connectionsClose, toErrorMessage } from "../../api";
-import type { ConnectionView } from "../../api";
-import { CONNECTIONS_KEY, CLOSED_CONNECTIONS_KEY } from "../../api/keys";
-import { toastError, toastSuccess } from "../../toast";
+import { connectionsActive, connectionsClosed, connectionsClose, toErrorMessage } from "@pp/client-core";
+import type { ConnectionView } from "@pp/client-core";
+import { CONNECTIONS_KEY, CLOSED_CONNECTIONS_KEY } from "@pp/client-core";
+import { toastError, toastSuccess } from "@pp/client-core";
 
 const CLOSED_KEY = CLOSED_CONNECTIONS_KEY;
 const REFETCH_INTERVAL_MS = 2000;

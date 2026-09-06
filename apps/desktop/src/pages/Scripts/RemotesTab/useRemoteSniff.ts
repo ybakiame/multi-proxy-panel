@@ -4,8 +4,8 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { detectRemote, toErrorMessage } from "../../../api";
-import type { DetectRemoteView } from "../../../api";
+import { detectRemote, toErrorMessage } from "@pp/client-core";
+import type { DetectRemoteView } from "@pp/client-core";
 import { deriveNameFromUrl, normalizeDialect, normalizeKind } from "../utils";
 import type { SniffResult } from "./types";
 

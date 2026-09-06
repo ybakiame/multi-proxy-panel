@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/react";
-import type { LocalRuleInput, LocalRuleView } from "../../api";
+import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
 
 export interface RuleEditModalProps {
