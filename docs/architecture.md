@@ -447,6 +447,56 @@ App → 系统代理 → 核心主 mixed inbound (mixed_port)
 3. pp-mitm 完成 CA 解密、脚本钩子、重写与抓包后，经 `UpstreamProxy::Http` 转发到核心回流入站（`mitm-return`，监听 `mixed_port + 1`），回到核心后走正常路由链到远端节点
 4. 其余流量（含 wss）不经过 MITM，直接正常路由到远端节点
 
+### 配置合成链路
+
+客户端启动时把「订阅节点 + Profile 覆写」合成为最终 sing-box 启动 JSON 的分层链路（`pp-client`，入口 `state::start`）：
+
+```
+订阅配置（sing-box JSON / Clash 订阅已转节点）
+   │  build_core_config_v2（profile/）：提取节点 → singbox_template
+   │    （log/dns + proxy(select)/auto(url-test)/direct/block 分组 + route.rules=[]）
+   │    → remote/local YAML 覆写（深合并，remote 为底 local 覆盖）→ remote/local JS 覆写（链式 main）
+   ▼
+Profile 基础配置（含节点与分组）
+   │  compose_singbox_config（core_config/compose.rs）：inbounds 整体替换（mixed 主入口；
+   │    桌面 MITM 时双入站 main-in + mitm-return）、MITM 白名单规则前插、sing-box 1.12+ DNS
+   │    兼容（default_domain_resolver）
+   ▼
+Composed 配置
+   │  apply_local_override（local_override/，ADR-0002）：用户本地规则 / 规则集前插到 route.rules
+   │    头部、rule_set 引用注册、final 规则写 route.final
+   ▼
+   │  apply_panel_features（core_config/singbox.rs，设置页最高优先级）：TUN inbound 按设置整段替换、
+   │    experimental.clash_api（含 default_mode）、出站模式基础 clash_mode 规则前插
+   ▼
+最终 sing-box JSON ──► CoreRunner 启动（config_version = SHA-256 前 16 位）
+```
+
+各阶段职责一句话：
+
+| 阶段 | 职责 |
+|------|------|
+| `singbox_template` | 生成 sing-box 基础骨架：DNS、`proxy`（主 selector 组）/`auto`/`direct`/`block` 分组，`route.rules = []`（空路由） |
+| Profile 覆写（YAML/JS） | 模板之上叠加用户 Profile（远端为底、本地覆盖），改写节点分组、路由与实验字段，可显式接管模式语义 |
+| `compose_singbox_config` | 注入本地可用的 inbounds（mixed 主入口；桌面 MITM 双入站）与 MITM 白名单规则、DNS 兼容适配 |
+| `apply_local_override` | 前插用户本地规则/规则集并处理 final（本地规则优先于订阅规则） |
+| `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式），对同名字段整段替换、优先级最高 |
+
+**规则优先级语义**（最终 `route.rules` 自前向后的匹配顺序）：
+
+```
+模式开关（clash_mode 基础规则）> 本地规则 > MITM 白名单（桌面）> 订阅/模板规则 > final
+```
+
+- 各层在更早阶段把自己的规则前插到头部：compose 前插 MITM 白名单 → local_override 前插本地规则 → panel features 前插模式开关，因此后执行者反而排在更前、优先级更高
+- 未命中任何规则时回落 `route.final`（模板默认 `proxy`，可被本地 final 规则覆写）
+
+**出站模式（rule/global/direct）实现说明**：sing-box 的 mode **不是核心内置语义**，仅是路由规则 `clash_mode` 条件的匹配值（大小写敏感，见 sing-box issue #2477）——模板路由为空时切换 direct/global 无效果，核心甚至不会在 mode-list 注册这三档。因此 `apply_panel_features` 在 Clash API 开启时：
+
+1. 向 `route.rules` **头部**注入基础规则 `{clash_mode: direct → direct}` 与 `{clash_mode: global → proxy}`（`proxy` 为主 selector 组；rule 模式无需规则，走正常规则链）；若用户经 Profile 覆写已在规则中含 `clash_mode` 条件则跳过注入（显式接管）
+2. `experimental.clash_api.default_mode` 写入归一化小写模式（`rule`/`global`/`direct`），核心启动即处于正确模式，消除「Android VPN 异步启动时 Clash API push 竞态失败 → 停留在默认 Rule」的隐患
+3. 启动后 `push_clash_mode`（`PATCH /configs`）仍保留，作为幂等双保险与运行期切换通道
+
 ### 关键设计决策
 
 - **ScriptWorker !Send 执行模型**: rquickjs 的 `AsyncRuntime` 非 `Send`，若直接跨线程使用会反复创建运行时；收敛为「单一专有线程 + mpsc 串行化」后对外暴露 `Send` future，脚本超时 / 异常由引擎隔离
