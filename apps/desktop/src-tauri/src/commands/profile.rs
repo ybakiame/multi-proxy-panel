@@ -4,7 +4,7 @@ use pp_client::{Profile, ProfileStoreV2};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::commands::{core_type_str, parse_profile_id};
+use crate::commands::parse_profile_id;
 use crate::state::AppState;
 
 /// Profile list view (aligned with frontend `ProfileView` TS type).
@@ -12,7 +12,6 @@ use crate::state::AppState;
 pub struct ProfileView {
     pub id: String,
     pub name: String,
-    pub core_type: String,
     pub yaml_bytes: u64,
     pub js_bytes: u64,
     pub yaml_url: Option<String>,
@@ -24,7 +23,6 @@ impl ProfileView {
         Self {
             id: p.id.to_string(),
             name: p.name.clone(),
-            core_type: core_type_str(p.core_type),
             yaml_bytes: p.yaml_override.len() as u64,
             js_bytes: p.js_override.len() as u64,
             yaml_url: p.yaml_url.clone(),
@@ -38,7 +36,6 @@ impl ProfileView {
 pub struct ProfileDetailView {
     pub id: String,
     pub name: String,
-    pub core_type: String,
     pub yaml_override: String,
     pub js_override: String,
     pub yaml_url: Option<String>,
@@ -50,7 +47,6 @@ impl ProfileDetailView {
         Self {
             id: p.id.to_string(),
             name: p.name.clone(),
-            core_type: core_type_str(p.core_type),
             yaml_override: p.yaml_override.clone(),
             js_override: p.js_override.clone(),
             yaml_url: p.yaml_url.clone(),
@@ -71,7 +67,6 @@ pub fn list_profiles(state: State<'_, AppState>) -> Result<Vec<ProfileView>, Str
 #[derive(Debug, Deserialize)]
 pub struct CreateProfileInput {
     pub name: String,
-    pub core_type: String,
 }
 
 /// Create a new profile; errors on duplicate name.
@@ -84,11 +79,8 @@ pub fn create_profile(
     if name.is_empty() {
         return Err("模板名称不能为空".to_string());
     }
-    let core_type = crate::commands::core_type_from_str(&input.core_type)?;
     let store = ProfileStoreV2::new(state.data_dir.clone());
-    let profile = store
-        .add(&name, core_type)
-        .map_err(|e| format!("创建模板失败: {e}"))?;
+    let profile = store.add(&name).map_err(|e| format!("创建模板失败: {e}"))?;
     Ok(ProfileView::from_profile(&profile))
 }
 

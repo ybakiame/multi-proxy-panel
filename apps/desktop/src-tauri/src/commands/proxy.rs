@@ -137,7 +137,7 @@ mod tests {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "pp-client-ui-test-{}-{}",
+                "pp-client-ui-proxy-test-{}-{}",
                 std::process::id(),
                 n
             ));
@@ -163,7 +163,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            pp_common::CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -181,7 +180,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            pp_common::CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -203,7 +201,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            pp_common::CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();

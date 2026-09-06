@@ -10,47 +10,45 @@ use super::views::*;
 /// Validate local override before saving.
 ///
 /// Checks:
-/// - Rule IDs are unique within each core.
+/// - Rule IDs are unique.
 /// - Targets are non-empty for non-Final rules.
 /// - RuleSet references point to subscribed rule sets.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
-    for (core_name, core_ovr) in [("singbox", &ovr.singbox), ("mihomo", &ovr.mihomo)] {
-        // Check rule ID uniqueness.
-        let mut seen = std::collections::HashSet::new();
-        for rule in &core_ovr.rules {
-            if !seen.insert(rule.id.clone()) {
-                return Err(format!(
-                    "duplicate rule id '{}' in {core_name}",
-                    rule.id
-                ));
-            }
+    let core_ovr = &ovr.singbox;
+    // Check rule ID uniqueness.
+    let mut seen = std::collections::HashSet::new();
+    for rule in &core_ovr.rules {
+        if !seen.insert(rule.id.clone()) {
+            return Err(format!("duplicate rule id '{}'", rule.id));
         }
+    }
 
-        // Check non-empty targets.
-        for rule in &core_ovr.rules {
-            if !matches!(rule.match_type, pp_client::local_override::RuleMatchType::Final)
-                && rule.target.trim().is_empty()
-            {
-                return Err(format!(
-                    "rule '{}' in {core_name} has empty target",
-                    rule.id
-                ));
-            }
+    // Check non-empty targets.
+    for rule in &core_ovr.rules {
+        if !matches!(
+            rule.match_type,
+            pp_client::local_override::RuleMatchType::Final
+        ) && rule.target.trim().is_empty()
+        {
+            return Err(format!("rule '{}' has empty target", rule.id));
         }
+    }
 
-        // Check RuleSet references are subscribed.
-        for rule in &core_ovr.rules {
-            if matches!(rule.match_type, pp_client::local_override::RuleMatchType::RuleSet) {
-                let subscribed = ovr
-                    .rule_set_subscriptions
-                    .iter()
-                    .any(|s| s.community_id == rule.target && s.subscribed);
-                if !subscribed {
-                    return Err(format!(
-                        "rule '{}' references unsubscribed rule set '{}'",
-                        rule.id, rule.target
-                    ));
-                }
+    // Check RuleSet references are subscribed.
+    for rule in &core_ovr.rules {
+        if matches!(
+            rule.match_type,
+            pp_client::local_override::RuleMatchType::RuleSet
+        ) {
+            let subscribed = ovr
+                .rule_set_subscriptions
+                .iter()
+                .any(|s| s.community_id == rule.target && s.subscribed);
+            if !subscribed {
+                return Err(format!(
+                    "rule '{}' references unsubscribed rule set '{}'",
+                    rule.id, rule.target
+                ));
             }
         }
     }
@@ -62,10 +60,11 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub(super) fn convert_input_to_model(input: SaveLocalOverrideInput) -> Result<LocalOverride, String> {
+pub(super) fn convert_input_to_model(
+    input: SaveLocalOverrideInput,
+) -> Result<LocalOverride, String> {
     Ok(LocalOverride {
         singbox: convert_core_input(input.singbox)?,
-        mihomo: convert_core_input(input.mihomo)?,
         rule_set_subscriptions: input
             .rule_set_subscriptions
             .into_iter()
@@ -79,7 +78,9 @@ pub(super) fn convert_input_to_model(input: SaveLocalOverrideInput) -> Result<Lo
     })
 }
 
-pub(super) fn convert_core_input(input: CoreLocalOverrideInput) -> Result<CoreLocalOverride, String> {
+pub(super) fn convert_core_input(
+    input: CoreLocalOverrideInput,
+) -> Result<CoreLocalOverride, String> {
     Ok(CoreLocalOverride {
         rules: input
             .rules
@@ -174,8 +175,6 @@ fn parse_rule_set_kind(s: &str) -> Result<pp_client::local_override::RuleSetKind
     match s {
         "singbox_remote" => Ok(pp_client::local_override::RuleSetKind::SingBoxRemote),
         "singbox_local" => Ok(pp_client::local_override::RuleSetKind::SingBoxLocal),
-        "mihomo_http" => Ok(pp_client::local_override::RuleSetKind::MihomoHttp),
-        "mihomo_file" => Ok(pp_client::local_override::RuleSetKind::MihomoFile),
         _ => Err(format!("unknown rule_set kind: {s}")),
     }
 }
@@ -188,7 +187,6 @@ fn convert_subscription_input(input: RuleSetSubscriptionInput) -> RuleSetSubscri
         category: parse_rule_set_category(&input.category),
         subscribed: input.subscribed,
         singbox_url_template: input.singbox_url_template,
-        mihomo_url_template: input.mihomo_url_template,
         default_interval_minutes: input.default_interval_minutes,
     }
 }
@@ -223,8 +221,7 @@ impl RuleSetStatusView {
             display_name: sub.display_name.clone(),
             category: format!("{:?}", sub.category).to_lowercase(),
             subscribed: sub.subscribed,
-            singbox_cached: manager.is_cached(&sub.community_id, pp_common::CoreType::SingBox),
-            mihomo_cached: manager.is_cached(&sub.community_id, pp_common::CoreType::Mihomo),
+            singbox_cached: manager.is_cached(&sub.community_id),
             last_updated: 0,
         }
     }

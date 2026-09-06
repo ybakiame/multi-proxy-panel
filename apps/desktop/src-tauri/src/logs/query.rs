@@ -63,13 +63,7 @@ pub(crate) fn list_log_files_impl(logs_dir: &std::path::Path) -> Result<Vec<Stri
         .filter_map(|entry| entry.file_name().into_string().ok())
         .filter(|name| {
             name.starts_with("app.log")
-                || matches!(
-                    name.as_str(),
-                    "libbox.log"
-                        | "mihomo.log"
-                        | "last_start_config.json"
-                        | "last_start_config.yaml"
-                )
+                || matches!(name.as_str(), "libbox.log" | "last_start_config.json")
         })
         .collect();
     names.sort();
@@ -126,7 +120,7 @@ pub fn log_frontend(level: String, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logs::test_entry;
+    use crate::logs::{push_entry, test_entry};
 
     fn temp_logs_dir(tag: &str) -> std::path::PathBuf {
         let tmp = std::env::temp_dir().join(format!("pp-log-{tag}-{}", std::process::id()));
@@ -227,9 +221,7 @@ mod tests {
         std::fs::write(logs_dir.join("app.log.2026-08-01"), "day1\n").unwrap();
         std::fs::write(logs_dir.join("app.log.2026-08-02"), "day2\n").unwrap();
         std::fs::write(logs_dir.join("libbox.log"), "box\n").unwrap();
-        std::fs::write(logs_dir.join("mihomo.log"), "mihomo\n").unwrap();
         std::fs::write(logs_dir.join("last_start_config.json"), "{}\n").unwrap();
-        std::fs::write(logs_dir.join("last_start_config.yaml"), "---\n").unwrap();
         std::fs::write(logs_dir.join("export-20260101-000000.log"), "old\n").unwrap();
         std::fs::write(logs_dir.join("README.txt"), "ignore\n").unwrap();
 
@@ -237,9 +229,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "mihomo.log",
                 "libbox.log",
-                "last_start_config.yaml",
                 "last_start_config.json",
                 "app.log.2026-08-02",
                 "app.log.2026-08-01",
@@ -296,11 +286,11 @@ mod tests {
         assert!(validate_log_file_name("app.log").is_ok());
         assert!(validate_log_file_name("app.log.2026-08-01").is_ok());
         assert!(validate_log_file_name("libbox.log").is_ok());
-        assert!(validate_log_file_name("mihomo.log").is_ok());
         assert!(validate_log_file_name("last_start_config.json").is_ok());
-        assert!(validate_log_file_name("last_start_config.yaml").is_ok());
 
         assert!(validate_log_file_name("").is_err());
+        assert!(validate_log_file_name("mihomo.log").is_err());
+        assert!(validate_log_file_name("last_start_config.yaml").is_err());
         assert!(validate_log_file_name("../app.log").is_err());
         assert!(validate_log_file_name("a/../app.log").is_err());
         assert!(validate_log_file_name("evil.log").is_err());
@@ -318,9 +308,9 @@ mod tests {
         let mut content = String::with_capacity(crate::logs::LOG_TAIL_MAX_BYTES_VAL as usize + 32);
         content.push_str("UNIQUE_HEAD_MARKER\n");
         content.push_str(&"x".repeat(crate::logs::LOG_TAIL_MAX_BYTES_VAL as usize));
-        std::fs::write(logs_dir.join("mihomo.log"), &content).unwrap();
+        std::fs::write(logs_dir.join("libbox.log"), &content).unwrap();
 
-        let tail = read_log_file_tail_impl(&logs_dir, "mihomo.log", None).unwrap();
+        let tail = read_log_file_tail_impl(&logs_dir, "libbox.log", None).unwrap();
         assert!(!tail.contains("UNIQUE_HEAD_MARKER"));
         assert!(!tail.is_empty());
         std::fs::remove_dir_all(&tmp).ok();

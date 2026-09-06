@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalOverrideView {
     pub singbox: CoreLocalOverrideView,
-    pub mihomo: CoreLocalOverrideView,
     pub rule_set_subscriptions: Vec<RuleSetSubscriptionView>,
     pub applied_templates: Vec<AppliedTemplateView>,
 }
@@ -67,7 +66,6 @@ pub struct RuleSetSubscriptionView {
     pub category: String,
     pub subscribed: bool,
     pub singbox_url_template: String,
-    pub mihomo_url_template: String,
     pub default_interval_minutes: u32,
 }
 
@@ -88,7 +86,6 @@ pub struct RuleSetStatusView {
     pub category: String,
     pub subscribed: bool,
     pub singbox_cached: bool,
-    pub mihomo_cached: bool,
     pub last_updated: u64,
 }
 
@@ -100,7 +97,6 @@ impl LocalOverrideView {
     pub(crate) fn from_model(model: &LocalOverride) -> Self {
         Self {
             singbox: CoreLocalOverrideView::from_model(&model.singbox),
-            mihomo: CoreLocalOverrideView::from_model(&model.mihomo),
             rule_set_subscriptions: model
                 .rule_set_subscriptions
                 .iter()
@@ -175,7 +171,6 @@ impl RuleSetSubscriptionView {
             category: format!("{:?}", model.category).to_lowercase(),
             subscribed: model.subscribed,
             singbox_url_template: model.singbox_url_template.clone(),
-            mihomo_url_template: model.mihomo_url_template.clone(),
             default_interval_minutes: model.default_interval_minutes,
         }
     }
@@ -199,7 +194,6 @@ impl AppliedTemplateView {
 #[derive(Debug, Deserialize)]
 pub struct SaveLocalOverrideInput {
     pub singbox: CoreLocalOverrideInput,
-    pub mihomo: CoreLocalOverrideInput,
     pub rule_set_subscriptions: Vec<RuleSetSubscriptionInput>,
     pub applied_templates: Vec<AppliedTemplateInput>,
 }
@@ -256,7 +250,6 @@ pub struct RuleSetSubscriptionInput {
     #[serde(default)]
     pub subscribed: bool,
     pub singbox_url_template: String,
-    pub mihomo_url_template: String,
     pub default_interval_minutes: u32,
 }
 

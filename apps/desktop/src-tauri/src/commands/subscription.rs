@@ -3,10 +3,9 @@
 use std::path::PathBuf;
 
 use pp_client::{
-    fetch_subscription_with_ua, ClientConfig, Subscription, SubscriptionStore, SubContent,
-    CachedSubscriptionContent,
+    fetch_subscription_with_ua, CachedSubscriptionContent, ClientConfig, Subscription,
+    SubscriptionStore,
 };
-use pp_common::CoreType;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
@@ -93,35 +92,25 @@ pub(crate) fn parse_profile_ref(profile_id: &Option<String>) -> Result<Option<Uu
 }
 
 /// Write fetch result to local content cache (best-effort).
-pub(crate) fn cache_fetch_result(store: &SubscriptionStore, id: Uuid, fetch: &pp_client::FetchResult) {
+pub(crate) fn cache_fetch_result(
+    store: &SubscriptionStore,
+    id: Uuid,
+    fetch: &pp_client::FetchResult,
+) {
     let cached = CachedSubscriptionContent {
         format: fetch.format,
         singbox_nodes: fetch.singbox_nodes.clone(),
-        mihomo_nodes: fetch.mihomo_nodes.clone(),
     };
     if let Err(e) = store.write_cached_content(id, &cached) {
         tracing::warn!(id = %id, error = %e, "写入订阅内容缓存失败");
     }
 }
 
-/// Assemble SubContent from dual-core nodes.
-pub(crate) fn sub_content_from_nodes(
-    core_type: CoreType,
-    singbox_nodes: &[serde_json::Value],
-    mihomo_nodes: &[serde_json::Value],
-) -> Result<SubContent, String> {
-    match core_type {
-        CoreType::SingBox => Ok(SubContent::SingBox(serde_json::json!({
-            "outbounds": singbox_nodes,
-        }))),
-        CoreType::Mihomo => {
-            let yaml = serde_yaml::to_string(&serde_json::json!({
-                "proxies": mihomo_nodes,
-            }))
-            .map_err(|e| format!("序列化配置失败: {e}"))?;
-            Ok(SubContent::Mihomo(yaml))
-        }
-    }
+/// Assemble a sing-box subscription config (`outbounds` array) from fetched nodes.
+pub(crate) fn sub_content_from_nodes(singbox_nodes: &[serde_json::Value]) -> serde_json::Value {
+    serde_json::json!({
+        "outbounds": singbox_nodes,
+    })
 }
 
 /// Apply fetch result to subscription (updates userinfo / node count, clears error on success).
@@ -270,7 +259,6 @@ pub(crate) fn set_active_subscription_impl(
             data_dir.to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         ),
     };
@@ -345,7 +333,7 @@ mod tests {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "pp-client-ui-test-{}-{}",
+                "pp-client-ui-subscription-test-{}-{}",
                 std::process::id(),
                 n
             ));
@@ -404,7 +392,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -436,7 +423,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.active_subscription_id = Some(sub.id);

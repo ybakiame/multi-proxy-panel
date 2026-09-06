@@ -3,14 +3,12 @@
 use std::path::PathBuf;
 
 use pp_client::{
-    apply_panel_features, build_core_config_v2, compose_mihomo_config, compose_singbox_config,
-    fetch_subscription_with_ua, resolve_remote_overrides, ClientConfig, EffectiveOverrides,
-    PanelFeatures, SubscriptionFetcher, SubscriptionStore, SubContent,
+    apply_panel_features, build_core_config_v2, compose_singbox_config, fetch_subscription_with_ua,
+    resolve_remote_overrides, ClientConfig, EffectiveOverrides, PanelFeatures, SubscriptionStore,
 };
-use pp_common::CoreType;
 use tauri::State;
 
-use crate::commands::{sub_content_from_nodes, cache_fetch_result, parse_subscription_id};
+use crate::commands::{cache_fetch_result, parse_subscription_id, sub_content_from_nodes};
 use crate::state::AppState;
 
 /// Generate effective config preview: subscription nodes -> template -> overrides -> core synthesis.
@@ -36,7 +34,7 @@ pub(crate) async fn preview_core_config_impl(
     let cache_dir = data_dir.join("profile_cache");
 
     let sub_store = SubscriptionStore::new(data_dir.clone());
-    let mut linked_profile_id = None;
+    let linked_profile_id: Option<uuid::Uuid>;
     let specified = match preview_id {
         Some(id) => {
             let subs = sub_store.load().map_err(|e| format!("读取订阅失败: {e}"))?;
@@ -52,17 +50,13 @@ pub(crate) async fn preview_core_config_impl(
     let sub_content = if let Some(sub) = &specified {
         linked_profile_id = sub.profile_id;
         if let Some(cached) = sub_store.load_cached_content(sub.id) {
-            pp_client::check_preview_core_compat(cached.format, cfg.core_type)
-                .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
-            sub_content_from_nodes(cfg.core_type, &cached.singbox_nodes, &cached.mihomo_nodes)?
+            sub_content_from_nodes(&cached.singbox_nodes)
         } else {
             let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                 .await
                 .map_err(|e| format!("拉取订阅「{}」失败: {e}", sub.name))?;
-            pp_client::check_preview_core_compat(fetch.format, cfg.core_type)
-                .map_err(|e| format!("订阅「{}」无法预览: {e}", sub.name))?;
             cache_fetch_result(&sub_store, sub.id, &fetch);
-            sub_content_from_nodes(cfg.core_type, &fetch.singbox_nodes, &fetch.mihomo_nodes)?
+            sub_content_from_nodes(&fetch.singbox_nodes)
         }
     } else {
         match cfg.active_subscription_id {
@@ -77,43 +71,16 @@ pub(crate) async fn preview_core_config_impl(
                 }
                 linked_profile_id = sub.profile_id;
                 if let Some(cached) = sub_store.load_cached_content(sub.id) {
-                    sub_content_from_nodes(
-                        cfg.core_type,
-                        &cached.singbox_nodes,
-                        &cached.mihomo_nodes,
-                    )?
+                    sub_content_from_nodes(&cached.singbox_nodes)
                 } else {
                     let fetch = fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
                         .await
                         .map_err(|e| format!("拉取订阅失败: {e}"))?;
                     cache_fetch_result(&sub_store, sub.id, &fetch);
-                    sub_content_from_nodes(
-                        cfg.core_type,
-                        &fetch.singbox_nodes,
-                        &fetch.mihomo_nodes,
-                    )?
+                    sub_content_from_nodes(&fetch.singbox_nodes)
                 }
             }
-            None if !cfg.hub_url.is_empty() && !cfg.sub_token.is_empty() => {
-                let fetcher = SubscriptionFetcher::new();
-                match cfg.core_type {
-                    CoreType::SingBox => {
-                        let (config, _) = fetcher
-                            .fetch_singbox_config(&cfg.hub_url, &cfg.sub_token)
-                            .await
-                            .map_err(|e| format!("拉取订阅失败: {e}"))?;
-                        SubContent::SingBox(config)
-                    }
-                    CoreType::Mihomo => {
-                        let (yaml, _) = fetcher
-                            .fetch_clash_config(&cfg.hub_url, &cfg.sub_token)
-                            .await
-                            .map_err(|e| format!("拉取订阅失败: {e}"))?;
-                        SubContent::Mihomo(yaml)
-                    }
-                }
-            }
-            _ => return Err("请先在首页选择要使用的订阅".to_string()),
+            None => return Err("请先在首页选择要使用的订阅".to_string()),
         }
     };
 
@@ -131,22 +98,6 @@ pub(crate) async fn preview_core_config_impl(
                     }
                     None => "订阅关联的覆写模板不存在，请在订阅页重新关联".to_string(),
                 })?;
-            if linked.core_type != cfg.core_type {
-                return Err(match sub_name {
-                    Some(name) => format!(
-                        "订阅「{name}」关联的覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
-                        linked.name,
-                        pp_client::core_type_display_name(linked.core_type),
-                        pp_client::core_type_display_name(cfg.core_type),
-                    ),
-                    None => format!(
-                        "覆写模板「{}」适用于 {}，与当前核心 {} 不匹配，请在首页切换核心或在订阅页调整关联",
-                        linked.name,
-                        pp_client::core_type_display_name(linked.core_type),
-                        pp_client::core_type_display_name(cfg.core_type),
-                    ),
-                });
-            }
             resolve_remote_overrides(&cache_dir, linked).await
         }
         None => (EffectiveOverrides::default(), Vec::new()),
@@ -155,7 +106,7 @@ pub(crate) async fn preview_core_config_impl(
         tracing::warn!(warning, "profile remote override");
     }
 
-    let profile_cfg = build_core_config_v2(cfg.core_type, &sub_content, &effective)
+    let profile_cfg = build_core_config_v2(&sub_content, &effective)
         .await
         .map_err(|e| format!("生成配置失败: {e}"))?;
 
@@ -169,31 +120,17 @@ pub(crate) async fn preview_core_config_impl(
         clash_api_ui: cfg.clash_api_ui.clone(),
         rule_mode: cfg.normalized_rule_mode().to_string(),
     };
-    let mut value = match cfg.core_type {
-        CoreType::SingBox => compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
-            .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?,
-        CoreType::Mihomo => {
-            let yaml =
-                serde_yaml::to_string(&profile_cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
-            compose_mihomo_config(&yaml, cfg.mixed_port, None)
-                .map_err(|e| format!("合成 mihomo 配置失败: {e}"))?
-        }
-    };
-    apply_panel_features(&mut value, cfg.core_type, &features);
+    let mut value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
+        .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;
+    apply_panel_features(&mut value, &features);
 
-    match cfg.core_type {
-        CoreType::SingBox => {
-            serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
-        }
-        CoreType::Mihomo => {
-            serde_yaml::to_string(&value).map_err(|e| format!("序列化配置失败: {e}"))
-        }
-    }
+    serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pp_client::{CachedSubscriptionContent, SubFormat};
     use std::io::{Read, Write};
 
     struct TestDir(PathBuf);
@@ -203,7 +140,7 @@ mod tests {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "pp-client-ui-test-{}-{}",
+                "pp-client-ui-preview-test-{}-{}",
                 std::process::id(),
                 n
             ));
@@ -256,7 +193,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -280,7 +216,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -300,7 +235,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.active_subscription_id = Some(off.id);
@@ -315,7 +249,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -332,7 +265,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();
@@ -351,7 +283,6 @@ mod tests {
                     "uuid": "12345678-1234-1234-1234-123456789012",
                     "tls": { "enabled": true, "server_name": "example.com" },
                 })],
-                mihomo_nodes: Vec::new(),
             },
         ).unwrap();
 
@@ -369,7 +300,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             PathBuf::new(),
         );
         cfg.save().unwrap();

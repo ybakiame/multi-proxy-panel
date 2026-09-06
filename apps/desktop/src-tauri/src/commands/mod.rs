@@ -32,23 +32,17 @@ pub use subscription::*;
 pub use task::*;
 
 use pp_client::SubFormat;
-use pp_common::CoreType;
 use pp_script::ScriptDialect;
 use uuid::Uuid;
 
 /// Unified error prefix for commands unavailable on Android.
+#[cfg(target_os = "android")]
 const UNSUPPORTED_PLATFORM_PREFIX: &str = "unsupported_platform";
 
-/// Returns a unified error when called on Android; desktop path is unreachable.
+/// Returns a unified error when called on Android; desktop path is cfg'd out.
 #[cfg(target_os = "android")]
 fn require_desktop<T>(feature: &str) -> Result<T, String> {
     Err(format!("{UNSUPPORTED_PLATFORM_PREFIX}: {feature} is not supported on Android"))
-}
-
-/// Desktop path: unreachable (guarded by `cfg` before calling).
-#[cfg(not(target_os = "android"))]
-fn require_desktop<T>(_: &str) -> Result<T, String> {
-    unreachable!("require_desktop should only be called after cfg guard")
 }
 
 /// OS desktop notifier backed by `tauri-plugin-notification`.
@@ -88,16 +82,6 @@ fn parse_profile_id(id: &str) -> Result<Uuid, String> {
 
 // The following pure conversion functions are re-exported from pp_client::validation
 // for backward compatibility with existing command modules.
-
-/// Serializes `CoreType` to frontend lowercase convention (`singbox` / `mihomo`).
-fn core_type_str(core_type: CoreType) -> String {
-    pp_client::core_type_str(core_type)
-}
-
-/// Parses frontend lowercase core type string (`singbox` / `mihomo`).
-fn core_type_from_str(s: &str) -> Result<CoreType, String> {
-    pp_client::core_type_from_str(s)
-}
 
 /// String representation of `RemoteKind` (matches `RemoteResourceView.kind` serde).
 fn remote_kind_str(kind: pp_client::RemoteKind) -> &'static str {

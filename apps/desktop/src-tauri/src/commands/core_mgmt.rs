@@ -1,12 +1,12 @@
 //! Core management commands: download, list, delete, select local core binaries.
+//!
+//! The client only supports the sing-box core; commands carry no core type parameter.
 
 use std::path::PathBuf;
 
-use pp_common::CoreType;
 use serde::Serialize;
 use tauri::State;
 
-use crate::commands::core_type_from_str;
 use crate::state::AppState;
 #[cfg(target_os = "android")]
 use super::require_desktop;
@@ -14,7 +14,6 @@ use super::require_desktop;
 /// External view of a local core.
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalCoreView {
-    pub core_type: String,
     pub version: String,
     pub path: String,
     pub source: String,
@@ -24,7 +23,6 @@ pub struct LocalCoreView {
 impl LocalCoreView {
     pub(crate) fn from_core(core: &pp_client::LocalCore, active_binary: &std::path::Path) -> Self {
         Self {
-            core_type: crate::commands::core_type_str(core.core_type),
             version: core.version.clone(),
             path: core.path.to_string_lossy().into_owned(),
             source: match core.source {
@@ -78,50 +76,36 @@ pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>
 }
 
 /// List recent 10 remote releases (GitHub releases, `v` prefix stripped).
-#[tauri::command(rename_all = "snake_case")]
-pub async fn list_remote_core_versions(
-    state: State<'_, AppState>,
-    core_type: String,
-) -> Result<Vec<String>, String> {
+#[tauri::command]
+pub async fn list_remote_core_versions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     #[cfg(target_os = "android")]
     {
-        let _ = (state, core_type);
+        let _ = state;
         return require_desktop("core version listing");
     }
     #[cfg(not(target_os = "android"))]
     {
-        let ct = core_type_from_str(&core_type)?;
         let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        inv.list_remote_versions(ct)
+        inv.list_remote_versions()
             .await
             .map_err(|e| format!("拉取远端版本失败: {e}"))
     }
 }
 
-/// List downloaded versions for a core type (semantic version descending).
-#[tauri::command(rename_all = "snake_case")]
-pub async fn list_downloaded_versions(
-    state: State<'_, AppState>,
-    core_type: String,
-) -> Result<Vec<String>, String> {
-    let ct = core_type_from_str(&core_type)?;
+/// List downloaded versions (semantic version descending).
+#[tauri::command]
+pub async fn list_downloaded_versions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    Ok(inv.list_downloaded_versions(ct))
+    Ok(inv.list_downloaded_versions())
 }
 
-/// Auto-select downloaded core when type matches current config (desktop only).
+/// Auto-select downloaded core as the active binary (desktop only; sing-box only,
+/// downloads take effect immediately).
 #[cfg(not(target_os = "android"))]
-pub(crate) fn auto_select_downloaded_core(
-    data_dir: &std::path::Path,
-    core_type: CoreType,
-    core_path: &std::path::Path,
-) {
+pub(crate) fn auto_select_downloaded_core(data_dir: &std::path::Path, core_path: &std::path::Path) {
     let Ok(mut config) = pp_client::ClientConfig::load(data_dir) else {
         return;
     };
-    if config.core_type != core_type {
-        return;
-    }
     config.core_binary = core_path.to_path_buf();
     if let Err(e) = config.save() {
         tracing::warn!("保存自动选中核心配置失败: {e}");
@@ -132,23 +116,21 @@ pub(crate) fn auto_select_downloaded_core(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn download_core(
     state: State<'_, AppState>,
-    core_type: String,
     version: String,
 ) -> Result<LocalCoreView, String> {
     #[cfg(target_os = "android")]
     {
-        let _ = (state, core_type, version);
+        let _ = (state, version);
         return require_desktop("core download");
     }
     #[cfg(not(target_os = "android"))]
     {
-        let ct = core_type_from_str(&core_type)?;
         let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
         let core = inv
-            .download(ct, &version)
+            .download(&version)
             .await
             .map_err(|e| format!("下载核心失败: {e}"))?;
-        auto_select_downloaded_core(&state.data_dir, ct, &core.path);
+        auto_select_downloaded_core(&state.data_dir, &core.path);
         let active = active_binary(&state.data_dir);
         Ok(LocalCoreView::from_core(&core, &active))
     }
@@ -176,25 +158,16 @@ pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result
                 return Err(format!("核心二进制不可执行: {path}"));
             }
         }
-        let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-        let core_type = merge_cores(inv.list_installed(), inv.detect_system_cores())
-            .into_iter()
-            .find(|c| c.path == bin)
-            .map(|c| c.core_type)
-            .or_else(|| pp_client::infer_core_type(&bin))
-            .ok_or_else(|| format!("无法识别核心类型: {path}，请在设置页手动选择核心类型"))?;
         let mut config = match pp_client::ClientConfig::load(&state.data_dir) {
             Ok(cfg) => cfg,
             Err(_) => pp_client::ClientConfig::new(
                 state.data_dir.clone(),
                 String::new(),
                 String::new(),
-                CoreType::SingBox,
                 PathBuf::new(),
             ),
         };
         config.core_binary = bin;
-        config.core_type = core_type;
         config.save().map_err(|e| format!("保存配置失败: {e}"))
     }
 }
@@ -254,6 +227,7 @@ pub async fn delete_core(state: State<'_, AppState>, path: String) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pp_client::ClientConfig;
 
     struct TestDir(PathBuf);
 
@@ -262,7 +236,7 @@ mod tests {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "pp-client-ui-test-{}-{}",
+                "pp-client-ui-core-mgmt-test-{}-{}",
                 std::process::id(),
                 n
             ));
@@ -313,55 +287,29 @@ mod tests {
         write_core(dir.path(), "sing-box", "1.13.15");
         write_core(dir.path(), "sing-box", "1.14.0-beta.4");
         write_core(dir.path(), "sing-box", "1.14.0");
-        write_core(dir.path(), "mihomo", "1.19.29");
 
         let inv = pp_client::ClientCoreInventory::new(dir.path().to_path_buf());
-        let versions = inv.list_downloaded_versions(pp_common::CoreType::SingBox);
+        let versions = inv.list_downloaded_versions();
         assert_eq!(versions, vec!["1.14.0", "1.14.0-beta.4", "1.13.15"]);
-
-        let mihomo = inv.list_downloaded_versions(pp_common::CoreType::Mihomo);
-        assert_eq!(mihomo, vec!["1.19.29"]);
     }
 
     #[cfg(not(target_os = "android"))]
     #[test]
-    fn auto_select_downloaded_core_matching_type_updates_core_binary() {
+    fn auto_select_downloaded_core_updates_core_binary() {
         let dir = TestDir::new();
         let prev = ClientConfig::new(
             dir.path().to_path_buf(),
             "http://127.0.0.1:50052",
             "tok",
-            CoreType::SingBox,
             dir.path().join("cores/sing-box/1.13.15/sing-box"),
         );
         prev.save().unwrap();
 
         let downloaded = dir.path().join("cores/sing-box/1.14.0/sing-box");
-        auto_select_downloaded_core(dir.path(), CoreType::SingBox, &downloaded);
+        auto_select_downloaded_core(dir.path(), &downloaded);
 
         let saved = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(saved.core_type, CoreType::SingBox);
         assert_eq!(saved.core_binary, downloaded);
-    }
-
-    #[cfg(not(target_os = "android"))]
-    #[test]
-    fn auto_select_downloaded_core_mismatched_type_keeps_binary_untouched() {
-        let dir = TestDir::new();
-        let prev = ClientConfig::new(
-            dir.path().to_path_buf(),
-            "http://127.0.0.1:50052",
-            "tok",
-            CoreType::SingBox,
-            dir.path().join("cores/sing-box/1.13.15/sing-box"),
-        );
-        prev.save().unwrap();
-
-        let downloaded = dir.path().join("cores/mihomo/1.19.29/mihomo");
-        auto_select_downloaded_core(dir.path(), CoreType::Mihomo, &downloaded);
-
-        let saved = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(saved.core_binary, dir.path().join("cores/sing-box/1.13.15/sing-box"));
     }
 
     #[cfg(not(target_os = "android"))]
@@ -370,7 +318,6 @@ mod tests {
         let dir = TestDir::new();
         auto_select_downloaded_core(
             dir.path(),
-            CoreType::SingBox,
             &dir.path().join("cores/sing-box/1.14.0/sing-box"),
         );
         assert!(!dir.path().join("client.json").exists());
@@ -399,7 +346,6 @@ mod tests {
             dir.path().to_path_buf(),
             String::new(),
             String::new(),
-            CoreType::SingBox,
             bin.clone(),
         );
         cfg.save().unwrap();
@@ -446,10 +392,13 @@ mod tests {
     #[test]
     fn delete_core_rejects_nonexistent_path() {
         let dir = TestDir::new();
+        // pp-client's delete first canonicalizes the cores download dir; create one
+        // core so the dir exists and the missing binary is what gets rejected.
+        write_core(dir.path(), "sing-box", "1.13.15");
         let missing = dir.path().join("cores/sing-box/9.9.9/sing-box");
         let err = with_empty_path(|| {
             delete_core_impl(dir.path(), &missing.to_string_lossy()).unwrap_err()
         });
-        assert!(err.contains("不存在"), "{err}");
+        assert!(err.contains("does not exist"), "{err}");
     }
 }

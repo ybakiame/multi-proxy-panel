@@ -271,12 +271,7 @@ pub(crate) fn validate_log_file_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("非法的日志文件名".to_string());
     }
-    if name.starts_with("app.log")
-        || matches!(
-            name,
-            "libbox.log" | "mihomo.log" | "last_start_config.json" | "last_start_config.yaml"
-        )
-    {
+    if name.starts_with("app.log") || matches!(name, "libbox.log" | "last_start_config.json") {
         Ok(())
     } else {
         Err(format!("非法的日志文件名：{name}"))
@@ -314,6 +309,7 @@ pub(crate) fn log_tail_max_lines() -> u32 {
 }
 
 /// Max bytes for `read_log_file_tail`.
+#[cfg(test)]
 pub(crate) const LOG_TAIL_MAX_BYTES_VAL: u64 = LOG_TAIL_MAX_BYTES;
 
 /// Construct a test log entry (message carries sequence number for assertions).

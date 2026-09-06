@@ -1,16 +1,15 @@
-//! Android 核心引擎桥（真实实现：Rust ↔ Kotlin VpnPlugin/libbox + mihomo 通道）。
+//! Android 核心引擎桥（真实实现：Rust ↔ Kotlin VpnPlugin/libbox 通道）。
 //!
-//! Android 上核心由 Kotlin 侧 VpnPlugin 驱动（sing-box libbox / mihomo wrapper，
-//! 二者经 panelcore.aar 合并绑定），Rust 侧无法 spawn 二进制。本模块在 `run()`
-//! 的 `vpn` 插件 setup 中经 `tauri::plugin::PluginApi::register_android_plugin`
-//! 注册 `com.proxypanel.client` 的 `VpnPlugin`，拿到 `PluginHandle` 后安装真实桥：
+//! Android 上核心由 Kotlin 侧 VpnPlugin 驱动（sing-box libbox，经 panelcore.aar
+//! 绑定），Rust 侧无法 spawn 二进制。本模块在 `run()` 的 `vpn` 插件 setup 中经
+//! `tauri::plugin::PluginApi::register_android_plugin` 注册
+//! `com.proxypanel.client` 的 `VpnPlugin`，拿到 `PluginHandle` 后安装真实桥：
 //! `start` / `stop` / `is_running` 通过 `run_mobile_plugin_async` 转发给
-//! Kotlin 插件，核心生命周期由 libbox / Mihomocore 执行。
+//! Kotlin 插件，核心生命周期由 libbox 执行。
 //!
-//! 双核心分派：`start` 按 `core_type` 映射到 Kotlin `StartArgs.core`
-//! （`"singbox"` / `"mihomo"`），由 VpnPlugin 分派到对应 VPN 服务；配置以
-//! JSON 文本经 `config` 字段传给 Kotlin（JSON 为合法 YAML 子集，mihomo 的
-//! `hub.Parse` 可直接解析，无需改序列化）。
+//! 配置下发：配置以 JSON 文本经 `config` 字段传给 Kotlin；客户端仅支持
+//! sing-box，`StartArgs` 不再携带核心分派参数（仅 `config` / `showTraffic` /
+//! `showSelection`）。
 //!
 //! 错误透传：Kotlin 侧 `invoke.reject(..., "vpn_not_authorized")` 的拒绝
 //! 在 [`plugin_error`] 中被规范为可识别前缀 `vpn_not_authorized: ...` 上抛，
@@ -78,7 +77,7 @@ pub(crate) fn plugin_error(err: PluginInvokeError) -> PanelError {
 impl CoreEngineBridge for AndroidCoreBridge {
     fn start<'a>(
         &'a self,
-        core_type: CoreType,
+        _core_type: CoreType,
         config_json: &'a Value,
     ) -> BoxFuture<'a, PanelResult<()>> {
         Box::pin(async move {
@@ -91,15 +90,10 @@ impl CoreEngineBridge for AndroidCoreBridge {
                 .get("vpn_notify_show_selection")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
-            // Align with Kotlin `StartArgs` (`config: String` + `core: String?` + prefs):
-            // Config passed as JSON text, core type dispatched by `core_type`.
-            let core = match core_type {
-                CoreType::Mihomo => "mihomo",
-                _ => "singbox",
-            };
+            // 与 Kotlin `StartArgs` 对齐（`config: String` + 通知偏好）：客户端仅支持
+            // sing-box，核心类型不再下发，配置以 JSON 文本传递。
             let payload = serde_json::json!({
                 "config": config_json.to_string(),
-                "core": core,
                 "showTraffic": show_traffic,
                 "showSelection": show_selection,
             });

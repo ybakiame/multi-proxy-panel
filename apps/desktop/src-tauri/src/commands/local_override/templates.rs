@@ -28,11 +28,9 @@ pub async fn local_override_apply_template(
 
     // Auto-subscribe community rule sets referenced by generated rules.
     let mut referenced: Vec<String> = Vec::new();
-    for core in [&ovr.singbox, &ovr.mihomo] {
-        for rule in &core.rules {
-            if rule.match_type == RuleMatchType::RuleSet && !referenced.contains(&rule.target) {
-                referenced.push(rule.target.clone());
-            }
+    for rule in &ovr.singbox.rules {
+        if rule.match_type == RuleMatchType::RuleSet && !referenced.contains(&rule.target) {
+            referenced.push(rule.target.clone());
         }
     }
     let manager = RuleSetManager::new(state.data_dir.clone());
