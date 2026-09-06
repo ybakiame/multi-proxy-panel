@@ -4,7 +4,6 @@ import { listRemotes, listTasks, getRemoteIcon, toErrorMessage } from "@pp/clien
 import { REMOTES_KEY, TASKS_KEY } from "@pp/client-core";
 import type { RemoteResource } from "@pp/client-core";
 import { useCapabilities } from "@pp/client-core";
-import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import RemotesTab from "./RemotesTab";
 import TasksTab from "./TasksTab";
 import ImportTab from "./ImportTab";
@@ -54,7 +53,6 @@ export default function Scripts() {
 
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="脚本" />
       <div>
         <h1 className="text-xl font-semibold">脚本</h1>
         <p className="text-sm text-muted">远程脚本 / 配置片段订阅、定时任务调度与三方配置导入</p>

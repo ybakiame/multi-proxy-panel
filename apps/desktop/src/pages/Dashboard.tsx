@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtom } from "jotai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { listCores, listProfiles, listSubscriptions, proxyStatus, requestVpnPermission } from "@pp/client-core";
+import { listCores, listProfiles, listSubscriptions } from "@pp/client-core";
 import { setActiveCore, setRuleMode as setRuleModeApi, startProxy, stopProxy, toErrorMessage } from "@pp/client-core";
-import { vpnLastError, CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY } from "@pp/client-core";
-import { SUBSCRIPTIONS_KEY, VPN_ERROR_KEY, lastActionErrorAtom } from "@pp/client-core";
+import { CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY } from "@pp/client-core";
+import { SUBSCRIPTIONS_KEY, lastActionErrorAtom } from "@pp/client-core";
 import type { ClientConfig, ClientStatus, LocalCoreView, ProfileView, SubscriptionView } from "@pp/client-core";
 import { useCapabilities, useClientConfig, useProxyStatus, useSaveConfig } from "@pp/client-core";
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
@@ -20,11 +20,6 @@ const RULE_MODES = [
   { id: "direct", label: "直连" },
 ] as const;
 
-/** 等待指定毫秒数（Android 启动确认轮询窗口用）。 */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
@@ -32,7 +27,7 @@ export default function Dashboard() {
   const saveConfigMutation = useSaveConfig();
   // 保存进行中（替代原 store.loading；start/stop 在途由 busy 覆盖）。
   const loading = saveConfigMutation.isPending;
-  // 跨页共享的最近操作错误（Alert 与 TUN/VPN 授权门禁消费）。
+  // 跨页共享的最近操作错误（Alert 与 TUN 授权门禁消费）。
   const [error, setLastError] = useAtom(lastActionErrorAtom);
   const { data: capabilities } = useCapabilities();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
@@ -40,14 +35,6 @@ export default function Dashboard() {
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [vpnAuthBusy, setVpnAuthBusy] = useState(false);
-  // capabilities 异步返回前为 undefined，用 ref 让轮询读到最新平台。
-  const capsRef = useRef(capabilities);
-  useEffect(() => {
-    capsRef.current = capabilities;
-  }, [capabilities]);
-
-  const isAndroid = capabilities?.is_android ?? false;
 
   // ---- TanStack Query: data fetching ----
 
@@ -69,16 +56,6 @@ export default function Dashboard() {
     queryKey: PROFILES_KEY,
     queryFn: listProfiles,
   });
-
-  // Android VPN 启动错误轮询（2s，与 proxy_status 轮询同频）。
-  const { data: vpnErrorData } = useQuery<string | null>({
-    queryKey: VPN_ERROR_KEY,
-    queryFn: vpnLastError,
-    enabled: isAndroid,
-    refetchInterval: 2000,
-    retry: false,
-  });
-  const vpnError = vpnErrorData ?? null;
 
   // ---- Mutations ----
 
@@ -176,63 +153,16 @@ export default function Dashboard() {
     },
   });
 
-  /**
-   * Android 启动确认：Kotlin 核心在后台线程异步启动，`start_proxy` resolve 不代表启动成功
-   * （真正失败仅写入 lastError）。每 500ms 轮询 `vpn_last_error` 与运行状态，3s 窗口内判定：
-   * 有错误 → toastError（不显示成功）；running → toastSuccess；窗口耗尽 → toastWarning（不误报）。
-   * 仅在 Android 分支调用（`vpn_last_error` 命令桌面不存在，调用会失败）。
-   */
-  const confirmAndroidStart = async () => {
-    for (let attempt = 0; attempt < 6; attempt++) {
-      await sleep(500);
-      let lastError: string | null = null;
-      try {
-        // fetchQuery 拉取最新值并同步进缓存（供 VPN 启动失败 Alert 展示）。
-        lastError = await queryClient.fetchQuery<string | null>({
-          queryKey: VPN_ERROR_KEY,
-          queryFn: vpnLastError,
-          retry: false,
-        });
-      } catch {
-        // 命令失败保持当前展示（非致命，避免轮询抖动）。
-      }
-      if (lastError) {
-        // 手动更新 query 缓存以展示错误
-        queryClient.setQueryData<string | null>(VPN_ERROR_KEY, lastError);
-        toastError(lastError);
-        await queryClient.invalidateQueries({ queryKey: PROXY_STATUS_KEY });
-        return;
-      }
-      const status = await queryClient.fetchQuery<ClientStatus>({
-        queryKey: PROXY_STATUS_KEY,
-        queryFn: proxyStatus,
-        retry: false,
-      });
-      if (status.core_running) {
-        toastSuccess("代理已启动");
-        return;
-      }
-    }
-    toastWarning("代理正在后台启动…");
-  };
-
   const handleStart = async () => {
     setBusy("start");
-    // 新一次启动尝试先清掉上一次的失败展示（服务侧 lastError 成功启动后也会清空）。
-    queryClient.setQueryData<string | null>(VPN_ERROR_KEY, null);
     try {
       await startMutation.mutateAsync();
-      if (capsRef.current?.is_android) {
-        // Android：核心异步启动，轮询确认后再提示，避免「启动失败却提示成功」。
-        await confirmAndroidStart();
-      } else {
-        toastSuccess("代理已启动");
-      }
+      toastSuccess("代理已启动");
     } catch (err) {
-      // mutation onError 已记录共享错误（由页面 Alert 展示）；`tun_auth_required` / `vpn_not_authorized`
-      // 走现有引导（TUN 授权页 / VPN 授权按钮）不重复 toast。
+      // mutation onError 已记录共享错误（由页面 Alert 展示）；`tun_auth_required`
+      // 走现有引导（TUN 授权提示）不重复 toast。
       const message = toErrorMessage(err);
-      if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
+      if (!message.includes("tun_auth_required")) {
         toastError(message);
       }
     }
@@ -246,24 +176,11 @@ export default function Dashboard() {
       toastSuccess("代理已停止");
     } catch (err) {
       const message = toErrorMessage(err);
-      if (!message.includes("tun_auth_required") && !message.includes("vpn_not_authorized")) {
+      if (!message.includes("tun_auth_required")) {
         toastError(message);
       }
     }
     setBusy(null);
-  };
-
-  /** 发起系统 VPN 授权（Android）：成功后引导重新启动代理。 */
-  const handleVpnAuth = async () => {
-    setVpnAuthBusy(true);
-    try {
-      await requestVpnPermission();
-      setActionError(null);
-      toastSuccess("VPN 授权成功，请重新启动代理");
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    }
-    setVpnAuthBusy(false);
   };
 
   /** 选择生效订阅：仅持久化 active_subscription_id（单核心，无格式联动）。 */
@@ -307,8 +224,6 @@ export default function Dashboard() {
   const running = status?.core_running ?? false;
   // start_proxy 在 TUN 未授权时返回 `tun_auth_required` 错误，改为引导前往设置页授权。
   const tunAuthRequired = error?.includes("tun_auth_required") ?? false;
-  // Android 下 start_proxy 未获 VPN 授权时返回 `vpn_not_authorized` 前缀错误，改为引导「去授权」。
-  const vpnAuthRequired = error?.includes("vpn_not_authorized") ?? false;
   const alertError = error ?? actionError;
 
   // 运行门禁：不满足时禁止启动并逐条提示。
@@ -329,8 +244,7 @@ export default function Dashboard() {
   if (activeSub && !activeSub.enabled) {
     gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
-  // Android 核心为内置 sing-box libbox（无「选择核心二进制」概念），二进制门禁跳过。
-  if (!isAndroid && (!config?.core_binary || !activeCore)) {
+  if (!config?.core_binary || !activeCore) {
     gateMessages.push("请先选择要使用的核心");
   }
   // 单核心（sing-box）：ClashYaml 订阅由 Rust 侧转换为 sing-box 运行，无格式门禁。
@@ -356,7 +270,7 @@ export default function Dashboard() {
         <p className="text-sm text-muted">代理核心运行状态与启停控制</p>
       </div>
 
-      {alertError && !tunAuthRequired && !vpnAuthRequired && (
+      {alertError && !tunAuthRequired && (
         <Alert status="danger">
           <Alert.Indicator />
           <Alert.Content>
@@ -374,34 +288,6 @@ export default function Dashboard() {
             <Alert.Description>
               代理启动失败：TUN 模式未获得系统授权。请前往「设置 → TUN 模式」点击「立即授权」后重新启动代理。
             </Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
-
-      {vpnAuthRequired && (
-        <Alert status="warning">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>需要 VPN 授权</Alert.Title>
-            <Alert.Description>
-              代理启动失败：Android 系统尚未授权本应用创建 VPN。点击「去授权」完成系统授权后重新启动代理。
-            </Alert.Description>
-            <div className="mt-2">
-              <Button variant="secondary" size="sm" isPending={vpnAuthBusy} onPress={() => void handleVpnAuth()}>
-                去授权
-              </Button>
-            </div>
-          </Alert.Content>
-        </Alert>
-      )}
-
-      {/* Android：libbox 后台启动失败被 start_proxy 静默吞掉，经 vpn_last_error() 轮询兜底展示。 */}
-      {isAndroid && vpnError && (
-        <Alert status="danger">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>VPN 启动失败</Alert.Title>
-            <Alert.Description className="break-all">{vpnError}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
@@ -447,46 +333,38 @@ export default function Dashboard() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="dashboard-core">核心</Label>
-              {isAndroid ? (
-                // Android 核心为内置 sing-box libbox，无切换 UI，只读展示。
-                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-sm">
-                  <span className="font-medium">自动（sing-box）</span>
-                  <span className="ml-2 text-xs text-muted">（Android 内置核心）</span>
-                </div>
-              ) : (
-                // 桌面分支：单核心（sing-box），列出全部可用二进制。
-                <Select
-                  key="core-desktop"
-                  id="dashboard-core"
-                  aria-label="核心二进制"
-                  value={activeCore?.path ?? ""}
-                  onChange={(key) => void handleSelectCore(String(key ?? ""))}
-                  placeholder="请选择核心"
-                  isDisabled={cores.length === 0}
-                  fullWidth
-                >
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      {cores.length === 0 ? (
-                        <ListBox.Item key="__empty" id="__empty" textValue="暂无可用核心">
-                          暂无可用核心
+              {/* 桌面：单核心（sing-box），列出全部可用二进制。 */}
+              <Select
+                key="core-desktop"
+                id="dashboard-core"
+                aria-label="核心二进制"
+                value={activeCore?.path ?? ""}
+                onChange={(key) => void handleSelectCore(String(key ?? ""))}
+                placeholder="请选择核心"
+                isDisabled={cores.length === 0}
+                fullWidth
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {cores.length === 0 ? (
+                      <ListBox.Item key="__empty" id="__empty" textValue="暂无可用核心">
+                        暂无可用核心
+                      </ListBox.Item>
+                    ) : (
+                      cores.map((core) => (
+                        <ListBox.Item key={core.path} id={core.path} textValue={`sing-box ${core.version}`}>
+                          sing-box {core.version}
+                          <ListBox.ItemIndicator />
                         </ListBox.Item>
-                      ) : (
-                        cores.map((core) => (
-                          <ListBox.Item key={core.path} id={core.path} textValue={`sing-box ${core.version}`}>
-                            sing-box {core.version}
-                            <ListBox.ItemIndicator />
-                          </ListBox.Item>
-                        ))
-                      )}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-              )}
+                      ))
+                    )}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
             </div>
           </div>
 
@@ -499,42 +377,39 @@ export default function Dashboard() {
             <span className="text-xs text-warning">使用旧版 Hub 订阅（deprecated），建议到「订阅」页添加订阅</span>
           )}
 
-          {/* 系统代理 / MITM 为桌面专属开关：Android 由 VpnService 接管流量，
-              两个开关无效故隐藏（保留运行配置其余部分）。 */}
-          {!isAndroid && (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <Switch
-                  isSelected={config?.mitm_enabled ?? false}
-                  isDisabled={!config || loading || busy !== null}
-                  onChange={(next) => void persistConfig({ mitm_enabled: next })}
-                >
-                  <Switch.Content>
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                    启用 MITM
-                  </Switch.Content>
-                </Switch>
-                <span className="text-xs text-muted">拦截并解密 HTTPS 流量（重写/脚本钩子），重启代理生效</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Switch
-                  isSelected={config?.system_proxy_enabled ?? false}
-                  isDisabled={!config || loading || busy !== null}
-                  onChange={(next) => void persistConfig({ system_proxy_enabled: next })}
-                >
-                  <Switch.Content>
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                    启用系统代理
-                  </Switch.Content>
-                </Switch>
-                <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
-              </div>
+          {/* 系统代理 / MITM 开关（桌面由核心直接接管系统流量）。 */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <Switch
+                isSelected={config?.mitm_enabled ?? false}
+                isDisabled={!config || loading || busy !== null}
+                onChange={(next) => void persistConfig({ mitm_enabled: next })}
+              >
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  启用 MITM
+                </Switch.Content>
+              </Switch>
+              <span className="text-xs text-muted">拦截并解密 HTTPS 流量（重写/脚本钩子），重启代理生效</span>
             </div>
-          )}
+            <div className="flex flex-col gap-1">
+              <Switch
+                isSelected={config?.system_proxy_enabled ?? false}
+                isDisabled={!config || loading || busy !== null}
+                onChange={(next) => void persistConfig({ system_proxy_enabled: next })}
+              >
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  启用系统代理
+                </Switch.Content>
+              </Switch>
+              <span className="text-xs text-muted">接管系统代理设置指向核心 mixed 入口，随代理启停生效</span>
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center gap-4">
             <Button variant="secondary" size="lg" isDisabled={!canPreview} onPress={() => setPreviewOpen(true)}>

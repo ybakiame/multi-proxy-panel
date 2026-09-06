@@ -7,19 +7,16 @@ export interface RuleEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   initial?: LocalRuleView | null;
-  isAndroid: boolean;
   onSave: (rule: LocalRuleInput) => void;
 }
 
 /** 规则表单内容，key 由调用方控制，确保 initial 变化时重新挂载、状态重置。 */
 function RuleEditForm({
   initial,
-  isAndroid,
   onSave,
   onClose,
 }: {
   initial?: LocalRuleView | null;
-  isAndroid: boolean;
   onSave: (rule: LocalRuleInput) => void;
   onClose: () => void;
 }) {
@@ -31,8 +28,8 @@ function RuleEditForm({
   const [noResolve, setNoResolve] = useState(initial?.no_resolve ?? false);
   const [invert, setInvert] = useState(initial?.invert ?? false);
 
-  const matchTypeOptions = useMemo(() => {
-    const base = [
+  const matchTypeOptions = useMemo(
+    () => [
       { id: "domain", label: "域名 (domain)" },
       { id: "domain_suffix", label: "域名后缀 (domain_suffix)" },
       { id: "domain_keyword", label: "域名关键词 (domain_keyword)" },
@@ -41,12 +38,10 @@ function RuleEditForm({
       { id: "rule_set", label: "规则集 (rule_set)" },
       { id: "port", label: "端口 (port)" },
       { id: "final", label: "最终规则 (final)" },
-    ];
-    if (isAndroid) {
-      return [...base, { id: "app_package", label: "应用包名 (app_package)" }];
-    }
-    return [...base, { id: "process_name", label: "进程名 (process_name)" }];
-  }, [isAndroid]);
+      { id: "process_name", label: "进程名 (process_name)" },
+    ],
+    [],
+  );
 
   const handleSave = useCallback(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -193,7 +188,7 @@ function RuleEditForm({
   );
 }
 
-export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: RuleEditModalProps) {
+export function RuleEditModal({ isOpen, onClose, initial, onSave }: RuleEditModalProps) {
   // key 确保 initial 变化时表单重新挂载、状态重置
   const formKey = initial?.id ?? "__new__";
 
@@ -210,7 +205,7 @@ export function RuleEditModal({ isOpen, onClose, initial, isAndroid, onSave }: R
           <Modal.Header>
             <Modal.Heading>{initial ? "编辑规则" : "新增规则"}</Modal.Heading>
           </Modal.Header>
-          <RuleEditForm key={formKey} initial={initial} isAndroid={isAndroid} onSave={onSave} onClose={onClose} />
+          <RuleEditForm key={formKey} initial={initial} onSave={onSave} onClose={onClose} />
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>

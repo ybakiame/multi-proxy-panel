@@ -5,7 +5,6 @@ import { getMitmCa, listTraffic } from "@pp/client-core";
 import type { TrafficRecord } from "@pp/client-core";
 import { MITM_CA_KEY, TRAFFIC_KEY } from "@pp/client-core";
 import { useClientConfig, useSaveConfig } from "@pp/client-core";
-import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 
 interface HostnameEditorProps {
   initialHostnames: string;
@@ -121,7 +120,6 @@ export default function Mitm() {
 
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="MITM" />
       <div>
         <h1 className="text-xl font-semibold">MITM</h1>
         <p className="text-sm text-muted">中间人代理的 CA 证书、抓包白名单与记录</p>

@@ -20,8 +20,6 @@ import type {
   LocalRuleView,
   RuleSetStatusView,
 } from "@pp/client-core";
-import { useCapabilities } from "@pp/client-core";
-import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import { toastError, toastSuccess } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
@@ -36,9 +34,6 @@ async function fetchRulesData(): Promise<{ override: LocalOverrideView; ruleSets
 }
 
 export default function Rules() {
-  const { data: capabilities } = useCapabilities();
-  const isAndroid = capabilities?.is_android ?? false;
-
   const queryClient = useQueryClient();
 
   const {
@@ -202,7 +197,6 @@ export default function Rules() {
 
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="规则" />
       <div>
         <h1 className="text-xl font-semibold">规则</h1>
         <p className="text-sm text-muted">本地规则卡片、场景模板与规则集订阅管理</p>
@@ -317,7 +311,6 @@ export default function Rules() {
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
         initial={editingRule}
-        isAndroid={isAndroid}
         onSave={(r) => void handleSaveRule(r)}
       />
 

@@ -2,11 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
-import { toErrorMessage, platformInfo, tunAuthStatus } from "@pp/client-core";
-import { CONFIG_KEY, NOTIF_PERM_KEY, PLATFORM_KEY, TUN_AUTH_KEY } from "@pp/client-core";
+import { toErrorMessage, tunAuthStatus } from "@pp/client-core";
+import { CONFIG_KEY, TUN_AUTH_KEY } from "@pp/client-core";
 import { lastActionErrorAtom } from "@pp/client-core";
 import { useClientConfig, useSaveConfig } from "@pp/client-core";
-import { isPermissionGranted } from "@tauri-apps/plugin-notification";
 import type { ClientConfig } from "@pp/client-core";
 
 // TODO: read version from package.json (build-time injection or runtime read)
@@ -29,8 +28,6 @@ export const CLASH_UI_OPTIONS = [
 export interface UseSettingsConfigReturn {
   config: ClientConfig | null;
   error: string | null;
-  os: string | null;
-  isAndroid: boolean;
   mixedPort: number;
   setMixedPort: (value: number) => void;
   tunEnabled: boolean;
@@ -65,10 +62,6 @@ export interface UseSettingsConfigReturn {
   setProxyTestError: (value: string | null) => void;
   persist: (patch: Partial<ClientConfig>) => Promise<void>;
   persistDebounced: (patch: Partial<ClientConfig>) => void;
-  notifPerm: string;
-  setNotifPerm: (value: string) => void;
-  notifPermBusy: boolean;
-  setNotifPermBusy: (value: boolean) => void;
 }
 
 export function useSettingsConfig(): UseSettingsConfigReturn {
@@ -93,17 +86,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [proxyTestResult, setProxyTestResult] = useState<string | null>(null);
   const [proxyTestError, setProxyTestError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [notifPermBusy, setNotifPermBusy] = useState(false);
-
-  // 平台探测（Android 显示「打开下载目录」引导；失败按桌面渲染）。
-  const { data: platformData } = useQuery<{ os: string }>({
-    queryKey: PLATFORM_KEY,
-    queryFn: platformInfo,
-    staleTime: Infinity,
-    retry: false,
-  });
-
-  const os = platformData?.os ?? null;
 
   // config 变化时在渲染期间同步表单本地状态（React 推荐的 adjust-state-during-render
   // 模式，替代 effect 内同步 setState，满足 React Compiler 的 set-state-in-effect 限制）。
@@ -123,24 +105,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
       setFetchViaLocalProxy(config.fetch_via_local_proxy);
     }
   }
-
-  const isAndroid = os === "android";
-
-  // Android 通知权限查询（Query 缓存为权威源；失败保持 unknown）。
-  const { data: notifPermData } = useQuery<string>({
-    queryKey: NOTIF_PERM_KEY,
-    queryFn: async () => ((await isPermissionGranted()) ? "granted" : "denied"),
-    enabled: isAndroid,
-    retry: false,
-  });
-  const notifPerm = notifPermData ?? "unknown";
-  // 申请权限后直接回写缓存（NotificationSettings 消费）。
-  const setNotifPerm = useCallback(
-    (value: string) => {
-      queryClient.setQueryData(NOTIF_PERM_KEY, value);
-    },
-    [queryClient],
-  );
 
   /**
    * 配置即时保存：从 Query 缓存取最新配置叠加补丁（避免闭包旧值）。
@@ -185,7 +149,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const { data: tunAuthData } = useQuery<string>({
     queryKey: TUN_AUTH_KEY,
     queryFn: tunAuthStatus,
-    enabled: !isAndroid && tunEnabled,
+    enabled: tunEnabled,
     retry: false,
   });
   // TUN 关闭时不展示授权状态。
@@ -201,8 +165,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   return {
     config,
     error,
-    os,
-    isAndroid,
     mixedPort,
     setMixedPort,
     tunEnabled,
@@ -237,9 +199,5 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     setProxyTestError,
     persist,
     persistDebounced,
-    notifPerm,
-    setNotifPerm,
-    notifPermBusy,
-    setNotifPermBusy,
   };
 }

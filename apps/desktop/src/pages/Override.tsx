@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createProfile, deleteProfile, getProfile, listProfiles, toErrorMessage, updateProfile } from "@pp/client-core";
 import { PROFILES_KEY, profileKey } from "@pp/client-core";
 import type { ProfileView } from "@pp/client-core";
-import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
 import { ProfileEditor } from "./OverrideEditor";
 import { CreateProfileModal, DeleteProfileDialog } from "./OverrideModals";
 
@@ -122,7 +121,6 @@ export default function Override() {
 
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="覆写" />
       <div>
         <h1 className="text-xl font-semibold">覆写</h1>
         <p className="text-sm text-muted">

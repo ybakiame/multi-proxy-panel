@@ -1,19 +1,9 @@
 import { useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@heroui/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  clearLogs,
-  exportLogs,
-  getLogs,
-  listLogFiles,
-  openExportDir,
-  platformInfo,
-  readLogFileTail,
-  toErrorMessage,
-} from "@pp/client-core";
+import { clearLogs, exportLogs, getLogs, listLogFiles, readLogFileTail, toErrorMessage } from "@pp/client-core";
 import type { LogEntry } from "@pp/client-core";
-import { LOGS_KEY, LOG_FILES_KEY, PLATFORM_KEY } from "@pp/client-core";
-import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
+import { LOGS_KEY, LOG_FILES_KEY } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
 
 /** 级别过滤选项（空串 = 不过滤；其余与后端 `min_level` 对齐，默认 info）。 */
@@ -63,15 +53,6 @@ function formatTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
-/**
- * Android 应用数据目录路径美化：`/data/user/0/` 是 Android 多用户符号链接
- * （`0` = 主用户），与 `/data/data/` 指向同一目录；展示为更通用、用户更熟悉的
- * `/data/data/` 等价形式。非 Android 路径原样返回。
- */
-function beautifyAndroidPath(path: string): string {
-  return path.replace(/^\/data\/user\/0\//, "/data/data/");
-}
-
 const LOGS_REFETCH_INTERVAL_MS = 2000;
 
 export default function Logs() {
@@ -86,18 +67,6 @@ export default function Logs() {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
-
-  const { data: os } = useQuery<string>({
-    queryKey: PLATFORM_KEY,
-    queryFn: async () => {
-      const info = await platformInfo();
-      return info.os;
-    },
-    staleTime: Infinity,
-    retry: false,
-  });
-
-  const isAndroid = os === "android";
 
   const {
     data: entries = [],
@@ -192,17 +161,8 @@ export default function Logs() {
     }
   };
 
-  const handleOpenDownloads = async () => {
-    try {
-      await openExportDir();
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="日志" />
       <div>
         <h1 className="text-xl font-semibold">日志</h1>
         <p className="text-sm text-muted">后端与前端错误日志（内存环形缓冲，最新在前）</p>
@@ -315,14 +275,9 @@ export default function Logs() {
           </div>
           {exportPath && (
             <div className="flex min-w-0 items-center gap-2 text-xs">
-              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={beautifyAndroidPath(exportPath)}>
-                {beautifyAndroidPath(exportPath)}
+              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={exportPath}>
+                {exportPath}
               </span>
-              {isAndroid && (
-                <Button size="sm" variant="secondary" onPress={() => void handleOpenDownloads()}>
-                  打开下载目录
-                </Button>
-              )}
               <Button size="sm" variant="tertiary" onPress={() => void handleCopyPath()}>
                 {exportCopied ? "已复制" : "复制"}
               </Button>

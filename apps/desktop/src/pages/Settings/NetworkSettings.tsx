@@ -10,7 +10,6 @@ interface NetworkSettingsProps {
 
 export default function NetworkSettings({ settings }: NetworkSettingsProps) {
   const {
-    isAndroid,
     mixedPort,
     setMixedPort,
     tunEnabled,
@@ -46,9 +45,7 @@ export default function NetworkSettings({ settings }: NetworkSettingsProps) {
     <Card>
       <Card.Header>
         <Card.Title>网络设置</Card.Title>
-        <Card.Description>
-          {isAndroid ? "本地混合端口与 VPN 服务（TUN）配置" : "本地混合端口与虚拟网卡（TUN）配置"}
-        </Card.Description>
+        <Card.Description>本地混合端口与虚拟网卡（TUN）配置</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
@@ -70,30 +67,25 @@ export default function NetworkSettings({ settings }: NetworkSettingsProps) {
           />
         </div>
 
-        {/* TUN 区：桌面以开关启用并需提权授权；Android 由 VpnService（TUN）恒接管
-            全部流量，以静态说明替代开关且不展示提权相关区域。协议栈与自动路由两平台
-            均可编辑（持久化后参与合成 tun 入站）。 */}
-        {isAndroid ? (
-          <span className="text-sm text-muted">Android 始终通过 VPN 服务（TUN）接管全部流量</span>
-        ) : (
-          <Switch
-            isSelected={tunEnabled}
-            onChange={(next) => {
-              setTunEnabled(next);
-              void persist({ tun_enabled: next });
-            }}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-              启用 TUN 模式
-            </Switch.Content>
-          </Switch>
-        )}
+        {/* TUN 区：桌面以开关启用并需提权授权；协议栈与自动路由两平台
+             均可编辑（持久化后参与合成 tun 入站）。 */}
+        <Switch
+          isSelected={tunEnabled}
+          onChange={(next) => {
+            setTunEnabled(next);
+            void persist({ tun_enabled: next });
+          }}
+        >
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+            启用 TUN 模式
+          </Switch.Content>
+        </Switch>
 
-        {/* TUN 授权区仅桌面展示：Android 由 VpnService 系统授权，无提权语义。 */}
-        {!isAndroid && tunEnabled && (
+        {/* TUN 授权区（桌面）：核心需系统提权授权。 */}
+        {tunEnabled && (
           <div className="flex flex-col gap-3">
             {tunAuth === "authorized" && (
               <div className="flex items-center gap-2">
@@ -197,18 +189,16 @@ export default function NetworkSettings({ settings }: NetworkSettingsProps) {
           </div>
         </div>
 
-        {/* 权限说明仅桌面展示：Android 无 TUN 提权概念。 */}
-        {!isAndroid && (
-          <Alert status="default">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>权限说明</Alert.Title>
-              <Alert.Description>
-                TUN 模式需要管理员 / root 权限；设置页的 TUN / Clash 面板配置优先级高于协议配置中的覆写
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
+        {/* 权限说明 */}
+        <Alert status="default">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>权限说明</Alert.Title>
+            <Alert.Description>
+              TUN 模式需要管理员 / root 权限；设置页的 TUN / Clash 面板配置优先级高于协议配置中的覆写
+            </Alert.Description>
+          </Alert.Content>
+        </Alert>
       </Card.Content>
     </Card>
   );

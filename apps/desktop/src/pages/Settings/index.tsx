@@ -5,11 +5,10 @@ import GithubSettings from "./GithubSettings";
 import ClashPanelSettings from "./ClashPanelSettings";
 import CoreManagement from "./CoreManagement";
 import AboutSection from "./AboutSection";
-import NotificationSettings from "./NotificationSettings";
 
 export default function Settings() {
   const settings = useSettingsConfig();
-  const { error, isAndroid } = settings;
+  const { error } = settings;
 
   return (
     <div className="flex max-w-xl flex-col gap-6">
@@ -26,8 +25,7 @@ export default function Settings() {
       <GithubSettings settings={settings} />
       <ClashPanelSettings settings={settings} />
 
-      {/* 核心管理：Android 核心为内置 libbox，无「选择核心二进制 / 下载 / 删除」概念，整卡隐藏。 */}
-      {!isAndroid && <CoreManagement settings={settings} />}
+      <CoreManagement settings={settings} />
 
       {error && (
         <Alert status="danger">
@@ -40,9 +38,6 @@ export default function Settings() {
       )}
 
       <AboutSection />
-
-      {/* Notification settings (Android only) */}
-      {isAndroid && <NotificationSettings settings={settings} />}
     </div>
   );
 }

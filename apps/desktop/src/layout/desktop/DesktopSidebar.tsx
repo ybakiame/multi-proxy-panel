@@ -16,10 +16,7 @@ function visibleNavItems(capabilities: ReturnType<typeof useCapabilities>["data"
   });
 }
 
-/**
- * 桌面端侧栏：`lg`（1024px）及以上常显，`lg` 以下隐藏
- * （导航收进移动端底部 TabBar，见 `./MobileTabBar`）。
- */
+/** 桌面端侧栏：主界面唯一导航（桌面客户端仅跑桌面，`lg` 起常显）。 */
 export function DesktopSidebar() {
   const { data: capabilities } = useCapabilities();
   const items = visibleNavItems(capabilities);

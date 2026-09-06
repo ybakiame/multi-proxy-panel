@@ -1,13 +1,11 @@
-import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { ToastProvider, useTheme } from "@heroui/react";
-import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { toastModeOverride } from "@pp/client-core";
 import { Toaster } from "./components/Toaster";
 import { isTauriEnv } from "@pp/client-core";
 import { setToastMode } from "@pp/client-core";
-import { useCapabilities } from "@pp/client-core";
 import { DesktopSidebar } from "./layout/desktop/DesktopSidebar";
-import { MobileTabBar } from "./layout/mobile/MobileTabBar";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Mitm from "./pages/Mitm";
@@ -19,37 +17,6 @@ import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 import Tools from "./pages/Tools";
 import Connections from "./pages/Connections";
-
-/** 底部 TabBar 显式路由：仅这四个主 Tab 显示底部导航。 */
-const MAIN_TAB_PATHS = ["/", "/proxies", "/tools", "/settings"];
-
-/** 判断当前路由是否为主 Tab（底部 TabBar 应显示）。 */
-function useIsMainTab(): boolean {
-  const { pathname } = useLocation();
-  return useMemo(() => MAIN_TAB_PATHS.includes(pathname), [pathname]);
-}
-
-/**
- * /mitm route guard: redirects to home on Android (where mitm capability is false).
- */
-function MitmGuard() {
-  const { data: caps } = useCapabilities();
-  if (caps && !caps.capabilities.mitm) {
-    return <Navigate to="/" replace />;
-  }
-  return <Mitm />;
-}
-
-/**
- * /scripts route guard: redirects to home on Android (where scripts_remote capability is false).
- */
-function ScriptsGuard() {
-  const { data: caps } = useCapabilities();
-  if (caps && !caps.capabilities.scripts_remote) {
-    return <Navigate to="/" replace />;
-  }
-  return <Scripts />;
-}
 
 /**
  * 渲染期错误兜底：捕获子组件渲染时的未处理异常，展示错误信息与
@@ -132,29 +99,14 @@ function ThemeBootstrap() {
  */
 /**
  * 应用内容层：依赖 Router context（useLocation），需在 HashRouter 内部渲染。
- *
- * 移动端安全区适配（Tauri Android 已 enableEdgeToEdge）：
- * - 顶部：主 Tab 页面保留原有标题区，子页由 MobileBackHeader 处理；
- *   整体容器加 `env(safe-area-inset-top)` padding（仅移动端 lg 以下）。
- * - 底部：主 Tab 页内容区需留出 TabBar 高度 + `env(safe-area-inset-bottom)`；
- *   子页仅需 safe-area-inset-bottom（无 TabBar）。桌面端不受影响。
+ * 桌面端统一由侧边栏主导航，主内容区使用常规内边距布局。
  */
 function AppContent() {
-  const isMainTab = useIsMainTab();
-
   return (
     <div className="flex h-full min-h-screen bg-background text-foreground">
       <DesktopSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <main
-          className="flex-1 overflow-y-auto p-4 lg:p-6"
-          style={{
-            paddingTop: "max(1rem, env(safe-area-inset-top))",
-            paddingBottom: isMainTab
-              ? "calc(5rem + env(safe-area-inset-bottom))"
-              : "max(1rem, env(safe-area-inset-bottom))",
-          }}
-        >
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/proxies" element={<Proxies />} />
@@ -162,15 +114,14 @@ function AppContent() {
             <Route path="/tools" element={<Tools />} />
             <Route path="/rules" element={<Rules />} />
             <Route path="/connections" element={<Connections />} />
-            <Route path="/mitm" element={<MitmGuard />} />
-            <Route path="/scripts" element={<ScriptsGuard />} />
+            <Route path="/mitm" element={<Mitm />} />
+            <Route path="/scripts" element={<Scripts />} />
             <Route path="/override" element={<Override />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
-        {isMainTab && <MobileTabBar />}
       </div>
     </div>
   );

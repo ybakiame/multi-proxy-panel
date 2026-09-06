@@ -3,7 +3,6 @@ import { Button, Card } from "@heroui/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CONFIG_KEY } from "@pp/client-core";
 import ConfigPreviewModal from "../../components/ConfigPreviewModal";
-import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
 import { useSubscriptionData } from "./useSubscriptionData";
 import { SubscriptionTable } from "./SubscriptionTable";
 import { SubscriptionAlerts } from "./SubscriptionAlerts";
@@ -57,7 +56,6 @@ export default function Nodes() {
 
   return (
     <div className="flex flex-col gap-6">
-      <MobileBackHeader title="订阅" />
       <div>
         <h1 className="text-xl font-semibold">订阅</h1>
         <p className="text-sm text-muted">
