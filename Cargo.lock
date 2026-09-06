@@ -4920,6 +4920,7 @@ dependencies = [
  "tauri",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-appender",
