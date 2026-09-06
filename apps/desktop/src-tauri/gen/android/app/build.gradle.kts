@@ -27,7 +27,7 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
         // ABI 裁剪：仅保留 arm64 真机 + x86_64 模拟器，控制包体。
-        // libbox.aar / 未来 mihomo.aar 内多余 ABI 的 .so 由 abiFilters 在打包时剔除。
+        // panelcore.aar 内多余 ABI 的 .so 由 abiFilters 在打包时剔除。
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -73,9 +73,8 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
-    // panelcore（合并核心）Android 库，由 scripts/build-panel-core.sh 合并构建，
-    // 同时含 sing-box libbox 与 mihomo 双核心绑定（gomobile 单库单运行时，
-    // 避免 libbox.aar + mihomo.aar 双 go.* 运行时冲突），本地构建产物，不入库。
+    // panelcore Android 库（sing-box libbox 的 gomobile 绑定），由
+    // apps/android/scripts/build-panel-core.sh 构建，本地构建产物，不入库。
     implementation(files("libs/panelcore.aar"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")

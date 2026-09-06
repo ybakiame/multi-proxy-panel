@@ -1,12 +1,10 @@
 /src/main/**/generated
 /src/main/jniLibs/**/*.so
-# libbox.aar 为 GPL-3.0 本地构建产物（体积大），不入库，用 scripts/build-libbox.sh 构建
+# panelcore.aar 为 GPL-3.0 本地构建产物（体积大），不入库，用 apps/android/scripts/build-panel-core.sh 构建
 /libs/*.aar
 # gomobile bind 生成的 sources jar 一并忽略
 /libs/*-sources.jar
 /src/main/assets/tauri.conf.json
-# GEO 数据三件套为下载产物（体积大），不入库，用 scripts/update-android-geodata.sh 生成
-/src/main/assets/geo/
 /tauri.build.gradle.kts
 /proguard-tauri.pro
 /tauri.properties

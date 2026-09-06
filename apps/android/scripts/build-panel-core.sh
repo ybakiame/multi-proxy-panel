@@ -3,9 +3,8 @@ set -euo pipefail
 
 # ProxyPanel Android 客户端 panelcore.aar 源码构建脚本
 #
-# 将 android/panel-core（module: panelcore）一次 gomobile bind 同时导出
-# sing-box libbox + mihomo wrapper，产出单一 panelcore.aar（本地构建产物，
-# 不入库）。解决两个独立 AAR 内嵌相同 go.* 运行时类冲突无法共存的问题。
+# 将 android/panel-core（module: panelcore）gomobile bind 导出 sing-box
+# libbox 绑定，产出 panelcore.aar（本地构建产物，不入库）。
 #
 # 用法:
 #   ./apps/android/scripts/build-panel-core.sh [OUTPUT_AAR]
@@ -27,7 +26,7 @@ set -euo pipefail
 #     上游 golang.org/x/mobile 以 go1.24/1.25/1.26 构建时会出现
 #     `invalid reference to os.checkPidfdOnce` 链接错误。
 #   - bind 参数逐项对齐 sing-box 官方 cmd/internal/build_libbox（v1.12.9）：
-#     -tags 并集 = mihomo `cmfa` + libbox release tags
+#     -tags = libbox release tags
 #     （with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,
 #     with_conntrack,with_tailscale）
 #     -ldflags 含 `-checklinkname=0`（官方 release 构建同款）、
@@ -37,12 +36,12 @@ set -euo pipefail
 #   - ABI 只编 arm64-v8a + x86_64，与
 #     apps/desktop/src-tauri/gen/android/app/build.gradle.kts 的
 #     abiFilters 对齐。
-#   - libbox 包不在本 module 内，由 mihomocore/gomobile.go 的 blank import
+#   - libbox 包不在本 module 内，由 panel-core/pin.go 的 blank import
 #     钉进 go.mod，gobind 的 packages.Load 方可解析。
 #
 # 许可约束（重要）:
-#   sing-box 与 mihomo 均遵循 GPL-3.0 许可，合并构建产物 panelcore.aar
-#   同样受 GPL-3.0 约束，分发应用前请确保满足开源/源码可得性要求。
+#   sing-box 遵循 GPL-3.0 许可，构建产物 panelcore.aar 同样受 GPL-3.0
+#   约束，分发应用前请确保满足开源/源码可得性要求。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -117,8 +116,8 @@ command -v gomobile >/dev/null 2>&1 || { echo "error: gomobile 安装失败" >&2
 command -v gobind >/dev/null 2>&1 || { echo "error: gobind 安装失败" >&2; exit 1; }
 gomobile init
 
-# 2. 构建 AAR（一次 bind 合并 libbox + mihomocore，参数对齐 build_libbox）
-echo "==> 构建 panelcore.aar（libbox + mihomocore，多 ABI，耗时较长）..."
+# 2. 构建 AAR（bind libbox，参数对齐 build_libbox）
+echo "==> 构建 panelcore.aar（libbox，多 ABI，耗时较长）..."
 mkdir -p "$(dirname "$OUTPUT_AAR")"
 cd "$REPO_ROOT/apps/android/panel-core"
 gomobile bind -v -x \
@@ -128,9 +127,9 @@ gomobile bind -v -x \
     -trimpath \
     -buildvcs=false \
     -ldflags "-X github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION_NUM -s -w -buildid= -checklinkname=0" \
-    -tags "cmfa,with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_conntrack,with_tailscale" \
+    -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_conntrack,with_tailscale" \
     -o "$OUTPUT_AAR" \
-    panelcore/mihomocore github.com/sagernet/sing-box/experimental/libbox
+    github.com/sagernet/sing-box/experimental/libbox
 
 if [[ ! -f "$OUTPUT_AAR" ]]; then
     echo "error: 构建完成但未找到 $OUTPUT_AAR" >&2

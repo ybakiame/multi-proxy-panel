@@ -26,13 +26,10 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** start command args: core config content (sing-box JSON / mihomo YAML), core type, and notification prefs. */
+/** start command args: core config content (sing-box JSON) and notification prefs. */
 @InvokeArg
 class StartArgs {
   var config: String? = null
-
-  /** Core type: `mihomo` -> [MihomoVpnService], default/other -> [ProxyVpnService]. */
-  var core: String? = null
 
   /** Whether to show traffic in the VPN notification. */
   var showTraffic: Boolean = true
@@ -109,17 +106,6 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
-    // Core dispatch: `core == "mihomo"` -> MihomoVpnService, default/other -> ProxyVpnService.
-    val useMihomo = args.core == "mihomo"
-    val serviceClass: Class<*> =
-      if (useMihomo) MihomoVpnService::class.java else ProxyVpnService::class.java
-    val extraConfig =
-      if (useMihomo) MihomoVpnService.EXTRA_CONFIG else ProxyVpnService.EXTRA_CONFIG
-    val extraShowTraffic =
-      if (useMihomo) MihomoVpnService.EXTRA_SHOW_TRAFFIC else ProxyVpnService.EXTRA_SHOW_TRAFFIC
-    val extraShowSelection =
-      if (useMihomo) MihomoVpnService.EXTRA_SHOW_SELECTION else ProxyVpnService.EXTRA_SHOW_SELECTION
-
     val prepareIntent = VpnService.prepare(activity)
     if (prepareIntent != null) {
       // Not authorized: reject with fixed error code, Rust side forwards to frontend for guidance.
@@ -127,23 +113,20 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
-    // Mutual exclusion + restart: stop any running service before starting new one
+    // Restart: stop any running service before starting new one
     // to avoid concurrent core startup.
     if (ProxyVpnService.running) {
       activity.stopService(Intent(activity, ProxyVpnService::class.java))
-    }
-    if (MihomoVpnService.running) {
-      activity.stopService(Intent(activity, MihomoVpnService::class.java))
     }
 
     // Persist notification prefs from start args (for initial launch).
     notifyShowTraffic = args.showTraffic
     notifyShowSelection = args.showSelection
 
-    val intent = Intent(activity, serviceClass)
-      .putExtra(extraConfig, config)
-      .putExtra(extraShowTraffic, args.showTraffic)
-      .putExtra(extraShowSelection, args.showSelection)
+    val intent = Intent(activity, ProxyVpnService::class.java)
+      .putExtra(ProxyVpnService.EXTRA_CONFIG, config)
+      .putExtra(ProxyVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
+      .putExtra(ProxyVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
     try {
       ContextCompat.startForegroundService(activity, intent)
       invoke.resolve()
@@ -154,29 +137,13 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun stop(invoke: Invoke) {
-    // 两个服务都处理：谁在运行停谁（幂等——实例已销毁时 stopService 无副作用）。
-    stopServiceIfAlive(
-      ProxyVpnService::class.java,
-      ProxyVpnService.instanceAlive,
-      ProxyVpnService.ACTION_STOP,
-    )
-    stopServiceIfAlive(
-      MihomoVpnService::class.java,
-      MihomoVpnService.instanceAlive,
-      MihomoVpnService.ACTION_STOP,
-    )
-    invoke.resolve()
-  }
-
-  /**
-   * 对指定 VPN 服务派发显式 stop：实例存活（含启动中）时发 ACTION_STOP intent，
-   * 服务 onStartCommand 处理时有序关闭核心（后台线程）→ 退前台 → 自停 →
-   * running 复位；裸 stopService 只走 onDestroy，close 仍阻塞主线程且不记录
-   * lastError。实例已销毁时回退裸 stopService 兜底幂等清理。
-   */
-  private fun stopServiceIfAlive(serviceClass: Class<*>, alive: Boolean, stopAction: String) {
-    if (alive) {
-      val intent = Intent(activity, serviceClass).setAction(stopAction)
+    // 实例存活（含启动中）时发 ACTION_STOP intent，服务 onStartCommand 处理时
+    // 有序关闭核心（后台线程）→ 退前台 → 自停 → running 复位；裸 stopService
+    // 只走 onDestroy，close 仍阻塞主线程且不记录 lastError。实例已销毁时回退
+    // 裸 stopService 兜底幂等清理（stopService 幂等——实例已销毁时无副作用）。
+    if (ProxyVpnService.instanceAlive) {
+      val intent = Intent(activity, ProxyVpnService::class.java)
+        .setAction(ProxyVpnService.ACTION_STOP)
       try {
         ContextCompat.startForegroundService(activity, intent)
       } catch (e: Exception) {
@@ -185,8 +152,9 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         activity.stopService(intent)
       }
     } else {
-      activity.stopService(Intent(activity, serviceClass))
+      activity.stopService(Intent(activity, ProxyVpnService::class.java))
     }
+    invoke.resolve()
   }
 
   @Command
@@ -210,45 +178,24 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         Log.w("VpnPlugin", "forward prefs to ProxyVpnService failed: ${e.message}")
       }
     }
-    if (MihomoVpnService.instanceAlive) {
-      val intent = Intent(activity, MihomoVpnService::class.java)
-        .setAction(MihomoVpnService.ACTION_UPDATE_PREFS)
-        .putExtra(MihomoVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
-        .putExtra(MihomoVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
-      try {
-        ContextCompat.startForegroundService(activity, intent)
-      } catch (e: Exception) {
-        Log.w("VpnPlugin", "forward prefs to MihomoVpnService failed: ${e.message}")
-      }
-    }
     invoke.resolve()
   }
 
   @Command
   fun isRunning(invoke: Invoke) {
     val result = JSObject()
-    result.put("running", ProxyVpnService.running || MihomoVpnService.running)
-    // last_error: prioritize the side that is not running and has an error (most recent failure);
-    // when neither has an error, take the non-null one, in reverse order of
-    // ProxyVpnService.lastError ?: MihomoVpnService.lastError (mihomo优先).
+    result.put("running", ProxyVpnService.running)
+    // last_error: 核心最近一次启动失败原因；未运行且无错误时取残留值。
     // When null, the key is removed by JSONObject, and Rust side `#[serde(default)]` falls back to None.
-    val lastError =
-      when {
-        !MihomoVpnService.running && MihomoVpnService.lastError != null ->
-          MihomoVpnService.lastError
-        !ProxyVpnService.running && ProxyVpnService.lastError != null ->
-          ProxyVpnService.lastError
-        else -> MihomoVpnService.lastError ?: ProxyVpnService.lastError
-      }
-    result.put("last_error", lastError)
+    result.put("last_error", ProxyVpnService.lastError)
     invoke.resolve(result)
   }
 
   /**
    * 把 `filesDir/logs/` 下 `.log` 文件、`app.log.*` 滚动文件及启动前脱敏落盘的
-   * `last_start_config.json` / `last_start_config.yaml`（最终核心配置脱敏快照，
-   * uuid/password/server 已打码，见 Rust 侧 start_services；mihomo 为 YAML、
-   * sing-box 为 JSON）打包 zip 导出到公共 `Download/ProxyPanel/`：
+   * `last_start_config.json`（最终核心配置脱敏快照，
+   * uuid/password/server 已打码，见 Rust 侧 start_services）打包 zip
+   * 导出到公共 `Download/ProxyPanel/`：
    * - API 29+：经 [MediaStore.Downloads] 插入（`RELATIVE_PATH=Download/ProxyPanel/`，
    *   无需任何权限）；
    * - API 26-28：旧式直接写公共下载目录（依赖 manifest 中
@@ -281,8 +228,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   /**
    * 收集 `filesDir/logs/` 下 `.log` 文件、`app.log.*` 滚动文件及启动前脱敏落盘的
-   * `last_start_config.json` / `last_start_config.yaml`（目录不存在 / 无日志时
-   * 返回空数组）。
+   * `last_start_config.json`（目录不存在 / 无日志时返回空数组）。
    */
   private fun collectLogFiles(): Array<File> {
     val logsDir = File(activity.filesDir, "logs")
@@ -290,8 +236,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       f.isFile &&
         (f.name.endsWith(".log") ||
           f.name.startsWith("app.log") ||
-          f.name == "last_start_config.json" ||
-          f.name == "last_start_config.yaml")
+          f.name == "last_start_config.json")
     } ?: emptyArray()
   }
 
