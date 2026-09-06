@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Alert, Button, Card, Chip, Label, ListBox, Select } from "@heroui/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { CORE_LABELS, CORE_CHIP_COLORS, normalizeCoreType } from "./useSettingsConfig";
 import {
   deleteCore,
   detectSystemCores,
@@ -11,7 +10,7 @@ import {
   listRemoteCoreVersions,
   toErrorMessage,
 } from "../../api";
-import type { CoreType, LocalCoreView } from "../../api";
+import type { LocalCoreView } from "../../api";
 import { CORES_LIST_KEY, REMOTE_VERSIONS_KEY } from "../../api/keys";
 
 interface CoreManagementProps {
@@ -21,7 +20,6 @@ interface CoreManagementProps {
 export default function CoreManagement({ settings }: CoreManagementProps) {
   const { config } = settings;
   const queryClient = useQueryClient();
-  const [downloadType, setDownloadType] = useState<CoreType>("singbox");
   const [downloadVersion, setDownloadVersion] = useState("");
   const [coresBusy, setCoresBusy] = useState(false);
   const [coresError, setCoresError] = useState<string | null>(null);
@@ -34,8 +32,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
   });
 
   const { data: remoteVersions = [] } = useQuery<string[]>({
-    queryKey: [...REMOTE_VERSIONS_KEY, downloadType],
-    queryFn: () => listRemoteCoreVersions(downloadType),
+    queryKey: REMOTE_VERSIONS_KEY,
+    queryFn: listRemoteCoreVersions,
     retry: false,
   });
 
@@ -47,8 +45,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
     setCoresError(null);
     setCoresMessage(null);
     try {
-      await downloadCore(downloadType, downloadVersion);
-      setCoresMessage(`已下载 ${CORE_LABELS[downloadType]} ${downloadVersion}`);
+      await downloadCore(downloadVersion);
+      setCoresMessage(`已下载 sing-box ${downloadVersion}`);
       await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
     } catch (err) {
       setCoresError(toErrorMessage(err));
@@ -76,8 +74,7 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
     setCoresMessage(null);
     try {
       await deleteCore(core.path);
-      const coreLabel = CORE_LABELS[core.core_type] ?? core.core_type;
-      setCoresMessage(`已删除 ${coreLabel} ${core.version}`);
+      setCoresMessage(`已删除 sing-box ${core.version}`);
       await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
     } catch (err) {
       setCoresError(toErrorMessage(err));
@@ -86,14 +83,15 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
   };
 
   const activeCore = cores.find((core) => core.active) ?? null;
-  const normalizedCoreType = normalizeCoreType(config?.core_type ?? "singbox") as CoreType;
   const coreBinary = config?.core_binary ?? "";
 
   return (
     <Card>
       <Card.Header>
         <Card.Title>核心管理</Card.Title>
-        <Card.Description>下载与管理核心二进制；在首页选择要使用的核心（下载/删除后需重启代理生效）</Card.Description>
+        <Card.Description>
+          下载与管理 sing-box 二进制；在首页选择要使用的核心（下载/删除后需重启代理生效）
+        </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         {/* 当前核心 */}
@@ -102,9 +100,9 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-xs text-muted">当前核心</span>
               <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                {CORE_LABELS[normalizedCoreType]}
+                sing-box
                 {activeCore && (
-                  <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[activeCore.core_type]}>
+                  <Chip size="sm" variant="soft" color="accent">
                     {activeCore.version}
                   </Chip>
                 )}
@@ -121,7 +119,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
           <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-border/60 text-left text-xs text-muted">
-                <th className="py-2 pr-3 font-normal">类型</th>
                 <th className="py-2 pr-3 font-normal">版本</th>
                 <th className="py-2 pr-3 font-normal">来源</th>
                 <th className="py-2 pr-3 font-normal">路径</th>
@@ -131,57 +128,51 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <tbody>
               {cores.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-muted">
+                  <td colSpan={4} className="py-8 text-center text-sm text-muted">
                     暂无可用核心，可下载新版本或探测系统核心
                   </td>
                 </tr>
               ) : (
-                cores.map((core) => {
-                  const coreLabel = CORE_LABELS[core.core_type] ?? core.core_type;
-                  return (
-                    <tr key={core.path} className="border-b border-border/40">
-                      <td className="py-2 pr-3">
-                        <span className="flex items-center gap-2">
-                          {coreLabel}
-                          {core.active && (
-                            <Chip size="sm" variant="soft" color="success">
-                              使用中
-                            </Chip>
-                          )}
-                        </span>
-                      </td>
-                      <td className="max-w-[160px] truncate py-2 pr-3">
-                        <span title={core.version}>{core.version}</span>
-                      </td>
-                      <td className="py-2 pr-3">
-                        <Chip size="sm" variant="soft" color={core.source === "downloaded" ? "accent" : "warning"}>
-                          {core.source === "downloaded" ? "下载" : "系统"}
-                        </Chip>
-                      </td>
-                      <td className="max-w-[180px] truncate py-2 pr-3 text-xs text-muted">
-                        <span title={core.path}>{core.path}</span>
-                      </td>
-                      <td className="py-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="tertiary"
-                          isDisabled={coresBusy || core.source === "system" || core.active}
-                          {...{
-                            title:
-                              core.source === "system"
-                                ? "系统核心不可删除"
-                                : core.active
-                                  ? "正在使用的核心不可删除"
-                                  : undefined,
-                          }}
-                          onPress={() => void handleDeleteCore(core)}
-                        >
-                          删除
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })
+                cores.map((core) => (
+                  <tr key={core.path} className="border-b border-border/40">
+                    <td className="max-w-[160px] truncate py-2 pr-3">
+                      <span className="flex items-center gap-2" title={core.version}>
+                        {core.version}
+                        {core.active && (
+                          <Chip size="sm" variant="soft" color="success">
+                            使用中
+                          </Chip>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Chip size="sm" variant="soft" color={core.source === "downloaded" ? "accent" : "warning"}>
+                        {core.source === "downloaded" ? "下载" : "系统"}
+                      </Chip>
+                    </td>
+                    <td className="max-w-[180px] truncate py-2 pr-3 text-xs text-muted">
+                      <span title={core.path}>{core.path}</span>
+                    </td>
+                    <td className="py-2 text-right">
+                      <Button
+                        size="sm"
+                        variant="tertiary"
+                        isDisabled={coresBusy || core.source === "system" || core.active}
+                        {...{
+                          title:
+                            core.source === "system"
+                              ? "系统核心不可删除"
+                              : core.active
+                                ? "正在使用的核心不可删除"
+                                : undefined,
+                        }}
+                        onPress={() => void handleDeleteCore(core)}
+                      >
+                        删除
+                      </Button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -191,31 +182,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
         <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-surface p-4">
           <span className="text-sm font-medium">下载新版本</span>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <Label>核心类型</Label>
-              <Select
-                aria-label="下载核心类型"
-                value={downloadType}
-                onChange={(value) => setDownloadType((value as CoreType | null) ?? "singbox")}
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    <ListBox.Item id="singbox" textValue="sing-box">
-                      sing-box
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                    <ListBox.Item id="mihomo" textValue="mihomo">
-                      mihomo
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </div>
             <div className="flex flex-col gap-1">
               <Label>版本</Label>
               <Select
@@ -248,7 +214,7 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <Button
               variant="tertiary"
               isDisabled={coresBusy}
-              onPress={() => void queryClient.invalidateQueries({ queryKey: [...REMOTE_VERSIONS_KEY, downloadType] })}
+              onPress={() => void queryClient.invalidateQueries({ queryKey: REMOTE_VERSIONS_KEY })}
             >
               刷新版本
             </Button>

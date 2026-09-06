@@ -9,10 +9,8 @@ import { invoke } from "@tauri-apps/api/core";
 /** Core source: `downloaded` (downloaded) / `system` (system detected). */
 export type CoreSource = "downloaded" | "system";
 
-/** Local core view (aligned with Rust `LocalCoreView`). */
+/** Local core view (aligned with Rust `LocalCoreView`; 仅 sing-box 单核心). */
 export interface LocalCoreView {
-  /** Core type: `singbox` / `mihomo`. */
-  core_type: string;
   version: string;
   path: string;
   source: CoreSource;
@@ -26,18 +24,18 @@ export function listCores(): Promise<LocalCoreView[]> {
 }
 
 /** List recent 10 remote releases (GitHub releases). */
-export function listRemoteCoreVersions(coreType: string): Promise<string[]> {
-  return invoke<string[]>("list_remote_core_versions", { core_type: coreType });
+export function listRemoteCoreVersions(): Promise<string[]> {
+  return invoke<string[]>("list_remote_core_versions");
 }
 
-/** List downloaded versions for a core type (version directory scan, semver descending). */
-export function listDownloadedVersions(coreType: string): Promise<string[]> {
-  return invoke<string[]>("list_downloaded_versions", { core_type: coreType });
+/** List downloaded versions (version directory scan, semver descending). */
+export function listDownloadedVersions(): Promise<string[]> {
+  return invoke<string[]>("list_downloaded_versions");
 }
 
 /** Download specified core version and return its view. */
-export function downloadCore(coreType: string, version: string): Promise<LocalCoreView> {
-  return invoke<LocalCoreView>("download_core", { core_type: coreType, version });
+export function downloadCore(version: string): Promise<LocalCoreView> {
+  return invoke<LocalCoreView>("download_core", { version });
 }
 
 /** Set specified path as core binary (validated then written back to client.json). */

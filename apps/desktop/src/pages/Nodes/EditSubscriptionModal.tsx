@@ -1,25 +1,17 @@
 import { useState } from "react";
 import { Button, Input, Label, ListBox, Select } from "@heroui/react";
 import type { ProfileView, SubscriptionView } from "../../api";
-import { coreLabel, subCoreType, UA_PRESETS } from "./utils";
+import { UA_PRESETS } from "./utils";
 
 interface EditSubscriptionModalProps {
   sub: SubscriptionView | null;
   busy: boolean;
   profiles: ProfileView[];
-  clientCoreType: string | undefined;
   onClose: () => void;
   onSave: (sub: SubscriptionView, name: string, url: string, profileId: string | null, userAgent?: string) => void;
 }
 
-export function EditSubscriptionModal({
-  sub,
-  busy,
-  profiles,
-  clientCoreType,
-  onClose,
-  onSave,
-}: EditSubscriptionModalProps) {
+export function EditSubscriptionModal({ sub, busy, profiles, onClose, onSave }: EditSubscriptionModalProps) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [ua, setUa] = useState("");
@@ -40,8 +32,6 @@ export function EditSubscriptionModal({
 
   if (!sub) return null;
 
-  const editCoreType = subCoreType(sub.format) ?? clientCoreType;
-  const editCoreProfiles = profiles.filter((p) => p.core_type === editCoreType);
   const formValid = name.trim().length > 0 && url.trim().length > 0;
 
   const handleClose = () => {
@@ -110,7 +100,7 @@ export function EditSubscriptionModal({
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="sub-edit-profile">关联覆写</Label>
-            {editCoreProfiles.length > 0 ? (
+            {profiles.length > 0 ? (
               <Select
                 id="sub-edit-profile"
                 aria-label="关联覆写"
@@ -129,7 +119,7 @@ export function EditSubscriptionModal({
                       不关联
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
-                    {editCoreProfiles.map((profile) => (
+                    {profiles.map((profile) => (
                       <ListBox.Item key={profile.id} id={profile.id} textValue={profile.name}>
                         {profile.name}
                         <ListBox.ItemIndicator />
@@ -139,9 +129,7 @@ export function EditSubscriptionModal({
                 </Select.Popover>
               </Select>
             ) : (
-              <p className="text-xs text-warning">
-                当前核心（{coreLabel(editCoreType)}）暂无覆写模板，可到「覆写」页创建
-              </p>
+              <p className="text-xs text-warning">暂无覆写模板，可到「覆写」页创建</p>
             )}
           </div>
         </div>

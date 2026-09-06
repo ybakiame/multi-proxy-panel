@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Alert, Button, Card, Chip } from "@heroui/react";
+import { Alert, Button, Card } from "@heroui/react";
 import clsx from "clsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createProfile, deleteProfile, getProfile, listProfiles, toErrorMessage, updateProfile } from "../api";
 import { PROFILES_KEY, profileKey } from "../api/keys";
-import type { CoreType, ProfileView } from "../api";
+import type { ProfileView } from "../api";
 import { MobileBackHeader } from "../layout/mobile/MobileBackHeader";
-import { CORE_CHIP_COLORS, CORE_LABELS, ProfileEditor } from "./OverrideEditor";
+import { ProfileEditor } from "./OverrideEditor";
 import { CreateProfileModal, DeleteProfileDialog } from "./OverrideModals";
 
 export default function Override() {
@@ -25,7 +25,6 @@ export default function Override() {
   // 新建模板对话框
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newCoreType, setNewCoreType] = useState<CoreType>("singbox");
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<ProfileView | null>(null);
@@ -82,7 +81,6 @@ export default function Override() {
       setSuccess(`模板「${created.name}」已创建`);
       setCreateOpen(false);
       setNewName("");
-      setNewCoreType("singbox");
       void queryClient.invalidateQueries({ queryKey: PROFILES_KEY });
       void handleSelectProfile(created.id);
     },
@@ -94,7 +92,7 @@ export default function Override() {
     setBusy(true);
     setError(null);
     setSuccess(null);
-    createMutation.mutate({ name: newName.trim(), core_type: newCoreType });
+    createMutation.mutate({ name: newName.trim() });
   };
 
   const deleteMutation = useMutation({
@@ -128,7 +126,7 @@ export default function Override() {
       <div>
         <h1 className="text-xl font-semibold">覆写</h1>
         <p className="text-sm text-muted">
-          多模板管理：按核心类型维护覆写模板，在订阅页关联后随订阅生效；合成配置预览已移至首页与订阅页
+          多模板管理：维护 sing-box 覆写模板，在订阅页关联后随订阅生效；合成配置预览已移至首页与订阅页
         </p>
       </div>
 
@@ -137,7 +135,7 @@ export default function Override() {
         <Card className="w-full shrink-0 lg:w-80">
           <Card.Header>
             <Card.Title>覆写模板</Card.Title>
-            <Card.Description>按核心类型维护，在订阅页关联后随订阅生效</Card.Description>
+            <Card.Description>在订阅页关联后随订阅生效</Card.Description>
           </Card.Header>
           <Card.Content className="flex flex-col gap-2">
             {(() => {
@@ -180,11 +178,6 @@ export default function Override() {
                         title={profile.name}
                       >
                         {profile.name}
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[profile.core_type]}>
-                          {CORE_LABELS[profile.core_type]}
-                        </Chip>
                       </span>
                     </button>
                     <div className="flex shrink-0 flex-col gap-1">
@@ -257,8 +250,6 @@ export default function Override() {
         onOpenChange={setCreateOpen}
         name={newName}
         onNameChange={setNewName}
-        coreType={newCoreType}
-        onCoreTypeChange={setNewCoreType}
         busy={busy}
         onSubmit={() => void handleCreate()}
       />

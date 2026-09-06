@@ -43,7 +43,7 @@ export function openExportDir(): Promise<void> {
   return invoke<void>("open_export_dir");
 }
 
-/** List log file names under `data_dir/logs` (`app.log*` rolling files / `libbox.log` / `mihomo.log`), sorted by name descending (newest first). */
+/** List log file names under `data_dir/logs` (`app.log*` rolling files / `libbox.log`), sorted by name descending (newest first). */
 export function listLogFiles(): Promise<string[]> {
   return invoke<string[]>("list_log_files");
 }

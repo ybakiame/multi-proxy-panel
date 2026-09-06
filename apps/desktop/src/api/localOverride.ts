@@ -44,7 +44,6 @@ export interface RuleSetSubscriptionView {
   category: string;
   subscribed: boolean;
   singbox_url_template: string;
-  mihomo_url_template: string;
   default_interval_minutes: number;
 }
 
@@ -56,7 +55,6 @@ export interface AppliedTemplateView {
 
 export interface LocalOverrideView {
   singbox: CoreLocalOverrideView;
-  mihomo: CoreLocalOverrideView;
   rule_set_subscriptions: RuleSetSubscriptionView[];
   applied_templates: AppliedTemplateView[];
 }
@@ -68,13 +66,11 @@ export interface RuleSetStatusView {
   category: string;
   subscribed: boolean;
   singbox_cached: boolean;
-  mihomo_cached: boolean;
   last_updated: number;
 }
 
 export interface SaveLocalOverrideInput {
   singbox: CoreLocalOverrideInput;
-  mihomo: CoreLocalOverrideInput;
   rule_set_subscriptions: RuleSetSubscriptionInput[];
   applied_templates: AppliedTemplateInput[];
 }
@@ -117,7 +113,6 @@ export interface RuleSetSubscriptionInput {
   category: string;
   subscribed: boolean;
   singbox_url_template: string;
-  mihomo_url_template: string;
   default_interval_minutes: number;
 }
 

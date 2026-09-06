@@ -80,13 +80,9 @@ export function viewToInput(view: CoreLocalOverrideView): CoreLocalOverrideInput
   };
 }
 
-export function buildSaveInput(
-  view: LocalOverrideView,
-  patchCore?: { key: "singbox" | "mihomo"; value: CoreLocalOverrideInput },
-) {
+export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOverrideInput) {
   return {
-    singbox: patchCore?.key === "singbox" ? patchCore.value : viewToInput(view.singbox),
-    mihomo: patchCore?.key === "mihomo" ? patchCore.value : viewToInput(view.mihomo),
+    singbox: patchCore ?? viewToInput(view.singbox),
     rule_set_subscriptions: view.rule_set_subscriptions.map((s) => ({
       id: s.id,
       community_id: s.community_id,
@@ -94,7 +90,6 @@ export function buildSaveInput(
       category: s.category,
       subscribed: s.subscribed,
       singbox_url_template: s.singbox_url_template,
-      mihomo_url_template: s.mihomo_url_template,
       default_interval_minutes: s.default_interval_minutes,
     })),
     applied_templates: view.applied_templates.map((t) => ({

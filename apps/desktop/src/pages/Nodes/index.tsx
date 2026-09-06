@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CONFIG_KEY } from "../../api/keys";
 import ConfigPreviewModal from "../../components/ConfigPreviewModal";
 import { MobileBackHeader } from "../../layout/mobile/MobileBackHeader";
-import { useClientConfig } from "../../hooks/useClientConfig";
 import { useSubscriptionData } from "./useSubscriptionData";
 import { SubscriptionTable } from "./SubscriptionTable";
 import { SubscriptionAlerts } from "./SubscriptionAlerts";
@@ -34,13 +33,10 @@ export default function Nodes() {
   const [previewSub, setPreviewSub] = useState<import("../../api").SubscriptionView | null>(null);
 
   const queryClient = useQueryClient();
-  const clientCoreType = useClientConfig().data?.core_type;
   // toggle 订阅后失效配置缓存触发重读（替代原 store.loadConfig）。
   const reloadConfig = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
   }, [queryClient]);
-
-  const coreProfiles = profiles.filter((profile) => profile.core_type === clientCoreType);
 
   const anyEnabled = subs.some((sub) => sub.enabled);
 
@@ -111,8 +107,7 @@ export default function Nodes() {
           setError(null);
         }}
         busy={busy}
-        coreProfiles={coreProfiles}
-        clientCoreType={clientCoreType}
+        profiles={profiles}
         onAdd={(name, url, ua, profileId) => {
           setError(null);
           setResult(null);
@@ -125,7 +120,6 @@ export default function Nodes() {
         sub={editSub}
         busy={busy}
         profiles={profiles}
-        clientCoreType={clientCoreType}
         onClose={() => setEditSub(null)}
         onSave={onEditSave}
       />

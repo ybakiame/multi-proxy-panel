@@ -5,14 +5,11 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { CoreType } from "./types";
 
 /** Profile list view (aligned with Rust `ProfileView`). */
 export interface ProfileView {
   id: string;
   name: string;
-  /** Core type: `singbox` / `mihomo`. */
-  core_type: CoreType;
   /** YAML override byte count (for list display). */
   yaml_bytes: number;
   /** JS override byte count (for list display). */
@@ -27,7 +24,6 @@ export interface ProfileView {
 export interface ProfileDetailView {
   id: string;
   name: string;
-  core_type: CoreType;
   /** YAML deep-merge override (RFC 7386 style; empty = not enabled). */
   yaml_override: string;
   /** JS override (sync pure function `function main(config){...; return config}`; empty = not enabled). */
@@ -41,7 +37,6 @@ export interface ProfileDetailView {
 /** Input for creating a new profile. */
 export interface CreateProfileInput {
   name: string;
-  core_type: CoreType;
 }
 
 /** Input for updating a profile (rejected by command layer on YAML/JS override and remote URL validation failure). */
@@ -82,7 +77,7 @@ export function deleteProfile(id: string): Promise<void> {
 }
 
 /**
- * Generate core config preview (according to current client core type; sing-box = JSON, mihomo = YAML text).
+ * Generate core config preview (sing-box JSON text).
  * Pass `subscriptionId` to preview by specified subscription (ignores enabled state);
  * omit / pass `null` to generate by current effective subscription
  * (falls back to legacy Hub subscription path when no subscription selected, no override).

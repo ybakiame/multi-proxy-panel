@@ -1,20 +1,9 @@
 import { Button, Card, Chip } from "@heroui/react";
-import type { ClientConfig, ClientStatus, CoreType, SubscriptionView } from "../api";
-
-const CORE_LABELS: Record<CoreType, string> = {
-  singbox: "sing-box",
-  mihomo: "mihomo",
-};
-
-/** 核心类型展示名（兼容 `singbox` / `mihomo` 小写 serde 值）。 */
-export function coreLabel(value: string): string {
-  return CORE_LABELS[(value === "SingBox" ? "singbox" : value === "Mihomo" ? "mihomo" : value) as CoreType] ?? value;
-}
+import type { ClientConfig, ClientStatus, SubscriptionView } from "../api";
 
 interface DashboardStatusCardsProps {
   config: ClientConfig | null | undefined;
   status: ClientStatus | null | undefined;
-  isAndroid: boolean;
   running: boolean;
   /** 当前生效订阅（展示节点数）。 */
   activeSub: SubscriptionView | null;
@@ -27,7 +16,6 @@ interface DashboardStatusCardsProps {
 export default function DashboardStatusCards({
   config,
   status,
-  isAndroid,
   running,
   activeSub,
   linkCopied,
@@ -40,11 +28,7 @@ export default function DashboardStatusCards({
         <Card.Header>
           <Card.Title>核心状态</Card.Title>
           <Card.Description>
-            {isAndroid
-              ? `当前运行核心：${coreLabel(config?.core_type ?? "singbox")}`
-              : config?.core_type === "mihomo"
-                ? "mihomo"
-                : "sing-box"}
+            sing-box
             {config ? ` · 混合端口 ${config.mixed_port}` : ""}
           </Card.Description>
         </Card.Header>

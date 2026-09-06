@@ -78,19 +78,3 @@ export function formatColor(format: SubscriptionFormat): "accent" | "warning" | 
   }
   return "accent";
 }
-
-/** Core type display name: singbox → sing-box, mihomo → mihomo (for override association hint). */
-export function coreLabel(coreType: string | undefined): string {
-  return coreType === "mihomo" ? "mihomo" : "sing-box";
-}
-
-/** Derive compatible core from subscription format; ShareLinks/empty returns null (follows global core). */
-export function subCoreType(format: SubscriptionFormat | null | undefined): "singbox" | "mihomo" | null {
-  if (format === "ClashYaml") {
-    return "mihomo";
-  }
-  if (format === "SingBoxJson") {
-    return "singbox";
-  }
-  return null;
-}

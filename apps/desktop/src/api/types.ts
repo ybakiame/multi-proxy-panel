@@ -1,10 +1,8 @@
 /**
- * Core type and base configuration types.
+ * Base configuration types (客户端仅 sing-box 单核心，无核心类型维度).
  *
  * Aligned with Rust-side serde view structures in `src-tauri/src/commands.rs`.
  */
-
-export type CoreType = "singbox" | "mihomo";
 
 export type MitmScriptDialect = "Surge" | "Loon";
 
@@ -14,8 +12,6 @@ export interface ClientConfig {
   sub_token: string;
   /** Active subscription id selected on home page (`null` = not selected). */
   active_subscription_id: string | null;
-  /** `CoreType` serde representation: `singbox` / `mihomo`. */
-  core_type: string;
   core_binary: string;
   mixed_port: number;
   mitm_enabled: boolean;
@@ -62,6 +58,6 @@ export interface ClientStatus {
 
 /** `save_config` return view (carries non-blocking warnings). */
 export interface SaveConfigView {
-  /** Non-blocking warnings (empty hub_url/sub_token, core_type linkage missing local core, etc.). */
+  /** Non-blocking warnings (empty hub_url/sub_token, core_binary missing local core, etc.). */
   warning: string | null;
 }

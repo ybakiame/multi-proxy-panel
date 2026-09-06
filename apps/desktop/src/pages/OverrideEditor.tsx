@@ -5,8 +5,8 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
-import { Alert, Button, Card, Chip, Input, Label, Tabs } from "@heroui/react";
-import type { CoreType, ProfileDetailView, ProfileView } from "../api";
+import { Alert, Button, Card, Input, Label, Tabs } from "@heroui/react";
+import type { ProfileDetailView, ProfileView } from "../api";
 
 export const JS_PLACEHOLDER = `function main(config) {
   // 在这里修改最终生成的配置
@@ -18,17 +18,6 @@ export const YAML_PLACEHOLDER = `# 按 RFC 7386 深合并：对象递归合并�
 # 示例：覆盖出站端口
 # mixed-port: 7890
 `;
-
-export const CORE_LABELS: Record<CoreType, string> = {
-  singbox: "sing-box",
-  mihomo: "mihomo",
-};
-
-/** 核心类型 Chip 配色：sing-box 用强调色、mihomo 用警告色区分。 */
-export const CORE_CHIP_COLORS: Record<CoreType, "accent" | "warning"> = {
-  singbox: "accent",
-  mihomo: "warning",
-};
 
 type EditorLanguage = "yaml" | "json" | "js";
 
@@ -105,9 +94,6 @@ export function ProfileEditor({ profile, detail, onSave, busy }: ProfileEditorPr
       <Card.Header>
         <div className="flex flex-wrap items-center gap-2">
           <Card.Title className="min-w-0 break-words">{profile.name}</Card.Title>
-          <Chip size="sm" variant="soft" color={CORE_CHIP_COLORS[profile.core_type]}>
-            {CORE_LABELS[profile.core_type]}
-          </Chip>
         </div>
         <Card.Description>
           针对该模板独立维护本地 YAML / JS 覆写与远程 URL（远程为基底、本地叠加），保存后需重启代理生效
@@ -143,11 +129,7 @@ export function ProfileEditor({ profile, detail, onSave, busy }: ProfileEditorPr
               </p>
             </div>
             <Editor value={yamlValue} onChange={setYamlValue} language="yaml" placeholder={YAML_PLACEHOLDER} />
-            <p className="text-xs text-muted">
-              {profile.core_type === "mihomo"
-                ? "mihomo 推荐优先使用 YAML 覆写做深合并覆盖；留空表示不启用。"
-                : "按 RFC 7386 深合并：对象递归合并，数组与标量整体替换；留空表示不启用。"}
-            </p>
+            <p className="text-xs text-muted">按 RFC 7386 深合并：对象递归合并，数组与标量整体替换；留空表示不启用。</p>
           </Tabs.Panel>
           <Tabs.Panel id="js" className="flex flex-col gap-2 pt-3">
             <div className="flex flex-col gap-1">
@@ -166,9 +148,7 @@ export function ProfileEditor({ profile, detail, onSave, busy }: ProfileEditorPr
             </div>
             <Editor value={jsValue} onChange={setJsValue} language="js" placeholder={JS_PLACEHOLDER} />
             <p className="text-xs text-muted">
-              {profile.core_type === "singbox"
-                ? "sing-box 推荐优先使用 JS 覆写做程序化调整；需定义 function main(config) 并返回 config；留空表示不启用。"
-                : "双核心通用：需定义 function main(config) 并返回 config；留空表示不启用。"}
+              sing-box 推荐优先使用 JS 覆写做程序化调整；需定义 function main(config) 并返回 config；留空表示不启用。
             </p>
           </Tabs.Panel>
         </Tabs>

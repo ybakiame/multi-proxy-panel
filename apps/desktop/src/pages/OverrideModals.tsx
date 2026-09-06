@@ -1,13 +1,11 @@
-import { AlertDialog, Button, Input, Label, ListBox, Modal, Select } from "@heroui/react";
-import type { CoreType, ProfileView } from "../api";
+import { AlertDialog, Button, Input, Label, Modal } from "@heroui/react";
+import type { ProfileView } from "../api";
 
 interface CreateProfileModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   name: string;
   onNameChange: (name: string) => void;
-  coreType: CoreType;
-  onCoreTypeChange: (coreType: CoreType) => void;
   busy: boolean;
   onSubmit: () => void;
 }
@@ -18,8 +16,6 @@ export function CreateProfileModal({
   onOpenChange,
   name,
   onNameChange,
-  coreType,
-  onCoreTypeChange,
   busy,
   onSubmit,
 }: CreateProfileModalProps) {
@@ -42,33 +38,6 @@ export function CreateProfileModal({
                 placeholder="例如：香港-去广告"
                 fullWidth
               />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>核心类型</Label>
-              <Select
-                aria-label="核心类型"
-                placeholder="选择核心类型"
-                value={coreType}
-                onChange={(value) => onCoreTypeChange((value as CoreType | null) ?? "singbox")}
-                fullWidth
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    <ListBox.Item id="singbox" textValue="sing-box">
-                      sing-box
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                    <ListBox.Item id="mihomo" textValue="mihomo">
-                      mihomo
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  </ListBox>
-                </Select.Popover>
-              </Select>
             </div>
           </Modal.Body>
           <Modal.Footer>

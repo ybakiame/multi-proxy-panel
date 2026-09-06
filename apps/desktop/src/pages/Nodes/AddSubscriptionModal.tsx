@@ -1,26 +1,17 @@
 import { useState } from "react";
 import { Button, Input, Label, ListBox, Select } from "@heroui/react";
 import type { ProfileView } from "../../api";
-import { coreLabel } from "./utils";
 import { UA_PRESETS } from "./utils";
 
 interface AddSubscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   busy: boolean;
-  coreProfiles: ProfileView[];
-  clientCoreType: string | undefined;
+  profiles: ProfileView[];
   onAdd: (name: string, url: string, ua: string, profileId: string | null) => void;
 }
 
-export function AddSubscriptionModal({
-  isOpen,
-  onClose,
-  busy,
-  coreProfiles,
-  clientCoreType,
-  onAdd,
-}: AddSubscriptionModalProps) {
+export function AddSubscriptionModal({ isOpen, onClose, busy, profiles, onAdd }: AddSubscriptionModalProps) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [ua, setUa] = useState("");
@@ -101,7 +92,7 @@ export function AddSubscriptionModal({
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="sub-profile">关联覆写</Label>
-            {coreProfiles.length > 0 ? (
+            {profiles.length > 0 ? (
               <Select
                 id="sub-profile"
                 aria-label="关联覆写"
@@ -120,7 +111,7 @@ export function AddSubscriptionModal({
                       不关联
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
-                    {coreProfiles.map((profile) => (
+                    {profiles.map((profile) => (
                       <ListBox.Item key={profile.id} id={profile.id} textValue={profile.name}>
                         {profile.name}
                         <ListBox.ItemIndicator />
@@ -130,9 +121,7 @@ export function AddSubscriptionModal({
                 </Select.Popover>
               </Select>
             ) : (
-              <p className="text-xs text-warning">
-                当前核心（{coreLabel(clientCoreType)}）暂无覆写模板，可到「覆写」页创建
-              </p>
+              <p className="text-xs text-warning">暂无覆写模板，可到「覆写」页创建</p>
             )}
           </div>
         </div>

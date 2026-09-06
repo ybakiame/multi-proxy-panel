@@ -58,17 +58,12 @@ export default function Rules() {
   const [deleteRule, setDeleteRule] = useState<LocalRuleView | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const coreKey: "singbox" | "mihomo" = isAndroid
-    ? "singbox"
-    : (overrideData?.singbox.rules.length ?? 0) >= (overrideData?.mihomo.rules.length ?? 0)
-      ? "singbox"
-      : "mihomo";
+  // 单核心（sing-box）：直接消费 singbox 桶。
+  const currentCore = overrideData ? overrideData.singbox : null;
 
-  const currentCore = overrideData ? overrideData[coreKey] : null;
-
-  const persist = async (patchCore: { key: "singbox" | "mihomo"; value: CoreLocalOverrideInput }) => {
+  const persist = async (value: CoreLocalOverrideInput) => {
     if (!overrideData) return;
-    const input = buildSaveInput(overrideData, patchCore);
+    const input = buildSaveInput(overrideData, value);
     try {
       await localOverrideSave(input);
       toastSuccess("已保存");
@@ -85,14 +80,14 @@ export default function Rules() {
       ...viewToInput(currentCore),
       enabled: !currentCore.enabled,
     };
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const handleToggleRule = async (id: string) => {
     if (!overrideData || !currentCore) return;
     const nextRules = currentCore.rules.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const handleMoveUp = async (index: number) => {
@@ -105,7 +100,7 @@ export default function Rules() {
       ...viewToInput(currentCore),
       rules: rules.map((r, i) => ({ ...r, sort_order: i })),
     };
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const handleMoveDown = async (index: number) => {
@@ -118,7 +113,7 @@ export default function Rules() {
       ...viewToInput(currentCore),
       rules: rules.map((r, i) => ({ ...r, sort_order: i })),
     };
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const handleDelete = async () => {
@@ -126,7 +121,7 @@ export default function Rules() {
     const nextRules = currentCore.rules.filter((r) => r.id !== deleteRule.id);
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
     setDeleteRule(null);
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const handleSaveRule = async (rule: LocalRuleInput) => {
@@ -141,7 +136,7 @@ export default function Rules() {
       nextRules = [...viewToInput(currentCore).rules, { ...rule, sort_order: currentCore.rules.length }];
     }
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
-    await persist({ key: coreKey, value: next });
+    await persist(next);
   };
 
   const templateMutation = useMutation({
@@ -243,7 +238,7 @@ export default function Rules() {
                   <Switch.Control>
                     <Switch.Thumb />
                   </Switch.Control>
-                  启用本地规则（{coreKey === "singbox" ? "sing-box" : "mihomo"}）
+                  启用本地规则（sing-box）
                 </Switch.Content>
               </Switch>
             </Card.Content>

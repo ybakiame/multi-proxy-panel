@@ -12,29 +12,6 @@ import type { ClientConfig } from "../../api";
 // TODO: read version from package.json (build-time injection or runtime read)
 export const APP_VERSION = "0.1.0";
 
-/** 兼容任务描述中的 PascalCase 值（`SingBox`/`Mihomo`）与后端 serde 值（`singbox`/`mihomo`）。 */
-export function normalizeCoreType(value: string): string {
-  if (value === "SingBox") {
-    return "singbox";
-  }
-  if (value === "Mihomo") {
-    return "mihomo";
-  }
-  return value;
-}
-
-/** 核心类型展示名（与复写页的 CORE_LABELS 一致）。 */
-export const CORE_LABELS: Record<string, string> = {
-  singbox: "sing-box",
-  mihomo: "mihomo",
-};
-
-/** 核心类型 Chip 配色：sing-box 用强调色、mihomo 用警告色区分。 */
-export const CORE_CHIP_COLORS: Record<string, "accent" | "warning"> = {
-  singbox: "accent",
-  mihomo: "warning",
-};
-
 /** TUN 协议栈选项（与后端 `ClientConfigView.tun_stack` 的 serde 值一致）。 */
 export const TUN_STACK_OPTIONS = [
   { id: "mixed", label: "mixed" },

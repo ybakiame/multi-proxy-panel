@@ -8,7 +8,6 @@ import {
   listProfiles,
   listSubscriptions,
   proxyStatus,
-  refreshSubscription,
   requestVpnPermission,
   setActiveCore,
   setRuleMode as setRuleModeApi,
@@ -17,14 +16,7 @@ import {
   toErrorMessage,
   vpnLastError,
 } from "../api";
-import type {
-  ClientConfig,
-  ClientStatus,
-  LocalCoreView,
-  ProfileView,
-  SubscriptionFormat,
-  SubscriptionView,
-} from "../api";
+import type { ClientConfig, ClientStatus, LocalCoreView, ProfileView, SubscriptionView } from "../api";
 import { CORES_KEY, CONFIG_KEY, PROFILES_KEY, PROXY_STATUS_KEY, SUBSCRIPTIONS_KEY, VPN_ERROR_KEY } from "../api/keys";
 import { lastActionErrorAtom } from "../atoms/ui";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
@@ -32,7 +24,7 @@ import { useCapabilities } from "../hooks/useCapabilities";
 import { useClientConfig, useSaveConfig } from "../hooks/useClientConfig";
 import { useProxyStatus } from "../hooks/useProxyStatus";
 import { toastError, toastSuccess, toastWarning } from "../toast";
-import DashboardStatusCards, { coreLabel } from "./DashboardStatusCards";
+import DashboardStatusCards from "./DashboardStatusCards";
 
 /** 规则模式按钮（与后端 `rule` / `global` / `direct` 对齐）。 */
 const RULE_MODES = [
@@ -40,25 +32,6 @@ const RULE_MODES = [
   { id: "global", label: "全局" },
   { id: "direct", label: "直连" },
 ] as const;
-
-/** 核心类型归一化（兼容 serde PascalCase `SingBox`/`Mihomo` 与小写 `singbox`/`mihomo`，未知回退 singbox）。 */
-function coreTypeOf(value: string | undefined): "singbox" | "mihomo" {
-  if (value === "Mihomo" || value === "mihomo") {
-    return "mihomo";
-  }
-  return "singbox";
-}
-
-/** 由订阅 format 推导适配核心；ShareLinks/空 返回 null（跟随全局核心）。 */
-function subCoreType(format: SubscriptionFormat | null | undefined): "singbox" | "mihomo" | null {
-  if (format === "ClashYaml") {
-    return "mihomo";
-  }
-  if (format === "SingBoxJson") {
-    return "singbox";
-  }
-  return null;
-}
 
 /** 等待指定毫秒数（Android 启动确认轮询窗口用）。 */
 function sleep(ms: number): Promise<void> {
@@ -76,8 +49,6 @@ export default function Dashboard() {
   const [error, setLastError] = useAtom(lastActionErrorAtom);
   const { data: capabilities } = useCapabilities();
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
-  // 选中订阅后嗅探 format 期间置忙：禁用订阅 Select 避免重复触发。
-  const [refreshingSub, setRefreshingSub] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleModeBusy, setRuleModeBusy] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -125,55 +96,15 @@ export default function Dashboard() {
   // ---- Mutations ----
 
   const selectSubMutation = useMutation({
-    mutationFn: async ({
-      id,
-      needSniff,
-      sub,
-    }: {
-      id: string;
-      needSniff: boolean;
-      sub: SubscriptionView | undefined;
-    }) => {
-      let derivedCore = sub ? subCoreType(sub.format) : null;
-
-      if (needSniff) {
-        setRefreshingSub(true);
-        try {
-          const sniffed = await refreshSubscription(id);
-          derivedCore = subCoreType(sniffed.format);
-          // 刷新成功：更新本地 query 缓存中的订阅数据
-          queryClient.setQueryData<SubscriptionView[]>(SUBSCRIPTIONS_KEY, (prev) =>
-            prev ? prev.map((item) => (item.id === sniffed.id ? sniffed : item)) : prev,
-          );
-        } catch {
-          setRefreshingSub(false);
-          await persistConfig({ active_subscription_id: id });
-          toastWarning("订阅格式未知，未联动切换核心");
-          await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
-          throw new Error("sniff_failed");
-        }
-        setRefreshingSub(false);
-      }
-
-      const patch: Partial<ClientConfig> = { active_subscription_id: id };
-      if (derivedCore && derivedCore !== config?.core_type) {
-        patch.core_type = derivedCore;
-      }
-      await persistConfig(patch);
-      return { patch, needSniff, derivedCore };
+    mutationFn: async (id: string) => {
+      await persistConfig({ active_subscription_id: id });
     },
-    onSuccess: ({ patch, needSniff, derivedCore }) => {
+    onSuccess: () => {
       setActionError(null);
       void queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
-      if (patch.core_type) {
-        toastWarning(`已按订阅格式切换至 ${coreLabel(patch.core_type)} 核心`);
-      } else if (needSniff && derivedCore === null) {
-        toastWarning("订阅格式未知，未联动切换核心");
-      }
       void queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_KEY });
     },
     onError: (err: unknown) => {
-      if (err instanceof Error && err.message === "sniff_failed") return;
       setActionError(toErrorMessage(err));
     },
   });
@@ -348,12 +279,9 @@ export default function Dashboard() {
     setVpnAuthBusy(false);
   };
 
-  /** 选择生效订阅：订阅自身格式推导的核心与当前核心不一致时，同一次持久化联动切换。
-   *  存量订阅未嗅探过 format（null/undefined）时先刷新拉取嗅探，拿到格式后再推导联动。 */
+  /** 选择生效订阅：仅持久化 active_subscription_id（单核心，无格式联动）。 */
   const handleSelectSubscription = async (id: string) => {
-    const sub = subs.find((item) => item.id === id);
-    const needSniff = sub != null && sub.format == null;
-    selectSubMutation.mutate({ id, needSniff, sub });
+    selectSubMutation.mutate(id);
   };
 
   const handleSelectCore = async (path: string) => {
@@ -401,12 +329,6 @@ export default function Dashboard() {
   const activeSub = subs.find((sub) => sub.id === config?.active_subscription_id) ?? null;
   const activeCore = cores.find((core) => core.active) ?? null;
 
-  // 桌面分支：核心二进制按当前 core_type 过滤（core_type 与二进制分属两个概念，
-  // 切换核心类型后需重新选择匹配的二进制；active 二进制不属于当前类型时 Select
-  // 显示 placeholder 不强行展示旧值，gate「请先选择要使用的核心」届时引导重新选择）。
-  const desktopCores = cores.filter((core) => coreTypeOf(core.core_type) === coreTypeOf(config?.core_type));
-  const desktopActiveCore = activeCore && desktopCores.includes(activeCore) ? activeCore : null;
-
   // 旧版 Hub 直连模式：未选择订阅但 hub_url 与 sub_token 均已配置时放行（deprecated）。
   const legacyHub = !activeSub && Boolean(config?.hub_url && config?.sub_token);
 
@@ -420,27 +342,15 @@ export default function Dashboard() {
   if (activeSub && !activeSub.enabled) {
     gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
   }
-  // Android 核心为内置双核心（sing-box libbox / mihomo wrapper，无「选择核心二进制」
-  // 概念，核心类型由运行时自动判定），二进制门禁跳过。
+  // Android 核心为内置 sing-box libbox（无「选择核心二进制」概念），二进制门禁跳过。
   if (!isAndroid && (!config?.core_binary || !activeCore)) {
     gateMessages.push("请先选择要使用的核心");
   }
-  // Android: clash 订阅与 sing-box 不兼容时自动降级到 mihomo（state.rs 中
-  // check_subscription_core_compat 处理），前端不再显示格式不匹配门禁。
-  if (!isAndroid) {
-    if (activeSub && activeSub.format === "ClashYaml" && config?.core_type === "singbox") {
-      gateMessages.push("该订阅为 Clash 格式，需切换 mihomo 核心");
-    }
-    if (activeSub && activeSub.format === "SingBoxJson" && config?.core_type === "mihomo") {
-      gateMessages.push("该订阅为 sing-box 格式，需切换 sing-box 核心");
-    }
-  }
+  // 单核心（sing-box）：ClashYaml 订阅由 Rust 侧转换为 sing-box 运行，无格式门禁。
   if (activeSub?.profile_id) {
     const profile = profiles.find((p) => p.id === activeSub.profile_id);
     if (!profile) {
       gateMessages.push("关联的覆写模板已失效，请在订阅页重新关联");
-    } else if (config && profile.core_type !== config.core_type) {
-      gateMessages.push(`关联覆写适用于 ${coreLabel(profile.core_type)}，与当前核心不匹配`);
     }
   }
   const canStart = gateMessages.length === 0;
@@ -450,9 +360,7 @@ export default function Dashboard() {
   const ruleModeHint =
     running && config?.clash_api_enabled
       ? "即时生效"
-      : config?.core_type === "singbox"
-        ? "已保存，将在下次启动生效（sing-box 运行时切换依赖 Clash 面板 API，需在「设置 → Clash 面板」开启）"
-        : "已保存，将在下次启动生效";
+      : "已保存，将在下次启动生效（sing-box 运行时切换依赖 Clash 面板 API，需在「设置 → Clash 面板」开启）";
 
   return (
     <div className="flex flex-col gap-6">
@@ -530,7 +438,6 @@ export default function Dashboard() {
                   value={config?.active_subscription_id ?? ""}
                   onChange={(key) => void handleSelectSubscription(String(key ?? ""))}
                   placeholder="请选择订阅"
-                  isDisabled={refreshingSub}
                   fullWidth
                 >
                   <Select.Trigger>
@@ -554,25 +461,21 @@ export default function Dashboard() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="dashboard-core">核心</Label>
               {isAndroid ? (
-                // Phase ②: Android core selection silenced — hide switch UI,
-                // show read-only status text (default sing-box, but
-                // check_subscription_core_compat may auto-downgrade to mihomo).
+                // Android 核心为内置 sing-box libbox，无切换 UI，只读展示。
                 <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-sm">
-                  <span className="font-medium">自动（{coreLabel(config?.core_type ?? "singbox")}）</span>
+                  <span className="font-medium">自动（sing-box）</span>
                   <span className="ml-2 text-xs text-muted">（Android 内置核心）</span>
                 </div>
               ) : (
-                // 桌面分支：items 按当前 core_type 过滤；active 二进制不属于当前
-                // 类型时显示 placeholder（不强行展示旧值），提示核心类型切换后需
-                // 重新选择匹配的二进制。
+                // 桌面分支：单核心（sing-box），列出全部可用二进制。
                 <Select
                   key="core-desktop"
                   id="dashboard-core"
                   aria-label="核心二进制"
-                  value={desktopActiveCore?.path ?? ""}
+                  value={activeCore?.path ?? ""}
                   onChange={(key) => void handleSelectCore(String(key ?? ""))}
                   placeholder="请选择核心"
-                  isDisabled={desktopCores.length === 0}
+                  isDisabled={cores.length === 0}
                   fullWidth
                 >
                   <Select.Trigger>
@@ -581,14 +484,14 @@ export default function Dashboard() {
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      {desktopCores.length === 0 ? (
+                      {cores.length === 0 ? (
                         <ListBox.Item key="__empty" id="__empty" textValue="暂无可用核心">
                           暂无可用核心
                         </ListBox.Item>
                       ) : (
-                        desktopCores.map((core) => (
-                          <ListBox.Item key={core.path} id={core.path} textValue={coreLabel(core.core_type)}>
-                            {coreLabel(core.core_type)} {core.version}
+                        cores.map((core) => (
+                          <ListBox.Item key={core.path} id={core.path} textValue={`sing-box ${core.version}`}>
+                            sing-box {core.version}
                             <ListBox.ItemIndicator />
                           </ListBox.Item>
                         ))
@@ -705,7 +608,6 @@ export default function Dashboard() {
       <DashboardStatusCards
         config={config}
         status={status}
-        isAndroid={isAndroid}
         running={running}
         activeSub={activeSub}
         linkCopied={linkCopied}
