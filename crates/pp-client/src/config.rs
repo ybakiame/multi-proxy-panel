@@ -68,6 +68,10 @@ pub struct ClientConfig {
     /// TUN 自动路由（默认开启）。
     pub tun_auto_route: bool,
     /// 是否启用 Clash 面板 API（RESTful 控制接口）。
+    ///
+    /// 默认开启：流量统计与出站模式即时切换依赖该本地接口。存量 `client.json` 中
+    /// 已持久化的显式值在反序列化时优先（尊重用户选择），该默认仅作用于缺失此字段
+    /// 或首装无配置文件的新配置。
     pub clash_api_enabled: bool,
     /// Clash 面板 API 监听端口。
     pub clash_api_port: u16,
@@ -127,7 +131,11 @@ impl Default for ClientConfig {
             tun_enabled: false,
             tun_stack: "mixed".to_string(),
             tun_auto_route: true,
-            clash_api_enabled: false,
+            // Clash API 默认开启：流量统计与出站模式即时切换依赖该本地控制接口。
+            // 该默认仅影响新配置（首装无 client.json 时）；存量 client.json 中已持久化的
+            // 值不受影响（显式字段优先于默认值，desktop 用户显式关闭的尊重选择，
+            // mobile 用户可在设置页自行开启/关闭）。
+            clash_api_enabled: true,
             clash_api_port: 9090,
             clash_api_secret: String::new(),
             clash_api_ui: "zashboard".to_string(),
@@ -230,11 +238,12 @@ mod tests {
             cfg.mitm.script_dialect,
             pp_script::ScriptDialect::Surge
         ));
-        // TUN / Clash 面板配置默认关闭，默认值向后兼容。
+        // TUN 默认关闭；Clash API 默认开启（流量统计与出站模式即时切换依赖它，
+        // 用户可在设置页显式关闭并持久化）。
         assert!(!cfg.tun_enabled);
         assert_eq!(cfg.tun_stack, "mixed");
         assert!(cfg.tun_auto_route);
-        assert!(!cfg.clash_api_enabled);
+        assert!(cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
         assert_eq!(cfg.clash_api_ui, "zashboard");
@@ -286,7 +295,8 @@ mod tests {
 
     #[test]
     fn serde_missing_new_fields_defaults() {
-        // 旧版 client.json 缺失 TUN / Clash 字段时按默认值解析（serde default 全兼容）。
+        // 旧版 client.json 缺失 TUN / Clash 字段时按默认值解析（serde default 全兼容；
+        // Clash API 默认开启，同 ClientConfig::default）。
         let json = r#"{
             "data_dir": "/tmp/pp-client-test",
             "hub_url": "http://127.0.0.1:50052",
@@ -302,7 +312,7 @@ mod tests {
         assert!(!cfg.tun_enabled);
         assert_eq!(cfg.tun_stack, "mixed");
         assert!(cfg.tun_auto_route);
-        assert!(!cfg.clash_api_enabled);
+        assert!(cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
         assert_eq!(cfg.clash_api_ui, "zashboard");

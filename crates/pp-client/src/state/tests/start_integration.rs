@@ -367,6 +367,9 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
     cfg.system_proxy_enabled = true;
+    // 本场景只验证 MITM 链 + 系统代理指向主入口；Clash API 默认已开启，若走默认会
+    // 多注入 clash_mode 基础规则影响 rule_count 断言，故显式关闭。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
