@@ -36,8 +36,10 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
  * 2. 状态卡（StatusCard）；3. 当前节点卡（CurrentNodeCard，点击进代理选择页）；
  * 4. 流量统计卡（TrafficCard，2s 轮询）；
- * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；
- * 6. VPN 授权引导（自 M3.6 Home 完整迁移：同步 reject + vpnLastError 轮询双来源）；
+ * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
+ *    「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
+ *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
+ * 6. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）；
  * 7. 出站模式分段控件（RuleModeSwitch，仅核心运行中渲染；未运行时由状态卡 chip 展示已保存模式）；
  * 8. 快捷入口：配置预览。
  */
@@ -65,9 +67,9 @@ export default function Dashboard() {
   // ---- 局部 UI 状态 ----
   const [sheetOpen, setSheetOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  // 最近启停/授权的同步错误与授权成功标记（展示于主操作卡片内）。
+  // 最近启停/授权的同步错误（展示于主操作卡片内）；`vpn_not_authorized` 由下方
+  // 「需要 VPN 授权」引导接管，自动授权/重试链路期间主按钮呈 busy 态。
   const [actionError, setActionError] = useState<string | null>(null);
-  const [authGranted, setAuthGranted] = useState(false);
 
   // Android 后台启动失败兜底：2s 轮询 vpn_last_error（与 proxy_status 同频）。
   const { data: vpnErrorData } = useQuery<string | null>({
@@ -95,31 +97,61 @@ export default function Dashboard() {
     onSuccess: writeStatus,
     onError: reportError,
   });
-  // 系统 VPN 授权（request_vpn_permission → VpnService.prepare），成功后引导重试启动。
+  // 系统 VPN 授权（request_vpn_permission → VpnService.prepare）。
   const vpnAuthMutation = useMutation({
     mutationFn: requestVpnPermission,
     onSuccess: () => {
+      // 授权成功：清空失败展示，后续由调用方（自动链路 / 兜底按钮）重试启动。
       setActionError(null);
       queryClient.setQueryData<string | null>(VPN_ERROR_KEY, null);
-      setAuthGranted(true);
     },
     onError: reportError,
   });
 
-  const handleStart = async () => {
-    // 新一轮启动先清空上轮失败展示（服务侧成功启动后也会清空 vpn_last_error）。
-    setActionError(null);
-    setAuthGranted(false);
-    queryClient.setQueryData<string | null>(VPN_ERROR_KEY, null);
+  const isVpnAuthError = (err: unknown) => toErrorMessage(err).includes(VPN_AUTH_MARKER);
+
+  /**
+   * 启动代理一次。成功回写状态 + toast；`vpn_not_authorized` 返回 "auth-needed"
+   * 交授权链路处理（不 toast），其余失败 toast + actionError 展示。
+   */
+  const attemptStart = async (): Promise<"ok" | "auth-needed" | "failed"> => {
     try {
       await startMutation.mutateAsync();
       toastSuccess("代理已启动");
+      return "ok";
     } catch (err) {
-      const message = toErrorMessage(err);
-      // vpn_not_authorized 走下方授权引导（Alert），不重复 toast。
-      if (!message.includes(VPN_AUTH_MARKER)) {
-        toastError(message);
+      if (isVpnAuthError(err)) {
+        return "auth-needed";
       }
+      toastError(toErrorMessage(err));
+      return "failed";
+    }
+  };
+
+  /** 请求系统 VPN 授权；授权成功后自动重试启动一次（handleStart 与「去授权」兜底按钮共用）。 */
+  const authorizeAndStart = async () => {
+    try {
+      await vpnAuthMutation.mutateAsync();
+    } catch (err) {
+      // 授权被拒/取消：mutation onError 已把错误写入 actionError（含 vpn_not_authorized），
+      // 卡内显示「需要 VPN 授权」引导并保留「去授权」按钮供用户改变主意后再发起。
+      reportError(err);
+      return;
+    }
+    // 授权成功 → 自动重试启动一次（仅一次，防循环）；仍失败走下方错误展示（含 vpnLastError 轮询兜底）。
+    await attemptStart();
+  };
+
+  const handleStart = async () => {
+    if (startMutation.isPending || vpnAuthMutation.isPending || stopMutation.isPending) {
+      return;
+    }
+    // 新一轮启动先清空上轮失败展示（服务侧成功启动后也会清空 vpn_last_error）。
+    setActionError(null);
+    queryClient.setQueryData<string | null>(VPN_ERROR_KEY, null);
+    if ((await attemptStart()) === "auth-needed") {
+      // 未获系统 VPN 授权 → 自动拉起系统授权弹窗，授权成功后在同一链路内重试启动。
+      await authorizeAndStart();
     }
   };
 
@@ -137,6 +169,8 @@ export default function Dashboard() {
   const vpnAuthRequired = message.includes(VPN_AUTH_MARKER) || (vpnError ?? "").includes(VPN_AUTH_MARKER);
   const showActionError = message !== "" && !vpnAuthRequired;
   const showVpnError = vpnError !== null && !vpnAuthRequired;
+  // 主操作 busy：覆盖「启动→授权→重试」整条链路（授权弹窗停留期间按钮禁用）。
+  const startingPending = startMutation.isPending || vpnAuthMutation.isPending;
 
   return (
     <PageShell>
@@ -173,13 +207,15 @@ export default function Dashboard() {
       {/* 5+6. 主操作 + VPN 授权引导 */}
       <Card>
         <Card.Content className="flex flex-col gap-4">
-          {vpnAuthRequired && (
+          {/* 授权被拒 / 重试仍遇未授权：显示引导 + 「去授权」兜底按钮；授权链路进行中隐藏避免与系统弹窗重叠 */}
+          {vpnAuthRequired && !startingPending && (
             <Alert status="warning">
               <Alert.Indicator />
               <Alert.Content>
                 <Alert.Title>需要 VPN 授权</Alert.Title>
                 <Alert.Description>
-                  代理启动失败：Android 系统尚未授权本应用创建 VPN。点击「去授权」完成系统授权后重新启动代理。
+                  启动代理需要 Android 系统授权创建
+                  VPN。授权被拒绝或取消时无法启动，点击「去授权」重新发起，授权成功后将在同一链路内自动启动代理。
                 </Alert.Description>
                 <div className="mt-3">
                   <Button
@@ -187,7 +223,7 @@ export default function Dashboard() {
                     size="lg"
                     className="min-h-11"
                     isPending={vpnAuthMutation.isPending}
-                    onPress={() => vpnAuthMutation.mutate()}
+                    onPress={() => void authorizeAndStart()}
                   >
                     去授权
                   </Button>
@@ -197,7 +233,7 @@ export default function Dashboard() {
           )}
 
           {/* 启动失败：同步错误文本 + vpn_last_error（若有） */}
-          {(showActionError || showVpnError) && (
+          {(showActionError || showVpnError) && !startingPending && (
             <Alert status="danger">
               <Alert.Indicator />
               <Alert.Content>
@@ -208,17 +244,13 @@ export default function Dashboard() {
             </Alert>
           )}
 
-          {authGranted && (
-            <p className="text-center text-sm text-success">VPN 授权成功，请再次点击下方按钮启动代理。</p>
-          )}
-
           {running ? (
             <Button
               variant="danger"
               size="lg"
               className="min-h-14 w-full"
               isPending={stopMutation.isPending}
-              isDisabled={startMutation.isPending || vpnAuthMutation.isPending}
+              isDisabled={startingPending}
               onPress={() => void handleStop()}
             >
               停止代理
@@ -228,16 +260,16 @@ export default function Dashboard() {
               variant="primary"
               size="lg"
               className="min-h-14 w-full"
-              isPending={startMutation.isPending}
-              isDisabled={!canStart || stopMutation.isPending || vpnAuthMutation.isPending}
+              isPending={startingPending}
+              isDisabled={!canStart || stopMutation.isPending || startingPending}
               onPress={() => void handleStart()}
             >
-              启动代理
+              {vpnAuthMutation.isPending ? "等待授权…" : startMutation.isPending ? "启动中…" : "启动代理"}
             </Button>
           )}
 
           {!running && !canStart && <p className="text-center text-xs text-warning">请先选择要使用的订阅</p>}
-          {!running && canStart && (
+          {!running && canStart && !startingPending && (
             <p className="text-center text-xs text-muted">启动后将同步订阅并拉起内置核心（sing-box）</p>
           )}
         </Card.Content>
