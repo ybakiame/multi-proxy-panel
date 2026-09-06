@@ -6,7 +6,6 @@
 pub mod commands;
 #[cfg(target_os = "android")]
 mod core_bridge;
-pub mod logs;
 mod state;
 
 use tauri::Manager;
@@ -117,7 +116,7 @@ fn configure_wsl_webkit_workaround() {
 
 /// 解析应用数据目录。
 ///
-/// - 桌面：沿用 [`state::AppState::default_data_dir`]（`$HOME/.proxy-panel-client`），
+/// - 桌面：沿用 [`state::default_data_dir`]（`$HOME/.proxy-panel-client`），
 ///   行为与既有版本完全一致，不迁移已有数据；
 /// - Android：`HOME` 为只读 `/`，写 `$HOME/.proxy-panel-client` 必然失败；改用
 ///   Tauri path resolver 的应用私有可写目录 `app_data_dir()`（如
@@ -146,7 +145,7 @@ fn resolve_data_dir(app: &tauri::App) -> std::path::PathBuf {
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
-        state::AppState::default_data_dir()
+        state::default_data_dir()
     }
 }
 
@@ -169,7 +168,7 @@ pub fn run() {
             let data_dir = resolve_data_dir(app);
             // tracing 全局 subscriber 只能初始化一次；日志初始化紧随 data_dir
             // 解析，guard 存入 AppState 持有，保证进程生命周期内文件写入线程存活。
-            let log_guard = logs::init_logging(&data_dir);
+            let log_guard = pp_client_tauri::logs::init_logging(&data_dir);
             tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
             app.manage(state::AppState::new(data_dir, log_guard));
             Ok(())
@@ -224,8 +223,8 @@ pub fn run() {
             commands::vpn_last_error,
             #[cfg(target_os = "android")]
             commands::notify_prefs_changed,
-            commands::platform_info,
-            commands::get_capabilities,
+            pp_client_tauri::capabilities::platform_info,
+            pp_client_tauri::capabilities::get_capabilities,
             commands::local_override_get,
             commands::local_override_save,
             commands::local_override_apply_template,
@@ -240,13 +239,13 @@ pub fn run() {
             commands::connections_active,
             commands::connections_closed,
             commands::connections_close,
-            logs::get_logs,
-            logs::export_logs,
-            logs::open_export_dir,
-            logs::list_log_files,
-            logs::read_log_file_tail,
-            logs::clear_logs,
-            logs::log_frontend,
+            pp_client_tauri::logs::get_logs,
+            pp_client_tauri::logs::export_logs,
+            pp_client_tauri::logs::open_export_dir,
+            pp_client_tauri::logs::list_log_files,
+            pp_client_tauri::logs::read_log_file_tail,
+            pp_client_tauri::logs::clear_logs,
+            pp_client_tauri::logs::log_frontend,
         ]);
 
     // Android 核心由 Kotlin 侧 libbox 驱动：`vpn` 插件 setup 中注册 VpnPlugin

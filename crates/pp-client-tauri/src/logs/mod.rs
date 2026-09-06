@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use tracing::field::Field;
-use tracing::{field, Event, Subscriber};
+use tracing::{Event, Subscriber, field};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
 pub mod export;
 pub mod query;

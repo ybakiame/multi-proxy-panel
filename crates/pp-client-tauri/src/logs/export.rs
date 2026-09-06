@@ -122,12 +122,14 @@ mod tests {
         let export_path = write_export(&logs_dir).unwrap();
         let merged = std::fs::read_to_string(&export_path).unwrap();
         assert_eq!(merged, "day0\nday1\nday2\nbox\n");
-        assert!(export_path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("export-"));
+        assert!(
+            export_path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("export-")
+        );
         std::fs::remove_dir_all(&tmp).ok();
     }
 

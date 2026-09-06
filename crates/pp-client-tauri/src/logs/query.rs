@@ -1,9 +1,8 @@
 //! Log query commands: get logs, list log files, read tail, clear.
 
 use crate::logs::{
-    clear_ring_buffer, entry_sort_ts, passes_level_filter, read_libbox_entries,
-    read_tail_bytes, ring_buffer, validate_log_file_name, LogEntry,
-    log_tail_default_lines, log_tail_max_lines,
+    LogEntry, clear_ring_buffer, entry_sort_ts, log_tail_default_lines, log_tail_max_lines,
+    passes_level_filter, read_libbox_entries, read_tail_bytes, ring_buffer, validate_log_file_name,
 };
 use crate::state::AppState;
 
@@ -154,13 +153,19 @@ mod tests {
 
         let filtered = get_logs_impl(&logs_dir, None, Some("warn".to_string()));
         assert_eq!(
-            filtered.iter().map(|e| e.message.clone()).collect::<Vec<_>>(),
+            filtered
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>(),
             vec!["message 2", "message 1"]
         );
 
         let limited = get_logs_impl(&logs_dir, Some(2), None);
         assert_eq!(
-            limited.iter().map(|e| e.message.clone()).collect::<Vec<_>>(),
+            limited
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>(),
             vec!["message 3", "message 2"]
         );
         clear_ring_buffer();

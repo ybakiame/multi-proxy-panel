@@ -1,59 +1,12 @@
 //! Platform, TUN, and rendering compatibility commands.
+//!
+//! 平台能力矩阵（[`pp_client_tauri::capabilities`]：`CapabilitiesView` /
+//! `get_capabilities` / `platform_info`）已随 ADR-0003 M2 迁至共享 crate，壳层在
+//! `lib.rs` 的 `generate_handler!` 中以全路径注册。
 
-use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
-
-/// Platform capability matrix view.
-#[derive(Debug, Clone, Serialize)]
-pub struct CapabilitiesView {
-    pub os: String,
-    pub is_android: bool,
-    pub capabilities: PlatformCapabilities,
-}
-
-/// Per-platform feature capability matrix.
-#[derive(Debug, Clone, Serialize)]
-pub struct PlatformCapabilities {
-    pub mitm: bool,
-    pub system_proxy: bool,
-    pub core_management: bool,
-    pub tun_toggle: bool,
-    pub scripts_remote: bool,
-    pub cron_tasks: bool,
-}
-
-impl CapabilitiesView {
-    fn current() -> Self {
-        let os = std::env::consts::OS.to_string();
-        let is_android = cfg!(target_os = "android");
-        Self {
-            os: os.clone(),
-            is_android,
-            capabilities: PlatformCapabilities {
-                mitm: !is_android,
-                system_proxy: !is_android,
-                core_management: !is_android,
-                tun_toggle: !is_android,
-                scripts_remote: !is_android,
-                cron_tasks: true,
-            },
-        }
-    }
-}
-
-/// Query platform capability matrix.
-#[tauri::command]
-pub fn get_capabilities() -> CapabilitiesView {
-    CapabilitiesView::current()
-}
-
-/// Legacy `platform_info` (compatibility shim).
-#[tauri::command]
-pub fn platform_info() -> CapabilitiesView {
-    CapabilitiesView::current()
-}
 
 /// TUN authorization status based on current `core_binary`.
 #[tauri::command]
@@ -155,9 +108,9 @@ pub fn toast_mode_override() -> Option<String> {
         .filter(|v| !v.trim().is_empty())
 }
 
-use pp_client::ClientConfig;
 #[cfg(target_os = "android")]
 use super::require_desktop;
+use pp_client::ClientConfig;
 
 #[cfg(test)]
 mod tests {

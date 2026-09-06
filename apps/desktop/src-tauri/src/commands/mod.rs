@@ -31,10 +31,6 @@ pub use remote::*;
 pub use subscription::*;
 pub use task::*;
 
-use pp_client::SubFormat;
-use pp_script::ScriptDialect;
-use uuid::Uuid;
-
 /// Unified error prefix for commands unavailable on Android.
 #[cfg(target_os = "android")]
 const UNSUPPORTED_PLATFORM_PREFIX: &str = "unsupported_platform";
@@ -45,57 +41,8 @@ fn require_desktop<T>(feature: &str) -> Result<T, String> {
     Err(format!("{UNSUPPORTED_PLATFORM_PREFIX}: {feature} is not supported on Android"))
 }
 
-/// OS desktop notifier backed by `tauri-plugin-notification`.
-///
-/// Falls back to `tracing::warn` on failure without blocking script execution.
-pub struct TauriNotifier {
-    app: tauri::AppHandle,
-}
-
-impl TauriNotifier {
-    /// Creates a notifier from the app handle.
-    pub fn new(app: tauri::AppHandle) -> Self {
-        Self { app }
-    }
-}
-
-impl pp_script::Notifier for TauriNotifier {
-    fn notify(&self, title: &str, subtitle: &str, body: &str, _options: Option<serde_json::Value>) {
-        use tauri_plugin_notification::NotificationExt;
-        if let Err(e) = self
-            .app
-            .notification()
-            .builder()
-            .title(title)
-            .body(format!("{subtitle}\n{body}"))
-            .show()
-        {
-            tracing::warn!(error = %e, "failed to send desktop notification");
-        }
-    }
-}
-
-/// Parses a profile ID string into `Uuid`.
-fn parse_profile_id(id: &str) -> Result<Uuid, String> {
-    Uuid::parse_str(id).map_err(|e| format!("invalid profile ID: {e}"))
-}
-
-// The following pure conversion functions are re-exported from pp_client::validation
-// for backward compatibility with existing command modules.
-
-/// String representation of `RemoteKind` (matches `RemoteResourceView.kind` serde).
-fn remote_kind_str(kind: pp_client::RemoteKind) -> &'static str {
-    pp_client::remote_kind_str(kind)
-}
-
-/// String representation of `ScriptDialect` (matches `RemoteResourceView.dialect` serde).
-///
-/// QX is merged into the Loon ecosystem; detected QuantumultX is mapped to `Loon`.
-fn script_dialect_str(dialect: ScriptDialect) -> &'static str {
-    pp_client::script_dialect_str(dialect)
-}
-
-/// String representation of `SubFormat`.
-fn sub_format_str(format: SubFormat) -> &'static str {
-    pp_client::sub_format_str(format)
-}
+// Shared command-layer helpers (双端通用) live in `pp-client-tauri`; re-export here
+// so existing `crate::commands::*` references in shell command modules stay unchanged.
+pub use pp_client_tauri::commands::{
+    TauriNotifier, parse_profile_id, remote_kind_str, script_dialect_str, sub_format_str,
+};
