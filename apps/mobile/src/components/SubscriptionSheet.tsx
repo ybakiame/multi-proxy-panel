@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Modal } from "@heroui/react";
 import {
@@ -25,9 +26,10 @@ interface SubscriptionSheetProps {
  *
  * 点击订阅行 → `useSaveConfig` 叠加 `active_subscription_id` 补丁（对齐 desktop Dashboard
  * 的 `persistConfig` 模式：成功 toast + invalidate CONFIG_KEY / SUBSCRIPTIONS_KEY）。
- * 底部「管理订阅」为后续批次的订阅管理页占位（仅 toast 提示）。
+ * 底部「管理订阅」跳转订阅管理页（`/subscriptions`，M5.6 落地）。
  */
 export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscriptionId }: SubscriptionSheetProps) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const saveConfigMutation = useSaveConfig();
   const [selecting, setSelecting] = useState(false);
@@ -80,7 +82,7 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
               {enabledSubs.length === 0 ? (
                 <div className="flex flex-col gap-1 py-8 text-center">
                   <span className="text-sm text-muted">暂无已启用的订阅</span>
-                  <span className="text-xs text-muted/80">订阅添加与启用将在「订阅管理」中提供</span>
+                  <span className="text-xs text-muted/80">请到「管理订阅」添加订阅源并保持启用</span>
                 </div>
               ) : (
                 enabledSubs.map((sub) => {
@@ -112,7 +114,7 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
               className="min-h-11 w-full"
               onPress={() => {
                 onClose();
-                toastWarning("订阅管理即将上线");
+                navigate("/subscriptions");
               }}
             >
               管理订阅
