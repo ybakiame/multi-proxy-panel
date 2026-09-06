@@ -13,8 +13,9 @@ use super::PanelFeatures;
 ///   (see [`build_singbox_tun_inbound`]);
 /// - `clash_api_enabled` → `experimental.clash_api = {external_controller:
 ///   "127.0.0.1:port", external_ui: "ui-<choice>", external_ui_download_url:
-///   <by choice>}`, append `secret` when non-empty (when template already has
-///   `experimental.clash_api`, replace it wholesale).
+///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
+///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
+///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
 /// `ui-metacubexd`), unknown falls back to zashboard:
@@ -26,8 +27,12 @@ use super::PanelFeatures;
 ///
 /// Dashboard open link does not need to change.
 ///
-/// Note: sing-box has no composition-level `mode` field, rule mode is not written to config,
-/// runtime switched via Clash API ([`push_clash_mode`]).
+/// Note: sing-box `mode` is not composition-level semantics — it only matches the route rule
+/// `clash_mode` condition (case-sensitive, see sing-box issue #2477). When Clash API is enabled,
+/// the head of `route.rules` gets baseline `clash_mode` rules so direct/global actually take
+/// effect, and `experimental.clash_api.default_mode` pins the startup mode to
+/// `features.rule_mode` (small-case); the runtime push ([`push_clash_mode`]) is kept as a
+/// secondary, idempotent path that also covers post-start mode switches.
 pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatures) {
     if features.tun_enabled {
         let Some(obj) = composed.as_object_mut() else {
@@ -69,6 +74,14 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             "external_ui_download_url".to_string(),
             Value::String(super::clash_api_ui_download_url(&features.clash_api_ui).to_string()),
         );
+        // Startup mode pinned to the persisted (normalized small-case) rule mode: sing-box mode is
+        // only the `clash_mode` rule matching value, core default is "Rule" (uppercase) — writing
+        // default_mode removes the reliance on the post-start push succeeding (notably Android's
+        // async VPN boot race where the push could fail and leave the mode at default).
+        clash_api.insert(
+            "default_mode".to_string(),
+            Value::String(normalized_rule_mode(&features.rule_mode).to_string()),
+        );
         if !features.clash_api_secret.is_empty() {
             clash_api.insert(
                 "secret".to_string(),
@@ -83,6 +96,8 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         if let Some(exp) = experimental.as_object_mut() {
             exp.insert("clash_api".to_string(), Value::Object(clash_api));
         }
+        // Outbound mode baseline rules (Clash API enabled implies mode switching is possible).
+        inject_mode_baseline_rules(obj);
     }
 
     // Android: after VpnService (TUN) takes over full traffic, system resolver is unavailable,
@@ -90,6 +105,68 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     // desktop relies on system resolver, not injected.
     #[cfg(target_os = "android")]
     inject_android_dns(composed);
+}
+
+/// Normalize rule mode for config injection: valid values `rule` / `global` / `direct` returned
+/// as-is (small-case, matching [`push_clash_mode`] values and the mode-list sing-box registers
+/// from the baseline `clash_mode` rules), anything else (including empty string) falls back to
+/// `rule`. Callers already pass `normalized_rule_mode()` output, this keeps direct construction
+/// (tests / preview) safe as well.
+fn normalized_rule_mode(rule_mode: &str) -> &str {
+    match rule_mode {
+        "rule" | "global" | "direct" => rule_mode,
+        _ => "rule",
+    }
+}
+
+/// Outbound mode baseline rules (injected at the head of `route.rules` when Clash API is enabled).
+///
+/// sing-box `mode` is not core built-in semantics — it is only the value matched by the route
+/// rule `clash_mode` condition (case-sensitive, see sing-box issue #2477). Without any
+/// `clash_mode` rule the core does not even register `rule`/`direct`/`global` in its mode list,
+/// and Clash API `PATCH /configs {"mode": ...}` silently has no effect. The two head rules make
+/// the mode switch real:
+///
+/// - `{ "clash_mode": "direct", "outbound": "direct" }`: direct mode → all traffic direct;
+/// - `{ "clash_mode": "global", "outbound": "proxy" }`: global mode → all traffic through the
+///   template's main selector group (`proxy`).
+///
+/// rule mode needs no baseline rule — traffic falls through to the normal rule chain below.
+///
+/// Priority semantics: mode switch > local override rules > MITM whitelist (desktop) >
+/// subscription/template rules > final. `insert(0)` guarantees the mode switch wins over every
+/// later rule (including the MITM whitelist rule `compose_singbox_config` prepends and the local
+/// override rules `apply_singbox_local_override` prepends — both run before this stage).
+///
+/// Idempotency guard: when `route.rules` already contains any rule carrying a `clash_mode`
+/// condition (user explicitly took over mode semantics via Profile override / template), the
+/// injection is skipped (debug log) to avoid duplicating or conflicting with user rules.
+fn inject_mode_baseline_rules(obj: &mut serde_json::Map<String, Value>) {
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(route_obj) = route.as_object_mut() else {
+        return;
+    };
+    let rules = route_obj
+        .entry("rules")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(rules_arr) = rules.as_array_mut() else {
+        return;
+    };
+    if rules_arr.iter().any(|r| r.get("clash_mode").is_some()) {
+        tracing::debug!(
+            "route.rules 已含 clash_mode 条件规则，跳过基础模式规则注入（用户经 Profile 覆写显式接管模式语义）"
+        );
+        return;
+    }
+    let baseline = [
+        json!({ "clash_mode": "direct", "outbound": "direct" }),
+        json!({ "clash_mode": "global", "outbound": "proxy" }),
+    ];
+    for (i, rule) in baseline.into_iter().enumerate() {
+        rules_arr.insert(i, rule);
+    }
 }
 
 /// Build sing-box tun inbound JSON (libbox-compatible field set).

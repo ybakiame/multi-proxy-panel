@@ -50,8 +50,10 @@ pub struct PanelFeatures {
     pub clash_api_ui: String,
     /// Rule mode: `rule` / `global` / `direct` (invalid values fall back to `rule` at injection time).
     ///
-    /// sing-box has no composition-level mode field, not written to config (runtime switched via
-    /// Clash API `PATCH /configs`, see [`push_clash_mode`]).
+    /// When Clash API is enabled, written into `experimental.clash_api.default_mode` (startup mode,
+    /// normalized small-case) and backed by baseline `clash_mode` rules at `route.rules` head (see
+    /// [`apply_singbox_panel_features`]); runtime switching via Clash API `PATCH /configs`
+    /// ([`push_clash_mode`]) is kept as a secondary idempotent path.
     pub rule_mode: String,
 }
 

@@ -14,8 +14,9 @@ use pp_common::{PanelError, PanelResult};
 /// not be ready when core just started (especially on Android where the VPN service
 /// boots asynchronously), longer window lets it come up; each failure logged at debug
 /// level, only returns `Err` when all fail (caller treats as best-effort warning, not
-/// blocking: sing-box has no composition-level mode field, runtime mode switching fully
-/// depends on this PATCH).
+/// blocking). Startup mode is already pinned by `experimental.clash_api.default_mode`
+/// (see [`super::apply_singbox_panel_features`]), so this push is an idempotent
+/// secondary path covering post-start switches rather than the sole mechanism.
 pub async fn push_clash_mode(port: u16, secret: &str, mode: &str) -> PanelResult<()> {
     const BACKOFF_MS: [u64; 5] = [500, 1000, 2000, 4000, 8000];
 

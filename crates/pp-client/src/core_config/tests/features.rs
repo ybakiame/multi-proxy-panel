@@ -476,3 +476,138 @@ fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
     );
     assert!(cfg.get("experimental").is_none());
 }
+
+// ---------- Outbound mode: baseline clash_mode rules + clash_api default_mode ----------
+
+/// `apply_panel_features` (Clash API enabled) injects the two baseline `clash_mode` rules at the
+/// head of `route.rules` — before subscription rules, local override rules and the MITM whitelist
+/// rule (all of which run in earlier stages), so the mode switch has top priority.
+#[test]
+fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": {
+            "final": "direct",
+            "rules": [
+                { "domain": "sub.com", "outbound": "proxy" }
+            ]
+        }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &singbox_features());
+
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        rules.len(),
+        3,
+        "2 baseline mode rules prepended to 1 subscription rule"
+    );
+    // Head two rules are the mode switch baselines (small-case, matching push / mode-list values).
+    assert_eq!(
+        rules[0],
+        json!({ "clash_mode": "direct", "outbound": "direct" })
+    );
+    assert_eq!(
+        rules[1],
+        json!({ "clash_mode": "global", "outbound": "proxy" })
+    );
+    // Original subscription rule preserved after them (mode wins over it).
+    assert_eq!(
+        rules[2],
+        json!({ "domain": "sub.com", "outbound": "proxy" })
+    );
+}
+
+/// `experimental.clash_api.default_mode` is written (normalized small-case) from `features.rule_mode`
+/// — core starts in the persisted mode without relying on the post-start Clash API push.
+#[test]
+fn apply_singbox_panel_features_writes_clash_api_default_mode() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    for (rule_mode, expected) in [("rule", "rule"), ("global", "global"), ("direct", "direct")] {
+        let features = PanelFeatures {
+            rule_mode: rule_mode.to_string(),
+            ..singbox_features()
+        };
+        let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+        apply_panel_features(&mut cfg, &features);
+        assert_eq!(
+            cfg["experimental"]["clash_api"]["default_mode"], expected,
+            "default_mode should mirror rule_mode={rule_mode}"
+        );
+    }
+}
+
+/// Invalid `rule_mode` falls back to `rule` at injection time (same normalization as the push path).
+#[test]
+fn apply_singbox_panel_features_default_mode_falls_back_for_invalid_rule_mode() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let features = PanelFeatures {
+        rule_mode: "turbo".to_string(),
+        ..singbox_features()
+    };
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(cfg["experimental"]["clash_api"]["default_mode"], "rule");
+}
+
+/// When `route.rules` already carries a `clash_mode` rule (user explicitly took over mode semantics
+/// via Profile override / template), the baseline injection is skipped — no duplication/conflict.
+#[test]
+fn apply_singbox_panel_features_skips_mode_rules_when_clash_mode_already_present() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": {
+            "rules": [
+                { "clash_mode": "Rule", "outbound": "direct" },
+                { "domain": "sub.com", "outbound": "proxy" }
+            ]
+        }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &singbox_features());
+
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        rules.len(),
+        2,
+        "user clash_mode rule present -> baseline not injected"
+    );
+    assert_eq!(
+        rules[0],
+        json!({ "clash_mode": "Rule", "outbound": "direct" })
+    );
+    assert_eq!(
+        rules[1],
+        json!({ "domain": "sub.com", "outbound": "proxy" })
+    );
+}
+
+/// Clash API disabled: no `experimental.clash_api` (hence no `default_mode`) and no baseline
+/// `clash_mode` rules injected (mode subsystem is off, rules would be dead weight).
+#[test]
+fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": { "final": "direct", "rules": [] }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let no_clash_api = PanelFeatures {
+        clash_api_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &no_clash_api);
+
+    assert!(
+        cfg.get("experimental").is_none(),
+        "clash_api disabled -> no experimental section, no default_mode"
+    );
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert!(
+        rules.is_empty(),
+        "clash_api disabled -> no baseline clash_mode rules injected"
+    );
+}

@@ -84,10 +84,12 @@ pub struct ClientConfig {
     pub fetch_via_local_proxy: bool,
     /// Rule mode: `rule` / `global` / `direct` (default `rule`).
     ///
-    /// Persisted to client.json; sing-box has no composition-level mode field, runtime switched
-    /// via Clash API (`PATCH /configs`). Illegal values fall back to `rule` on the read side
-    /// ([`Self::normalized_rule_mode`]). Struct-level `#[serde(default)]` ensures old version `client.json` (without this field)
-    /// parses normally.
+    /// Persisted to client.json. sing-box mode is only the route rule `clash_mode` matching value:
+    /// when Clash API is enabled the composed config writes it to `experimental.clash_api.default_mode`
+    /// plus baseline `clash_mode` rules (`core_config::apply_singbox_panel_features`), with the
+    /// runtime Clash API `PATCH /configs` push as a secondary idempotent path. Illegal values fall
+    /// back to `rule` on the read side ([`Self::normalized_rule_mode`]). Struct-level `#[serde(default)]`
+    /// ensures old version `client.json` (without this field) parses normally.
     pub rule_mode: String,
     /// Persisted group selections: group name -> selected node name.
     ///

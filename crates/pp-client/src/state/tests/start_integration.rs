@@ -170,7 +170,7 @@ async fn start_with_remote_snippet_runs_mitm_and_scheduler() {
 }
 
 /// Rule mode + Clash API integration: startup succeeds and when clash_api_enabled, best-effort push persisted mode via
-/// `PATCH /configs` (for sing-box this is the only effective channel); status()
+/// `PATCH /configs` (secondary to config-level default_mode + baseline clash_mode rules); status()
 /// returns rule_mode / rule_count / clash_api_url new fields.
 #[tokio::test]
 async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
@@ -199,7 +199,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    // Subscription contains 1 route rule (for rule_count assertion).
+    // Subscription contains 1 route rule; composed config additionally gets the 2 baseline
+    // clash_mode mode rules at head (rule_count assertion covers the final config).
     let sub_body = r#"{
             "outbounds": [{ "type": "direct", "tag": "direct" }],
             "route": { "final": "direct", "rules": [{"action": "sniff"}] }
@@ -230,7 +231,10 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     // Status extension fields.
     let status = state.status().await;
     assert_eq!(status.rule_mode, "global");
-    assert_eq!(status.rule_count, 1);
+    assert_eq!(
+        status.rule_count, 3,
+        "2 baseline clash_mode mode rules + 1 subscription sniff rule"
+    );
     assert_eq!(
         status.clash_api_url,
         Some(format!("http://127.0.0.1:{}", clash_addr.port()))

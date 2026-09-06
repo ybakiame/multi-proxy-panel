@@ -6,13 +6,13 @@ use crate::state::{ClientState, ConnectionTrackerHandle};
 
 impl ClientState {
     /// Runs after the core is started and the Clash API is enabled:
-    /// waits for API readiness, pushes the persisted rule mode (sing-box has no
-    /// composition-level mode field, so this PATCH is the only way), replays
-    /// persisted group selections, and starts the connection tracker.
+    /// waits for API readiness, pushes the persisted rule mode (startup mode is already pinned
+    /// by config-level `default_mode` + baseline `clash_mode` rules, this PATCH is an idempotent
+    /// secondary path), replays persisted group selections, and starts the connection tracker.
     /// All steps are best-effort: failures are logged, never fatal.
     pub(crate) async fn post_core_clash_setup(&mut self) {
-        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：sing-box
-        // 无组合层 mode 字段，完全依赖本次 PATCH 让持久化模式生效。失败仅记 warning，不影响启动。
+        // 核心已启动且 Clash API 开启时，best-effort 推送持久化规则模式：启动 mode 已由合成配置的
+        // default_mode + 基础 clash_mode 规则保证，本次 PATCH 为幂等双保险。失败仅记 warning，不影响启动。
         if self.config.clash_api_enabled {
             // The Clash API may lag behind core startup (notably Android's async
             // VPN boot); wait for readiness so the mode push and the selection
