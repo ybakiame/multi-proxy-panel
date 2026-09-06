@@ -56,6 +56,7 @@
         "@heroui/react": "3.2.2",
         "@heroui/styles": "^3.2.2",
         "@pp/client-core": "workspace:*",
+        "@tanstack/react-query": "^5.102.7",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
       },
