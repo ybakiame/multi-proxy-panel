@@ -3,13 +3,15 @@
 use std::path::PathBuf;
 
 use pp_common::{PanelError, PanelResult};
+#[cfg(feature = "mitm")]
 use pp_script::ScriptDialect;
 
+#[cfg(feature = "mitm")]
 use crate::import::{ConfigMeta, ImportedConfig, parse_import};
 
-use super::{
-    FetchReport, ImportSummary, MergedRemoteConfig, RemoteKind, RemoteResource, safe_name,
-};
+#[cfg(feature = "mitm")]
+use super::ImportSummary;
+use super::{FetchReport, MergedRemoteConfig, RemoteKind, RemoteResource, safe_name};
 
 /// Remote resource manager: responsible for remotes manifest I/O, periodic fetching, and cache reading.
 #[derive(Debug, Clone)]
@@ -86,6 +88,7 @@ impl RemoteManager {
                         .warnings
                         .push(format!("remote '{}': {e}", remote.name)),
                 },
+                #[cfg(feature = "mitm")]
                 RemoteKind::Snippet => match self.fetch_snippet(remote).await {
                     Ok(imported) => {
                         report.rewrites += imported.rewrites.len();
@@ -115,6 +118,15 @@ impl RemoteManager {
                         .warnings
                         .push(format!("remote '{}': {e}", remote.name)),
                 },
+                // scripts-only（mobile）形态：Snippet 解析依赖 pp-mitm，此构建不编译 import
+                // 解析路径，存量 Snippet 资源跳过并记录 warning（不阻塞其余 Script 资源）。
+                #[cfg(not(feature = "mitm"))]
+                RemoteKind::Snippet => {
+                    report.warnings.push(format!(
+                        "remote '{}': Snippet 资源类型需桌面版（mitm）支持，已跳过",
+                        remote.name
+                    ));
+                }
             }
             // Icon localization cache (best-effort): failure only recorded in warning, not affecting fetched count.
             if let Some(icon_url) = &remote.icon
@@ -163,8 +175,11 @@ impl RemoteManager {
                 }
             };
             let part = cached.into_merged();
-            merged.rewrites.extend(part.rewrites);
-            merged.scripts.extend(part.scripts);
+            #[cfg(feature = "mitm")]
+            {
+                merged.rewrites.extend(part.rewrites);
+                merged.scripts.extend(part.scripts);
+            }
             merged.task_scripts.extend(part.task_scripts);
             merged.metas.extend(part.metas);
             for hostname in part.hostnames {
@@ -181,6 +196,7 @@ impl RemoteManager {
     /// Script hooks / task scripts with empty `source` (not fetched) are skipped and counted in
     /// [`ImportSummary::warnings`]; rewrite rules and hostnames are directly merged.
     /// Repeated imports append on top of existing cache (do not overwrite).
+    #[cfg(feature = "mitm")]
     pub fn merge_imported(&self, imported: &ImportedConfig) -> PanelResult<ImportSummary> {
         let mut summary = ImportSummary::default();
         summary.warnings.extend(imported.warnings.iter().cloned());
@@ -250,6 +266,7 @@ impl RemoteManager {
     /// Single script / task script fetch failure only recorded in [`ImportSummary::warnings`] and skipped,
     /// not blocking rewrite rules and hostnames from being merged. Returns summary containing config header
     /// metadata and fetch statistics.
+    #[cfg(feature = "mitm")]
     pub async fn import_content(
         &self,
         content: &str,
@@ -276,6 +293,7 @@ impl RemoteManager {
     /// Fetch scripts pointed to by [`ImportedConfig::script_urls`] and [`ImportedConfig::task_scripts`]
     /// one by one, write back to corresponding `source` on success; failure recorded in
     /// [`ImportedConfig::warnings`] and the script discarded, not blocking other scripts and rules.
+    #[cfg(feature = "mitm")]
     pub async fn fill_script_sources(&self, imported: &mut ImportedConfig) {
         let scripts = std::mem::take(&mut imported.scripts);
         let script_urls = std::mem::take(&mut imported.script_urls);
@@ -317,6 +335,7 @@ impl RemoteManager {
     /// Fetch backfill resource parameter declarations (auxiliary path): when manifest resource `arguments`
     /// is empty but remote meta declares parameters, backfill `arguments` and pre-fill `argument_values`
     /// with defaults (existing values in `argument_values` are not overwritten).
+    #[cfg(feature = "mitm")]
     fn backfill_arguments(&self, name: &str, meta: &ConfigMeta) -> PanelResult<()> {
         if meta.arguments.is_empty() {
             return Ok(());
@@ -342,6 +361,7 @@ impl RemoteManager {
     }
 
     /// Fetch Snippet: parse → backfill script hooks/task sources one by one (failure recorded in warning and skipped).
+    #[cfg(feature = "mitm")]
     async fn fetch_snippet(&self, remote: &RemoteResource) -> PanelResult<ImportedConfig> {
         let text = self.fetch_text(&remote.url).await?;
         let mut imported = parse_import(&text, remote.dialect).map_err(|e| {
@@ -361,6 +381,7 @@ impl RemoteManager {
     }
 
     /// Serialize Snippet aggregation result to cache `data_dir/remote_cache/<name>.json`.
+    #[cfg(feature = "mitm")]
     fn write_cache(&self, name: &str, imported: &ImportedConfig) -> PanelResult<PathBuf> {
         let dir = self.data_dir.join("remote_cache");
         std::fs::create_dir_all(&dir)?;

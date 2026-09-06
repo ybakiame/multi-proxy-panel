@@ -120,7 +120,9 @@ pp-subscription = { path = "crates/pp-subscription" }
 pp-core = { path = "crates/pp-core" }
 pp-script = { path = "crates/pp-script" }
 pp-mitm = { path = "crates/pp-mitm" }
-pp-client = { path = "crates/pp-client" }
+# 共享层默认以 scripts-only 形态拉取 pp-client（mobile 形态无 pp-mitm）；
+# desktop 全功能由成员/壳层通过 pp-client/mitm feature 显式开启。
+pp-client = { path = "crates/pp-client", default-features = false, features = ["scripts"] }
 
 [profile]
 

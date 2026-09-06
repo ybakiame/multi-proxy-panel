@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use pp_common::{PanelError, PanelResult};
+#[cfg(feature = "mitm")]
 use pp_mitm::{MemoryRecorder, RunningProxy};
 use pp_script::{Notifier, ScriptScheduler};
 use tokio::task::JoinHandle;
@@ -28,10 +29,11 @@ use crate::sysproxy::{PlatformSystemProxy, SystemProxy};
 mod clash_setup;
 mod compat;
 mod connection_tracker;
+#[cfg(feature = "mitm")]
 mod mitm;
 mod scheduler;
 mod services;
-#[cfg(all(test, unix))]
+#[cfg(all(test, unix, feature = "mitm"))]
 mod tests;
 mod types;
 
@@ -53,11 +55,13 @@ pub struct ClientState {
     /// Client configuration.
     pub config: ClientConfig,
     core: Option<CoreRunner>,
+    #[cfg(feature = "mitm")]
     mitm: Option<RunningProxy>,
     sysproxy: Arc<dyn SystemProxy>,
     /// Script notifier (`$notify` / `$notification`); default [`TracingNotifier`] (logs only).
     notifier: Arc<dyn Notifier>,
     /// Packet capture recorder (in-memory ring buffer, capacity 2048; injected when MITM proxy starts).
+    #[cfg(feature = "mitm")]
     recorder: Arc<MemoryRecorder>,
     /// Remote subscription task script scheduler (starts after MITM ready, stops on stop).
     scheduler: Option<SchedulerHandle>,
@@ -103,9 +107,11 @@ impl ClientState {
         Self {
             config,
             core: None,
+            #[cfg(feature = "mitm")]
             mitm: None,
             sysproxy,
             notifier,
+            #[cfg(feature = "mitm")]
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
             connection_tracker: None,
@@ -115,6 +121,7 @@ impl ClientState {
     }
 
     /// Packet capture recorder (in-memory ring buffer, capacity 2048).
+    #[cfg(feature = "mitm")]
     pub fn recorder(&self) -> Arc<MemoryRecorder> {
         Arc::clone(&self.recorder)
     }
@@ -323,15 +330,38 @@ impl ClientState {
         } else {
             None
         };
+        #[cfg(feature = "mitm")]
+        let mitm_addr = self.mitm.as_ref().map(|m| m.addr);
+        #[cfg(not(feature = "mitm"))]
+        let mitm_addr = None;
         ClientStatus {
             core_running,
-            mitm_addr: self.mitm.as_ref().map(|m| m.addr),
+            mitm_addr,
             system_proxy: self.sysproxy.is_enabled().await,
             rule_mode: self.config.normalized_rule_mode().to_string(),
             rule_count: self.rule_count,
             clash_api_url,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Non-MITM fallback (scripts-only / mobile shape)
+// ---------------------------------------------------------------------------
+
+/// MITM 相关方法在 `mitm` feature 关闭（mobile 形态）时的空实现：不启动 MITM，
+/// 链路始终为 `None`，回滚仅关停调度器（与 mitm 实现的停止序列保持一致）。
+#[cfg(not(feature = "mitm"))]
+impl ClientState {
+    pub(crate) async fn start_mitm_chain(&mut self) -> PanelResult<Option<core_config::MitmChain>> {
+        Ok(None)
+    }
+
+    pub(crate) async fn rollback_mitm_started(&mut self) {
+        self.stop_scheduler().await;
+    }
+
+    pub(crate) async fn stop_mitm(&mut self) {}
 }
 
 // ---------------------------------------------------------------------------

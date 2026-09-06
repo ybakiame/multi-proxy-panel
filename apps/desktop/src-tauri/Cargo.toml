@@ -30,7 +30,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = "1"
 pp-client = { path = "../../../crates/pp-client" }
-pp-client-tauri = { path = "../../../crates/pp-client-tauri" }
+pp-client-tauri = { path = "../../../crates/pp-client-tauri", features = ["mitm"] }
 pp-common = { path = "../../../crates/pp-common" }
 pp-mitm = { path = "../../../crates/pp-mitm" }
 pp-script = { path = "../../../crates/pp-script" }

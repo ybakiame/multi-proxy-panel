@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "mitm")]
 use pp_mitm::{RewriteRule, ScriptRule};
 use pp_script::{ScriptDialect, TaskScript};
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ mod cache;
 mod manager;
 mod notify;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mitm"))]
 mod tests;
 
 pub use cache::*;
@@ -164,8 +165,10 @@ pub struct ImportSummary {
 #[derive(Default)]
 pub struct MergedRemoteConfig {
     /// Rewrite rules (patterns recompiled).
+    #[cfg(feature = "mitm")]
     pub rewrites: Vec<RewriteRule>,
     /// Script hook rules (`source` backfilled).
+    #[cfg(feature = "mitm")]
     pub scripts: Vec<ScriptRule>,
     /// Task scripts (`source` backfilled).
     pub task_scripts: Vec<TaskScript>,
@@ -216,6 +219,7 @@ fn placeholder(key: &str, triple: bool) -> String {
 ///
 /// `remotes` provides user-configured parameter values ([`RemoteResource::argument_values`]),
 /// `metas` provides each resource's `#!arguments=` declared keys and defaults ([`ConfigMeta::arguments`]).
+#[cfg(feature = "mitm")]
 pub fn apply_argument_templates(
     rules: Vec<ScriptRule>,
     metas: &[ConfigMeta],

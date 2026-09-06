@@ -8,6 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 description = "双端通用 Tauri 命令层（Desktop/Mobile 壳共享）"
 
+[features]
+# 桌面（mitm）全功能开关：desktop 壳显式开启；mobile 壳不开 → pp-client 以
+# scripts-only 形态进入 mobile 构建图（无 pp-mitm）。
+mitm = ["pp-client/mitm"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"

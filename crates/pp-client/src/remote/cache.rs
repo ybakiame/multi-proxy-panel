@@ -2,16 +2,21 @@
 //!
 //! Rewrite rule `Regex` is persisted as pattern string, recompiled on readback.
 
+#[cfg(feature = "mitm")]
 use pp_mitm::{Phase, RewriteKind, RewriteRule, ScriptRule};
 use pp_script::{ScriptKind, TaskScript};
 use serde::{Deserialize, Serialize};
 
-use crate::import::{ConfigMeta, ImportedConfig};
+use crate::import::ConfigMeta;
+#[cfg(feature = "mitm")]
+use crate::import::ImportedConfig;
 
 /// Cached Snippet aggregation result (JSON persistence).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CachedRemoteConfig {
+    #[cfg(feature = "mitm")]
     pub rewrites: Vec<CachedRewriteRule>,
+    #[cfg(feature = "mitm")]
     pub scripts: Vec<CachedScriptRule>,
     pub task_scripts: Vec<TaskScript>,
     pub hostnames: Vec<String>,
@@ -20,6 +25,7 @@ pub struct CachedRemoteConfig {
 
 impl CachedRemoteConfig {
     /// Build from parsed [`ImportedConfig`].
+    #[cfg(feature = "mitm")]
     pub fn from_imported(imported: &ImportedConfig) -> Self {
         Self {
             rewrites: imported
@@ -49,11 +55,13 @@ impl CachedRemoteConfig {
     /// Convert cache to runtime merged config (recompile regex patterns).
     pub fn into_merged(self) -> super::MergedRemoteConfig {
         super::MergedRemoteConfig {
+            #[cfg(feature = "mitm")]
             rewrites: self
                 .rewrites
                 .into_iter()
                 .filter_map(|r| r.try_into().ok())
                 .collect(),
+            #[cfg(feature = "mitm")]
             scripts: self
                 .scripts
                 .into_iter()
@@ -73,6 +81,7 @@ pub struct CachedRewriteRule {
     pub kind: CachedRewriteKind,
 }
 
+#[cfg(feature = "mitm")]
 impl From<&RewriteRule> for CachedRewriteRule {
     fn from(rule: &RewriteRule) -> Self {
         Self {
@@ -82,6 +91,7 @@ impl From<&RewriteRule> for CachedRewriteRule {
     }
 }
 
+#[cfg(feature = "mitm")]
 impl TryFrom<CachedRewriteRule> for RewriteRule {
     type Error = regex::Error;
 
@@ -116,6 +126,7 @@ pub enum CachedRewriteKind {
     Reject,
 }
 
+#[cfg(feature = "mitm")]
 impl From<&RewriteKind> for CachedRewriteKind {
     fn from(kind: &RewriteKind) -> Self {
         match kind {
@@ -145,6 +156,7 @@ impl From<&RewriteKind> for CachedRewriteKind {
     }
 }
 
+#[cfg(feature = "mitm")]
 impl From<CachedRewriteKind> for RewriteKind {
     fn from(kind: CachedRewriteKind) -> Self {
         match kind {
@@ -179,6 +191,7 @@ pub enum CachedPhase {
     Response,
 }
 
+#[cfg(feature = "mitm")]
 impl From<Phase> for CachedPhase {
     fn from(phase: Phase) -> Self {
         match phase {
@@ -188,6 +201,7 @@ impl From<Phase> for CachedPhase {
     }
 }
 
+#[cfg(feature = "mitm")]
 impl From<CachedPhase> for Phase {
     fn from(phase: CachedPhase) -> Self {
         match phase {
@@ -209,6 +223,7 @@ pub struct CachedScriptRule {
     pub argument: Option<String>,
 }
 
+#[cfg(feature = "mitm")]
 impl From<&ScriptRule> for CachedScriptRule {
     fn from(rule: &ScriptRule) -> Self {
         Self {
@@ -223,6 +238,7 @@ impl From<&ScriptRule> for CachedScriptRule {
     }
 }
 
+#[cfg(feature = "mitm")]
 impl TryFrom<CachedScriptRule> for ScriptRule {
     type Error = regex::Error;
 

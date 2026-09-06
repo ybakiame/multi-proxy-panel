@@ -1,9 +1,12 @@
 //! Parsing utilities shared across import dialects.
 
+#[cfg(feature = "mitm")]
 use regex::Regex;
+#[cfg(feature = "mitm")]
 use std::collections::HashMap;
 
 /// Compile regex; on failure record warning and return `None` (no panic).
+#[cfg(feature = "mitm")]
 pub(super) fn compile_pattern(
     src: &str,
     cfg: &mut super::ImportedConfig,
@@ -20,12 +23,14 @@ pub(super) fn compile_pattern(
 }
 
 /// Whether the string is a remote http(s) script URL; others (local paths, etc.) are not supported.
+#[cfg(feature = "mitm")]
 pub(super) fn is_remote_url(s: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
 /// Derive task name from script URL: take the last path segment filename (strip `.js` suffix),
 /// fallback to the whole URL on failure.
+#[cfg(feature = "mitm")]
 pub(super) fn derive_name_from_url(url: &str) -> String {
     if let Ok(parsed) = reqwest::Url::parse(url)
         && let Some(seg) = parsed.path_segments().and_then(|mut it| it.next_back())
@@ -52,6 +57,7 @@ pub(super) fn strip_quotes(s: &str) -> &str {
 /// Parse `key=value` value (`true` / `1` / `yes` treated as true, default false).
 ///
 /// Surge's `requires-body` accepts both boolean and numeric forms: `true/false` and `1/0`.
+#[cfg(feature = "mitm")]
 pub(super) fn parse_bool(v: Option<&String>) -> bool {
     matches!(
         v.map(|s| s.trim().to_ascii_lowercase()).as_deref(),
@@ -64,9 +70,11 @@ pub(super) fn parse_bool(v: Option<&String>) -> bool {
 /// In Surge semantics `max-size=-1` / `max-size=0` means "unlimited body size";
 /// pp-mitm's `max_size` is `usize`, mapping `usize::MAX` directly would break internal buffering
 /// semantics, so mapped to 10MB upper bound (sufficient for绝大多数 real response bodies).
+#[cfg(feature = "mitm")]
 const MAX_SIZE_UNLIMITED: usize = 10 * 1024 * 1024;
 
 /// Parse Surge `max-size`: `-1` / `0` (unlimited) → [`MAX_SIZE_UNLIMITED`], normal numbers parsed as-is.
+#[cfg(feature = "mitm")]
 pub(super) fn parse_max_size(v: Option<&String>) -> Option<usize> {
     let s = v?.trim();
     match s {
@@ -110,6 +118,7 @@ pub(super) fn split_kv_segments(input: &str) -> Vec<String> {
 }
 
 /// Parse comma-separated `key=value` parameter list; keys normalized to lowercase, values unquoted.
+#[cfg(feature = "mitm")]
 pub(super) fn parse_kv_params(input: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for pair in split_kv_segments(input) {
@@ -126,6 +135,7 @@ pub(super) fn parse_kv_params(input: &str) -> HashMap<String, String> {
 }
 
 /// Split by whitespace but preserve whitespace inside double quotes (e.g., `data="hello world"`).
+#[cfg(feature = "mitm")]
 pub(super) fn split_tokens_keep_quoted(line: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -151,12 +161,14 @@ pub(super) fn split_tokens_keep_quoted(line: &str) -> Vec<String> {
 }
 
 /// Comment (`#` / `;` prefix) or blank line.
+#[cfg(feature = "mitm")]
 pub(super) fn is_comment_or_blank(line: &str) -> bool {
     line.is_empty() || line.starts_with('#') || line.starts_with(';')
 }
 
 /// Parse `[section]` header, normalized to lowercase + single space between words
 /// (`[URL Rewrite]` → `"url rewrite"`).
+#[cfg(feature = "mitm")]
 pub(super) fn section_name(line: &str) -> Option<String> {
     let t = line.trim();
     if t.len() >= 2 && t.starts_with('[') && t.ends_with(']') {
