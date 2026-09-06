@@ -449,8 +449,10 @@ fn android_config_without_direct_outbound_passes_real_singbox_check() {
     );
 }
 
+/// 全部面板特性关闭时：tun inbound / experimental.clash_api / clash_mode 规则都不注入，
+/// 但 sniff + hijack-dns 头部规则仍无条件注入（TUN 必需，mixed-only 无害）。
 #[test]
-fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
+fn apply_singbox_panel_features_disabled_only_injects_sniff_and_dns_hijack() {
     let sub = json!({
         "inbounds": [{ "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 17890 }],
         "outbounds": [{ "type": "direct", "tag": "direct" }]
@@ -475,13 +477,95 @@ fn apply_singbox_panel_features_disabled_leaves_config_untouched() {
             .any(|i| i["type"] == "tun")
     );
     assert!(cfg.get("experimental").is_none());
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(
+        rules.len(),
+        2,
+        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns injected"
+    );
+}
+
+/// sniff / hijack-dns 幂等：route.rules 已含 sniff 或 hijack-dns 规则时不重复注入（各自独立判断）。
+/// 关闭 clash_api（无 mode 规则注入），隔离验证 sniff/hijack 头部插入的幂等语义。
+#[test]
+fn inject_dns_hijack_and_sniff_skips_when_already_present() {
+    let no_clash_api = PanelFeatures {
+        clash_api_enabled: false,
+        ..singbox_features()
+    };
+
+    // 已含 sniff、缺 hijack-dns：只补 hijack-dns（紧随已有 sniff 之后，index 1）。
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": {
+            "final": "direct",
+            "rules": [
+                { "action": "sniff" },
+                { "domain": "sub.com", "outbound": "proxy" }
+            ]
+        }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &no_clash_api);
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        rules.len(),
+        3,
+        "missing hijack-dns added next to existing sniff, subscription rule kept"
+    );
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(
+        rules[2],
+        json!({ "domain": "sub.com", "outbound": "proxy" })
+    );
+
+    // 两条都已含 -> 一条都不补，订阅规则原序保留。
+    let sub2 = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": {
+            "final": "direct",
+            "rules": [
+                { "action": "sniff" },
+                { "protocol": "dns", "action": "hijack-dns" },
+                { "domain": "sub.com", "outbound": "proxy" }
+            ]
+        }
+    });
+    let mut cfg2 = compose_singbox_config(&sub2, 17890, None).unwrap();
+    apply_panel_features(&mut cfg2, &no_clash_api);
+    let rules2 = cfg2["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        rules2.len(),
+        3,
+        "existing sniff + hijack-dns -> no head injection, rules untouched"
+    );
+    assert_eq!(rules2[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules2[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(
+        rules2[2],
+        json!({ "domain": "sub.com", "outbound": "proxy" })
+    );
 }
 
 // ---------- Outbound mode: baseline clash_mode rules + clash_api default_mode ----------
 
-/// `apply_panel_features` (Clash API enabled) injects the two baseline `clash_mode` rules at the
-/// head of `route.rules` — before subscription rules, local override rules and the MITM whitelist
-/// rule (all of which run in earlier stages), so the mode switch has top priority.
+/// `apply_panel_features` (Clash API enabled) injects sniff + hijack-dns head rules and the two
+/// baseline `clash_mode` rules into `route.rules` — before subscription rules, local override
+/// rules and the MITM whitelist rule (all of which run in earlier stages), so DNS hijacking /
+/// sniffing and the mode switch take priority. Final head order:
+/// `sniff`, `hijack-dns`, `clash_mode direct`, `clash_mode global`, then the original rule.
 #[test]
 fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
     let sub = json!({
@@ -499,21 +583,27 @@ fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        3,
-        "2 baseline mode rules prepended to 1 subscription rule"
+        5,
+        "2 sniff/dns-hijack + 2 baseline mode rules prepended to 1 subscription rule"
     );
-    // Head two rules are the mode switch baselines (small-case, matching push / mode-list values).
+    // Head rules: sniff + hijack-dns (TUN DNS hijack, precedes mode rules so DNS goes to DNS module in every mode).
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
     assert_eq!(
-        rules[0],
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    // Then the two mode switch baselines (small-case, matching push / mode-list values).
+    assert_eq!(
+        rules[2],
         json!({ "clash_mode": "direct", "outbound": "direct" })
     );
     assert_eq!(
-        rules[1],
+        rules[3],
         json!({ "clash_mode": "global", "outbound": "proxy" })
     );
     // Original subscription rule preserved after them (mode wins over it).
     assert_eq!(
-        rules[2],
+        rules[4],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
@@ -556,6 +646,7 @@ fn apply_singbox_panel_features_default_mode_falls_back_for_invalid_rule_mode() 
 
 /// When `route.rules` already carries a `clash_mode` rule (user explicitly took over mode semantics
 /// via Profile override / template), the baseline injection is skipped — no duplication/conflict.
+/// sniff / hijack-dns 仍注入（与用户接管模式语义无关，无条件）。
 #[test]
 fn apply_singbox_panel_features_skips_mode_rules_when_clash_mode_already_present() {
     let sub = json!({
@@ -573,21 +664,27 @@ fn apply_singbox_panel_features_skips_mode_rules_when_clash_mode_already_present
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        2,
-        "user clash_mode rule present -> baseline not injected"
+        4,
+        "user clash_mode rule present -> baseline not injected, sniff/hijack-dns still injected"
+    );
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
     );
     assert_eq!(
-        rules[0],
+        rules[2],
         json!({ "clash_mode": "Rule", "outbound": "direct" })
     );
     assert_eq!(
-        rules[1],
+        rules[3],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
 
-/// Clash API disabled: no `experimental.clash_api` (hence no `default_mode`) and no baseline
-/// `clash_mode` rules injected (mode subsystem is off, rules would be dead weight).
+/// Clash API disabled: no `experimental.clash_api` (hence no `default_mode`), no baseline
+/// `clash_mode` rules injected (mode subsystem is off, rules would be dead weight) — but sniff /
+/// hijack-dns head rules still injected unconditionally.
 #[test]
 fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api() {
     let sub = json!({
@@ -606,8 +703,14 @@ fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api
         "clash_api disabled -> no experimental section, no default_mode"
     );
     let rules = cfg["route"]["rules"].as_array().unwrap();
-    assert!(
-        rules.is_empty(),
-        "clash_api disabled -> no baseline clash_mode rules injected"
+    assert_eq!(
+        rules.len(),
+        2,
+        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns injected"
+    );
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
     );
 }

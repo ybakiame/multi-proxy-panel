@@ -199,8 +199,9 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    // Subscription contains 1 route rule; composed config additionally gets the 2 baseline
-    // clash_mode mode rules at head (rule_count assertion covers the final config).
+    // Subscription contains outbounds only; composed config additionally gets the 2 baseline
+    // clash_mode mode rules + 1 MITM whitelist rule at head (rule_count assertion covers the
+    // final config; sniff/hijack-dns 无条件注入后总计 5 条)。
     let sub_body = r#"{
             "outbounds": [{ "type": "direct", "tag": "direct" }],
             "route": { "final": "direct", "rules": [{"action": "sniff"}] }
@@ -232,8 +233,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     let status = state.status().await;
     assert_eq!(status.rule_mode, "global");
     assert_eq!(
-        status.rule_count, 3,
-        "2 baseline clash_mode mode rules + 1 subscription sniff rule"
+        status.rule_count, 5,
+        "2 sniff/dns-hijack + 2 baseline clash_mode mode rules + 1 MITM whitelist rule"
     );
     assert_eq!(
         status.clash_api_url,
@@ -425,19 +426,29 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     assert_eq!(pp_mitm["server_port"], mitm_addr.port());
 
     // Whitelist routing rule: inbound matches main entry, domains are correctly split by wildcard/exact.
+    // 前面两条是 sniff + hijack-dns 头部规则（无条件注入），MITM whitelist 被推到 index 2。
     let rules = core_config["route"]["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0]["inbound"], serde_json::json!(["main-in"]));
     assert_eq!(
-        rules[0]["domain_suffix"],
+        rules.len(),
+        3,
+        "2 sniff/dns-hijack head rules + 1 MITM whitelist rule"
+    );
+    assert_eq!(rules[0], serde_json::json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        serde_json::json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(rules[2]["inbound"], serde_json::json!(["main-in"]));
+    assert_eq!(
+        rules[2]["domain_suffix"],
         serde_json::json!(["example.com"])
     );
-    assert_eq!(rules[0]["domain"], serde_json::json!(["api.example2.com"]));
-    assert_eq!(rules[0]["outbound"], "pp-mitm");
+    assert_eq!(rules[2]["domain"], serde_json::json!(["api.example2.com"]));
+    assert_eq!(rules[2]["outbound"], "pp-mitm");
 
-    // Running status extension: composed config contains 1 MITM whitelist routing rule.
+    // Running status extension: composed config contains sniff + hijack-dns + 1 MITM whitelist rule.
     let status = state.status().await;
-    assert_eq!(status.rule_count, 1);
+    assert_eq!(status.rule_count, 3);
 
     state.stop().await;
     let status = state.status().await;

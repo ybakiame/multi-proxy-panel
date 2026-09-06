@@ -16,6 +16,7 @@ use super::PanelFeatures;
 ///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
 ///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
 ///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
+/// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
 /// `ui-metacubexd`), unknown falls back to zashboard:
@@ -105,6 +106,11 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     // desktop relies on system resolver, not injected.
     #[cfg(target_os = "android")]
     inject_android_dns(composed);
+
+    // TUN DNS 劫持 + 域名嗅探（无条件注入，见 inject_dns_hijack_and_sniff_rules）。
+    if let Some(obj) = composed.as_object_mut() {
+        inject_dns_hijack_and_sniff_rules(obj);
+    }
 }
 
 /// Normalize rule mode for config injection: valid values `rule` / `global` / `direct` returned
@@ -166,6 +172,56 @@ fn inject_mode_baseline_rules(obj: &mut serde_json::Map<String, Value>) {
     ];
     for (i, rule) in baseline.into_iter().enumerate() {
         rules_arr.insert(i, rule);
+    }
+}
+
+/// TUN DNS 劫持 + 域名嗅探头部规则（无条件注入，见 [`apply_singbox_panel_features`]）。
+///
+/// sing-box 1.13+ 移除 inbound 级 `sniff` 字段（见 [`build_singbox_tun_inbound`] 注释），TUN
+/// (Android VPN / desktop tun) 模式下域名分流规则与 `dns.servers` 需要嗅探 + DNS 劫持才生效。
+/// 标准做法是在 `route.rules` 头部注入两条 action 规则：
+///
+/// - `{ "action": "sniff" }`：对所有连接做协议/域名嗅探（此后续规则可用嗅探出的域名分流）；
+/// - `{ "protocol": "dns", "action": "hijack-dns" }`：DNS 流量劫持进 DNS 模块（放 clash_mode
+///   之前：direct/global 模式下 DNS 也必须进 DNS 模块解析，否则 TUN 下 system resolver 不可用，
+///   `dns.servers` 形同虚设）。
+///
+/// 无条件注入：TUN 场景必需；mixed-only（无 TUN）场景下嗅探无副作用、DNS 劫持不命中，无害。
+/// 与 clash_mode 注入解耦（用户经 Profile 覆写显式接管 mode 语义时仍注入 sniff/hijack-dns）。
+///
+/// 幂等性：已有 `{"action":"sniff"}` 规则时跳过 sniff；已有 protocol=dns 的 hijack-dns 规则时
+/// 跳过 hijack-dns（各自独立判断，避免与用户/模板显式规则重复）。
+fn inject_dns_hijack_and_sniff_rules(obj: &mut serde_json::Map<String, Value>) {
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(route_obj) = route.as_object_mut() else {
+        return;
+    };
+    let rules = route_obj
+        .entry("rules")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(rules_arr) = rules.as_array_mut() else {
+        return;
+    };
+    let has_sniff = rules_arr
+        .iter()
+        .any(|r| r.get("action").and_then(|a| a.as_str()) == Some("sniff"));
+    let has_hijack_dns = rules_arr.iter().any(|r| {
+        r.get("action").and_then(|a| a.as_str()) == Some("hijack-dns")
+            && r.get("protocol").and_then(|p| p.as_str()) == Some("dns")
+    });
+    if !has_sniff {
+        rules_arr.insert(0, json!({ "action": "sniff" }));
+    }
+    if !has_hijack_dns {
+        // hijack-dns 紧随 sniff 之后（index 0 = sniff 时插到 1，否则插到头部 0）。
+        let at = usize::from(
+            rules_arr
+                .first()
+                .is_some_and(|r| r.get("action").and_then(|a| a.as_str()) == Some("sniff")),
+        );
+        rules_arr.insert(at, json!({ "protocol": "dns", "action": "hijack-dns" }));
     }
 }
 
