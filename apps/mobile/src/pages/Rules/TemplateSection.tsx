@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { AlertDialog, Button, Card, Chip } from "@heroui/react";
-import { TEMPLATE_DEFS } from "@pp/client-core";
 import type { CustomTemplateInput, CustomTemplateView, LocalRuleView } from "@pp/client-core";
 import { TemplateFormSheet } from "./TemplateFormSheet";
 
@@ -26,13 +25,12 @@ function customTemplateId(template: CustomTemplateView): string {
 }
 
 /**
- * 规则页 2 区：场景模板卡（ADR-0003 M5.4 J4 扩展）。
+ * 规则页场景模板区（ADR-0003 M5.4 / J4 扩展）。
  *
- * - 内置 3 张模板卡（回国/海外/广告过滤，来自共享 `TEMPLATE_DEFS`）+ 自定义模板卡
- *   （名称/描述/规则数 + 应用或撤销按钮 + 删除入口——内置卡无删除）；
- * - 区头「新建模板」按钮 → 底部 Sheet（`TemplateFormSheet`，规则勾选快照）；
- * - 应用/撤销串行化（单飞 busy），成功/失败 toast 由页面处理器负责；
- * - 删除需 AlertDialog 确认；已应用的模板必须先撤销再删除（避免丢失撤销入口）。
+ * 自「废弃内置场景模板」起只渲染**用户自定义模板卡**（名称/描述/规则数 + 应用或
+ * 撤销按钮 + 删除入口）；区头「新建模板」按钮 → 底部 Sheet（`TemplateFormSheet`，
+ * 规则勾选快照）；应用/撤销串行化（单飞 busy），成功/失败 toast 由页面处理器负责；
+ * 删除需 AlertDialog 确认；已应用的模板必须先撤销再删除（避免丢失撤销入口）。
  */
 export function TemplateSection({
   appliedIds,
@@ -91,49 +89,6 @@ export function TemplateSection({
       </div>
 
       <div className="flex flex-col gap-2">
-        {/* 内置模板卡（无删除入口） */}
-        {TEMPLATE_DEFS.map((template) => {
-          const applied = appliedIds.has(template.id);
-          return (
-            <Card key={template.id}>
-              <Card.Content className="flex items-center gap-3">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate text-sm font-medium text-foreground">{template.name}</span>
-                    {applied && (
-                      <Chip size="sm" variant="soft" color="accent" className="shrink-0">
-                        已应用
-                      </Chip>
-                    )}
-                  </span>
-                  <span className="text-xs text-muted">{template.desc}</span>
-                </div>
-                {applied ? (
-                  <Button
-                    variant="secondary"
-                    className="min-h-11 shrink-0 px-4"
-                    isDisabled={busyId !== null}
-                    isPending={busyId === template.id}
-                    onPress={() => void run(template.id, onRevert)}
-                  >
-                    撤销
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    className="min-h-11 shrink-0 px-4"
-                    isDisabled={busyId !== null}
-                    isPending={busyId === template.id}
-                    onPress={() => void run(template.id, onApply)}
-                  >
-                    应用
-                  </Button>
-                )}
-              </Card.Content>
-            </Card>
-          );
-        })}
-
         {/* 自定义模板卡（可删除） */}
         {customTemplates.map((template) => {
           const templateId = customTemplateId(template);

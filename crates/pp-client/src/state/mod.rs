@@ -372,7 +372,15 @@ impl ClientState {
 ///
 /// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
 /// - Injection failure → warning log, does not block startup.
-fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut serde_json::Value) {
+///
+/// 自「废弃内置规则集订阅」起，生成配置里的 `rule_sets` 条目**只**来自用户自控的
+/// 自定义规则集（[`apply_custom_rule_sets`](crate::local_override::apply_custom_rule_sets)
+/// 注入 enabled + 已落盘 backing file 的 custom set）；旧内置订阅的 remote
+/// rule_set 注入已移除，`ovr.singbox.rule_sets` 仅承载用户显式保留的引用。
+pub(crate) fn inject_local_override_warn_only(
+    data_dir: &std::path::Path,
+    config: &mut serde_json::Value,
+) {
     let store = crate::local_override::LocalOverrideStore::new(data_dir.to_path_buf());
     let ovr = match store.load() {
         Ok(o) => o,
@@ -385,15 +393,11 @@ fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut serd
         }
     };
 
-    // Sync rule set refs from subscriptions.
     let manager = crate::local_override::RuleSetManager::new(data_dir.to_path_buf());
-    let mut core_ovr = ovr.singbox.clone();
-    core_ovr.rule_sets = manager.build_rule_set_refs(&ovr);
 
-    crate::local_override::apply_local_override(config, &core_ovr);
+    // 本地规则卡片前插（rule_set 引用由用户规则卡片定义并校验到 custom tag）。
+    crate::local_override::apply_local_override(config, &ovr.singbox);
 
-    // Inject user-defined custom rule sets (remote URL cache / manual JSON)
-    // as local rule_set entries. Rule cards referencing their tags are
-    // injected together with the local rules above.
+    // 注入用户自定义 rule sets（remote cache / manual JSON）为 local rule_set 条目。
     crate::local_override::apply_custom_rule_sets(config, &manager, &ovr.custom_rule_sets);
 }

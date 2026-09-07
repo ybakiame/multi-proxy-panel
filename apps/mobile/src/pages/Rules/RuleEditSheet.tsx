@@ -4,11 +4,11 @@ import { Button, ListBox, Modal, Select, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "@pp/client-core";
 
-/** 规则集选择器选项（rule_set 匹配目标）：已订阅社区规则集或启用的自定义规则集。 */
+/** 规则集选择器选项（rule_set 匹配目标）：已启用的自定义规则集 tag。 */
 export interface RuleSetOption {
-  /** 写入 `rule.target` 的原始值：社区 `community_id` 或自定义 `tag`。 */
+  /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
   value: string;
-  /** 下拉显示名（社区用 display_name，自定义用 tag）。 */
+  /** 下拉显示名（自定义规则集 tag）。 */
   label: string;
   /** 可选说明行（如不可用原值的提示）。 */
   hint?: string;
@@ -34,14 +34,14 @@ const TARGET_PLACEHOLDER: Record<string, string> = {
   domain_keyword: "例如：google",
   ip_cidr: "例如：1.2.3.0/24",
   source_ip_cidr: "例如：10.0.0.0/8",
-  rule_set: "规则集 community_id",
+  rule_set: "自定义规则集 tag",
   app_package: "例如：com.android.chrome",
   port: "例如：443",
 };
 
 /** 目标输入下方辅助说明（仅选中类型有提示时展示）。 */
 const TARGET_HINT: Record<string, string> = {
-  rule_set: "填入规则集列表内可用订阅的 community_id",
+  rule_set: "填入已启用的自定义规则集 tag",
   app_package: "按 Android 应用包名匹配（仅 Android 生效）",
   port: "匹配目标端口；也支持端口段如 1000:2000",
 };
@@ -135,8 +135,8 @@ export function RuleEditSheet({
   const canSave = isFinal ? true : target.trim().length > 0;
 
   /**
-   * 规则集选择器候选：父层传入选项（已订阅社区 + 启用自定义）。
-   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（内置已取消订阅 / 自定义已删除或停用），
+   * 规则集选择器候选：父层传入选项（已启用的自定义规则集）。
+   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（自定义已删除/停用/未迁移），
    * 追加为「原值保留」项——Select 显示原值且不强清，由用户决定改选或保留（保留保存时后端会校验失败）。
    */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
@@ -254,9 +254,11 @@ export function RuleEditSheet({
                     </Select.Popover>
                   </Select>
                   {effectiveRuleSetOptions.length === 0 ? (
-                    <span className="text-xs text-muted">当前没有可用的规则集，请先在「规则集管理」中添加或订阅</span>
+                    <span className="text-xs text-muted">
+                      当前没有可用的规则集，请先在「规则集管理」中添加自定义规则集
+                    </span>
                   ) : (
-                    <span className="text-xs text-muted">选择已订阅的社区规则集或已启用的自定义规则集</span>
+                    <span className="text-xs text-muted">选择已启用的自定义规则集 tag</span>
                   )}
                 </div>
               ) : (

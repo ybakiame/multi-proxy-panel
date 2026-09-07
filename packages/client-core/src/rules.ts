@@ -31,12 +31,6 @@ export const ACTION_LABELS: Record<string, string> = {
   reject: "拒绝",
 };
 
-export const TEMPLATE_DEFS: { id: string; name: string; desc: string }[] = [
-  { id: "return-china", name: "回国模式", desc: "海外用户访问国内服务直连" },
-  { id: "overseas", name: "海外模式", desc: "国内用户访问海外服务代理" },
-  { id: "ad-filter", name: "广告过滤", desc: "拦截常见广告域名" },
-];
-
 export const RULE_ACTIONS = [
   { id: "proxy", label: "代理" },
   { id: "direct", label: "直连" },
@@ -95,15 +89,6 @@ export function viewToInput(view: CoreLocalOverrideView): CoreLocalOverrideInput
 export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOverrideInput) {
   return {
     singbox: patchCore ?? viewToInput(view.singbox),
-    rule_set_subscriptions: view.rule_set_subscriptions.map((s) => ({
-      id: s.id,
-      community_id: s.community_id,
-      display_name: s.display_name,
-      category: s.category,
-      subscribed: s.subscribed,
-      singbox_url_template: s.singbox_url_template,
-      default_interval_minutes: s.default_interval_minutes,
-    })),
     applied_templates: view.applied_templates.map((t) => ({
       template_id: t.template_id,
       applied_at: t.applied_at,

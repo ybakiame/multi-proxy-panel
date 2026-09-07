@@ -18,7 +18,13 @@ pub struct LocalOverride {
     /// sing-box side local rules and rule sets.
     #[serde(default)]
     pub singbox: CoreLocalOverride,
-    /// Rule set subscription list (core-agnostic).
+    /// Legacy built-in rule set subscription list.
+    ///
+    /// **Deprecated**：内置规则集订阅机制已废弃，统一为用户自控的
+    /// [`CustomRuleSet`] 模型。本字段仅保留 serde 兼容以读取旧版文件
+    /// （存量迁移在 [`crate::local_override::store::LocalOverrideStore::load`]
+    /// 中把 `subscribed == true` 的条目转换为 custom Remote 后清空）；
+    /// 写回时恒为空数组，业务代码不得再依赖它。
     #[serde(default)]
     pub rule_set_subscriptions: Vec<RuleSetSubscription>,
     /// Applied template records (for display / revert).
@@ -229,6 +235,10 @@ pub enum RuleSetSource {
 // ---------------------------------------------------------------------------
 
 /// Rule set subscription entry (unified list, core-agnostic).
+///
+/// **Deprecated**：内置规则集订阅机制已废弃。本类型仅保留 serde 兼容以读取
+/// 旧版 `local_override.json`，存量迁移后会清空对应字段；新数据一律走
+/// [`CustomRuleSet`]。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuleSetSubscription {
     pub id: String,

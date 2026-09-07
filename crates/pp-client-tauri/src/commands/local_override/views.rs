@@ -5,7 +5,7 @@
 
 use pp_client::local_override::{
     AppliedTemplate, CoreLocalOverride, CustomRuleSetSource, LocalOverride, LocalRule,
-    RuleSetManager, RuleSetSubscription,
+    RuleSetManager,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,10 +14,13 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Full local override view (returned by `local_override_get`).
+///
+/// 自「废弃内置规则集订阅」起不再输出 `rule_set_subscriptions` 段；自定义规则集
+/// 状态（含 `cached` / `last_updated`）由 `custom_rule_sets` 段承载，前端统一走本
+/// 命令消费。
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalOverrideView {
     pub singbox: CoreLocalOverrideView,
-    pub rule_set_subscriptions: Vec<RuleSetSubscriptionView>,
     pub applied_templates: Vec<AppliedTemplateView>,
     pub custom_rule_sets: Vec<CustomRuleSetView>,
     pub custom_templates: Vec<CustomTemplateView>,
@@ -60,18 +63,6 @@ pub struct LocalRuleSetRefView {
     pub last_updated: u64,
 }
 
-/// Rule set subscription view.
-#[derive(Debug, Clone, Serialize)]
-pub struct RuleSetSubscriptionView {
-    pub id: String,
-    pub community_id: String,
-    pub display_name: String,
-    pub category: String,
-    pub subscribed: bool,
-    pub singbox_url_template: String,
-    pub default_interval_minutes: u32,
-}
-
 /// Applied template view.
 #[derive(Debug, Clone, Serialize)]
 pub struct AppliedTemplateView {
@@ -109,18 +100,6 @@ pub struct CustomTemplateView {
     pub created_at: u64,
 }
 
-/// Rule set status view (with cache info).
-#[derive(Debug, Clone, Serialize)]
-pub struct RuleSetStatusView {
-    pub id: String,
-    pub community_id: String,
-    pub display_name: String,
-    pub category: String,
-    pub subscribed: bool,
-    pub singbox_cached: bool,
-    pub last_updated: u64,
-}
-
 // ---------------------------------------------------------------------------
 // Conversions (pp-client types → View types)
 // ---------------------------------------------------------------------------
@@ -129,11 +108,6 @@ impl LocalOverrideView {
     pub(crate) fn from_model(model: &LocalOverride, manager: &RuleSetManager) -> Self {
         Self {
             singbox: CoreLocalOverrideView::from_model(&model.singbox),
-            rule_set_subscriptions: model
-                .rule_set_subscriptions
-                .iter()
-                .map(RuleSetSubscriptionView::from_model)
-                .collect(),
             applied_templates: model
                 .applied_templates
                 .iter()
@@ -204,20 +178,6 @@ impl LocalRuleSetRefView {
     }
 }
 
-impl RuleSetSubscriptionView {
-    pub(crate) fn from_model(model: &RuleSetSubscription) -> Self {
-        Self {
-            id: model.id.clone(),
-            community_id: model.community_id.clone(),
-            display_name: model.display_name.clone(),
-            category: format!("{:?}", model.category).to_lowercase(),
-            subscribed: model.subscribed,
-            singbox_url_template: model.singbox_url_template.clone(),
-            default_interval_minutes: model.default_interval_minutes,
-        }
-    }
-}
-
 impl AppliedTemplateView {
     pub(crate) fn from_model(model: &AppliedTemplate) -> Self {
         Self {
@@ -265,7 +225,6 @@ impl CustomTemplateView {
 #[derive(Debug, Deserialize)]
 pub struct SaveLocalOverrideInput {
     pub singbox: CoreLocalOverrideInput,
-    pub rule_set_subscriptions: Vec<RuleSetSubscriptionInput>,
     pub applied_templates: Vec<AppliedTemplateInput>,
     /// Full replacement of the custom rule set segment (semantics identical
     /// to `rules`). Uses the shared model type so the manual content / remote
@@ -332,18 +291,6 @@ pub struct LocalRuleSetRefInput {
     pub auto_update_interval_minutes: u32,
     #[serde(default)]
     pub last_updated: u64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RuleSetSubscriptionInput {
-    pub id: String,
-    pub community_id: String,
-    pub display_name: String,
-    pub category: String,
-    #[serde(default)]
-    pub subscribed: bool,
-    pub singbox_url_template: String,
-    pub default_interval_minutes: u32,
 }
 
 #[derive(Debug, Deserialize)]

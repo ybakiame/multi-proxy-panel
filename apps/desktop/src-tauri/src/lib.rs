@@ -179,8 +179,6 @@ pub fn run() {
             pp_client_tauri::commands::local_override_save,
             pp_client_tauri::commands::local_override_apply_template,
             pp_client_tauri::commands::local_override_revert_template,
-            pp_client_tauri::commands::local_override_rulesets,
-            pp_client_tauri::commands::local_override_toggle_ruleset,
             pp_client_tauri::commands::local_override_update_rulesets_now,
             pp_client_tauri::commands::proxies_list,
             pp_client_tauri::commands::proxies_select,

@@ -1,57 +1,30 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Alert, AlertDialog, Button, Card, Switch } from "@heroui/react";
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  localOverrideApplyTemplate,
-  localOverrideGet,
-  localOverrideRevertTemplate,
-  localOverrideRulesets,
-  localOverrideSave,
-  localOverrideToggleRuleset,
-  localOverrideUpdateRulesetsNow,
-  toErrorMessage,
-} from "@pp/client-core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { localOverrideGet, localOverrideSave, toErrorMessage } from "@pp/client-core";
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
-import type {
-  CoreLocalOverrideInput,
-  LocalOverrideView,
-  LocalRuleInput,
-  LocalRuleView,
-  RuleSetStatusView,
-} from "@pp/client-core";
+import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
-import { RuleSetTable } from "./RuleSetTable";
-import { TEMPLATE_DEFS } from "./types";
 import { buildSaveInput, ruleSummary, viewToInput } from "./types";
-import { TemplateCard } from "./TemplateCard";
-
-async function fetchRulesData(): Promise<{ override: LocalOverrideView; ruleSets: RuleSetStatusView[] }> {
-  const [ovr, rs] = await Promise.all([localOverrideGet(), localOverrideRulesets()]);
-  return { override: ovr, ruleSets: rs };
-}
 
 export default function Rules() {
   const queryClient = useQueryClient();
 
   const {
-    data,
+    data: overrideData,
     isLoading,
     error: queryError,
-  } = useQuery({
+  } = useQuery<LocalOverrideView>({
     queryKey: LOCAL_OVERRIDE_KEY,
-    queryFn: fetchRulesData,
+    queryFn: localOverrideGet,
   });
-
-  const overrideData = data?.override ?? null;
-  const ruleSets = data?.ruleSets ?? [];
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
   const [deleteRule, setDeleteRule] = useState<LocalRuleView | null>(null);
-  const [busy, setBusy] = useState(false);
 
   // 单核心（sing-box）：直接消费 singbox 桶。
   const currentCore = overrideData ? overrideData.singbox : null;
@@ -134,72 +107,13 @@ export default function Rules() {
     await persist(next);
   };
 
-  const templateMutation = useMutation({
-    mutationFn: async ({ templateId, action }: { templateId: string; action: "apply" | "revert" }) => {
-      if (action === "apply") {
-        return localOverrideApplyTemplate(templateId);
-      }
-      return localOverrideRevertTemplate(templateId);
-    },
-    onSuccess: (_, { action }) => {
-      toastSuccess(action === "apply" ? "模板已应用" : "模板已撤销");
-      void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
-    },
-    onError: (err) => toastError(toErrorMessage(err)),
-    onSettled: () => setBusy(false),
-  });
-
-  const handleApplyTemplate = async (templateId: string) => {
-    setBusy(true);
-    templateMutation.mutate({ templateId, action: "apply" });
-  };
-
-  const handleRevertTemplate = async (templateId: string) => {
-    setBusy(true);
-    templateMutation.mutate({ templateId, action: "revert" });
-  };
-
-  const toggleRulesetMutation = useMutation({
-    mutationFn: ({ communityId, subscribed }: { communityId: string; subscribed: boolean }) =>
-      localOverrideToggleRuleset(communityId, subscribed),
-    onSuccess: (_, { subscribed }) => {
-      toastSuccess(subscribed ? "已订阅" : "已取消订阅");
-      void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
-    },
-    onError: (err) => toastError(toErrorMessage(err)),
-  });
-
-  const handleToggleRuleset = async (communityId: string, subscribed: boolean) => {
-    toggleRulesetMutation.mutate({ communityId, subscribed });
-  };
-
-  const updateRulesetsMutation = useMutation({
-    mutationFn: localOverrideUpdateRulesetsNow,
-    onSuccess: (updated) => {
-      toastSuccess(`已更新 ${updated} 个规则集`);
-      void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
-    },
-    onError: (err) => toastError(toErrorMessage(err)),
-    onSettled: () => setBusy(false),
-  });
-
-  const handleUpdateRulesetsNow = async () => {
-    setBusy(true);
-    updateRulesetsMutation.mutate();
-  };
-
-  const appliedTemplateIds = useMemo(
-    () => new Set(overrideData?.applied_templates.map((t) => t.template_id) ?? []),
-    [overrideData],
-  );
-
   const error = queryError ? toErrorMessage(queryError) : null;
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">规则</h1>
-        <p className="text-sm text-muted">本地规则卡片、场景模板与规则集订阅管理</p>
+        <p className="text-sm text-muted">本地规则卡片管理（自定义规则集为唯一规则集来源）</p>
       </div>
 
       {error && (
@@ -237,23 +151,6 @@ export default function Rules() {
               </Switch>
             </Card.Content>
           </Card>
-
-          {/* 场景模板 */}
-          <div className="flex flex-col gap-3">
-            <span className="text-sm font-medium">场景模板</span>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {TEMPLATE_DEFS.map((t) => (
-                <TemplateCard
-                  key={t.id}
-                  template={t}
-                  applied={appliedTemplateIds.has(t.id)}
-                  onApply={handleApplyTemplate}
-                  onRevert={handleRevertTemplate}
-                  busy={busy}
-                />
-              ))}
-            </div>
-          </div>
 
           {/* 规则卡片 */}
           <div className="flex flex-col gap-3">
@@ -296,14 +193,6 @@ export default function Rules() {
               </div>
             )}
           </div>
-
-          {/* 规则集订阅 */}
-          <RuleSetTable
-            ruleSets={ruleSets}
-            onToggle={(id, sub) => void handleToggleRuleset(id, sub)}
-            onUpdateNow={() => void handleUpdateRulesetsNow()}
-            busy={busy}
-          />
         </>
       )}
 
@@ -336,7 +225,7 @@ export default function Rules() {
               <Button slot="close" variant="tertiary" onPress={() => setDeleteRule(null)}>
                 取消
               </Button>
-              <Button slot="close" variant="danger" isPending={busy} onPress={() => void handleDelete()}>
+              <Button slot="close" variant="danger" onPress={() => void handleDelete()}>
                 删除
               </Button>
             </AlertDialog.Footer>

@@ -1,83 +1,29 @@
-//! Local Override Tauri commands.
+//! Local Override 规则集命令。
 //!
-//! Provides frontend-facing commands for rule card management, template
-//! application, and rule set subscription control.
+//! 自「废弃内置规则集订阅」起：
+//! - `local_override_rulesets`（订阅状态列表）与 `local_override_toggle_ruleset`
+//!   （订阅开关）**已删除**——前端统一消费 `local_override_get` 的
+//!   `custom_rule_sets` 段（含 `cached` / `last_updated`），减少一条命令链路；
+//! - `local_override_update_rulesets_now` 语义收敛为「同步更新启用的 custom
+//!   Remote」：**await 全部下载完成后**保存并返回，确保 UI invalidate 重拉即见
+//!   cached / last_updated 变化（修复“缓存状态和更新时间不刷新”）。
 
 use pp_client::local_override::{LocalOverrideStore, RuleSetManager};
 use tauri::State;
 
 use crate::state::AppState;
 
-use super::views::*;
-
-/// Build the rule-set status view list from `data_dir`.
-///
-/// Like every local-override read, goes through
-/// [`LocalOverrideStore::ensure_builtin_subscriptions`] so the built-in 5
-/// rule sets are listed on first entry (see [`super::rules::load_override_view`]
-/// for the shared rationale). Extracted for unit testing without a Tauri runtime.
-pub(crate) fn load_rule_set_status_views(
-    data_dir: &std::path::Path,
-) -> Result<Vec<RuleSetStatusView>, String> {
+/// 更新命令实现体（抽取以便无 Tauri 运行时单测）：同步 await 下载、刷新
+/// `last_updated` 并保存到 `data_dir`，返回成功更新的数量。
+pub(crate) async fn run_update_rulesets_now(data_dir: &std::path::Path) -> Result<usize, String> {
     let store = LocalOverrideStore::new(data_dir.to_path_buf());
-    let ovr = store
-        .ensure_builtin_subscriptions()
+    let mut ovr = store
+        .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
 
     let manager = RuleSetManager::new(data_dir.to_path_buf());
-    Ok(ovr
-        .rule_set_subscriptions
-        .iter()
-        .map(|sub| RuleSetStatusView::from_subscription(sub, &manager))
-        .collect())
-}
-
-/// List all rule sets with subscription and cache status.
-#[tauri::command]
-pub fn local_override_rulesets(
-    state: State<'_, AppState>,
-) -> Result<Vec<RuleSetStatusView>, String> {
-    load_rule_set_status_views(&state.data_dir)
-}
-
-/// Toggle subscription for a rule set.
-#[tauri::command]
-pub async fn local_override_toggle_ruleset(
-    state: State<'_, AppState>,
-    community_id: String,
-    subscribed: bool,
-) -> Result<bool, String> {
-    let store = LocalOverrideStore::new(state.data_dir.clone());
-    let mut ovr = store
-        .ensure_builtin_subscriptions()
-        .map_err(|e| format!("failed to load local override: {e}"))?;
-
-    let manager = RuleSetManager::new(state.data_dir.clone());
-    let changed = manager
-        .toggle_subscription(&mut ovr, &community_id, subscribed)
-        .await
-        .map_err(|e| format!("failed to toggle rule set: {e}"))?;
-
-    store
-        .save(&ovr)
-        .map_err(|e| format!("failed to save after toggle: {e}"))?;
-
-    Ok(changed)
-}
-
-/// Manually update all subscribed rule sets now.
-#[tauri::command]
-pub async fn local_override_update_rulesets_now(
-    state: State<'_, AppState>,
-) -> Result<usize, String> {
-    let store = LocalOverrideStore::new(state.data_dir.clone());
-    let mut ovr = store
-        .ensure_builtin_subscriptions()
-        .map_err(|e| format!("failed to load local override: {e}"))?;
-
-    let manager = RuleSetManager::new(state.data_dir.clone());
     let updated = manager
-        .update_all_subscribed(&mut ovr)
+        .update_enabled_custom_remotes(&mut ovr)
         .await
         .map_err(|e| format!("failed to update rule sets: {e}"))?;
 
@@ -88,35 +34,68 @@ pub async fn local_override_update_rulesets_now(
     Ok(updated)
 }
 
+/// Manually update all enabled Remote custom rule sets now.
+///
+/// 同步 await 下载并刷新 `last_updated` 后落盘；失败条目 best-effort（仅告警，
+/// 不中断整批），返回成功更新的数量。
+#[tauri::command]
+pub async fn local_override_update_rulesets_now(
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    run_update_rulesets_now(&state.data_dir).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn first_run_rulesets_returns_builtin_statuses() {
-        // 规则集管理首次进入（文件缺失）即返回内置 5 订阅的状态列表，而非空页。
-        let dir = tempfile::tempdir().unwrap();
-        let views = load_rule_set_status_views(dir.path()).unwrap();
-        assert_eq!(views.len(), 5);
-        // 首次未下载任何规则集：均为未订阅、未缓存、从未更新。
-        assert!(
-            views
-                .iter()
-                .all(|v| !v.subscribed && !v.singbox_cached && v.last_updated == 0)
+    /// 更新命令链路：download await 完成 → last_updated 刷新 → save 落盘；
+    /// 重读即可见 cached / last_updated 变化。
+    #[tokio::test]
+    async fn update_now_downloads_awaits_and_persists_last_updated() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/ok.srs",
+            axum::routing::get(|| async { "binary-remote-body" }),
         );
-        // 状态视图字段来自 ensure 后的同一份数据：id/community_id 完整。
-        assert!(views.iter().any(|v| v.community_id == "geosite-cn"));
-    }
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
 
-    #[test]
-    fn rulesets_statuses_idempotent_across_reads() {
         let dir = tempfile::tempdir().unwrap();
-        let views = load_rule_set_status_views(dir.path()).unwrap();
-        assert_eq!(views.len(), 5);
-        let views2 = load_rule_set_status_views(dir.path()).unwrap();
-        assert_eq!(views2.len(), 5);
+        // 预置一个启用的 custom Remote（迁移自订阅的常见形态）并落盘 override 文件。
+        let ovr = pp_client::local_override::LocalOverride {
+            custom_rule_sets: vec![pp_client::local_override::CustomRuleSet {
+                id: "c-1".to_string(),
+                name: "GeoIP CN".to_string(),
+                tag: "geoip-cn".to_string(),
+                source: pp_client::local_override::CustomRuleSetSource::Remote {
+                    url: format!("http://{addr}/ok.srs"),
+                    format: pp_client::local_override::RuleSetFormat::Binary,
+                },
+                enabled: true,
+                last_updated: 0,
+            }],
+            ..Default::default()
+        };
+        let store = LocalOverrideStore::new(dir.path().to_path_buf());
+        store.save(&ovr).unwrap();
+
+        let updated = run_update_rulesets_now(dir.path()).await.unwrap();
+        assert_eq!(updated, 1);
+
+        // save 已落盘：重新 load 可见 last_updated 刷新，backing 文件已缓存。
+        let reloaded = store.load().unwrap();
+        let rs = &reloaded.custom_rule_sets[0];
+        assert!(rs.last_updated > 0, "last_updated 应在下载成功后刷新");
+        let manager = RuleSetManager::new(dir.path().to_path_buf());
+        let path = manager
+            .custom_rule_set_file_path(&rs.id, pp_client::local_override::RuleSetFormat::Binary);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "binary-remote-body",
+            "下载完成后 backing 文件应存在（UI 重拉即见 cached=true）"
+        );
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers

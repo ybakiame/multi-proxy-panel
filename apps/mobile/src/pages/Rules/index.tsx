@@ -28,7 +28,7 @@ import { TemplateSection } from "./TemplateSection";
  *
  * 自上而下：
  * 1. 总开关卡：`singbox.enabled`（关闭后本地规则与规则集不注入运行配置）；
- * 2. 场景模板：三内置模板应用 / 撤销（J4 起支持自定义模板）；
+ * 2. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）；
  * 3. 两个入口卡：自定义规则（`/rules/custom`）与规则集管理（`/rules/rulesets`）。
  *
  * 规则列表 CRUD 与规则集订阅管理已迁至对应子页；规则集启用与否通过
@@ -139,7 +139,7 @@ export default function Rules() {
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">规则管理</h1>
-        <p className="text-sm text-muted">本地规则 · 场景模板 · 规则集订阅</p>
+        <p className="text-sm text-muted">本地规则 · 场景模板 · 自定义规则集</p>
       </div>
 
       {queryError && (
@@ -181,7 +181,7 @@ export default function Rules() {
           {/* 1. 总开关 */}
           <MasterSwitchCard enabled={currentCore.enabled} onToggle={(next) => void handleToggleEnabled(next)} />
 
-          {/* 2. 场景模板（内置 + 自定义） */}
+          {/* 2. 场景模板（自定义） */}
           <TemplateSection
             appliedIds={appliedTemplateIds}
             customTemplates={overrideData.custom_templates}
@@ -202,7 +202,7 @@ export default function Rules() {
           <EntryLinkCard
             icon={<SwatchIcon className="size-6" aria-hidden="true" />}
             title="规则集管理"
-            description="订阅社区规则集与自定义规则集"
+            description="自定义规则集的增删与更新"
             onPress={() => navigate("/rules/rulesets")}
           />
         </div>

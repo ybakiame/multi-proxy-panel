@@ -100,7 +100,7 @@ function RuleEditForm({
               aria-label="匹配目标"
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              placeholder={matchType === "rule_set" ? "规则集 community_id" : "例如：googleapis.com"}
+              placeholder={matchType === "rule_set" ? "自定义规则集 tag" : "例如：googleapis.com"}
               fullWidth
             />
           </div>

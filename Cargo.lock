@@ -4911,6 +4911,7 @@ dependencies = [
 name = "pp-client-tauri"
 version = "0.4.5"
 dependencies = [
+ "axum",
  "chrono",
  "pp-client",
  "pp-common",

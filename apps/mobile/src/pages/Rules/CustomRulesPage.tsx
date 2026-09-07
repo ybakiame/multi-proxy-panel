@@ -27,8 +27,8 @@ import { RuleListSection } from "./RuleListSection";
  * 承接原规则主页的规则列表 CRUD：启停 / 上移下移 / 添加 / 编辑 / 删除，数据流不变
  * （`persist = buildSaveInput + localOverrideSave` 全量落盘，成功按动作差异化 toast）。
  *
- * `rule_set` 匹配目标改为规则集选择器：选项 = 已订阅社区规则集（community_id）
- * + 已启用自定义规则集（tag）；编辑已有规则时原 target 不在候选则追加「原值保留」项。
+ * `rule_set` 匹配目标改为规则集选择器：自「废弃内置规则集订阅」起选项 = 已启用
+ * 自定义规则集（tag）；编辑已有规则时原 target 不在候选则追加「原值保留」项。
  */
 export default function CustomRulesPage() {
   const queryClient = useQueryClient();
@@ -54,16 +54,12 @@ export default function CustomRulesPage() {
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LocalRuleView | null>(null);
 
-  /** 规则集选择器候选：已订阅社区规则集 + 已启用自定义规则集。 */
+  /** 规则集选择器候选：已启用自定义规则集（内置社区订阅已废弃）。 */
   const ruleSetOptions = useMemo<RuleSetOption[]>(() => {
     if (!overrideData) return [];
-    const community = asArray(overrideData.rule_set_subscriptions)
-      .filter((s) => s.subscribed)
-      .map((s) => ({ value: s.community_id, label: s.display_name }));
-    const custom = asArray(overrideData.custom_rule_sets)
+    return asArray(overrideData.custom_rule_sets)
       .filter((rs) => rs.enabled)
       .map((rs) => ({ value: rs.tag, label: rs.tag, hint: rs.name.trim() || undefined }));
-    return [...community, ...custom];
   }, [overrideData]);
 
   const toastRuleSaved = (base: string) => {

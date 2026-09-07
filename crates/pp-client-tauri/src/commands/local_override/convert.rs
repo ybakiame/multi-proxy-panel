@@ -1,8 +1,7 @@
 //! Conversion and validation helpers for local override commands.
 
 use pp_client::local_override::{
-    AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalRule, RuleSetManager,
-    RuleSetSubscription,
+    AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalRule,
 };
 
 use super::views::*;
@@ -12,9 +11,10 @@ use super::views::*;
 /// Checks:
 /// - Rule IDs are unique.
 /// - Targets are non-empty for non-Final rules.
-/// - RuleSet references point to subscribed rule sets.
-/// - Custom rule set IDs/tags are unique and do not collide with built-in
-///   `community_id`s; Remote URLs / Manual contents are non-empty.
+/// - RuleSet references resolve to an **enabled custom rule set** tag
+///   （内置社区订阅已废弃，规则集引用统一指向用户自控的 custom set）。
+/// - Custom rule set IDs/tags are unique; Remote URLs / Manual contents are
+///   non-empty.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
     let core_ovr = &ovr.singbox;
     // Check rule ID uniqueness.
@@ -36,25 +36,20 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
         }
     }
 
-    // Check RuleSet references resolve to a subscribed community rule set or
-    // an enabled custom rule set.
+    // Check RuleSet references resolve to an enabled custom rule set tag.
     for rule in &core_ovr.rules {
         if matches!(
             rule.match_type,
             pp_client::local_override::RuleMatchType::RuleSet
         ) {
-            let subscribed = ovr
-                .rule_set_subscriptions
-                .iter()
-                .any(|s| s.community_id == rule.target && s.subscribed);
             let custom_enabled = ovr
                 .custom_rule_sets
                 .iter()
                 .any(|rs| rs.tag == rule.target && rs.enabled);
-            if !subscribed && !custom_enabled {
+            if !custom_enabled {
                 return Err(format!(
                     "rule '{}' references unavailable rule set '{}' \
-                     (need a subscribed community rule set or an enabled custom rule set)",
+                     (need an enabled custom rule set with this tag)",
                     rule.id, rule.target
                 ));
             }
@@ -70,16 +65,9 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
 
 /// Custom rule set segment validation:
 /// - unique IDs;
-/// - tags non-empty, unique among custom rule sets and non-conflicting with
-///   built-in `community_id`s;
+/// - tags non-empty and unique among custom rule sets;
 /// - Remote URL / Manual content non-empty.
 pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), String> {
-    let builtin_tags: std::collections::HashSet<&str> = ovr
-        .rule_set_subscriptions
-        .iter()
-        .map(|s| s.community_id.as_str())
-        .collect();
-
     let mut seen_ids = std::collections::HashSet::new();
     let mut seen_tags = std::collections::HashSet::new();
     for rs in &ovr.custom_rule_sets {
@@ -89,11 +77,6 @@ pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), Strin
         let tag = rs.tag.trim();
         if tag.is_empty() {
             return Err(format!("custom rule set '{}' has an empty tag", rs.id));
-        }
-        if builtin_tags.contains(tag) {
-            return Err(format!(
-                "custom rule set tag '{tag}' conflicts with a built-in community rule set id"
-            ));
         }
         if !seen_tags.insert(rs.tag.clone()) {
             return Err(format!("duplicate custom rule set tag '{}'", rs.tag));
@@ -160,11 +143,8 @@ pub(super) fn convert_input_to_model(
 ) -> Result<LocalOverride, String> {
     Ok(LocalOverride {
         singbox: convert_core_input(input.singbox)?,
-        rule_set_subscriptions: input
-            .rule_set_subscriptions
-            .into_iter()
-            .map(convert_subscription_input)
-            .collect(),
+        // 内置订阅段已废弃：save 恒写空数组（serde 兼容旧字段，空数组无害）。
+        rule_set_subscriptions: Vec::new(),
         applied_templates: input
             .applied_templates
             .into_iter()
@@ -292,50 +272,10 @@ fn parse_rule_set_kind(s: &str) -> Result<pp_client::local_override::RuleSetKind
     }
 }
 
-fn convert_subscription_input(input: RuleSetSubscriptionInput) -> RuleSetSubscription {
-    RuleSetSubscription {
-        id: input.id,
-        community_id: input.community_id,
-        display_name: input.display_name,
-        category: parse_rule_set_category(&input.category),
-        subscribed: input.subscribed,
-        singbox_url_template: input.singbox_url_template,
-        default_interval_minutes: input.default_interval_minutes,
-    }
-}
-
-fn parse_rule_set_category(s: &str) -> pp_client::local_override::RuleSetCategory {
-    match s {
-        "geoip" => pp_client::local_override::RuleSetCategory::Geoip,
-        "geosite" => pp_client::local_override::RuleSetCategory::Geosite,
-        "ads" => pp_client::local_override::RuleSetCategory::Ads,
-        "privacy" => pp_client::local_override::RuleSetCategory::Privacy,
-        "malware" => pp_client::local_override::RuleSetCategory::Malware,
-        _ => pp_client::local_override::RuleSetCategory::Custom,
-    }
-}
-
 fn convert_applied_template_input(input: AppliedTemplateInput) -> AppliedTemplate {
     AppliedTemplate {
         template_id: input.template_id,
         applied_at: input.applied_at,
         generated_rule_ids: input.generated_rule_ids,
-    }
-}
-
-impl RuleSetStatusView {
-    pub(crate) fn from_subscription(
-        sub: &pp_client::local_override::RuleSetSubscription,
-        manager: &RuleSetManager,
-    ) -> Self {
-        Self {
-            id: sub.id.clone(),
-            community_id: sub.community_id.clone(),
-            display_name: sub.display_name.clone(),
-            category: format!("{:?}", sub.category).to_lowercase(),
-            subscribed: sub.subscribed,
-            singbox_cached: manager.is_cached(&sub.community_id),
-            last_updated: 0,
-        }
     }
 }

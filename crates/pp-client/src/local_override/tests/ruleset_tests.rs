@@ -1,53 +1,7 @@
-//! Rule set download / cache / custom rule set tests (split out of `ruleset.rs`
-//! to stay within the business-file size gate; see `.agents/rules/code-organization.md`).
+//! Rule set download / custom rule set tests (split out of `ruleset.rs` to stay
+//! within the business-file size gate; see `.agents/rules/code-organization.md`).
 
 use super::*;
-use crate::local_override::store::built_in_rule_set_subscriptions;
-
-#[test]
-fn cache_file_path_formats_correctly() {
-    let dir = tempfile::tempdir().unwrap();
-    let mgr = RuleSetManager::new(dir.path().to_path_buf());
-    let p1 = mgr.cache_file_path("geoip-cn");
-    assert_eq!(p1.file_name().unwrap(), "geoip-cn.srs");
-}
-
-#[test]
-fn build_rule_set_refs_skips_unsubscribed() {
-    let dir = tempfile::tempdir().unwrap();
-    let mgr = RuleSetManager::new(dir.path().to_path_buf());
-    let ovr = LocalOverride {
-        rule_set_subscriptions: built_in_rule_set_subscriptions(),
-        ..Default::default()
-    };
-    // None subscribed, none cached.
-    let refs = mgr.build_rule_set_refs(&ovr);
-    assert!(refs.is_empty());
-}
-
-#[test]
-fn build_rule_set_refs_includes_cached_subscribed() {
-    let dir = tempfile::tempdir().unwrap();
-    let mgr = RuleSetManager::new(dir.path().to_path_buf());
-    let mut subs = built_in_rule_set_subscriptions();
-    subs[0].subscribed = true;
-    let ovr = LocalOverride {
-        rule_set_subscriptions: subs,
-        ..Default::default()
-    };
-    // Create fake cache.
-    std::fs::create_dir_all(mgr.cache_dir()).unwrap();
-    std::fs::write(mgr.cache_file_path("geoip-cn"), "fake").unwrap();
-
-    let refs = mgr.build_rule_set_refs(&ovr);
-    assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].tag, "geoip-cn");
-    assert!(matches!(refs[0].kind, RuleSetKind::SingBoxRemote));
-}
-
-// -----------------------------------------------------------------------
-// Custom rule sets
-// -----------------------------------------------------------------------
 
 fn custom(id: &str, tag: &str, source: CustomRuleSetSource, enabled: bool) -> CustomRuleSet {
     CustomRuleSet {
@@ -144,8 +98,10 @@ fn sync_custom_rule_set_files_writes_manual_and_cleans_orphans() {
     assert!(switched_file.exists());
 }
 
+/// 更新链路：仅覆盖启用的 custom Remote，同步 await 下载，成功刷新
+/// `last_updated` 并落盘 cache 文件；失败/停用/手动条目 best-effort 跳过。
 #[tokio::test]
-async fn update_all_subscribed_covers_enabled_custom_remote() {
+async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = axum::Router::new()
@@ -202,7 +158,7 @@ async fn update_all_subscribed_covers_enabled_custom_remote() {
         true,
     ));
 
-    let updated = mgr.update_all_subscribed(&mut ovr).await.unwrap();
+    let updated = mgr.update_enabled_custom_remotes(&mut ovr).await.unwrap();
     assert_eq!(
         updated, 1,
         "only the reachable enabled remote should update"

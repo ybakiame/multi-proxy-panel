@@ -15,16 +15,12 @@ use super::views::*;
 
 /// Build the full local override frontend view from `data_dir`.
 ///
-/// Every local-override read path must go through
-/// [`LocalOverrideStore::ensure_builtin_subscriptions`] (idempotent: initializes
-/// and persists the built-in 5 rule-set subscriptions when the list is empty),
-/// so the rule-set management UI shows the built-in list on first entry even
-/// before any write/update command ran. Extracted from the `#[tauri::command]`
-/// so this first-run contract is unit-testable without a Tauri runtime.
+/// 走 [`LocalOverrideStore::load`]：读取即触发幂等存量迁移（旧版内置订阅/模板
+/// 记录归一化为 custom 模型）。提取成独立函数以便在无 Tauri 运行时下单测。
 pub(crate) fn load_override_view(data_dir: &std::path::Path) -> Result<LocalOverrideView, String> {
     let store = LocalOverrideStore::new(data_dir.to_path_buf());
     let ovr = store
-        .ensure_builtin_subscriptions()
+        .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
     let manager = RuleSetManager::new(data_dir.to_path_buf());
     Ok(LocalOverrideView::from_model(&ovr, &manager))
@@ -66,7 +62,7 @@ mod tests {
     use super::*;
     use pp_client::local_override::{
         CustomRuleSet, CustomRuleSetSource, CustomTemplate, LocalOverride, LocalRule, RuleAction,
-        RuleMatchType, RuleSetSubscription, built_in_rule_set_subscriptions,
+        RuleMatchType,
     };
 
     fn sample_rule(id: &str, sort_order: i32) -> LocalRule {
@@ -89,7 +85,7 @@ mod tests {
     fn sample_override() -> LocalOverride {
         let mut ovr = LocalOverride {
             singbox: Default::default(),
-            rule_set_subscriptions: built_in_rule_set_subscriptions(),
+            rule_set_subscriptions: Vec::new(),
             applied_templates: Vec::new(),
             custom_rule_sets: vec![CustomRuleSet {
                 id: "rs-1".to_string(),
@@ -116,41 +112,36 @@ mod tests {
     }
 
     #[test]
-    fn first_run_get_returns_builtin_subscriptions() {
-        // 首次进入（local_override.json 缺失）：读命令必须经 ensure 初始化内置 5 订阅，
-        // 而不是返回空列表（历史 bug：仅「立即更新」等写路径触发初始化）。
+    fn first_run_get_returns_empty_user_controlled_segments() {
+        // 首次进入（local_override.json 缺失）：不再注入任何内置订阅，
+        // 返回纯空的自定义段（custom 模型）。
         let dir = tempfile::tempdir().unwrap();
         let store = LocalOverrideStore::new(dir.path().to_path_buf());
         assert!(!store.override_file().exists());
         let view = load_override_view(dir.path()).unwrap();
-        assert_eq!(view.rule_set_subscriptions.len(), 5);
         assert!(view.custom_rule_sets.is_empty());
         assert!(view.custom_templates.is_empty());
+        assert!(view.applied_templates.is_empty());
         assert!(view.singbox.enabled);
-        // ensure 幂等：重复读取不重复追加（列表非空时直接返回）。
+        // 重复读取结果一致，不写盘、不注入内置数据。
         let view2 = load_override_view(dir.path()).unwrap();
-        assert_eq!(view2.rule_set_subscriptions.len(), 5);
-        // 初始化结果已持久化，后续真实保存/读取不会丢失。
-        let reloaded = store.load().unwrap();
-        assert_eq!(reloaded.rule_set_subscriptions.len(), 5);
+        assert!(view2.custom_rule_sets.is_empty());
     }
 
     #[test]
     fn save_then_get_roundtrip_preserves_custom_segments() {
         // 模拟保存（sync manual 落盘 + store.save）后 get 往返自洽：
-        // 内置订阅不回退为空、custom 段（含 cached 状态判定）与模板快照原样回读。
+        // custom 段（含 cached 状态判定）与模板快照原样回读。
         let dir = tempfile::tempdir().unwrap();
         let ovr = sample_override();
         let manager = pp_client::local_override::RuleSetManager::new(dir.path().to_path_buf());
         manager
             .sync_custom_rule_set_files(&ovr.custom_rule_sets)
             .unwrap();
-        LocalOverrideStore::new(dir.path().to_path_buf())
-            .save(&ovr)
-            .unwrap();
+        let store = LocalOverrideStore::new(dir.path().to_path_buf());
+        store.save(&ovr).unwrap();
 
         let view = load_override_view(dir.path()).unwrap();
-        assert_eq!(view.rule_set_subscriptions.len(), 5);
         assert_eq!(view.custom_rule_sets.len(), 1);
         let custom = &view.custom_rule_sets[0];
         assert_eq!(custom.tag, "my-block");
@@ -159,34 +150,54 @@ mod tests {
         assert_eq!(view.custom_templates[0].rules.len(), 1);
         assert_eq!(view.singbox.rules.len(), 1);
         assert!(view.singbox.enabled);
-        // 未订阅的社区订阅在往返后仍保持未订阅（无状态漂移）。
-        assert!(view.rule_set_subscriptions.iter().all(|s| !s.subscribed));
-        // 内置 id 完整（序列化契约），category 为小写字符串。
-        assert!(
-            view.rule_set_subscriptions
-                .iter()
-                .any(|s| s.community_id == "geoip-cn" && s.category == "geoip")
-        );
+        // 写回文件里订阅段恒为空数组（序列化契约：字段保留 serde 兼容）。
+        let reloaded = store.load().unwrap();
+        assert!(reloaded.rule_set_subscriptions.is_empty());
     }
 
     #[test]
-    fn existing_nonempty_file_is_not_duplicated() {
-        // 用户已有订阅（列表非空）：ensure 不重复注入内置项。
+    fn load_override_view_migrates_legacy_builtin_to_custom() {
+        // 旧版文件（已订阅内置 + 内置 applied 记录）经 load 迁移：
+        // get 视图不再含订阅段，custom_rule_sets 含迁移出的 Remote（未缓存）；
+        // 重复读取不重复迁移（幂等）。
         let dir = tempfile::tempdir().unwrap();
-        let store = LocalOverrideStore::new(dir.path().to_path_buf());
-        let mut ovr = sample_override();
-        ovr.rule_set_subscriptions = vec![RuleSetSubscription {
-            id: "sub-custom".to_string(),
-            community_id: "my-community".to_string(),
-            display_name: "自定义".to_string(),
-            category: pp_client::local_override::RuleSetCategory::Custom,
-            subscribed: false,
-            singbox_url_template: "https://example.com/{tag}.srs".to_string(),
-            default_interval_minutes: 1440,
-        }];
-        store.save(&ovr).unwrap();
+        let legacy = serde_json::json!({
+            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
+            "rule_set_subscriptions": [{
+                "id": "sub-geoip-cn",
+                "community_id": "geoip-cn",
+                "display_name": "GeoIP China",
+                "category": "geoip",
+                "subscribed": true,
+                "singbox_url_template": "https://example.com/ip/{tag}.srs",
+                "default_interval_minutes": 1440
+            }],
+            "applied_templates": [
+                { "template_id": "return-china", "applied_at": 1, "generated_rule_ids": ["x"] }
+            ],
+            "custom_rule_sets": [],
+            "custom_templates": []
+        });
+        std::fs::write(
+            dir.path().join("local_override.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
+
         let view = load_override_view(dir.path()).unwrap();
-        assert_eq!(view.rule_set_subscriptions.len(), 1);
-        assert_eq!(view.rule_set_subscriptions[0].community_id, "my-community");
+        assert_eq!(view.custom_rule_sets.len(), 1);
+        let migrated = &view.custom_rule_sets[0];
+        assert_eq!(migrated.tag, "geoip-cn");
+        assert_eq!(migrated.name, "GeoIP China");
+        assert!(migrated.enabled);
+        assert_eq!(migrated.last_updated, 0);
+        assert!(!migrated.cached, "迁移后尚未下载，无 backing 文件");
+        assert!(view.applied_templates.is_empty());
+        assert!(view.custom_templates.is_empty());
+
+        // 幂等：二次读取不重复转换。
+        let view2 = load_override_view(dir.path()).unwrap();
+        assert_eq!(view2.custom_rule_sets.len(), 1);
+        assert_eq!(view2.custom_rule_sets[0].id, migrated.id);
     }
 }

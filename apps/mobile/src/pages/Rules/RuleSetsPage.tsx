@@ -1,50 +1,35 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { Alert, AlertDialog, Button, Card, Chip, Spinner, Switch } from "@heroui/react";
+import { Alert, AlertDialog, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
   buildSaveInput,
   localOverrideGet,
-  localOverrideRulesets,
   localOverrideSave,
-  localOverrideToggleRuleset,
   localOverrideUpdateRulesetsNow,
   toErrorMessage,
   toastError,
   toastSuccess,
   useProxyStatus,
 } from "@pp/client-core";
-import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView, RuleSetStatusView } from "@pp/client-core";
+import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
 
 /**
- * 规则集订阅/缓存状态查询键。
- *
- * 与 `LOCAL_OVERRIDE_KEY` 共用前缀：任何 `invalidateQueries(LOCAL_OVERRIDE_KEY)`
- * （前缀匹配）都会连带重拉本查询；同时避免把 `{override, ruleSets}` 复合形态
- * 写进 `LOCAL_OVERRIDE_KEY`——那是规则主页/自定义规则页黑屏（异构缓存下访问
- * `applied_templates.map` 崩溃）的根因。
- */
-const RULE_SETS_STATUS_KEY = [...LOCAL_OVERRIDE_KEY, "rule_sets_status"] as const;
-
-function formatUpdated(lastUpdated: number): string {
-  if (lastUpdated <= 0) return "从未更新";
-  return new Date(lastUpdated * 1000).toLocaleString();
-}
-
-/**
  * 规则集管理子页（ADR-0003 M5.4 拆分，路由 `/rules/rulesets`）。
  *
- * - 顶部「立即更新」：批量下载已订阅社区规则集与远程自定义规则集
- *   （`localOverrideUpdateRulesetsNow`，busy 态，toast 汇总）；
- * - 社区规则集：5 内置卡（订阅 Switch / 缓存 chip / 更新时间），无删除/编辑（模板依赖）；
- * - 自定义规则集：添加/编辑底部 Sheet（远程 URL / 手动 JSON）+ 删除 AlertDialog；
- *   写操作经 `buildSaveInput` 整段替换 `custom_rule_sets` 落盘（J2 链路同步清理文件）；
- *   tag 冲突等 Rust 校验错误 → toast 并保留表单现场。
+ * 自「废弃内置规则集订阅」起页面只管理**用户自控的自定义规则集**（remote URL /
+ * manual JSON）：
+ * - 顶部「立即更新」：同步更新启用的 custom Remote（`localOverrideUpdateRulesetsNow`，
+ *   await 下载完成后保存，UI 重拉即见 cached / last_updated 变化）；
+ * - 自定义规则集列表：添加/编辑底部 Sheet + 删除 AlertDialog；写操作经
+ *   `buildSaveInput` 整段替换 `custom_rule_sets` 落盘；
+ * - 规则集状态（cached / last_updated / enabled）统一来自 `local_override_get`
+ *   的 `custom_rule_sets` 段（废弃的订阅状态命令不再使用）。
  */
 export default function RuleSetsPage() {
   const queryClient = useQueryClient();
@@ -59,18 +44,9 @@ export default function RuleSetsPage() {
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
   });
-  const {
-    data: ruleSets,
-    isLoading: ruleSetsLoading,
-    error: ruleSetsError,
-  } = useQuery<RuleSetStatusView[]>({
-    queryKey: RULE_SETS_STATUS_KEY,
-    queryFn: localOverrideRulesets,
-  });
 
   // 结构守卫：缓存残留异构形态（历史复合查询）时视为未加载，渲染空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
-  const communitySets = asArray(ruleSets);
   const customSets = asArray(overrideData?.custom_rule_sets);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
@@ -78,8 +54,6 @@ export default function RuleSetsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingSet, setEditingSet] = useState<CustomRuleSetView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomRuleSetView | null>(null);
-  // 内置订阅 Switch 单飞（同一时刻仅一个进行中）。
-  const [togglingCommunityId, setTogglingCommunityId] = useState<string | null>(null);
   // 自定义启停单飞（save 全量落盘，避免同卡并发写）。
   const [togglingCustomId, setTogglingCustomId] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -102,7 +76,7 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 立即更新 / 社区订阅 ----
+  // ---- 立即更新 ----
   const handleUpdateNow = async (): Promise<boolean> => {
     if (updating) return false;
     setUpdating(true);
@@ -117,23 +91,6 @@ export default function RuleSetsPage() {
       return false;
     } finally {
       setUpdating(false);
-    }
-  };
-
-  const handleToggleCommunity = async (ruleSet: RuleSetStatusView, subscribed: boolean): Promise<boolean> => {
-    if (togglingCommunityId !== null) return false;
-    setTogglingCommunityId(ruleSet.community_id);
-    try {
-      await localOverrideToggleRuleset(ruleSet.community_id, subscribed);
-      toastRuleSaved(subscribed ? `已订阅规则集「${ruleSet.display_name}」` : `已取消订阅「${ruleSet.display_name}」`);
-      invalidate();
-      return true;
-    } catch (err) {
-      toastError(toErrorMessage(err));
-      invalidate();
-      return false;
-    } finally {
-      setTogglingCommunityId(null);
     }
   };
 
@@ -201,9 +158,7 @@ export default function RuleSetsPage() {
       >
         {/* 顶部：立即更新 */}
         <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 text-xs text-muted">
-            订阅的社区规则集与远程自定义规则集需下载后才能被注入
-          </span>
+          <span className="min-w-0 flex-1 text-xs text-muted">启用的远程自定义规则集需下载后才能被注入</span>
           <Button
             variant="secondary"
             className="h-11 shrink-0 px-4"
@@ -216,7 +171,7 @@ export default function RuleSetsPage() {
           </Button>
         </div>
 
-        {((overrideLoading && !overrideData) || (ruleSetsLoading && ruleSets === undefined)) && (
+        {overrideLoading && !overrideData && (
           <Card>
             <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
               <Spinner aria-hidden="true" />
@@ -240,121 +195,40 @@ export default function RuleSetsPage() {
         )}
 
         {overrideData && (
-          <>
-            {/* 社区规则集（内置，不可删除） */}
-            <section className="flex flex-col gap-3">
-              <span className="text-sm font-medium text-foreground">社区规则集</span>
-              {ruleSetsError && communitySets.length === 0 ? (
-                <Card>
-                  <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-                    <Alert status="danger">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>订阅状态加载失败</Alert.Title>
-                        <Alert.Description>{toErrorMessage(ruleSetsError)}</Alert.Description>
-                      </Alert.Content>
-                    </Alert>
-                  </Card.Content>
-                </Card>
-              ) : communitySets.length === 0 ? (
-                <Card>
-                  <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-                    <span className="text-sm text-muted">暂无社区规则集</span>
-                  </Card.Content>
-                </Card>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {communitySets.map((ruleSet) => {
-                    const toggling = togglingCommunityId === ruleSet.community_id;
-                    return (
-                      <Card key={ruleSet.community_id}>
-                        <div className="flex items-center gap-1 px-2 py-1 pl-0">
-                          <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-2 pl-1">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                                {ruleSet.display_name}
-                              </span>
-                              {ruleSet.subscribed ? (
-                                <Chip size="sm" variant="soft" color="accent" className="shrink-0">
-                                  已订阅
-                                </Chip>
-                              ) : (
-                                <Chip size="sm" variant="soft" color="default" className="shrink-0">
-                                  未订阅
-                                </Chip>
-                              )}
-                            </span>
-                            <span className="truncate text-xs text-muted">{ruleSet.category}</span>
-                            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
-                              {ruleSet.singbox_cached ? (
-                                <Chip size="sm" variant="soft" color="accent" className="shrink-0">
-                                  已缓存
-                                </Chip>
-                              ) : (
-                                <Chip size="sm" variant="soft" color="default" className="shrink-0">
-                                  未缓存
-                                </Chip>
-                              )}
-                              <span className="shrink-0">更新于 {formatUpdated(ruleSet.last_updated)}</span>
-                            </span>
-                          </div>
-                          <Switch
-                            aria-label={`订阅 ${ruleSet.display_name}`}
-                            isSelected={ruleSet.subscribed}
-                            isDisabled={toggling}
-                            onChange={(next) => void handleToggleCommunity(ruleSet, next)}
-                            className="shrink-0 px-1"
-                          >
-                            <Switch.Content>
-                              <Switch.Control>
-                                <Switch.Thumb />
-                              </Switch.Control>
-                            </Switch.Content>
-                          </Switch>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* 自定义规则集 */}
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">自定义规则集</span>
-                  <span className="text-xs text-muted">远程 URL 或手动 JSON · 供本地规则「规则集」匹配引用</span>
-                </div>
-                <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
-                  <PlusIcon className="size-4" aria-hidden="true" />
-                  添加
-                </Button>
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm font-medium text-foreground">自定义规则集</span>
+                <span className="text-xs text-muted">远程 URL 或手动 JSON · 供本地规则「规则集」匹配引用</span>
               </div>
+              <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
+                <PlusIcon className="size-4" aria-hidden="true" />
+                添加
+              </Button>
+            </div>
 
-              {customSets.length === 0 ? (
-                <Card>
-                  <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-                    <span className="text-sm text-muted">添加你的第一个自定义规则集</span>
-                    <span className="text-xs text-muted/80">订阅远程规则集或在本地手写 JSON</span>
-                  </Card.Content>
-                </Card>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {customSets.map((ruleSet) => (
-                    <CustomRuleSetCard
-                      key={ruleSet.id}
-                      ruleSet={ruleSet}
-                      busy={togglingCustomId === ruleSet.id}
-                      onToggle={(next) => void handleToggleCustom(ruleSet, next)}
-                      onEdit={() => openEdit(ruleSet)}
-                      onDelete={() => setPendingDelete(ruleSet)}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
+            {customSets.length === 0 ? (
+              <Card>
+                <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
+                  <span className="text-sm text-muted">添加你的第一个自定义规则集</span>
+                  <span className="text-xs text-muted/80">订阅远程规则集或在本地手写 JSON</span>
+                </Card.Content>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {customSets.map((ruleSet) => (
+                  <CustomRuleSetCard
+                    key={ruleSet.id}
+                    ruleSet={ruleSet}
+                    busy={togglingCustomId === ruleSet.id}
+                    onToggle={(next) => void handleToggleCustom(ruleSet, next)}
+                    onEdit={() => openEdit(ruleSet)}
+                    onDelete={() => setPendingDelete(ruleSet)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </div>
 

@@ -1,19 +1,17 @@
-//! Scenario template commands (apply / revert with auto rule-set subscription).
+//! Scenario template commands (apply / revert user-defined custom templates).
+//!
+//! 自「废弃内置模板」起只支持 `"custom:<id>"` 地址；应用后不再自动订阅/下载任何
+//! 规则集（快照中 `rule_set` 规则引用由用户自控的 custom rule sets 承载）。
 
-use pp_client::local_override::{
-    LocalOverrideStore, RuleSetManager, RuleSetSubscription, template_auto_subscribed_community_ids,
-};
+use pp_client::local_override::LocalOverrideStore;
 use tauri::State;
 
 use crate::state::AppState;
+
 /// Apply a scenario template.
 ///
-/// `apply_template` auto-subscribes the community rule sets the template
-/// depends on and always generates the `rule_set` rules (ADR-0002 §3.3.3).
-/// After the overrides are persisted we trigger a best-effort download of
-/// those dependency rule sets so the generated rules can resolve; a download
-/// failure is only logged and retried by the next manual "update now" — it
-/// never fails the apply command.
+/// 仅接受 `"custom:<id>"`（前缀见 `pp_client` 的 `CUSTOM_TEMPLATE_PREFIX`），把模板
+/// 快照规则以新 UUID 复制并头插到 `singbox.rules`，记录 applied_templates 后落盘。
 #[tauri::command]
 pub async fn local_override_apply_template(
     state: State<'_, AppState>,
@@ -21,7 +19,7 @@ pub async fn local_override_apply_template(
 ) -> Result<Vec<String>, String> {
     let store = LocalOverrideStore::new(state.data_dir.clone());
     let mut ovr = store
-        .ensure_builtin_subscriptions()
+        .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
 
     let now_sec = std::time::SystemTime::now()
@@ -32,39 +30,9 @@ pub async fn local_override_apply_template(
     let ids = pp_client::local_override::apply_template(&mut ovr, &template_id, now_sec)
         .map_err(|e| format!("failed to apply template: {e}"))?;
 
-    // Persist (subscriptions were already marked subscribed by apply_template).
     store
         .save(&ovr)
         .map_err(|e| format!("failed to save after template apply: {e}"))?;
-
-    // Best-effort, non-blocking download of the template's dependency rule
-    // sets: failures are logged and retried on the next "update now".
-    // Built-ins come from the static dependency map; custom templates
-    // (`"custom:<id>"`) are scanned from their snapshot rules.
-    let deps: Vec<RuleSetSubscription> = template_auto_subscribed_community_ids(&ovr, &template_id)
-        .into_iter()
-        .filter_map(|community_id| {
-            ovr.rule_set_subscriptions
-                .iter()
-                .find(|s| s.community_id == community_id)
-                .cloned()
-        })
-        .collect();
-    if !deps.is_empty() {
-        let data_dir = state.data_dir.clone();
-        tokio::spawn(async move {
-            let manager = RuleSetManager::new(data_dir);
-            for sub in deps {
-                if let Err(e) = manager.download_rule_set(&sub).await {
-                    tracing::warn!(
-                        community_id = %sub.community_id,
-                        error = %e,
-                        "template dependency rule set download failed, retry via update-now"
-                    );
-                }
-            }
-        });
-    }
 
     Ok(ids)
 }
@@ -77,7 +45,7 @@ pub fn local_override_revert_template(
 ) -> Result<bool, String> {
     let store = LocalOverrideStore::new(state.data_dir.clone());
     let mut ovr = store
-        .ensure_builtin_subscriptions()
+        .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
 
     let reverted = pp_client::local_override::revert_template(&mut ovr, &template_id);

@@ -153,9 +153,7 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
                 disabled={saving}
                 className={`${inputClass} font-mono`}
               />
-              <span className="text-xs text-muted">
-                规则卡「规则集」匹配目标按此 tag 引用；须唯一且不与内置社区 id 冲突
-              </span>
+              <span className="text-xs text-muted">规则卡「规则集」匹配目标按此 tag 引用；须唯一且非空</span>
             </div>
 
             {/* 远程：格式 + URL */}
