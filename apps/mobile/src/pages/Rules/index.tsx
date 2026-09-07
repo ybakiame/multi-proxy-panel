@@ -28,8 +28,8 @@ import { TemplateSection } from "./TemplateSection";
  *
  * 自上而下：
  * 1. 总开关卡：`singbox.enabled`（关闭后本地规则与规则集不注入运行配置）；
- * 2. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）；
- * 3. 两个入口卡：自定义规则（`/rules/custom`）与规则集管理（`/rules/rulesets`）。
+ * 2. 二级页入口：规则集管理（`/rules/rulesets`）与自定义规则（`/rules/custom`）；
+ * 3. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）。
  *
  * 规则列表 CRUD 与规则集订阅管理已迁至对应子页；规则集启用与否通过
  * `buildSaveInput` 整段透传，本页只消费 `singbox` 桶与 `applied_templates`。
@@ -181,7 +181,21 @@ export default function Rules() {
           {/* 1. 总开关 */}
           <MasterSwitchCard enabled={currentCore.enabled} onToggle={(next) => void handleToggleEnabled(next)} />
 
-          {/* 2. 场景模板（自定义） */}
+          {/* 2. 二级页入口：规则集管理（社区/自定义分区）→ 自定义规则 */}
+          <EntryLinkCard
+            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
+            title="规则集管理"
+            description="社区与自定义规则集的增删与更新"
+            onPress={() => navigate("/rules/rulesets")}
+          />
+          <EntryLinkCard
+            icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
+            title="自定义规则"
+            description="添加与管理你的分流规则"
+            onPress={() => navigate("/rules/custom")}
+          />
+
+          {/* 3. 场景模板（自定义） */}
           <TemplateSection
             appliedIds={appliedTemplateIds}
             customTemplates={overrideData.custom_templates}
@@ -190,20 +204,6 @@ export default function Rules() {
             onRevert={(id) => handleRevertTemplate(id)}
             onCreate={(template) => handleCreateTemplate(template)}
             onDelete={(template) => handleDeleteTemplate(template)}
-          />
-
-          {/* 3. 二级页入口 */}
-          <EntryLinkCard
-            icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
-            title="自定义规则"
-            description="添加与管理你的分流规则"
-            onPress={() => navigate("/rules/custom")}
-          />
-          <EntryLinkCard
-            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
-            title="规则集管理"
-            description="自定义规则集的增删与更新"
-            onPress={() => navigate("/rules/rulesets")}
           />
         </div>
       )}

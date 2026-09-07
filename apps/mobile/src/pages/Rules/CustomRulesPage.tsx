@@ -54,7 +54,7 @@ export default function CustomRulesPage() {
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LocalRuleView | null>(null);
 
-  /** 规则集选择器候选：已启用自定义规则集（内置社区订阅已废弃）。 */
+  /** 规则集选择器候选：已启用规则集（社区 remote / 自定义 manual；内置订阅已废弃）。 */
   const ruleSetOptions = useMemo<RuleSetOption[]>(() => {
     if (!overrideData) return [];
     return asArray(overrideData.custom_rule_sets)

@@ -57,7 +57,7 @@ export function CustomRuleSetCard({ ruleSet, busy, onToggle, onEdit, onDelete }:
           </span>
         </div>
         <Switch
-          aria-label={`启用自定义规则集 ${tag}`}
+          aria-label={`启用规则集 ${tag}`}
           isSelected={enabled}
           isDisabled={busy}
           onChange={(next) => onToggle(next)}

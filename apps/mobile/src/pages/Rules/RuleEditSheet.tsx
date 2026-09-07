@@ -4,7 +4,7 @@ import { Button, ListBox, Modal, Select, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "@pp/client-core";
 
-/** 规则集选择器选项（rule_set 匹配目标）：已启用的自定义规则集 tag。 */
+/** 规则集选择器选项（rule_set 匹配目标）：已启用的规则集 tag（社区 remote / 自定义 manual）。 */
 export interface RuleSetOption {
   /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
   value: string;
@@ -34,14 +34,14 @@ const TARGET_PLACEHOLDER: Record<string, string> = {
   domain_keyword: "例如：google",
   ip_cidr: "例如：1.2.3.0/24",
   source_ip_cidr: "例如：10.0.0.0/8",
-  rule_set: "自定义规则集 tag",
+  rule_set: "规则集 tag",
   app_package: "例如：com.android.chrome",
   port: "例如：443",
 };
 
 /** 目标输入下方辅助说明（仅选中类型有提示时展示）。 */
 const TARGET_HINT: Record<string, string> = {
-  rule_set: "填入已启用的自定义规则集 tag",
+  rule_set: "填入已启用的规则集 tag",
   app_package: "按 Android 应用包名匹配（仅 Android 生效）",
   port: "匹配目标端口；也支持端口段如 1000:2000",
 };
@@ -59,7 +59,7 @@ interface RuleEditSheetProps {
   onSave: (rule: LocalRuleInput) => Promise<boolean>;
   /** 编辑模式点「删除规则」：父层收起 Sheet 并弹 AlertDialog 确认。 */
   onDeleteRequest: (rule: LocalRuleView) => void;
-  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先添加/订阅。 */
+  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加并启用。 */
   ruleSetOptions?: RuleSetOption[];
 }
 
@@ -254,11 +254,9 @@ export function RuleEditSheet({
                     </Select.Popover>
                   </Select>
                   {effectiveRuleSetOptions.length === 0 ? (
-                    <span className="text-xs text-muted">
-                      当前没有可用的规则集，请先在「规则集管理」中添加自定义规则集
-                    </span>
+                    <span className="text-xs text-muted">当前没有已启用的规则集，请先在「规则集管理」中添加并启用</span>
                   ) : (
-                    <span className="text-xs text-muted">选择已启用的自定义规则集 tag</span>
+                    <span className="text-xs text-muted">选择已启用的规则集 tag</span>
                   )}
                 </div>
               ) : (

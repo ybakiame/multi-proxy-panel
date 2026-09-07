@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { Alert, AlertDialog, Button, Card, Spinner } from "@heroui/react";
+import { Alert, AlertDialog, Button, Card, Chip, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
   buildSaveInput,
@@ -11,6 +11,7 @@ import {
   toErrorMessage,
   toastError,
   toastSuccess,
+  toastWarning,
   useProxyStatus,
 } from "@pp/client-core";
 import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
@@ -19,15 +20,72 @@ import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
 
+/** 分区渲染描述：社区 = 远程 URL（remote），自定义 = 手动 JSON（manual）。 */
+interface RuleSetSectionSpec {
+  /** 分区标题（按来源类型命名）。 */
+  title: string;
+  /** 空分区引导文案。 */
+  emptyCopy: string;
+  sets: CustomRuleSetView[];
+}
+
+interface RuleSetSectionProps extends RuleSetSectionSpec {
+  busyId: string | null;
+  onToggle: (ruleSet: CustomRuleSetView, next: boolean) => void;
+  onEdit: (ruleSet: CustomRuleSetView) => void;
+  onDelete: (ruleSet: CustomRuleSetView) => void;
+}
+
+/**
+ * 单来源分区（社区 / 自定义）：区头标题 + 计数，条目为 `CustomRuleSetCard`；
+ * 空分区渲染简短引导，引导新用户走顶部「添加」入口。
+ */
+function RuleSetSection({ title, emptyCopy, sets, busyId, onToggle, onEdit, onDelete }: RuleSetSectionProps) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
+        <Chip size="sm" variant="soft" color="default" className="shrink-0">
+          {sets.length}
+        </Chip>
+      </div>
+      {sets.length === 0 ? (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
+            <span className="text-sm text-muted">{emptyCopy}</span>
+          </Card.Content>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {sets.map((ruleSet) => (
+            <CustomRuleSetCard
+              key={ruleSet.id}
+              ruleSet={ruleSet}
+              busy={busyId === ruleSet.id}
+              onToggle={(next) => onToggle(ruleSet, next)}
+              onEdit={() => onEdit(ruleSet)}
+              onDelete={() => onDelete(ruleSet)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /**
  * 规则集管理子页（ADR-0003 M5.4 拆分，路由 `/rules/rulesets`）。
  *
- * 自「废弃内置规则集订阅」起页面只管理**用户自控的自定义规则集**（remote URL /
- * manual JSON）：
- * - 顶部「立即更新」：同步更新启用的 custom Remote（`localOverrideUpdateRulesetsNow`，
- *   await 下载完成后保存，UI 重拉即见 cached / last_updated 变化）；
- * - 自定义规则集列表：添加/编辑底部 Sheet + 删除 AlertDialog；写操作经
- *   `buildSaveInput` 整段替换 `custom_rule_sets` 落盘；
+ * 自「废弃内置规则集订阅」起页面只管理**用户自控的规则集**，并按**来源类型**分区：
+ * - 「社区规则集」区：`source.kind === "remote"`（远程 URL，如 geoip/geosite 社区资源）；
+ * - 「自定义规则集」区：`source.kind === "manual"`（手动 JSON）。
+ *
+ * 交互要点：
+ * - 顶部统一「添加」按钮（单一入口），表单选择远程 URL / 手动 JSON 后自然归入对应分区；
+ * - 顶部「立即更新」：同步更新启用的 Remote（`localOverrideUpdateRulesetsNow`，await
+ *   下载完成后保存），成功 toast 汇总成功/失败数（失败数 = 启用 Remote 数 - 成功数），
+ *   invalidate 触发重拉即见 cached / last_updated 变化；
+ * - 卡片增删改沿用整段替换 `custom_rule_sets` 落盘 + AlertDialog / 底部 Sheet；
  * - 规则集状态（cached / last_updated / enabled）统一来自 `local_override_get`
  *   的 `custom_rule_sets` 段（废弃的订阅状态命令不再使用）。
  */
@@ -48,6 +106,9 @@ export default function RuleSetsPage() {
   // 结构守卫：缓存残留异构形态（历史复合查询）时视为未加载，渲染空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const customSets = asArray(overrideData?.custom_rule_sets);
+  // 分区 = 来源类型：remote（社区）与 manual（自定义）。
+  const remoteSets = customSets.filter((rs) => rs.source.kind === "remote");
+  const manualSets = customSets.filter((rs) => rs.source.kind === "manual");
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
   // ---- 局部 UI 状态 ----
@@ -62,7 +123,7 @@ export default function RuleSetsPage() {
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
   };
 
-  /** 自定义规则集段整段替换落盘（其余段透传当前视图）。 */
+  /** 规则集段整段替换落盘（其余段透传当前视图）。 */
   const persistCustom = async (next: CustomRuleSetInput[]): Promise<boolean> => {
     if (!overrideData) return false;
     try {
@@ -76,13 +137,28 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 立即更新 ----
+  // ---- 立即更新（启用的 Remote）：后端只返回成功数，失败数 = 启用数 - 成功数 ----
   const handleUpdateNow = async (): Promise<boolean> => {
     if (updating) return false;
+    const enabledRemoteCount = remoteSets.filter((rs) => rs.enabled).length;
+    if (enabledRemoteCount === 0) {
+      toastWarning("暂无启用的远程规则集可更新");
+      return true;
+    }
     setUpdating(true);
     try {
       const updated = await localOverrideUpdateRulesetsNow();
-      toastRuleSaved(`已更新 ${updated} 个规则集`);
+      const failed = enabledRemoteCount - updated;
+      const suffix = coreRunning ? "，重启代理后生效" : "";
+      const summary =
+        failed > 0
+          ? `已更新 ${updated} 个远程规则集，${failed} 个失败${suffix}`
+          : `已更新 ${updated} 个远程规则集${suffix}`;
+      if (failed > 0) {
+        toastWarning(summary);
+      } else {
+        toastSuccess(summary);
+      }
       invalidate();
       return true;
     } catch (err) {
@@ -94,7 +170,7 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 自定义规则集 增改删启停 ----
+  // ---- 规则集 增改删启停 ----
   const openAdd = () => {
     setEditingSet(null);
     setFormOpen(true);
@@ -113,7 +189,7 @@ export default function RuleSetsPage() {
       : [...overrideData.custom_rule_sets, input];
     const ok = await persistCustom(next);
     if (ok) {
-      const base = exists ? "自定义规则集已更新" : "自定义规则集已添加";
+      const base = exists ? "规则集已更新" : "规则集已添加";
       let text = coreRunning ? `${base}，重启代理后生效` : base;
       if (!exists && input.source.kind === "remote") {
         text += "；点击「立即更新」下载规则集";
@@ -129,7 +205,7 @@ export default function RuleSetsPage() {
     const changed = overrideData.custom_rule_sets.map((rs) => (rs.id === ruleSet.id ? { ...rs, enabled: next } : rs));
     try {
       if (await persistCustom(changed)) {
-        toastRuleSaved(next ? `已启用自定义规则集「${ruleSet.tag}」` : `已停用自定义规则集「${ruleSet.tag}」`);
+        toastRuleSaved(next ? `已启用规则集「${ruleSet.tag}」` : `已停用规则集「${ruleSet.tag}」`);
       }
     } finally {
       setTogglingCustomId(null);
@@ -142,7 +218,7 @@ export default function RuleSetsPage() {
     setPendingDelete(null);
     const next = overrideData.custom_rule_sets.filter((rs) => rs.id !== target.id);
     if (await persistCustom(next)) {
-      toastRuleSaved(`已删除自定义规则集「${target.tag}」`);
+      toastRuleSaved(`已删除规则集「${target.tag}」`);
     }
   };
 
@@ -156,21 +232,6 @@ export default function RuleSetsPage() {
           paddingRight: "max(1rem, env(safe-area-inset-right))",
         }}
       >
-        {/* 顶部：立即更新 */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 text-xs text-muted">启用的远程自定义规则集需下载后才能被注入</span>
-          <Button
-            variant="secondary"
-            className="h-11 shrink-0 px-4"
-            isDisabled={updating}
-            isPending={updating}
-            onPress={() => void handleUpdateNow()}
-          >
-            <ArrowPathIcon className="size-4" aria-hidden="true" />
-            立即更新
-          </Button>
-        </div>
-
         {overrideLoading && !overrideData && (
           <Card>
             <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
@@ -194,41 +255,64 @@ export default function RuleSetsPage() {
           </Card>
         )}
 
+        {!overrideData && !overrideLoading && !overrideError && (
+          <Card>
+            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+              <span className="text-sm text-muted">规则集数据不可用</span>
+              <Button variant="secondary" className="min-h-10 shrink-0 px-4" onPress={() => void invalidate()}>
+                重新加载
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
+
         {overrideData && (
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">自定义规则集</span>
-                <span className="text-xs text-muted">远程 URL 或手动 JSON · 供本地规则「规则集」匹配引用</span>
-              </div>
-              <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
+          <div className="flex flex-col gap-4">
+            {/* 顶部说明 */}
+            <span className="text-xs text-muted">
+              远程 URL（社区）规则集需「立即更新」下载后才会被注入；手动 JSON（自定义）保存即写入本地文件
+            </span>
+
+            {/* 顶部统一操作：添加（单一入口）+ 立即更新 */}
+            <div className="flex items-center gap-2">
+              <Button variant="primary" className="h-11 min-w-0 flex-1 px-4" onPress={openAdd}>
                 <PlusIcon className="size-4" aria-hidden="true" />
                 添加
               </Button>
+              <Button
+                variant="secondary"
+                className="h-11 min-w-0 flex-1 px-4"
+                isDisabled={updating}
+                isPending={updating}
+                onPress={() => void handleUpdateNow()}
+              >
+                <ArrowPathIcon className="size-4" aria-hidden="true" />
+                立即更新
+              </Button>
             </div>
 
-            {customSets.length === 0 ? (
-              <Card>
-                <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-                  <span className="text-sm text-muted">添加你的第一个自定义规则集</span>
-                  <span className="text-xs text-muted/80">订阅远程规则集或在本地手写 JSON</span>
-                </Card.Content>
-              </Card>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {customSets.map((ruleSet) => (
-                  <CustomRuleSetCard
-                    key={ruleSet.id}
-                    ruleSet={ruleSet}
-                    busy={togglingCustomId === ruleSet.id}
-                    onToggle={(next) => void handleToggleCustom(ruleSet, next)}
-                    onEdit={() => openEdit(ruleSet)}
-                    onDelete={() => setPendingDelete(ruleSet)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+            {/* 社区规则集：远程 URL（remote） */}
+            <RuleSetSection
+              title="社区规则集"
+              emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
+              sets={remoteSets}
+              busyId={togglingCustomId}
+              onToggle={handleToggleCustom}
+              onEdit={openEdit}
+              onDelete={setPendingDelete}
+            />
+
+            {/* 自定义规则集：手动 JSON（manual） */}
+            <RuleSetSection
+              title="自定义规则集"
+              emptyCopy="手动输入 JSON 规则内容"
+              sets={manualSets}
+              busyId={togglingCustomId}
+              onToggle={handleToggleCustom}
+              onEdit={openEdit}
+              onDelete={setPendingDelete}
+            />
+          </div>
         )}
       </div>
 
@@ -253,7 +337,7 @@ export default function RuleSetsPage() {
             </AlertDialog.Header>
             <AlertDialog.Body>
               <p className="break-words">
-                确定删除自定义规则集「{pendingDelete ? pendingDelete.name.trim() || pendingDelete.tag : ""}」吗？
+                确定删除规则集「{pendingDelete ? pendingDelete.name.trim() || pendingDelete.tag : ""}」吗？
                 将同时清理其缓存文件；引用该 tag 的规则需一并调整。
               </p>
             </AlertDialog.Body>
