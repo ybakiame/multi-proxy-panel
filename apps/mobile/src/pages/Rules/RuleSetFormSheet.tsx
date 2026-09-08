@@ -6,6 +6,14 @@ type SourceKind = "remote" | "manual";
 /** 远程文件格式：binary = .srs，source = .json（对齐 CustomRuleSetSource.format）。 */
 type RemoteFormat = "binary" | "source";
 
+/**
+ * URL 后缀自动识别远程规则集格式（不再手选）：
+ * `.json`（大小写不敏感）结尾 → source；其余（含 `.srs` / 无后缀）→ binary。
+ */
+function detectRemoteFormat(url: string): RemoteFormat {
+  return url.trim().toLowerCase().endsWith(".json") ? "source" : "binary";
+}
+
 interface RuleSetFormSheetProps {
   isOpen: boolean;
   /** `null` = 新建；非空 = 编辑该自定义规则集（表单预填）。 */
@@ -41,7 +49,9 @@ function RadioOption({ value, label, disabled }: { value: string; label: string;
  *
  * - 类型 Radio：远程 URL / 手动输入 JSON；
  * - 公共字段：名称（必填）、tag（必填，placeholder `my-ads`）；
- * - 远程：格式 Radio（srs 二进制 / json）+ URL（必填）；
+ * - 远程：URL（必填）——**格式不再手选**，按 URL 后缀自动识别并显示只读识别
+ *   结果（`.json` → source，其余 → binary）；编辑已有远程规则集时 URL 未改则
+ *   保留已存 format，URL 一旦被修改即按新 URL 后缀重新识别；
  * - 手动：JSON 内容多行等宽编辑器（必填，placeholder 为 sing-box source 骨架）；
  * - 保存构建 `CustomRuleSetInput`（custom 段整段替换落盘由父层执行）。
  */
@@ -156,19 +166,9 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
               <span className="text-xs text-muted">规则卡「规则集」匹配目标按此 tag 引用；须唯一且非空</span>
             </div>
 
-            {/* 远程：格式 + URL */}
+            {/* 远程：URL（格式按后缀自动识别） */}
             {!isManual && (
               <>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">格式</span>
-                  <RadioGroup
-                    value={remoteFormat}
-                    onChange={(value) => setRemoteFormat(String(value) === "source" ? "source" : "binary")}
-                  >
-                    <RadioOption value="binary" label="srs 二进制（推荐）" disabled={saving} />
-                    <RadioOption value="source" label="json（source 文本）" disabled={saving} />
-                  </RadioGroup>
-                </div>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="rs-url" className="text-sm font-medium text-foreground">
                     URL
@@ -179,7 +179,12 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
                     aria-label="规则集 URL"
                     aria-required="true"
                     value={url}
-                    onChange={(event) => setUrl(event.target.value)}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setUrl(next);
+                      // 格式不再手选：URL 每次变化都按后缀自动识别（`.json` → source，其余 → binary）。
+                      setRemoteFormat(detectRemoteFormat(next));
+                    }}
                     placeholder="https://example.com/ads.srs"
                     autoCapitalize="none"
                     autoCorrect="off"
@@ -188,6 +193,16 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
                     disabled={saving}
                     className={`${inputClass} font-mono`}
                   />
+                  {url.trim() !== "" && (
+                    <span
+                      aria-live="polite"
+                      className="inline-flex self-start items-center gap-1.5 rounded-full border border-border/60 bg-surface-secondary/60 px-3 py-1 text-xs text-muted"
+                    >
+                      {detectRemoteFormat(url) === "source"
+                        ? "URL 以 .json 结尾：将识别为 json 源码（source）"
+                        : "URL 非 .json 结尾：将识别为 srs 二进制（binary）"}
+                    </span>
+                  )}
                   <span className="text-xs text-muted">保存后点击「立即更新」下载；下载成功前不会被注入</span>
                 </div>
               </>

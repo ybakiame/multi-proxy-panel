@@ -147,9 +147,9 @@ impl LocalRuleView {
             id: model.id.clone(),
             name: model.name.clone(),
             enabled: model.enabled,
-            match_type: format!("{:?}", model.match_type).to_lowercase(),
+            match_type: rule_match_type_str(&model.match_type),
             target: model.target.clone(),
-            action: format!("{:?}", model.action).to_lowercase(),
+            action: rule_action_str(&model.action),
             no_resolve: model.advanced.no_resolve,
             invert: model.advanced.invert,
             note: model.note.clone(),
@@ -165,7 +165,7 @@ impl LocalRuleSetRefView {
             id: model.id.clone(),
             name: model.name.clone(),
             tag: model.tag.clone(),
-            kind: format!("{:?}", model.kind).to_lowercase(),
+            kind: rule_set_kind_str(&model.kind),
             source: match &model.source {
                 pp_client::local_override::RuleSetSource::Remote { url } => url.clone(),
                 pp_client::local_override::RuleSetSource::Local { path } => path.clone(),
@@ -214,6 +214,57 @@ impl CustomTemplateView {
             rules: model.rules.iter().map(LocalRuleView::from_model).collect(),
             created_at: model.created_at,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enum → string mapping (frontend contract)
+// ---------------------------------------------------------------------------
+
+/// Canonical `match_type` string (snake_case, mirrors the serde values and is
+/// symmetric with `convert.rs::parse_match_type`).
+fn rule_match_type_str(t: &pp_client::local_override::RuleMatchType) -> String {
+    use pp_client::local_override::RuleMatchType as M;
+    match t {
+        M::Domain => "domain",
+        M::DomainSuffix => "domain_suffix",
+        M::DomainKeyword => "domain_keyword",
+        M::IpCidr => "ip_cidr",
+        M::SourceIpCidr => "source_ip_cidr",
+        M::RuleSet => "rule_set",
+        #[cfg(target_os = "android")]
+        M::AppPackage => "app_package",
+        #[cfg(not(target_os = "android"))]
+        M::ProcessName => "process_name",
+        M::Port => "port",
+        M::Final => "final",
+    }
+    .to_string()
+}
+
+/// Canonical `action` string, symmetric with `convert.rs::parse_action`.
+///
+/// Unit variants map to their word values; the data-carrying `Outbound`
+/// variant serializes as `"outbound:<tag>"` (this is the wire string the
+/// frontend echoes back and `parse_action` understands — not the enum's
+/// serde JSON shape, which is only used for `local_override.json` on disk).
+fn rule_action_str(a: &pp_client::local_override::RuleAction) -> String {
+    use pp_client::local_override::RuleAction as A;
+    match a {
+        A::Proxy => "proxy".to_string(),
+        A::Direct => "direct".to_string(),
+        A::Reject => "reject".to_string(),
+        A::Outbound { tag } => format!("outbound:{tag}"),
+    }
+}
+
+/// Canonical rule-set `kind` string, symmetric with
+/// `convert.rs::parse_rule_set_kind`.
+fn rule_set_kind_str(k: &pp_client::local_override::RuleSetKind) -> String {
+    use pp_client::local_override::RuleSetKind as K;
+    match k {
+        K::SingBoxRemote => "singbox_remote".to_string(),
+        K::SingBoxLocal => "singbox_local".to_string(),
     }
 }
 

@@ -279,3 +279,152 @@ fn convert_applied_template_input(input: AppliedTemplateInput) -> AppliedTemplat
         generated_rule_ids: input.generated_rule_ids,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Round-trip tests: model → view → input → model
+// ---------------------------------------------------------------------------
+//
+// The frontend receives `LocalRuleView` (string-typed enums), then echoes the
+// exact same strings back as `LocalRuleInput` / `LocalRuleSetRefInput`. The
+// view strings must therefore be accepted by the `parse_*` functions below, or
+// saves fail with `unknown match_type` / `unknown action` / `unknown rule_set
+// kind` (regression: `format!("{:?}").to_lowercase()` emitted `"ruleset"`,
+// `"domainsuffix"`, … which `parse_match_type` rejected).
+
+#[cfg(test)]
+mod roundtrip_tests {
+    use super::*;
+
+    fn sample_rule(match_type: pp_client::local_override::RuleMatchType) -> LocalRule {
+        LocalRule {
+            id: "r1".to_string(),
+            name: "rule".to_string(),
+            enabled: true,
+            match_type,
+            target: "example.com".to_string(),
+            action: pp_client::local_override::RuleAction::Proxy,
+            advanced: Default::default(),
+            note: String::new(),
+            created_at: 1,
+            sort_order: 0,
+        }
+    }
+
+    /// `LocalRule` → `LocalRuleView` → `LocalRuleInput` → `LocalRule`.
+    fn rule_round_trip(model: LocalRule) -> LocalRule {
+        let view = LocalRuleView::from_model(&model);
+        let input = LocalRuleInput {
+            id: view.id,
+            name: view.name,
+            enabled: view.enabled,
+            match_type: view.match_type,
+            target: view.target,
+            action: view.action,
+            no_resolve: view.no_resolve,
+            invert: view.invert,
+            note: view.note,
+            created_at: view.created_at,
+            sort_order: view.sort_order,
+        };
+        convert_rule_input(input).unwrap()
+    }
+
+    #[test]
+    fn every_match_type_round_trips_through_view_string() {
+        use pp_client::local_override::RuleMatchType as M;
+        let cases: Vec<(M, &str)> = vec![
+            (M::Domain, "domain"),
+            (M::DomainSuffix, "domain_suffix"),
+            (M::DomainKeyword, "domain_keyword"),
+            (M::IpCidr, "ip_cidr"),
+            (M::SourceIpCidr, "source_ip_cidr"),
+            (M::RuleSet, "rule_set"),
+            (M::Port, "port"),
+            (M::Final, "final"),
+            #[cfg(not(target_os = "android"))]
+            (M::ProcessName, "process_name"),
+            #[cfg(target_os = "android")]
+            (M::AppPackage, "app_package"),
+        ];
+        for (match_type, expected) in cases {
+            let model = sample_rule(match_type);
+            let view = LocalRuleView::from_model(&model);
+            assert_eq!(
+                view.match_type, expected,
+                "match_type {:?}",
+                model.match_type
+            );
+            let back = rule_round_trip(model.clone());
+            assert_eq!(
+                back, model,
+                "match_type {:?} must survive round trip",
+                model.match_type
+            );
+        }
+    }
+
+    #[test]
+    fn every_action_round_trips_through_view_string() {
+        use pp_client::local_override::RuleAction as A;
+        let cases: Vec<(A, &str)> = vec![
+            (A::Proxy, "proxy"),
+            (A::Direct, "direct"),
+            (A::Reject, "reject"),
+            (
+                A::Outbound {
+                    tag: "my-group".to_string(),
+                },
+                "outbound:my-group",
+            ),
+        ];
+        for (action, expected) in cases {
+            let mut model = sample_rule(pp_client::local_override::RuleMatchType::Domain);
+            model.action = action;
+            let view = LocalRuleView::from_model(&model);
+            assert_eq!(view.action, expected, "action {:?}", model.action);
+            let back = rule_round_trip(model.clone());
+            assert_eq!(
+                back, model,
+                "action {:?} must survive round trip",
+                model.action
+            );
+        }
+    }
+
+    #[test]
+    fn rule_set_kind_round_trips_through_view_string() {
+        use pp_client::local_override::{LocalRuleSetRef, RuleSetKind as K, RuleSetSource};
+        let cases: Vec<(K, &str)> = vec![
+            (K::SingBoxRemote, "singbox_remote"),
+            (K::SingBoxLocal, "singbox_local"),
+        ];
+        for (kind, expected) in cases {
+            let model = LocalRuleSetRef {
+                id: "rs1".to_string(),
+                name: "RS".to_string(),
+                tag: "rs-tag".to_string(),
+                kind,
+                source: RuleSetSource::Remote {
+                    url: "https://example.com/x.srs".to_string(),
+                },
+                enabled: true,
+                auto_update_interval_minutes: 0,
+                last_updated: 0,
+            };
+            let view = LocalRuleSetRefView::from_model(&model);
+            assert_eq!(view.kind, expected, "kind {:?}", model.kind);
+            let input = LocalRuleSetRefInput {
+                id: view.id,
+                name: view.name,
+                tag: view.tag,
+                kind: view.kind,
+                source: view.source,
+                enabled: view.enabled,
+                auto_update_interval_minutes: view.auto_update_interval_minutes,
+                last_updated: view.last_updated,
+            };
+            let back = convert_rule_set_ref_input(input).unwrap();
+            assert_eq!(back.kind, model.kind);
+        }
+    }
+}
