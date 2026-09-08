@@ -1,4 +1,4 @@
-//! Local override 注入回归测试：生成配置的 `rule_sets` 只来自用户自控的
+//! Local override 注入回归测试：生成配置的 `rule_set` 条目只来自用户自控的
 //! custom rule sets（内置订阅的 remote rule_set 注入已移除）。
 
 use crate::local_override::{LocalOverrideStore, RuleSetFormat, RuleSetManager};
@@ -6,7 +6,7 @@ use crate::local_override::{LocalOverrideStore, RuleSetFormat, RuleSetManager};
 use crate::state::inject_local_override_warn_only;
 
 /// 存量迁移 + 注入：旧文件里「已订阅内置 + 内置模板生成的 rule_set 规则卡片」经
-/// `load` 迁移为 custom Remote 后，注入进生成配置的 rule_sets 唯一来源是 custom
+/// `load` 迁移为 custom Remote 后，注入进生成配置的 rule_set 唯一来源是 custom
 /// local 条目；不存在任何内置 remote rule_set 条目。
 #[test]
 fn injection_rule_sets_only_come_from_custom_after_legacy_migration() {
@@ -65,10 +65,15 @@ fn injection_rule_sets_only_come_from_custom_after_legacy_migration() {
     let rules = config["route"]["rules"].as_array().unwrap();
     assert!(rules.iter().any(|r| r["rule_set"] == "geoip-cn"));
 
-    // rule_sets 条目唯一来源为 custom local；无内置 remote 条目。
-    let rule_sets = config["route"]["rule_sets"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 1, "{rule_sets:?}");
-    assert_eq!(rule_sets[0]["type"], "local");
-    assert_eq!(rule_sets[0]["tag"], "geoip-cn");
-    assert_eq!(rule_sets[0]["format"], "binary");
+    // sing-box route 字段是单数 `rule_set`；rule_set 条目唯一来源为被引用且
+    // enabled 的 custom local；无内置 remote 条目。
+    assert!(
+        config["route"].get("rule_sets").is_none(),
+        "no plural rule_sets key allowed"
+    );
+    let rule_set = config["route"]["rule_set"].as_array().unwrap();
+    assert_eq!(rule_set.len(), 1, "{rule_set:?}");
+    assert_eq!(rule_set[0]["type"], "local");
+    assert_eq!(rule_set[0]["tag"], "geoip-cn");
+    assert_eq!(rule_set[0]["format"], "binary");
 }

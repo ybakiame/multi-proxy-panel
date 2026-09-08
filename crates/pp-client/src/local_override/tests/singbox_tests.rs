@@ -75,7 +75,7 @@ fn rules_prepended_before_subscription_rules() {
 }
 
 #[test]
-fn rule_sets_appended_to_route_rule_sets() {
+fn rule_sets_appended_to_route_rule_set() {
     let mut config = json!({"route": {}});
     let ovr = CoreLocalOverride {
         enabled: true,
@@ -94,7 +94,12 @@ fn rule_sets_appended_to_route_rule_sets() {
         ..Default::default()
     };
     apply_singbox_local_override(&mut config, &ovr);
-    let rule_sets = config["route"]["rule_sets"].as_array().unwrap();
+    // sing-box route field is singular `rule_set`; plural `rule_sets` is rejected by check.
+    assert!(
+        config["route"].get("rule_sets").is_none(),
+        "no plural rule_sets key allowed"
+    );
+    let rule_sets = config["route"]["rule_set"].as_array().unwrap();
     assert_eq!(rule_sets.len(), 1);
     assert_eq!(rule_sets[0]["tag"], "geoip-cn");
     assert_eq!(rule_sets[0]["type"], "remote");
@@ -249,14 +254,30 @@ fn sample_custom_rule_set(
 }
 
 fn rule_set_entries(config: &serde_json::Value) -> Vec<&serde_json::Value> {
-    config["route"]["rule_sets"]
+    config["route"]["rule_set"]
         .as_array()
         .map(|a| a.iter().collect())
         .unwrap_or_default()
 }
 
+/// An enabled rule card referencing the given custom tag via `match_type == rule_set`.
+fn referencing_rule(tag: &str) -> LocalRule {
+    LocalRule {
+        id: format!("rule-{tag}"),
+        name: String::new(),
+        enabled: true,
+        match_type: RuleMatchType::RuleSet,
+        target: tag.to_string(),
+        action: RuleAction::Proxy,
+        advanced: Default::default(),
+        note: String::new(),
+        created_at: 0,
+        sort_order: 0,
+    }
+}
+
 #[test]
-fn custom_manual_rule_set_injected_as_local_source_when_file_exists() {
+fn custom_manual_rule_set_injected_as_local_source_when_file_exists_and_referenced() {
     let dir = tempfile::tempdir().unwrap();
     let mgr = RuleSetManager::new(dir.path().to_path_buf());
     let rs = sample_custom_rule_set(
@@ -267,18 +288,23 @@ fn custom_manual_rule_set_injected_as_local_source_when_file_exists() {
         },
         true,
     );
+    let rules = [referencing_rule("manual-custom")];
 
     // No backing file yet → no entry.
     let mut config = json!({"route": {}});
-    apply_custom_rule_sets(&mut config, &mgr, std::slice::from_ref(&rs));
+    apply_custom_rule_sets(&mut config, &mgr, &rules, std::slice::from_ref(&rs));
     assert!(rule_set_entries(&config).is_empty());
 
-    // Backing file exists (written at save) → local source entry.
+    // Backing file exists (written at save) → local source entry under `route.rule_set`.
     let manual_path = mgr.custom_rule_set_file_path(&rs.id, super::RuleSetFormat::Source);
     std::fs::create_dir_all(manual_path.parent().unwrap()).unwrap();
     std::fs::write(manual_path, "[]").unwrap();
     let mut config = json!({"route": {}});
-    apply_custom_rule_sets(&mut config, &mgr, &[rs]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[rs]);
+    assert!(
+        config["route"].get("rule_sets").is_none(),
+        "no plural rule_sets key allowed"
+    );
     let entries = rule_set_entries(&config);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["type"], "local");
@@ -292,7 +318,45 @@ fn custom_manual_rule_set_injected_as_local_source_when_file_exists() {
 }
 
 #[test]
-fn custom_remote_rule_set_injected_only_when_enabled_and_cached() {
+fn custom_rule_set_not_injected_when_no_rule_references_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = RuleSetManager::new(dir.path().to_path_buf());
+    let rs = sample_custom_rule_set(
+        "c1",
+        "manual-custom",
+        crate::local_override::CustomRuleSetSource::Manual {
+            content: "[]".to_string(),
+        },
+        true,
+    );
+    let manual_path = mgr.custom_rule_set_file_path(&rs.id, super::RuleSetFormat::Source);
+    std::fs::create_dir_all(manual_path.parent().unwrap()).unwrap();
+    std::fs::write(manual_path, "[]").unwrap();
+
+    // Backing file present but referenced by a *different* tag (or by nothing).
+    let mut config = json!({"route": {}});
+    apply_custom_rule_sets(
+        &mut config,
+        &mgr,
+        &[referencing_rule("other-tag")],
+        std::slice::from_ref(&rs),
+    );
+    assert!(
+        rule_set_entries(&config).is_empty(),
+        "unreferenced rule set must not be injected"
+    );
+
+    let mut config = json!({"route": {}});
+    let empty_rules: [LocalRule; 0] = [];
+    apply_custom_rule_sets(&mut config, &mgr, &empty_rules, &[rs]);
+    assert!(
+        rule_set_entries(&config).is_empty(),
+        "no rule at all → nothing injected"
+    );
+}
+
+#[test]
+fn custom_remote_rule_set_injected_only_when_enabled_cached_and_referenced() {
     let dir = tempfile::tempdir().unwrap();
     let mgr = RuleSetManager::new(dir.path().to_path_buf());
     let mk = |enabled: bool| {
@@ -306,23 +370,28 @@ fn custom_remote_rule_set_injected_only_when_enabled_and_cached() {
             enabled,
         )
     };
+    let rules = [referencing_rule("remote-custom")];
 
-    // Enabled but not cached → skipped (mirrors built-in community behavior).
+    // Enabled + referenced but not cached → skipped.
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &[mk(true)]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(true)]);
     assert!(rule_set_entries(&config).is_empty());
 
-    // Cached but disabled → skipped.
+    // Cached + referenced but disabled → skipped.
     let cache = mgr.custom_rule_set_file_path("r1", super::RuleSetFormat::Binary);
     std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
     std::fs::write(&cache, "fake-srs").unwrap();
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &[mk(false)]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(false)]);
     assert!(rule_set_entries(&config).is_empty());
 
-    // Enabled + cached → local binary entry.
+    // Enabled + referenced + cached → local binary entry under `route.rule_set`.
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &[mk(true)]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(true)]);
+    assert!(
+        config["route"].get("rule_sets").is_none(),
+        "no plural rule_sets key allowed"
+    );
     let entries = rule_set_entries(&config);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["type"], "local");
@@ -349,7 +418,12 @@ fn custom_remote_source_format_injected_with_source_format() {
     std::fs::write(&cache, "[]").unwrap();
 
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &[rs]);
+    apply_custom_rule_sets(
+        &mut config,
+        &mgr,
+        &[referencing_rule("remote-source")],
+        &[rs],
+    );
     let entries = rule_set_entries(&config);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["format"], "source");

@@ -373,10 +373,10 @@ impl ClientState {
 /// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
 /// - Injection failure → warning log, does not block startup.
 ///
-/// 自「废弃内置规则集订阅」起，生成配置里的 `rule_sets` 条目**只**来自用户自控的
+/// 自「废弃内置规则集订阅」起，生成配置里的 `route.rule_set` 条目**只**来自用户自控的
 /// 自定义规则集（[`apply_custom_rule_sets`](crate::local_override::apply_custom_rule_sets)
-/// 注入 enabled + 已落盘 backing file 的 custom set）；旧内置订阅的 remote
-/// rule_set 注入已移除，`ovr.singbox.rule_sets` 仅承载用户显式保留的引用。
+/// 注入「被启用 rule_set 规则引用 && enabled && 已落盘 backing file」的 custom set）；
+/// 旧内置订阅的 remote rule_set 注入已移除，`ovr.singbox.rule_sets` 仅承载用户显式保留的引用。
 pub(crate) fn inject_local_override_warn_only(
     data_dir: &std::path::Path,
     config: &mut serde_json::Value,
@@ -398,6 +398,12 @@ pub(crate) fn inject_local_override_warn_only(
     // 本地规则卡片前插（rule_set 引用由用户规则卡片定义并校验到 custom tag）。
     crate::local_override::apply_local_override(config, &ovr.singbox);
 
-    // 注入用户自定义 rule sets（remote cache / manual JSON）为 local rule_set 条目。
-    crate::local_override::apply_custom_rule_sets(config, &manager, &ovr.custom_rule_sets);
+    // 注入用户自定义 rule sets（remote cache / manual JSON）为 local rule_set 条目；
+    // 仅注入「被启用 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
+    crate::local_override::apply_custom_rule_sets(
+        config,
+        &manager,
+        &ovr.singbox.rules,
+        &ovr.custom_rule_sets,
+    );
 }

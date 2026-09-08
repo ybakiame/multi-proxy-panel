@@ -5,9 +5,13 @@
 //! Injection point: after `compose_singbox_config`, before `apply_panel_features`.
 //!
 //! Strategy:
-//! 1. `rule_sets`: append to `route.rule_sets` (remote rule_set array).
+//! 1. `rule_set`: append to `route.rule_set` (sing-box rule-set definitions
+//!    array — note the key is **singular** `rule_set`, matching the sing-box
+//!    JSON schema; a plural `rule_sets` key is rejected by `sing-box check`).
 //! 2. `rules`: prepend to `route.rules` array head (local rules take priority over subscription rules).
 //! 3. `final`: if a Final-type rule exists, write to `route.final`.
+
+use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
@@ -37,7 +41,7 @@ pub fn apply_singbox_local_override(config: &mut Value, ovr: &CoreLocalOverride)
 }
 
 // ---------------------------------------------------------------------------
-// rule_sets injection
+// rule_set injection
 // ---------------------------------------------------------------------------
 
 fn inject_singbox_rule_sets(obj: &mut serde_json::Map<String, Value>, ovr: &CoreLocalOverride) {
@@ -51,9 +55,12 @@ fn inject_singbox_rule_sets(obj: &mut serde_json::Map<String, Value>, ovr: &Core
     append_route_rule_set_entries(obj, rule_set_entries);
 }
 
-/// Append prebuilt rule_set entries into `route.rule_sets`, creating the
-/// `route` / `rule_sets` nodes when missing. No-op when `entries` is empty or
-/// the config is not an object.
+/// Append prebuilt rule_set definition entries into `route.rule_set`, creating
+/// the `route` / `rule_set` nodes when missing. No-op when `entries` is empty
+/// or the config is not an object.
+///
+/// Note the JSON key is the sing-box route field **`rule_set`** (singular);
+/// `route.rule_sets` is not a valid sing-box field and fails `check`.
 fn append_route_rule_set_entries(
     route_container: &mut serde_json::Map<String, Value>,
     entries: Vec<Value>,
@@ -67,23 +74,31 @@ fn append_route_rule_set_entries(
     let Some(route_obj) = route.as_object_mut() else {
         return;
     };
-    let rule_sets = route_obj
-        .entry("rule_sets")
+    let rule_set = route_obj
+        .entry("rule_set")
         .or_insert_with(|| Value::Array(Vec::new()));
-    let Some(arr) = rule_sets.as_array_mut() else {
+    let Some(arr) = rule_set.as_array_mut() else {
         return;
     };
     arr.extend(entries);
 }
 
-/// Inject `type: local` rule_set entries for **enabled** custom rule sets
-/// whose backing file exists on disk.
+/// Inject `type: local` rule_set entries for custom rule sets that are
+/// **referenced by at least one enabled `rule_set` rule**, enabled themselves,
+/// and whose backing file exists on disk.
 ///
-/// - Manual rule sets: injected whenever the persisted `<id>.json` file
-///   exists (written at save time).
-/// - Remote rule sets: injected only when the cached file exists for the
-///   declared format (mirrors the built-in community behavior where a
-///   subscribed-but-not-yet-downloaded rule set is skipped).
+/// Reference-driven semantics (aligns with user expectations of the rule
+/// editor):
+///
+/// - A custom rule set that no enabled `rule_set` rule references is **not**
+///   injected — merely adding a rule set (without a rule card using its tag)
+///   must not touch the generated config.
+/// - A rule set referenced by an enabled rule but **disabled** or with a
+///   **missing backing file** is also skipped. In that case the referencing
+///   rule keeps a dangling tag and `sing-box check` fails with a clear
+///   "rule set not found: <tag>"-style error — an explicit, user-perceivable
+///   signal to enable / update the rule set (we deliberately do not inject a
+///   half-broken rule set entry).
 ///
 /// Entry shape aligns with [`build_singbox_rule_set_entry`]'s local output:
 /// `{ "type": "local", "tag", "format": "source"|"binary", "path" }`.
@@ -92,15 +107,28 @@ fn append_route_rule_set_entries(
 pub fn apply_custom_rule_sets(
     config: &mut Value,
     manager: &RuleSetManager,
+    rules: &[LocalRule],
     custom_sets: &[CustomRuleSet],
 ) {
     let Some(obj) = config.as_object_mut() else {
         return;
     };
 
+    // Tags referenced by enabled `rule_set` rules (the only references the
+    // generated config's rules actually use).
+    let referenced_tags: HashSet<&str> = rules
+        .iter()
+        .filter(|r| r.enabled && matches!(r.match_type, RuleMatchType::RuleSet))
+        .map(|r| r.target.as_str())
+        .collect();
+    if referenced_tags.is_empty() {
+        return;
+    }
+
     let entries: Vec<Value> = custom_sets
         .iter()
         .filter(|rs| rs.enabled)
+        .filter(|rs| referenced_tags.contains(rs.tag.as_str()))
         .filter_map(|rs| {
             let format = rs.file_format();
             let path = manager.custom_rule_set_file_path(&rs.id, format);
