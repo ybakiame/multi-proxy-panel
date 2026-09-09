@@ -20,6 +20,7 @@ import {
 } from "@pp/client-core";
 import type { ClientStatus, SubscriptionView } from "@pp/client-core";
 import { ConfigPreviewModal } from "../components/ConfigPreviewModal";
+import { ConnectionsEntryCard } from "../components/ConnectionsEntryCard";
 import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
 import { RuleModeSwitch } from "../components/RuleModeSwitch";
@@ -35,7 +36,7 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  *
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
  * 2. 状态卡（StatusCard）；3. 当前节点卡（CurrentNodeCard，点击进代理选择页）；
- * 4. 流量统计卡（TrafficCard，2s 轮询）；
+ * 4. 流量统计卡（TrafficCard，2s 轮询）+ 当前连接入口（ConnectionsEntryCard，点击进连接页）；
  * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
  *    「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
@@ -203,6 +204,9 @@ export default function Dashboard() {
 
       {/* 4. 流量统计卡 */}
       <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
+
+      {/* 4.5 当前连接入口（点击进连接页） */}
+      <ConnectionsEntryCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
 
       {/* 5+6. 主操作 + VPN 授权引导 */}
       <Card>

@@ -17,9 +17,9 @@ import {
 } from "@pp/client-core";
 import type { CustomTemplateInput, CustomTemplateView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
+import { EntryLinkCard } from "../../components/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
 import { isLocalOverrideView } from "./localOverrideGuards";
-import { EntryLinkCard } from "./EntryLinkCard";
 import { MasterSwitchCard } from "./MasterSwitchCard";
 import { TemplateSection } from "./TemplateSection";
 

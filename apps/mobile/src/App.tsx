@@ -3,6 +3,7 @@ import { ToastProvider } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { isTauriEnv } from "@pp/client-core";
 import { TABS, TabBar } from "./components/TabBar";
+import Connections from "./pages/Connections";
 import Dashboard from "./pages/Dashboard";
 import Proxies from "./pages/Proxies";
 import Rules from "./pages/Rules";
@@ -81,8 +82,9 @@ function TauriRequired() {
  * - 布局：顶部内容滚动区（各页面自行处理 `env(safe-area-inset-top)`）+ 底部 TabBar
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/rules` 规则管理（Tab）、`/settings` 设置（Tab）；
- *   `/proxies` 代理选择页、`/subscriptions` 订阅管理页、`/rules/custom` 自定义规则、
- *   `/rules/rulesets` 规则集管理为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
+ *   `/connections` 连接页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
+ *   `/rules/custom` 自定义规则、`/rules/rulesets` 规则集管理为非 Tab 二级页——TabBar
+ *   仅在三主 Tab 路径渲染。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
  * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
  *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
@@ -104,6 +106,7 @@ function AppContent() {
       <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/connections" element={<Connections />} />
           <Route path="/proxies" element={<Proxies />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/rules" element={<Rules />} />
