@@ -40,6 +40,7 @@ export interface CoreLocalOverrideView {
 export interface AppliedTemplateView {
   template_id: string;
   applied_at: number;
+  /** 废弃：快照复制时代的产物。引用语义下保留字段仅为 serde/类型兼容（新数据恒空）。 */
   generated_rule_ids: string[];
 }
 
@@ -57,7 +58,6 @@ export interface CustomRuleSetView {
   name: string;
   tag: string;
   source: CustomRuleSetSource;
-  enabled: boolean;
   last_updated: number;
   /** Whether the backing file (manual 落盘 / remote cache) exists on disk. */
   cached: boolean;
@@ -66,14 +66,16 @@ export interface CustomRuleSetView {
 /**
  * User-defined scenario template view (from `local_override_get`).
  *
- * `rules` is the template's snapshot of the selected rule cards at creation
- * time (displayed back in the create form and used as the apply source).
+ * `rules` is the template's **rule ID reference list** (not a snapshot).
+ * `invalid_count` is computed server-side: references whose rule ID is missing
+ * from the rule list or whose rule is disabled.
  */
 export interface CustomTemplateView {
   id: string;
   name: string;
   desc: string;
-  rules: LocalRuleView[];
+  rules: string[];
+  invalid_count: number;
   created_at: number;
 }
 
@@ -99,22 +101,21 @@ export interface CustomRuleSetInput {
   name: string;
   tag: string;
   source: CustomRuleSetSource;
-  enabled: boolean;
   last_updated: number;
 }
 
 /**
  * Custom template save payload.
  *
- * `rules` is a full snapshot of the selected rule cards. `LocalRuleView` and
- * `LocalRuleInput` share the same field shape, so a template saved from the
- * current rule list round-trips through `buildSaveInput` unchanged.
+ * `rules` is the **rule ID reference list** (only enabled rules are selectable
+ * at creation time). A template saved from the current rule list round-trips
+ * through `buildSaveInput` unchanged.
  */
 export interface CustomTemplateInput {
   id: string;
   name: string;
   desc: string;
-  rules: LocalRuleInput[];
+  rules: string[];
   created_at: number;
 }
 

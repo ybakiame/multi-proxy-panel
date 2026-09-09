@@ -31,8 +31,10 @@ import { TemplateSection } from "./TemplateSection";
  * 2. 二级页入口：规则集管理（`/rules/rulesets`）与自定义规则（`/rules/custom`）；
  * 3. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）。
  *
- * 规则列表 CRUD 与规则集订阅管理已迁至对应子页；规则集启用与否通过
- * `buildSaveInput` 整段透传，本页只消费 `singbox` 桶与 `applied_templates`。
+ * 自「模板改为规则 ID 引用 + 应用激活」起：模板保存的是规则 ID 引用（不复制规则），
+ * 应用/撤销只是激活/停用场景，只有被已应用模板引用的启用规则才注入启动配置。
+ * 规则列表 CRUD 与规则集管理已迁至对应子页；本页只消费 `singbox` 桶、
+ * `applied_templates` 与 `custom_templates`（custom 段由 `buildSaveInput` 整段透传）。
  */
 export default function Rules() {
   const navigate = useNavigate();
@@ -106,7 +108,17 @@ export default function Rules() {
   const persistTemplates = async (next: CustomTemplateView[]): Promise<boolean> => {
     if (!overrideData) return false;
     try {
-      await localOverrideSave({ ...buildSaveInput(overrideData), custom_templates: next });
+      await localOverrideSave({
+        ...buildSaveInput(overrideData),
+        // 落盘走 Input 形态：去掉只读的 invalid_count（服务端下次读取时按引用重算）。
+        custom_templates: next.map((t) => ({
+          id: t.id,
+          name: t.name,
+          desc: t.desc,
+          rules: t.rules,
+          created_at: t.created_at,
+        })),
+      });
       invalidate();
       return true;
     } catch (err) {
@@ -118,7 +130,10 @@ export default function Rules() {
 
   const handleCreateTemplate = async (template: CustomTemplateInput): Promise<boolean> => {
     if (!overrideData) return false;
-    const ok = await persistTemplates([...overrideData.custom_templates, template]);
+    // 新建来源均为当前已启用的规则，本地引用必然有效 → invalid_count 暂按 0，
+    // 之后 disable/删除源规则产生的失效引用由服务端读取时重新计算。
+    const nextView: CustomTemplateView = { ...template, invalid_count: 0 };
+    const ok = await persistTemplates([...overrideData.custom_templates, nextView]);
     if (ok) {
       toastRuleSaved("场景模板已保存");
     }
@@ -199,7 +214,8 @@ export default function Rules() {
           <TemplateSection
             appliedIds={appliedTemplateIds}
             customTemplates={overrideData.custom_templates}
-            ruleOptions={currentCore.rules}
+            // 新建模板只从已启用规则中勾选（引用语义：禁用规则不参与注入）。
+            ruleOptions={currentCore.rules.filter((r) => r.enabled)}
             onApply={(id) => handleApplyTemplate(id)}
             onRevert={(id) => handleRevertTemplate(id)}
             onCreate={(template) => handleCreateTemplate(template)}

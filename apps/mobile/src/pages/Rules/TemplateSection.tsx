@@ -29,8 +29,12 @@ function customTemplateId(template: CustomTemplateView): string {
  *
  * 自「废弃内置场景模板」起只渲染**用户自定义模板卡**（名称/描述/规则数 + 应用或
  * 撤销按钮 + 删除入口）；区头「新建模板」按钮 → 底部 Sheet（`TemplateFormSheet`，
- * 规则勾选快照）；应用/撤销串行化（单飞 busy），成功/失败 toast 由页面处理器负责；
- * 删除需 AlertDialog 确认；已应用的模板必须先撤销再删除（避免丢失撤销入口）。
+ * 勾选已启用规则写入 ID 引用）；应用/撤销串行化（单飞 busy），成功/失败 toast
+ * 由页面处理器负责；删除需 AlertDialog 确认；已应用的模板必须先撤销再删除。
+ *
+ * 自「模板改为规则引用 + 应用激活」起卡片额外展示失效数：`invalid_count > 0` 时
+ * 出 warning「n 条失效」chip——引用规则被删除/禁用的失效引用会保留在模板上，
+ * 应用时跳过（联动方案 b），提示用户模板内存在不生效的引用。
  */
 export function TemplateSection({
   appliedIds,
@@ -108,8 +112,13 @@ export function TemplateSection({
                     <Chip size="sm" variant="soft" color="default" className="shrink-0">
                       {template.rules.length} 条规则
                     </Chip>
+                    {template.invalid_count > 0 && (
+                      <Chip size="sm" variant="soft" color="warning" className="shrink-0">
+                        {template.invalid_count} 条失效
+                      </Chip>
+                    )}
                   </span>
-                  <span className="truncate text-xs text-muted">{template.desc.trim() || "自定义规则组合快照"}</span>
+                  <span className="truncate text-xs text-muted">{template.desc.trim() || "自定义规则组合"}</span>
                 </div>
                 {applied ? (
                   <Button

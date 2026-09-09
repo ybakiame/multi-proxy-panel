@@ -95,7 +95,7 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
       name: name.trim(),
       tag: tag.trim(),
       source,
-      enabled: editing?.enabled ?? true,
+      // 规则集是纯资源（无 enabled）：是否注入由引用它的规则决定。
       // 手动内容保存即写入文件；远程沿用最近一次成功下载时间（新条目为 0，待「立即更新」）。
       last_updated: isManual ? now : (editing?.last_updated ?? 0),
     };

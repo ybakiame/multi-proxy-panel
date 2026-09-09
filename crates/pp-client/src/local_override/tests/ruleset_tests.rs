@@ -3,13 +3,12 @@
 
 use super::*;
 
-fn custom(id: &str, tag: &str, source: CustomRuleSetSource, enabled: bool) -> CustomRuleSet {
+fn custom(id: &str, tag: &str, source: CustomRuleSetSource) -> CustomRuleSet {
     CustomRuleSet {
         id: id.to_string(),
         name: String::new(),
         tag: tag.to_string(),
         source,
-        enabled,
         last_updated: 0,
     }
 }
@@ -55,7 +54,6 @@ fn sync_custom_rule_set_files_writes_manual_and_cleans_orphans() {
         CustomRuleSetSource::Manual {
             content: "[{\"rules\":[]}]".to_string(),
         },
-        true,
     );
     let switched = custom(
         "switched",
@@ -63,7 +61,6 @@ fn sync_custom_rule_set_files_writes_manual_and_cleans_orphans() {
         CustomRuleSetSource::Manual {
             content: "manual-content".to_string(),
         },
-        true,
     );
     mgr.sync_custom_rule_set_files(&[manual_a.clone(), switched.clone()])
         .unwrap();
@@ -98,10 +95,10 @@ fn sync_custom_rule_set_files_writes_manual_and_cleans_orphans() {
     assert!(switched_file.exists());
 }
 
-/// 更新链路：仅覆盖启用的 custom Remote，同步 await 下载，成功刷新
-/// `last_updated` 并落盘 cache 文件；失败/停用/手动条目 best-effort 跳过。
+/// 更新链路：覆盖**全部** custom Remote（无 enabled 概念），同步 await 下载，
+/// 成功刷新 `last_updated` 并落盘 cache 文件；失败/手动条目 best-effort 跳过。
 #[tokio::test]
-async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
+async fn update_custom_remotes_covers_all_remote() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = axum::Router::new()
@@ -118,7 +115,7 @@ async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
     let mgr = RuleSetManager::new(dir.path().to_path_buf());
 
     let mut ovr = LocalOverride::default();
-    // Enabled remote → downloaded.
+    // Reachable remote → downloaded.
     ovr.custom_rule_sets.push(custom(
         "c-ok",
         "ok-tag",
@@ -126,9 +123,8 @@ async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
             url: format!("http://{addr}/bin"),
             format: RuleSetFormat::Binary,
         },
-        true,
     ));
-    // Enabled remote but failing URL → best-effort skip (count unaffected).
+    // Remote but failing URL → best-effort skip (count unaffected).
     ovr.custom_rule_sets.push(custom(
         "c-fail",
         "fail-tag",
@@ -136,17 +132,6 @@ async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
             url: format!("http://{addr}/missing"),
             format: RuleSetFormat::Source,
         },
-        true,
-    ));
-    // Disabled remote → skipped.
-    ovr.custom_rule_sets.push(custom(
-        "c-disabled",
-        "disabled-tag",
-        CustomRuleSetSource::Remote {
-            url: format!("http://{addr}/bin"),
-            format: RuleSetFormat::Source,
-        },
-        false,
     ));
     // Manual → no download.
     ovr.custom_rule_sets.push(custom(
@@ -155,26 +140,21 @@ async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
         CustomRuleSetSource::Manual {
             content: "[]".to_string(),
         },
-        true,
     ));
 
-    let updated = mgr.update_enabled_custom_remotes(&mut ovr).await.unwrap();
+    let updated = mgr.update_custom_remotes(&mut ovr).await.unwrap();
     assert_eq!(
         updated, 1,
-        "only the reachable enabled remote should update"
+        "only the reachable remote should update (failed & manual skipped)"
     );
 
     let bin = mgr.custom_rule_set_file_path("c-ok", RuleSetFormat::Binary);
     assert_eq!(std::fs::read_to_string(&bin).unwrap(), "binary-body");
     assert!(ovr.custom_rule_sets[0].last_updated > 0);
 
-    // Failed/disabled/manual never wrote files nor bumped timestamps.
+    // Failed/manual never wrote files nor bumped timestamps.
     assert!(
         !mgr.custom_rule_set_file_path("c-fail", RuleSetFormat::Source)
-            .exists()
-    );
-    assert!(
-        !mgr.custom_rule_set_file_path("c-disabled", RuleSetFormat::Source)
             .exists()
     );
     assert!(
@@ -183,5 +163,4 @@ async fn update_enabled_custom_remotes_covers_only_enabled_remote() {
     );
     assert_eq!(ovr.custom_rule_sets[1].last_updated, 0);
     assert_eq!(ovr.custom_rule_sets[2].last_updated, 0);
-    assert_eq!(ovr.custom_rule_sets[3].last_updated, 0);
 }

@@ -4,9 +4,9 @@
 //! - `local_override_rulesets`（订阅状态列表）与 `local_override_toggle_ruleset`
 //!   （订阅开关）**已删除**——前端统一消费 `local_override_get` 的
 //!   `custom_rule_sets` 段（含 `cached` / `last_updated`），减少一条命令链路；
-//! - `local_override_update_rulesets_now` 语义收敛为「同步更新启用的 custom
-//!   Remote」：**await 全部下载完成后**保存并返回，确保 UI invalidate 重拉即见
-//!   cached / last_updated 变化（修复“缓存状态和更新时间不刷新”）。
+//! - 自「规则集移除 enabled」起 `local_override_update_rulesets_now` 语义收敛为
+//!   「同步更新**全部** custom Remote」（纯资源刷新语义）：**await 全部下载完成
+//!   后**保存并返回，确保 UI invalidate 重拉即见 cached / last_updated 变化。
 
 use pp_client::local_override::{LocalOverrideStore, RuleSetManager};
 use tauri::State;
@@ -23,7 +23,7 @@ pub(crate) async fn run_update_rulesets_now(data_dir: &std::path::Path) -> Resul
 
     let manager = RuleSetManager::new(data_dir.to_path_buf());
     let updated = manager
-        .update_enabled_custom_remotes(&mut ovr)
+        .update_custom_remotes(&mut ovr)
         .await
         .map_err(|e| format!("failed to update rule sets: {e}"))?;
 
@@ -34,7 +34,7 @@ pub(crate) async fn run_update_rulesets_now(data_dir: &std::path::Path) -> Resul
     Ok(updated)
 }
 
-/// Manually update all enabled Remote custom rule sets now.
+/// Manually update all Remote custom rule sets now.
 ///
 /// 同步 await 下载并刷新 `last_updated` 后落盘；失败条目 best-effort（仅告警，
 /// 不中断整批），返回成功更新的数量。
@@ -64,7 +64,7 @@ mod tests {
         });
 
         let dir = tempfile::tempdir().unwrap();
-        // 预置一个启用的 custom Remote（迁移自订阅的常见形态）并落盘 override 文件。
+        // 预置一个 custom Remote 并落盘 override 文件（纯资源：无 enabled）。
         let ovr = pp_client::local_override::LocalOverride {
             custom_rule_sets: vec![pp_client::local_override::CustomRuleSet {
                 id: "c-1".to_string(),
@@ -74,7 +74,6 @@ mod tests {
                     url: format!("http://{addr}/ok.srs"),
                     format: pp_client::local_override::RuleSetFormat::Binary,
                 },
-                enabled: true,
                 last_updated: 0,
             }],
             ..Default::default()

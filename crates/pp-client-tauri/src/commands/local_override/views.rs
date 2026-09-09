@@ -76,27 +76,31 @@ pub struct AppliedTemplateView {
 /// `source` keeps the model shape (remote url+format / manual content) so the
 /// editor can echo the content back; `cached` reflects whether the backing
 /// file (manual 落盘 or remote cache) currently exists on disk.
+///
+/// 自「规则集移除 enabled」起不再输出 `enabled`（纯资源，旧文件中的该字段由
+/// serde 忽略，不再出现在视图契约里）。
 #[derive(Debug, Clone, Serialize)]
 pub struct CustomRuleSetView {
     pub id: String,
     pub name: String,
     pub tag: String,
     pub source: CustomRuleSetSource,
-    pub enabled: bool,
     pub last_updated: u64,
     pub cached: bool,
 }
 
 /// User-defined scenario template view.
 ///
-/// `rules` are the template's snapshot of the selected rule cards (displayed
-/// in the create form's checklist and echoed back on the card).
+/// `rules` 是**规则 ID 引用列表**（非快照）；`invalid_count` 由服务端按
+/// 「引用 ID 不存在 或 对应规则 disabled」计算（模板卡据此显示失效数）。
 #[derive(Debug, Clone, Serialize)]
 pub struct CustomTemplateView {
     pub id: String,
     pub name: String,
     pub desc: String,
-    pub rules: Vec<LocalRuleView>,
+    pub rules: Vec<String>,
+    /// Number of currently invalid (missing / disabled) rule references.
+    pub invalid_count: usize,
     pub created_at: u64,
 }
 
@@ -121,7 +125,7 @@ impl LocalOverrideView {
             custom_templates: model
                 .custom_templates
                 .iter()
-                .map(CustomTemplateView::from_model)
+                .map(|tpl| CustomTemplateView::from_model(tpl, model))
                 .collect(),
         }
     }
@@ -198,7 +202,6 @@ impl CustomRuleSetView {
             name: model.name.clone(),
             tag: model.tag.clone(),
             source: model.source.clone(),
-            enabled: model.enabled,
             last_updated: model.last_updated,
             cached: manager.has_custom_rule_set_file(model),
         }
@@ -206,12 +209,17 @@ impl CustomRuleSetView {
 }
 
 impl CustomTemplateView {
-    pub(crate) fn from_model(model: &pp_client::local_override::CustomTemplate) -> Self {
+    pub(crate) fn from_model(
+        model: &pp_client::local_override::CustomTemplate,
+        ovr: &LocalOverride,
+    ) -> Self {
+        let invalid_count = pp_client::local_override::template_invalid_refs(ovr, model).len();
         Self {
             id: model.id.clone(),
             name: model.name.clone(),
             desc: model.desc.clone(),
-            rules: model.rules.iter().map(LocalRuleView::from_model).collect(),
+            rules: model.rules.clone(),
+            invalid_count,
             created_at: model.created_at,
         }
     }
@@ -283,12 +291,12 @@ pub struct SaveLocalOverrideInput {
     #[serde(default)]
     pub custom_rule_sets: Vec<pp_client::local_override::CustomRuleSet>,
     /// Full replacement of the custom template segment (semantics identical to
-    /// `rules`). Rules carry the flattened `LocalRuleInput` field shape.
+    /// `rules`). Templates carry rule **ID references** (`rules: Vec<String>`).
     #[serde(default)]
     pub custom_templates: Vec<CustomTemplateInput>,
 }
 
-/// Input for one custom scenario template (full rule snapshot).
+/// Input for one custom scenario template (rule ID reference list).
 #[derive(Debug, Deserialize)]
 pub struct CustomTemplateInput {
     pub id: String,
@@ -297,7 +305,7 @@ pub struct CustomTemplateInput {
     #[serde(default)]
     pub desc: String,
     #[serde(default)]
-    pub rules: Vec<LocalRuleInput>,
+    pub rules: Vec<String>,
     pub created_at: u64,
 }
 

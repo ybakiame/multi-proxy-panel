@@ -27,8 +27,11 @@ import { RuleListSection } from "./RuleListSection";
  * 承接原规则主页的规则列表 CRUD：启停 / 上移下移 / 添加 / 编辑 / 删除，数据流不变
  * （`persist = buildSaveInput + localOverrideSave` 全量落盘，成功按动作差异化 toast）。
  *
- * `rule_set` 匹配目标改为规则集选择器：自「废弃内置规则集订阅」起选项 = 已启用
- * 自定义规则集（tag）；编辑已有规则时原 target 不在候选则追加「原值保留」项。
+ * 自「场景模板改为规则引用 + 应用激活」起注入条件 = `enabled && 被已应用模板引用`：
+ * 未被任何模板引用的规则卡出「未分配模板」warning chip（不会注入启动配置）。
+ *
+ * `rule_set` 匹配目标为规则集选择器：选项 = **全部**自定义规则集（tag）——规则集
+ * 是纯资源无启停概念；编辑已有规则时原 target 不在候选则追加「原值保留」项。
  */
 export default function CustomRulesPage() {
   const queryClient = useQueryClient();
@@ -54,12 +57,23 @@ export default function CustomRulesPage() {
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LocalRuleView | null>(null);
 
-  /** 规则集选择器候选：已启用规则集（社区 remote / 自定义 manual；内置订阅已废弃）。 */
+  /**
+   * 规则集选择器候选：全部自定义规则集（社区 remote / 自定义 manual）。自
+   * 「规则集移除 enabled」起规则集是纯资源无启停概念，注入与否由引用它的规则决定。
+   */
   const ruleSetOptions = useMemo<RuleSetOption[]>(() => {
     if (!overrideData) return [];
-    return asArray(overrideData.custom_rule_sets)
-      .filter((rs) => rs.enabled)
-      .map((rs) => ({ value: rs.tag, label: rs.tag, hint: rs.name.trim() || undefined }));
+    return asArray(overrideData.custom_rule_sets).map((rs) => ({
+      value: rs.tag,
+      label: rs.tag,
+      hint: rs.name.trim() || undefined,
+    }));
+  }, [overrideData]);
+
+  /** 被任意场景模板引用的规则 id 集合（未引用的规则不注入启动配置，见 RuleCard）。 */
+  const referencedTemplateRuleIds = useMemo<ReadonlySet<string>>(() => {
+    if (!overrideData) return new Set<string>();
+    return new Set(overrideData.custom_templates.flatMap((t) => t.rules));
   }, [overrideData]);
 
   const toastRuleSaved = (base: string) => {
@@ -191,6 +205,7 @@ export default function CustomRulesPage() {
         {overrideData && currentCore && (
           <RuleListSection
             rules={currentCore.rules}
+            referencedRuleIds={referencedTemplateRuleIds}
             onToggle={(rule, next) => void handleToggleRule(rule, next)}
             onMove={(index, dir) => void handleMoveRule(index, dir)}
             onEdit={(rule) => openEdit(rule)}

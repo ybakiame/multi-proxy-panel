@@ -62,7 +62,6 @@ fn local_override_serde_roundtrip() {
                     url: "https://example.com/custom-ads.srs".to_string(),
                     format: RuleSetFormat::Binary,
                 },
-                enabled: true,
                 last_updated: 1234567890,
             },
             CustomRuleSet {
@@ -72,30 +71,14 @@ fn local_override_serde_roundtrip() {
                 source: CustomRuleSetSource::Manual {
                     content: r#"[{"rules":[{"domain_suffix":"example.com"}]}]"#.to_string(),
                 },
-                enabled: false,
                 last_updated: 0,
             },
         ],
         custom_templates: vec![CustomTemplate {
             id: "tpl1".to_string(),
             name: "我的场景".to_string(),
-            desc: "规则组合快照".to_string(),
-            rules: vec![LocalRule {
-                id: "r1".to_string(),
-                name: "google proxy".to_string(),
-                enabled: true,
-                match_type: RuleMatchType::DomainSuffix,
-                target: "google.com".to_string(),
-                action: RuleAction::Proxy,
-                advanced: RuleAdvancedOptions {
-                    no_resolve: false,
-                    invert: false,
-                    _sniff: false,
-                },
-                note: "snapshot".to_string(),
-                created_at: 1234567890,
-                sort_order: 5,
-            }],
+            desc: "规则引用组合".to_string(),
+            rules: vec!["r1".to_string(), "r2".to_string()],
             created_at: 1234567890,
         }],
     };
@@ -186,24 +169,13 @@ fn custom_templates_default_empty_for_legacy_file() {
     let parsed: LocalOverride = serde_json::from_str(json).unwrap();
     assert!(parsed.custom_templates.is_empty());
 
-    // 显式写入后 roundtrip 完整（含规则快照全字段）。
+    // 显式写入后 roundtrip 完整（规则 ID 引用列表）。
     let mut ovr = parsed;
     ovr.custom_templates.push(CustomTemplate {
         id: "tpl1".to_string(),
         name: "我的场景".to_string(),
         desc: String::new(),
-        rules: vec![LocalRule {
-            id: "r1".to_string(),
-            name: String::new(),
-            enabled: true,
-            match_type: RuleMatchType::RuleSet,
-            target: "geoip-cn".to_string(),
-            action: RuleAction::Direct,
-            advanced: RuleAdvancedOptions::default(),
-            note: "n".to_string(),
-            created_at: 1,
-            sort_order: 0,
-        }],
+        rules: vec!["r1".to_string(), "r2".to_string()],
         created_at: 100,
     });
     let saved = serde_json::to_string(&ovr).unwrap();
@@ -211,10 +183,9 @@ fn custom_templates_default_empty_for_legacy_file() {
     assert_eq!(back.custom_templates.len(), 1);
     assert_eq!(back.custom_templates[0].id, "tpl1");
     assert_eq!(
-        back.custom_templates[0].rules[0].match_type,
-        RuleMatchType::RuleSet
+        back.custom_templates[0].rules,
+        vec!["r1".to_string(), "r2".to_string()]
     );
-    assert_eq!(back.custom_templates[0].rules[0].target, "geoip-cn");
 }
 
 /// 旧版文件（无 `custom_rule_sets` 段）反序列化为空 Vec。
@@ -238,13 +209,53 @@ fn custom_rule_sets_default_empty_for_legacy_file() {
             url: "https://e/x.srs".to_string(),
             format: RuleSetFormat::Binary,
         },
-        enabled: true,
         last_updated: 0,
     });
     let saved = serde_json::to_string(&ovr).unwrap();
     let back: LocalOverride = serde_json::from_str(&saved).unwrap();
     assert_eq!(back.custom_rule_sets.len(), 1);
     assert_eq!(back.custom_rule_sets[0].tag, "my-set");
+}
+
+/// 纯资源语义兼容：旧文件里 `custom_rule_sets[].enabled` 字段被 serde 静默忽略。
+#[test]
+fn custom_rule_set_legacy_enabled_field_is_ignored() {
+    let json = r#"{
+            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
+            "rule_set_subscriptions": [],
+            "applied_templates": [],
+            "custom_rule_sets": [{
+                "id": "c1", "name": "x", "tag": "t",
+                "source": { "kind": "remote", "url": "https://e/x.srs", "format": "binary" },
+                "enabled": false,
+                "last_updated": 0
+            }],
+            "custom_templates": []
+        }"#;
+    let parsed: LocalOverride = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed.custom_rule_sets.len(), 1);
+    assert_eq!(parsed.custom_rule_sets[0].tag, "t");
+    // 规则集条目序列化回写不再带 enabled 字段（纯资源语义）。
+    let entry = serde_json::to_string(&parsed.custom_rule_sets[0]).unwrap();
+    assert!(!entry.contains("\"enabled\""));
+}
+
+/// 纯资源语义：模板是纯规则 ID 引用列表，反序列化只接受字符串数组。
+#[test]
+fn custom_template_rules_are_string_references() {
+    let json = r#"{
+            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
+            "rule_set_subscriptions": [],
+            "applied_templates": [],
+            "custom_rule_sets": [],
+            "custom_templates": [{
+                "id": "tpl1", "name": "t", "desc": "",
+                "rules": ["r1", "r2"],
+                "created_at": 1
+            }]
+        }"#;
+    let parsed: LocalOverride = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed.custom_templates[0].rules, vec!["r1", "r2"]);
 }
 
 #[test]
@@ -257,7 +268,6 @@ fn custom_rule_set_file_format_matches_source() {
             url: "https://e/x.srs".to_string(),
             format: RuleSetFormat::Binary,
         },
-        enabled: true,
         last_updated: 0,
     };
     assert_eq!(remote_bin.file_format(), RuleSetFormat::Binary);

@@ -4,7 +4,7 @@ import { Button, ListBox, Modal, Select, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "@pp/client-core";
 
-/** 规则集选择器选项（rule_set 匹配目标）：已启用的规则集 tag（社区 remote / 自定义 manual）。 */
+/** 规则集选择器选项（rule_set 匹配目标）：规则集 tag（社区 remote / 自定义 manual；规则集是纯资源无启停）。 */
 export interface RuleSetOption {
   /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
   value: string;
@@ -41,7 +41,7 @@ const TARGET_PLACEHOLDER: Record<string, string> = {
 
 /** 目标输入下方辅助说明（仅选中类型有提示时展示）。 */
 const TARGET_HINT: Record<string, string> = {
-  rule_set: "填入已启用的规则集 tag",
+  rule_set: "填入规则集 tag",
   app_package: "按 Android 应用包名匹配（仅 Android 生效）",
   port: "匹配目标端口；也支持端口段如 1000:2000",
 };
@@ -59,7 +59,7 @@ interface RuleEditSheetProps {
   onSave: (rule: LocalRuleInput) => Promise<boolean>;
   /** 编辑模式点「删除规则」：父层收起 Sheet 并弹 AlertDialog 确认。 */
   onDeleteRequest: (rule: LocalRuleView) => void;
-  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加并启用。 */
+  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加。 */
   ruleSetOptions?: RuleSetOption[];
 }
 
@@ -135,9 +135,10 @@ export function RuleEditSheet({
   const canSave = isFinal ? true : target.trim().length > 0;
 
   /**
-   * 规则集选择器候选：父层传入选项（已启用的自定义规则集）。
-   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（自定义已删除/停用/未迁移），
-   * 追加为「原值保留」项——Select 显示原值且不强清，由用户决定改选或保留（保留保存时后端会校验失败）。
+   * 规则集选择器候选：父层传入全部规则集 tag（规则集是纯资源，无启停概念）。
+   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（自定义规则集已删除/尚未
+   * 添加），追加为「原值保留」项——Select 显示原值且不强清，由用户决定改选或保留
+   * （保留且规则集不存在时，引用该 tag 的规则集不会注入、配置校验将报错）。
    */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
     const stale =
@@ -146,7 +147,7 @@ export function RuleEditSheet({
       target.trim() !== "" &&
       !ruleSetOptions.some((opt) => opt.value === target);
     if (!stale) return ruleSetOptions;
-    return [...ruleSetOptions, { value: target, label: target, hint: "当前不可用（原值保留）" }];
+    return [...ruleSetOptions, { value: target, label: target, hint: "当前无此规则集（原值保留）" }];
   }, [matchType, editing, target, ruleSetOptions]);
 
   const handleSave = async () => {
@@ -254,9 +255,9 @@ export function RuleEditSheet({
                     </Select.Popover>
                   </Select>
                   {effectiveRuleSetOptions.length === 0 ? (
-                    <span className="text-xs text-muted">当前没有已启用的规则集，请先在「规则集管理」中添加并启用</span>
+                    <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
                   ) : (
-                    <span className="text-xs text-muted">选择已启用的规则集 tag</span>
+                    <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
                   )}
                 </div>
               ) : (

@@ -373,10 +373,12 @@ impl ClientState {
 /// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
 /// - Injection failure → warning log, does not block startup.
 ///
-/// 自「废弃内置规则集订阅」起，生成配置里的 `route.rule_set` 条目**只**来自用户自控的
-/// 自定义规则集（[`apply_custom_rule_sets`](crate::local_override::apply_custom_rule_sets)
-/// 注入「被启用 rule_set 规则引用 && enabled && 已落盘 backing file」的 custom set）；
-/// 旧内置订阅的 remote rule_set 注入已移除，`ovr.singbox.rule_sets` 仅承载用户显式保留的引用。
+/// 自「场景模板改为规则引用 + 应用激活」起，`singbox.rules` 的注入条件为
+/// **`enabled && id ∈ 激活集合`**：激活集合 = ∪（已应用模板各自引用列表，
+/// 见 [`active_rule_ids`](crate::local_override::active_rule_ids)）。未被任何
+/// 已应用模板引用的规则不注入启动配置（模板的应用/撤销=场景开关，不复制规则）。
+/// 规则集注入（[`apply_custom_rule_sets`](crate::local_override::apply_custom_rule_sets)）
+/// 随之只看到被注入的规则，规则集条目也仅由这些规则引用。
 pub(crate) fn inject_local_override_warn_only(
     data_dir: &std::path::Path,
     config: &mut serde_json::Value,
@@ -395,15 +397,20 @@ pub(crate) fn inject_local_override_warn_only(
 
     let manager = crate::local_override::RuleSetManager::new(data_dir.to_path_buf());
 
+    // 激活规则 ID 集合 → 只注入已应用模板引用的启用规则。
+    let active = crate::local_override::active_rule_ids(&ovr);
+    let mut core = ovr.singbox.clone();
+    core.rules.retain(|r| r.enabled && active.contains(&r.id));
+
     // 本地规则卡片前插（rule_set 引用由用户规则卡片定义并校验到 custom tag）。
-    crate::local_override::apply_local_override(config, &ovr.singbox);
+    crate::local_override::apply_local_override(config, &core);
 
     // 注入用户自定义 rule sets（remote cache / manual JSON）为 local rule_set 条目；
-    // 仅注入「被启用 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
+    // 仅注入「被注入的 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
     crate::local_override::apply_custom_rule_sets(
         config,
         &manager,
-        &ovr.singbox.rules,
+        &core.rules,
         &ovr.custom_rule_sets,
     );
 }

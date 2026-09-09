@@ -84,21 +84,22 @@ fn append_route_rule_set_entries(
 }
 
 /// Inject `type: local` rule_set entries for custom rule sets that are
-/// **referenced by at least one enabled `rule_set` rule**, enabled themselves,
-/// and whose backing file exists on disk.
+/// **referenced by at least one of the given (already injected) `rule_set`
+/// rules**, and whose backing file exists on disk.
 ///
 /// Reference-driven semantics (aligns with user expectations of the rule
 /// editor):
 ///
-/// - A custom rule set that no enabled `rule_set` rule references is **not**
+/// - A custom rule set that no passed-in `rule_set` rule references is **not**
 ///   injected — merely adding a rule set (without a rule card using its tag)
 ///   must not touch the generated config.
-/// - A rule set referenced by an enabled rule but **disabled** or with a
-///   **missing backing file** is also skipped. In that case the referencing
-///   rule keeps a dangling tag and `sing-box check` fails with a clear
+/// - Since the「移除 enabled」refactor rule sets are pure resources: no enabled
+///   gate remains. A rule set referenced by an injected rule but with a
+///   **missing backing file** is skipped. In that case the referencing rule
+///   keeps a dangling tag and `sing-box check` fails with a clear
 ///   "rule set not found: <tag>"-style error — an explicit, user-perceivable
-///   signal to enable / update the rule set (we deliberately do not inject a
-///   half-broken rule set entry).
+///   signal to update the rule set (we deliberately do not inject a half-broken
+///   rule set entry).
 ///
 /// Entry shape aligns with [`build_singbox_rule_set_entry`]'s local output:
 /// `{ "type": "local", "tag", "format": "source"|"binary", "path" }`.
@@ -127,7 +128,6 @@ pub fn apply_custom_rule_sets(
 
     let entries: Vec<Value> = custom_sets
         .iter()
-        .filter(|rs| rs.enabled)
         .filter(|rs| referenced_tags.contains(rs.tag.as_str()))
         .filter_map(|rs| {
             let format = rs.file_format();

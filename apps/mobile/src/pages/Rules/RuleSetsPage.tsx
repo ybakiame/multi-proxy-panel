@@ -30,8 +30,6 @@ interface RuleSetSectionSpec {
 }
 
 interface RuleSetSectionProps extends RuleSetSectionSpec {
-  busyId: string | null;
-  onToggle: (ruleSet: CustomRuleSetView, next: boolean) => void;
   onEdit: (ruleSet: CustomRuleSetView) => void;
   onDelete: (ruleSet: CustomRuleSetView) => void;
 }
@@ -40,7 +38,7 @@ interface RuleSetSectionProps extends RuleSetSectionSpec {
  * 单来源分区（社区 / 自定义）：区头标题 + 计数，条目为 `CustomRuleSetCard`；
  * 空分区渲染简短引导，引导新用户走顶部「添加」入口。
  */
-function RuleSetSection({ title, emptyCopy, sets, busyId, onToggle, onEdit, onDelete }: RuleSetSectionProps) {
+function RuleSetSection({ title, emptyCopy, sets, onEdit, onDelete }: RuleSetSectionProps) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -61,8 +59,6 @@ function RuleSetSection({ title, emptyCopy, sets, busyId, onToggle, onEdit, onDe
             <CustomRuleSetCard
               key={ruleSet.id}
               ruleSet={ruleSet}
-              busy={busyId === ruleSet.id}
-              onToggle={(next) => onToggle(ruleSet, next)}
               onEdit={() => onEdit(ruleSet)}
               onDelete={() => onDelete(ruleSet)}
             />
@@ -80,14 +76,12 @@ function RuleSetSection({ title, emptyCopy, sets, busyId, onToggle, onEdit, onDe
  * - 「社区规则集」区：`source.kind === "remote"`（远程 URL，如 geoip/geosite 社区资源）；
  * - 「自定义规则集」区：`source.kind === "manual"`（手动 JSON）。
  *
- * 交互要点：
- * - 顶部统一「添加」按钮（单一入口），表单选择远程 URL / 手动 JSON 后自然归入对应分区；
- * - 顶部「立即更新」：同步更新启用的 Remote（`localOverrideUpdateRulesetsNow`，await
- *   下载完成后保存），成功 toast 汇总成功/失败数（失败数 = 启用 Remote 数 - 成功数），
+ * 自「规则集移除 enabled」起规则集是**纯资源**：
+ * - 卡片不再有启停 Switch（名称 / tag / 来源 chip / 缓存状态 / 更新时间 / 编辑 / 删除）；
+ * - 顶部「立即更新」同步更新**全部** Remote（`localOverrideUpdateRulesetsNow`，await
+ *   下载完成后保存），成功 toast 汇总成功/失败数（失败数 = Remote 数 - 成功数），
  *   invalidate 触发重拉即见 cached / last_updated 变化；
- * - 卡片增删改沿用整段替换 `custom_rule_sets` 落盘 + AlertDialog / 底部 Sheet；
- * - 规则集状态（cached / last_updated / enabled）统一来自 `local_override_get`
- *   的 `custom_rule_sets` 段（废弃的订阅状态命令不再使用）。
+ * - 是否注入仍由引用它的规则决定（引用它的规则被注入时才注入该规则集）。
  */
 export default function RuleSetsPage() {
   const queryClient = useQueryClient();
@@ -115,8 +109,6 @@ export default function RuleSetsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingSet, setEditingSet] = useState<CustomRuleSetView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomRuleSetView | null>(null);
-  // 自定义启停单飞（save 全量落盘，避免同卡并发写）。
-  const [togglingCustomId, setTogglingCustomId] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
 
   const toastRuleSaved = (base: string) => {
@@ -137,18 +129,18 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 立即更新（启用的 Remote）：后端只返回成功数，失败数 = 启用数 - 成功数 ----
+  // ---- 立即更新（全部 Remote）：后端只返回成功数，失败数 = Remote 数 - 成功数 ----
   const handleUpdateNow = async (): Promise<boolean> => {
     if (updating) return false;
-    const enabledRemoteCount = remoteSets.filter((rs) => rs.enabled).length;
-    if (enabledRemoteCount === 0) {
-      toastWarning("暂无启用的远程规则集可更新");
+    const remoteCount = remoteSets.length;
+    if (remoteCount === 0) {
+      toastWarning("暂无远程规则集可更新");
       return true;
     }
     setUpdating(true);
     try {
       const updated = await localOverrideUpdateRulesetsNow();
-      const failed = enabledRemoteCount - updated;
+      const failed = remoteCount - updated;
       const suffix = coreRunning ? "，重启代理后生效" : "";
       const summary =
         failed > 0
@@ -170,7 +162,7 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 规则集 增改删启停 ----
+  // ---- 规则集 增改删 ----
   const openAdd = () => {
     setEditingSet(null);
     setFormOpen(true);
@@ -197,19 +189,6 @@ export default function RuleSetsPage() {
       toastSuccess(text);
     }
     return ok;
-  };
-
-  const handleToggleCustom = async (ruleSet: CustomRuleSetView, next: boolean) => {
-    if (!overrideData || togglingCustomId !== null) return;
-    setTogglingCustomId(ruleSet.id);
-    const changed = overrideData.custom_rule_sets.map((rs) => (rs.id === ruleSet.id ? { ...rs, enabled: next } : rs));
-    try {
-      if (await persistCustom(changed)) {
-        toastRuleSaved(next ? `已启用规则集「${ruleSet.tag}」` : `已停用规则集「${ruleSet.tag}」`);
-      }
-    } finally {
-      setTogglingCustomId(null);
-    }
   };
 
   const handleDeleteConfirm = async () => {
@@ -296,8 +275,6 @@ export default function RuleSetsPage() {
               title="社区规则集"
               emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
               sets={remoteSets}
-              busyId={togglingCustomId}
-              onToggle={handleToggleCustom}
               onEdit={openEdit}
               onDelete={setPendingDelete}
             />
@@ -307,8 +284,6 @@ export default function RuleSetsPage() {
               title="自定义规则集"
               emptyCopy="手动输入 JSON 规则内容"
               sets={manualSets}
-              busyId={togglingCustomId}
-              onToggle={handleToggleCustom}
               onEdit={openEdit}
               onDelete={setPendingDelete}
             />

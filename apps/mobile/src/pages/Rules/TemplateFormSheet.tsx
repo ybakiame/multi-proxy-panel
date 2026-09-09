@@ -5,10 +5,10 @@ import { actionLabel, matchTypeLabel, ruleSummary } from "@pp/client-core";
 
 interface TemplateFormSheetProps {
   isOpen: boolean;
-  /** 当前 `singbox.rules`（新建模板时的勾选来源）。 */
+  /** 当前 `singbox.rules`（新建模板时的勾选来源；父层已只传已启用规则）。 */
   rules: LocalRuleView[];
   onClose: () => void;
-  /** 保存（名称/描述 + 所选规则快照）；返回是否成功——成功才收起 Sheet，失败保留现场。 */
+  /** 保存（名称/描述 + 所选规则 ID 引用列表）；返回是否成功——成功才收起 Sheet，失败保留现场。 */
   onSave: (template: CustomTemplateInput) => Promise<boolean>;
 }
 
@@ -28,7 +28,10 @@ const ACTION_BADGE_CLASS: Record<string, string> = {
  *
  * - 名称（必填）、描述（可选）；
  * - 从现有规则勾选：复选列表逐条展示 `ruleSummary` + 动作 badge，至少勾选 1 条；
- * - 保存时把勾选规则的完整定义快照进 `CustomTemplateInput.rules`（apply 时复制新 UUID）。
+ *   **只列已启用的规则**（父层已过滤，这里双保险——禁用规则不能进模板：引用
+ *   语义下它本就不会注入启动配置）；
+ * - 保存时把勾选规则的 **ID** 写入 `CustomTemplateInput.rules`（引用语义，不复制
+ *   规则定义；应用模板 = 激活场景，不复制规则）。
  *
  * 由父层以 `key` 强制重挂载，每次打开即空白表单（无编辑态）。
  */
@@ -37,6 +40,9 @@ export function TemplateFormSheet({ isOpen, rules, onClose, onSave }: TemplateFo
   const [desc, setDesc] = useState("");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
+
+  // 双保险：勾选列表只列已启用规则（禁用规则不能作为模板引用——引用语义下不注入）。
+  const selectableRules = rules.filter((rule) => rule.enabled);
 
   const toggle = (ruleId: string, selected: boolean) => {
     setSelectedIds((prev) => {
@@ -50,17 +56,19 @@ export function TemplateFormSheet({ isOpen, rules, onClose, onSave }: TemplateFo
     });
   };
 
-  const canSave = name.trim().length > 0 && rules.length > 0 && selectedIds.size > 0 && !saving;
+  const canSave = name.trim().length > 0 && selectableRules.length > 0 && selectedIds.size > 0 && !saving;
 
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
+    // 引用语义：保存勾选规则的 ID；仅已启用规则可进模板（父层已过滤，这里双保险）。
+    const selected = rules.filter((rule) => rule.enabled && selectedIds.has(rule.id));
     const template: CustomTemplateInput = {
       id: crypto.randomUUID(),
       name: name.trim(),
       desc: desc.trim(),
-      // 规则快照：保留当前定义全字段（apply 时生成新 UUID，不会与源规则冲突）。
-      rules: rules.filter((rule) => selectedIds.has(rule.id)),
+      // 规则 ID 引用列表（不复制规则定义；应用时以引用计算激活集合）。
+      rules: selected.map((rule) => rule.id),
       created_at: Math.floor(Date.now() / 1000),
     };
     const ok = await onSave(template);
@@ -120,14 +128,16 @@ export function TemplateFormSheet({ isOpen, rules, onClose, onSave }: TemplateFo
                 <span className="text-sm font-medium text-foreground">从现有规则勾选</span>
                 <span className="text-xs text-muted">已选 {selectedIds.size} 条</span>
               </div>
-              <span className="text-xs text-muted">应用模板时复制所选规则为模板快照（生成新规则）</span>
-              {rules.length === 0 ? (
+              <span className="text-xs text-muted">
+                勾选已启用的规则加入模板；只有被已应用模板引用的启用规则会注入启动配置
+              </span>
+              {selectableRules.length === 0 ? (
                 <div className="rounded-lg border border-border/70 px-3 py-6 text-center text-sm text-muted">
-                  暂无规则可选，请先在「自定义规则」中添加
+                  暂无已启用的规则可选，请先在「自定义规则」中添加并启用
                 </div>
               ) : (
                 <div className="flex flex-col gap-1">
-                  {rules.map((rule) => {
+                  {selectableRules.map((rule) => {
                     const badgeClass = ACTION_BADGE_CLASS[rule.action] ?? "bg-default-soft text-muted";
                     return (
                       <Checkbox

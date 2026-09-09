@@ -11,8 +11,9 @@ use super::views::*;
 /// Checks:
 /// - Rule IDs are unique.
 /// - Targets are non-empty for non-Final rules.
-/// - RuleSet references resolve to an **enabled custom rule set** tag
-///   （内置社区订阅已废弃，规则集引用统一指向用户自控的 custom set）。
+/// - RuleSet references resolve to an existing custom rule set tag
+///   （内置社区订阅已废弃，规则集引用统一指向用户自控的 custom set；纯资源语义，
+///   无 enabled 概念）。
 /// - Custom rule set IDs/tags are unique; Remote URLs / Manual contents are
 ///   non-empty.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
@@ -36,20 +37,18 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
         }
     }
 
-    // Check RuleSet references resolve to an enabled custom rule set tag.
+    // Check RuleSet references resolve to an existing custom rule set tag.
+    // （内置社区订阅已废弃；规则集是纯资源、无 enabled 概念——引用目标存在即可）。
     for rule in &core_ovr.rules {
         if matches!(
             rule.match_type,
             pp_client::local_override::RuleMatchType::RuleSet
         ) {
-            let custom_enabled = ovr
-                .custom_rule_sets
-                .iter()
-                .any(|rs| rs.tag == rule.target && rs.enabled);
-            if !custom_enabled {
+            let custom_exists = ovr.custom_rule_sets.iter().any(|rs| rs.tag == rule.target);
+            if !custom_exists {
                 return Err(format!(
                     "rule '{}' references unavailable rule set '{}' \
-                     (need an enabled custom rule set with this tag)",
+                     (need a custom rule set with this tag)",
                     rule.id, rule.target
                 ));
             }
@@ -100,9 +99,11 @@ pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), Strin
 
 /// Custom template segment validation:
 /// - IDs unique, non-empty and must not carry the reserved `custom:` prefix
-///   (apply addresses custom templates as `"custom:<id>"`, see template.rs);
-/// - snapshot rule IDs within one template are unique (apply assigns fresh
-///   UUIDs, but a consistent snapshot avoids confusion).
+///   (apply addresses custom templates as `"custom:<id>"`, see template.rs).
+///
+/// 引用语义下模板 `rules` 是规则 ID 引用列表：引用 ID **不强制存在**
+/// （规则可被禁用/删除，失效引用由应用时自动跳过 + View invalid_count 展示，
+/// 方案 b 联动），因此不做引用存在性校验。
 pub(super) fn validate_custom_templates(ovr: &LocalOverride) -> Result<(), String> {
     let prefix = pp_client::local_override::CUSTOM_TEMPLATE_PREFIX;
     let mut seen_ids = std::collections::HashSet::new();
@@ -118,16 +119,6 @@ pub(super) fn validate_custom_templates(ovr: &LocalOverride) -> Result<(), Strin
         }
         if !seen_ids.insert(tpl.id.clone()) {
             return Err(format!("duplicate custom template id '{}'", tpl.id));
-        }
-
-        let mut seen_rule_ids = std::collections::HashSet::new();
-        for rule in &tpl.rules {
-            if !seen_rule_ids.insert(rule.id.clone()) {
-                return Err(format!(
-                    "custom template '{}' contains duplicate snapshot rule id '{}'",
-                    tpl.id, rule.id
-                ));
-            }
         }
     }
 
@@ -164,11 +155,7 @@ fn convert_custom_template_input(input: CustomTemplateInput) -> Result<CustomTem
         id: input.id,
         name: input.name,
         desc: input.desc,
-        rules: input
-            .rules
-            .into_iter()
-            .map(convert_rule_input)
-            .collect::<Result<Vec<_>, _>>()?,
+        rules: input.rules,
         created_at: input.created_at,
     })
 }

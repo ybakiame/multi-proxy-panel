@@ -95,7 +95,6 @@ mod tests {
                     content: r#"{"version":1,"rules":[{"domain_suffix":[".ads.example"]}]}"#
                         .to_string(),
                 },
-                enabled: true,
                 last_updated: 0,
             }],
             custom_templates: Vec::new(),
@@ -105,7 +104,7 @@ mod tests {
             id: "tpl-1".to_string(),
             name: "模板".to_string(),
             desc: "描述".to_string(),
-            rules: vec![sample_rule("t1", 0)],
+            rules: vec![sample_rule("t1", 0).id],
             created_at: 1,
         });
         ovr
@@ -148,6 +147,7 @@ mod tests {
         assert!(custom.cached, "manual 内容同步落盘后 cached 应为 true");
         assert_eq!(view.custom_templates.len(), 1);
         assert_eq!(view.custom_templates[0].rules.len(), 1);
+        assert_eq!(view.custom_templates[0].rules[0], "t1");
         assert_eq!(view.singbox.rules.len(), 1);
         assert!(view.singbox.enabled);
         // 写回文件里订阅段恒为空数组（序列化契约：字段保留 serde 兼容）。
@@ -189,7 +189,6 @@ mod tests {
         let migrated = &view.custom_rule_sets[0];
         assert_eq!(migrated.tag, "geoip-cn");
         assert_eq!(migrated.name, "GeoIP China");
-        assert!(migrated.enabled);
         assert_eq!(migrated.last_updated, 0);
         assert!(!migrated.cached, "迁移后尚未下载，无 backing 文件");
         assert!(view.applied_templates.is_empty());

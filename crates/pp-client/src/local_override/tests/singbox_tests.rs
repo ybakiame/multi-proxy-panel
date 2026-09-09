@@ -241,14 +241,12 @@ fn sample_custom_rule_set(
     id: &str,
     tag: &str,
     source: crate::local_override::CustomRuleSetSource,
-    enabled: bool,
 ) -> super::CustomRuleSet {
     super::CustomRuleSet {
         id: id.to_string(),
         name: String::new(),
         tag: tag.to_string(),
         source,
-        enabled,
         last_updated: 0,
     }
 }
@@ -286,7 +284,6 @@ fn custom_manual_rule_set_injected_as_local_source_when_file_exists_and_referenc
         crate::local_override::CustomRuleSetSource::Manual {
             content: "[]".to_string(),
         },
-        true,
     );
     let rules = [referencing_rule("manual-custom")];
 
@@ -327,7 +324,6 @@ fn custom_rule_set_not_injected_when_no_rule_references_it() {
         crate::local_override::CustomRuleSetSource::Manual {
             content: "[]".to_string(),
         },
-        true,
     );
     let manual_path = mgr.custom_rule_set_file_path(&rs.id, super::RuleSetFormat::Source);
     std::fs::create_dir_all(manual_path.parent().unwrap()).unwrap();
@@ -356,10 +352,10 @@ fn custom_rule_set_not_injected_when_no_rule_references_it() {
 }
 
 #[test]
-fn custom_remote_rule_set_injected_only_when_enabled_cached_and_referenced() {
+fn custom_remote_rule_set_injected_only_when_cached_and_referenced() {
     let dir = tempfile::tempdir().unwrap();
     let mgr = RuleSetManager::new(dir.path().to_path_buf());
-    let mk = |enabled: bool| {
+    let mk = || {
         sample_custom_rule_set(
             "r1",
             "remote-custom",
@@ -367,27 +363,21 @@ fn custom_remote_rule_set_injected_only_when_enabled_cached_and_referenced() {
                 url: "https://example.com/x.srs".to_string(),
                 format: super::RuleSetFormat::Binary,
             },
-            enabled,
         )
     };
     let rules = [referencing_rule("remote-custom")];
 
-    // Enabled + referenced but not cached → skipped.
+    // Referenced but not cached → skipped (no enabled gate anymore).
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(true)]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk()]);
     assert!(rule_set_entries(&config).is_empty());
 
-    // Cached + referenced but disabled → skipped.
+    // Cached + referenced → local binary entry under `route.rule_set`.
     let cache = mgr.custom_rule_set_file_path("r1", super::RuleSetFormat::Binary);
     std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
     std::fs::write(&cache, "fake-srs").unwrap();
     let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(false)]);
-    assert!(rule_set_entries(&config).is_empty());
-
-    // Enabled + referenced + cached → local binary entry under `route.rule_set`.
-    let mut config = json!({});
-    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk(true)]);
+    apply_custom_rule_sets(&mut config, &mgr, &rules, &[mk()]);
     assert!(
         config["route"].get("rule_sets").is_none(),
         "no plural rule_sets key allowed"
@@ -411,7 +401,6 @@ fn custom_remote_source_format_injected_with_source_format() {
             url: "https://example.com/x.json".to_string(),
             format: super::RuleSetFormat::Source,
         },
-        true,
     );
     let cache = mgr.custom_rule_set_file_path("r2", super::RuleSetFormat::Source);
     std::fs::create_dir_all(cache.parent().unwrap()).unwrap();

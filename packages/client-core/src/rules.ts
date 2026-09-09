@@ -94,16 +94,15 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       applied_at: t.applied_at,
       generated_rule_ids: t.generated_rule_ids,
     })),
-    // 自定义规则集整段透传（View/Input 同构，去掉只读的 cached 字段）。
+    // 自定义规则集整段透传（View/Input 同构，去掉只读的 cached 字段；无 enabled）。
     custom_rule_sets: view.custom_rule_sets.map((rs) => ({
       id: rs.id,
       name: rs.name,
       tag: rs.tag,
       source: rs.source,
-      enabled: rs.enabled,
       last_updated: rs.last_updated,
     })),
-    // 自定义场景模板整段透传（规则快照 LocalRuleView / LocalRuleInput 同构）。
+    // 自定义场景模板整段透传（rules = 规则 ID 引用列表）。
     custom_templates: view.custom_templates.map((t) => ({
       id: t.id,
       name: t.name,

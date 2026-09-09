@@ -149,25 +149,24 @@ impl RuleSetManager {
         updated
     }
 
-    /// Manually update all **enabled Remote custom rule sets** now.
+    /// Manually update all Remote custom rule sets now.
     ///
+    /// 自「规则集移除 enabled」起不再有启用过滤：纯资源管理语义下「立即更新」
+    /// 刷新**全部** custom Remote（下载失败条目 best-effort 跳过）。
     /// 命令层**同步 await** 每个下载完成后才返回，保证前端 invalidate 重拉
     /// `local_override_get` 时即可看到 `cached` / `last_updated` 变化（用户反馈
     /// 的“缓存状态和更新时间不刷新”修复）。Manual 无远端源被跳过；单个失败仅
     /// 告警，不影响整批（best-effort）。
-    pub async fn update_enabled_custom_remotes(
-        &self,
-        ovr: &mut LocalOverride,
-    ) -> PanelResult<usize> {
+    pub async fn update_custom_remotes(&self, ovr: &mut LocalOverride) -> PanelResult<usize> {
         let now_sec = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         let updated = self
             .download_custom_many(
-                ovr.custom_rule_sets.iter_mut().filter(|rs| {
-                    rs.enabled && matches!(rs.source, CustomRuleSetSource::Remote { .. })
-                }),
+                ovr.custom_rule_sets
+                    .iter_mut()
+                    .filter(|rs| matches!(rs.source, CustomRuleSetSource::Remote { .. })),
                 now_sec,
             )
             .await;
