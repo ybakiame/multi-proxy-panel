@@ -5,6 +5,7 @@ import { isTauriEnv } from "@pp/client-core";
 import { TABS, TabBar } from "./components/TabBar";
 import Connections from "./pages/Connections";
 import Dashboard from "./pages/Dashboard";
+import Logs from "./pages/Logs";
 import Proxies from "./pages/Proxies";
 import Rules from "./pages/Rules";
 import CustomRulesPage from "./pages/Rules/CustomRulesPage";
@@ -82,7 +83,7 @@ function TauriRequired() {
  * - 布局：顶部内容滚动区（各页面自行处理 `env(safe-area-inset-top)`）+ 底部 TabBar
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/rules` 规则管理（Tab）、`/settings` 设置（Tab）；
- *   `/connections` 连接页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
+ *   `/connections` 连接页、`/logs` 日志页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
  *   `/rules/custom` 自定义规则、`/rules/rulesets` 规则集管理为非 Tab 二级页——TabBar
  *   仅在三主 Tab 路径渲染。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
@@ -113,6 +114,7 @@ function AppContent() {
           <Route path="/rules/custom" element={<CustomRulesPage />} />
           <Route path="/rules/rulesets" element={<RuleSetsPage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/logs" element={<Logs />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
