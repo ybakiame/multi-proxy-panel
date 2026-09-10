@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { Button, Modal } from "@heroui/react";
+import { Button, Chip, Modal } from "@heroui/react";
+import { deriveMarketSourceName, detectMarketSource } from "@pp/client-core";
 
 interface MarketSourceFormSheetProps {
   isOpen: boolean;
   onClose: () => void;
   /**
-   * 保存市场源（名称 + URL）。返回是否成功——成功才收起 Sheet，失败保留现场
-   * （如 URL 重复 / 拉取解析失败由后端返回错误）。
+   * 保存市场源（名称 + 输入内容 + GitHub tag）。返回是否成功——成功才收起
+   * Sheet，失败保留现场（如源重复 / 拉取解析失败由后端返回错误）。
    */
-  onSave: (name: string, url: string) => Promise<boolean>;
+  onSave: (name: string, url: string, tag?: string) => Promise<boolean>;
 }
 
 const inputClass =
@@ -16,32 +17,38 @@ const inputClass =
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 /**
- * 市场源添加底部 Sheet（名称 + 目录 JSON URL）。
+ * 市场源添加底部 Sheet。
  *
- * 保存时后端会先拉取 + 解析验证目录，失败不保存并返回错误。
+ * 单输入框支持 `owner/repo` 简写、完整 GitHub URL 或 JSON 目录 URL；输入时实时
+ * 显示自动识别结果（chip），GitHub 源额外提供可选 tag（留空 = latest）。保存时
+ * 后端会先拉取 + 解析验证，失败不保存并返回错误。
  */
 export function MarketSourceFormSheet({ isOpen, onClose, onSave }: MarketSourceFormSheetProps) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+  const [source, setSource] = useState("");
+  const [tag, setTag] = useState("");
   const [saving, setSaving] = useState(false);
   const [wasOpen, setWasOpen] = useState(false);
 
   // open 切换时重置表单（adjust-state-during-render）。
   if (isOpen && !wasOpen) {
     setWasOpen(true);
-    setName("");
-    setUrl("");
+    setSource("");
+    setTag("");
     setSaving(false);
   } else if (!isOpen && wasOpen) {
     setWasOpen(false);
   }
 
-  const canSave = name.trim().length > 0 && url.trim().length > 0;
+  const detected = detectMarketSource(source, tag);
+  const isGithub = detected.kind === "github";
+  const canSave = source.trim().length > 0;
 
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
-    const ok = await onSave(name.trim(), url.trim());
+    const trimmed = source.trim();
+    const name = deriveMarketSourceName(trimmed, tag);
+    const ok = await onSave(name, trimmed, isGithub ? tag.trim() : undefined);
     setSaving(false);
     if (ok) onClose();
   };
@@ -62,41 +69,57 @@ export function MarketSourceFormSheet({ isOpen, onClose, onSave }: MarketSourceF
           </Modal.Header>
           <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="market-source-name" className="text-sm font-medium text-foreground">
-                名称
+              <label htmlFor="market-source-input" className="text-sm font-medium text-foreground">
+                仓库 / 目录地址
               </label>
               <input
-                id="market-source-name"
-                aria-label="市场源名称"
+                id="market-source-input"
+                aria-label="市场源地址"
                 aria-required="true"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="例如：官方规则集市场"
-                disabled={saving}
-                className={inputClass}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="market-source-url" className="text-sm font-medium text-foreground">
-                目录 URL
-              </label>
-              <input
-                id="market-source-url"
-                type="url"
-                aria-label="市场目录 URL"
-                aria-required="true"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://example.com/ruleset-market.json"
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+                placeholder="owner/repo、GitHub URL 或 https://example.com/market.json"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                inputMode="url"
                 disabled={saving}
                 className={`${inputClass} font-mono`}
               />
-              <span className="text-xs text-muted">保存前会先拉取并解析该目录，失败不会保存</span>
+              {source.trim().length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Chip size="sm" variant="soft" color={isGithub ? "accent" : "default"}>
+                    {isGithub ? "GitHub 仓库" : "JSON 目录"}
+                  </Chip>
+                  {isGithub && detected.ownerRepo && (
+                    <span className="min-w-0 truncate font-mono text-xs text-muted">{detected.ownerRepo}</span>
+                  )}
+                </div>
+              )}
+              <span className="text-xs text-muted">保存前会先拉取并解析该源，失败不会保存</span>
             </div>
+
+            {isGithub && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="market-source-tag" className="text-sm font-medium text-foreground">
+                  Release tag（可选）
+                </label>
+                <input
+                  id="market-source-tag"
+                  aria-label="Release tag"
+                  value={tag}
+                  onChange={(event) => setTag(event.target.value)}
+                  placeholder="留空 = 最新 release（latest）"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  disabled={saving}
+                  className={`${inputClass} font-mono`}
+                />
+                <span className="text-xs text-muted">
+                  也可在 GitHub URL 中使用 /releases/tag/&lt;tag&gt;，此处填写会覆盖
+                </span>
+              </div>
+            )}
           </Modal.Body>
           <Modal.Footer>
             <Button variant="tertiary" className="min-h-12 flex-1" isDisabled={saving} onPress={onClose}>

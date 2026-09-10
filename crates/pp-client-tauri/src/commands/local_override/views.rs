@@ -133,12 +133,15 @@ pub struct CustomTemplateView {
 
 /// User-added market source view (from `local_override_get`).
 ///
+/// `kind` 为源类型标注（`json` = JSON 目录 / `github_releases` = GitHub 仓库）；
 /// `entry_count` 为本地缓存目录中的有效条目数（纯读缓存，不拉网络）。
 #[derive(Debug, Clone, Serialize)]
 pub struct MarketSourceView {
     pub id: String,
     pub name: String,
     pub url: String,
+    /// Source type: `json` | `github_releases`.
+    pub kind: String,
     /// Last successful fetch timestamp (Unix seconds; 0 = never).
     pub last_fetched: u64,
     /// Valid entries in the cached catalog.
@@ -147,7 +150,8 @@ pub struct MarketSourceView {
 
 /// Market entry view (from `local_override_market_entries`).
 ///
-/// 合并全部源缓存条目，`source_id` / `source_name` 标注来源。
+/// 合并全部源缓存条目，`source_id` / `source_name` 标注来源；`updated_at` 为
+/// 远端修改时间（Unix 秒，0 = 未知；GitHub 源取自 release asset 的 updated_at）。
 #[derive(Debug, Clone, Serialize)]
 pub struct MarketEntryView {
     pub id: String,
@@ -156,6 +160,7 @@ pub struct MarketEntryView {
     pub category: String,
     pub format: RuleSetFormat,
     pub url: String,
+    pub updated_at: u64,
     pub source_id: String,
     pub source_name: String,
 }
@@ -297,6 +302,7 @@ impl MarketSourceView {
             id: model.id.clone(),
             name: model.name.clone(),
             url: model.url.clone(),
+            kind: model.kind_str().to_string(),
             last_fetched: model.last_fetched,
             entry_count: market.cached_entry_count(&model.id),
         }

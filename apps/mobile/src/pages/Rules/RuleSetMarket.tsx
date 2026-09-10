@@ -5,6 +5,7 @@ import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
   MARKET_ENTRIES_KEY,
+  RECOMMENDED_MARKET_SOURCES,
   buildSaveInput,
   localOverrideGet,
   localOverrideMarketAdd,
@@ -75,6 +76,7 @@ export default function RuleSetMarket() {
   const [formOpen, setFormOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [addingKey, setAddingKey] = useState<string | null>(null);
+  const [addingRecommended, setAddingRecommended] = useState<string | null>(null);
 
   // 已添加判定：按 URL 匹配（同 tag 不同 URL 由 Rust 校验报冲突）。
   const addedUrls = useMemo(
@@ -83,9 +85,9 @@ export default function RuleSetMarket() {
   );
 
   // ---- 源管理 ----
-  const handleAddSource = async (name: string, url: string): Promise<boolean> => {
+  const handleAddSource = async (name: string, url: string, tag?: string): Promise<boolean> => {
     try {
-      const created = await localOverrideMarketAdd(name, url);
+      const created = await localOverrideMarketAdd(name, url, tag);
       toastSuccess(`已添加市场源「${created.name}」（${created.entry_count} 个条目）`);
       invalidate();
       return true;
@@ -93,6 +95,17 @@ export default function RuleSetMarket() {
       toastError(toErrorMessage(err));
       invalidate();
       return false;
+    }
+  };
+
+  /** 推荐源「一键添加」：单输入框 + 自动识别（GitHub releases）。 */
+  const handleAddRecommended = async (ownerRepo: string, tag: string, name: string): Promise<void> => {
+    if (addingRecommended !== null) return;
+    setAddingRecommended(ownerRepo);
+    try {
+      await handleAddSource(name, ownerRepo, tag);
+    } finally {
+      setAddingRecommended(null);
     }
   };
 
@@ -132,6 +145,9 @@ export default function RuleSetMarket() {
       source: { kind: "remote", url: entry.url, format: entry.format },
       // 新条目尚未下载，last_updated 归零，待「立即更新」。
       last_updated: 0,
+      // GitHub release asset 的 updated_at（JSON 目录可为 0）：写入远端更新时间，
+      // 供「有更新」判定使用，比 HEAD 更准。
+      remote_updated_at: entry.updated_at,
     };
     const base = buildSaveInput(overrideData);
     try {
@@ -192,24 +208,56 @@ export default function RuleSetMarket() {
         )}
 
         {overrideData && sources.length === 0 && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-4 px-6 py-10 text-center">
-              <SparklesIcon className="size-10 text-muted" aria-hidden="true" />
-              <div className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-foreground">市场目录为空</span>
-                <span className="text-sm text-muted">添加一个规则集市场源</span>
-              </div>
-              <Button variant="primary" className="min-h-11 shrink-0 px-4" onPress={() => setFormOpen(true)}>
-                添加市场源
-              </Button>
-              <details className="w-full text-left">
-                <summary className="cursor-pointer text-xs text-muted">查看目录 JSON 格式示例</summary>
-                <pre className="mt-2 overflow-x-auto rounded-lg border border-border/60 bg-surface-secondary/60 p-3 text-left font-mono text-xs leading-5 text-foreground">
-                  {CATALOG_FORMAT_EXAMPLE}
-                </pre>
-              </details>
-            </Card.Content>
-          </Card>
+          <>
+            <Card>
+              <Card.Content className="flex flex-col items-center gap-4 px-6 py-10 text-center">
+                <SparklesIcon className="size-10 text-muted" aria-hidden="true" />
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-foreground">市场目录为空</span>
+                  <span className="text-sm text-muted">添加一个规则集市场源</span>
+                </div>
+                <Button variant="primary" className="min-h-11 shrink-0 px-4" onPress={() => setFormOpen(true)}>
+                  添加市场源
+                </Button>
+                <details className="w-full text-left">
+                  <summary className="cursor-pointer text-xs text-muted">查看目录 JSON 格式示例</summary>
+                  <pre className="mt-2 overflow-x-auto rounded-lg border border-border/60 bg-surface-secondary/60 p-3 text-left font-mono text-xs leading-5 text-foreground">
+                    {CATALOG_FORMAT_EXAMPLE}
+                  </pre>
+                </details>
+              </Card.Content>
+            </Card>
+
+            <section className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-foreground">推荐市场源</span>
+              {RECOMMENDED_MARKET_SOURCES.map((rec) => {
+                const pending = addingRecommended === rec.ownerRepo;
+                return (
+                  <Card key={rec.ownerRepo}>
+                    <Card.Content className="flex flex-col gap-3 p-3">
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-medium text-foreground">{rec.name}</span>
+                        <span className="text-xs text-muted">{rec.description}</span>
+                        <span className="truncate font-mono text-xs text-muted">
+                          {rec.ownerRepo}
+                          {rec.tag ? ` @ ${rec.tag}` : " @ latest"}
+                        </span>
+                      </div>
+                      <Button
+                        variant="primary"
+                        className="min-h-11 shrink-0 self-end px-3"
+                        isDisabled={addingRecommended !== null}
+                        isPending={pending}
+                        onPress={() => void handleAddRecommended(rec.ownerRepo, rec.tag, rec.name)}
+                      >
+                        一键添加
+                      </Button>
+                    </Card.Content>
+                  </Card>
+                );
+              })}
+            </section>
+          </>
         )}
 
         {overrideData && sources.length > 0 && (

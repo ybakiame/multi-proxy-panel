@@ -163,13 +163,14 @@ mod tests {
     #[test]
     fn save_preserves_market_sources_and_view_exposes_entry_count() {
         let dir = tempfile::tempdir().unwrap();
+        let mut source = pp_client::local_override::MarketSource::json(
+            "m1".to_string(),
+            "示例市场".to_string(),
+            "https://e/market.json".to_string(),
+        );
+        source.last_fetched = 7;
         let ovr = LocalOverride {
-            market_sources: vec![pp_client::local_override::MarketSource {
-                id: "m1".to_string(),
-                name: "示例市场".to_string(),
-                url: "https://e/market.json".to_string(),
-                last_fetched: 7,
-            }],
+            market_sources: vec![source],
             ..Default::default()
         };
         let store = LocalOverrideStore::new(dir.path().to_path_buf());

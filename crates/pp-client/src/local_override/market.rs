@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 
-use super::RuleSetFormat;
+use super::{MarketSource, MarketSourceKind, RuleSetFormat};
 
 /// Market cache root under data_dir (`rulesets/`).
 pub const MARKET_ROOT_DIR: &str = "rulesets";
@@ -40,6 +40,12 @@ pub struct MarketEntry {
     pub format: RuleSetFormat,
     /// Rule set download URL.
     pub url: String,
+    /// Remote modification time (Unix seconds; 0 = unknown).
+    ///
+    /// JSON 目录可显式提供；GitHub releases 源取自资产的 `updated_at`。添加为
+    /// 规则集时写入 `custom_rule_sets.remote_updated_at`（比 HEAD 更准）。
+    #[serde(default)]
+    pub updated_at: u64,
 }
 
 /// Parse a remote market catalog JSON text into valid entries.
@@ -60,6 +66,110 @@ pub fn parse_market_entries(text: &str) -> PanelResult<Vec<MarketEntry>> {
         .filter(|entry| !entry.id.trim().is_empty() && !entry.url.trim().is_empty())
         .collect();
     Ok(entries)
+}
+
+/// Build the GitHub releases API URL for `owner/repo`.
+///
+/// `tag` 为空 → `/releases/latest`；否则 → `/releases/tags/<tag>`。
+pub fn github_releases_api_url(owner_repo: &str, tag: &str) -> String {
+    let base = format!("https://api.github.com/repos/{owner_repo}/releases");
+    let tag = tag.trim();
+    if tag.is_empty() {
+        format!("{base}/latest")
+    } else {
+        format!("{base}/tags/{tag}")
+    }
+}
+
+/// Parse a GitHub release JSON response's `assets[]` into market entries.
+///
+/// 只接受 `.srs`（`binary`）与 `.json`（`source`）资产，去后缀作为 id/name；
+/// `updated_at` 取资产的 ISO-8601 时间（转 Unix 秒，解析失败归 0）。非 JSON 或
+/// 缺 `assets` 数组返回 `Err`（供「添加 / 刷新」验证失败不落盘）；数组内缺少
+/// `name` / `browser_download_url` 或格式不符的资产被静默过滤。
+pub fn parse_github_release_assets(text: &str) -> PanelResult<Vec<MarketEntry>> {
+    let value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| PanelError::Client(format!("github release is not valid JSON: {e}")))?;
+    let Some(assets) = value.get("assets").and_then(|a| a.as_array()) else {
+        return Err(PanelError::Client(
+            "github release response has no assets array".to_string(),
+        ));
+    };
+    let mut entries = Vec::new();
+    for asset in assets {
+        let Some(name) = asset.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let (id, format) = if let Some(stem) = name.strip_suffix(".srs") {
+            (stem, RuleSetFormat::Binary)
+        } else if let Some(stem) = name.strip_suffix(".json") {
+            (stem, RuleSetFormat::Source)
+        } else {
+            continue;
+        };
+        let id = id.trim();
+        if id.is_empty() || url.trim().is_empty() {
+            continue;
+        }
+        let updated_at = asset
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .and_then(parse_rfc3339_secs)
+            .unwrap_or(0);
+        entries.push(MarketEntry {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: String::new(),
+            category: String::new(),
+            format,
+            url: url.to_string(),
+            updated_at,
+        });
+    }
+    Ok(entries)
+}
+
+/// Parse an RFC 3339 / ISO-8601 timestamp into Unix seconds (negative → 0).
+fn parse_rfc3339_secs(value: &str) -> Option<u64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| dt.timestamp().max(0) as u64)
+}
+
+impl MarketSource {
+    /// Build a JSON catalog source (existing behavior).
+    pub fn json(id: String, name: String, url: String) -> Self {
+        Self {
+            id,
+            name,
+            url,
+            kind: MarketSourceKind::Json,
+            last_fetched: 0,
+        }
+    }
+
+    /// Build a GitHub releases source; `url` is the resolved releases API URL.
+    pub fn github(id: String, name: String, owner_repo: String, tag: String) -> Self {
+        let url = github_releases_api_url(&owner_repo, &tag);
+        Self {
+            id,
+            name,
+            url,
+            kind: MarketSourceKind::GithubReleases { owner_repo, tag },
+            last_fetched: 0,
+        }
+    }
+
+    /// Stable discriminator string for the frontend View contract.
+    pub fn kind_str(&self) -> &'static str {
+        match &self.kind {
+            MarketSourceKind::Json => "json",
+            MarketSourceKind::GithubReleases { .. } => "github_releases",
+        }
+    }
 }
 
 /// Manager for user-defined market source catalog cache.
@@ -95,6 +205,44 @@ impl MarketManager {
                 .await?;
         let entries = parse_market_entries(&text)?;
         Ok((text, entries))
+    }
+
+    /// Fetch a GitHub release and parse its assets into market entries.
+    ///
+    /// Returns the **normalized entries JSON** (a `MarketEntry` array) plus the
+    /// parsed entries, so the on-disk cache keeps one shape for both source
+    /// kinds and `read_cache_entries` needs no kind awareness. `tag` empty →
+    /// latest release. Network / parse failures return `Err` (nothing persisted).
+    pub async fn fetch_github_release(
+        &self,
+        owner_repo: &str,
+        tag: &str,
+    ) -> PanelResult<(String, Vec<MarketEntry>)> {
+        let url = github_releases_api_url(owner_repo, tag);
+        let text =
+            crate::fetch_resource_text(&self.data_dir, &url, std::time::Duration::from_secs(60))
+                .await?;
+        let entries = parse_github_release_assets(&text)?;
+        let normalized = serde_json::to_string(&entries).map_err(|e| {
+            PanelError::Client(format!("failed to serialize github release entries: {e}"))
+        })?;
+        Ok((normalized, entries))
+    }
+
+    /// Fetch a source's catalog according to its kind.
+    ///
+    /// Dispatches to [`Self::fetch_catalog`] (JSON) or [`Self::fetch_github_release`]
+    /// (GitHub releases); returns the cache text + parsed entries.
+    pub async fn fetch_for_source(
+        &self,
+        source: &MarketSource,
+    ) -> PanelResult<(String, Vec<MarketEntry>)> {
+        match &source.kind {
+            MarketSourceKind::Json => self.fetch_catalog(&source.url).await,
+            MarketSourceKind::GithubReleases { owner_repo, tag } => {
+                self.fetch_github_release(owner_repo, tag).await
+            }
+        }
     }
 
     /// Persist the raw catalog JSON to `<market_dir>/<source_id>.json`.

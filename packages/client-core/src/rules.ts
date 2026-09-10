@@ -101,6 +101,8 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       tag: rs.tag,
       source: rs.source,
       last_updated: rs.last_updated,
+      // 后端对已存在 id 会按磁盘现值回填；新条目（市场一键添加）据此携带远端时间。
+      remote_updated_at: rs.remote_updated_at,
     })),
     // 自定义场景模板整段透传（rules = 规则 ID 引用列表）。
     custom_templates: view.custom_templates.map((t) => ({

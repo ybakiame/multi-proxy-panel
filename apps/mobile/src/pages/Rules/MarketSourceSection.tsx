@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowPathIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { AlertDialog, Button, Card } from "@heroui/react";
+import { AlertDialog, Button, Card, Chip } from "@heroui/react";
 import type { MarketSourceView } from "@pp/client-core";
 
 interface MarketSourceSectionProps {
@@ -51,7 +51,12 @@ export function MarketSourceSection({ sources, onAdd, onRefresh, onRemove, refre
             <Card key={source.id}>
               <Card.Content className="flex flex-col gap-3 p-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium text-foreground">{source.name}</span>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium text-foreground">{source.name}</span>
+                    <Chip size="sm" variant="soft" color={source.kind === "github_releases" ? "accent" : "default"}>
+                      {source.kind === "github_releases" ? "GitHub" : "JSON"}
+                    </Chip>
+                  </div>
                   <span className="truncate font-mono text-xs text-muted" title={source.url}>
                     {source.url}
                   </span>

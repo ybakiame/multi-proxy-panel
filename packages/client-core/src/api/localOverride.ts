@@ -111,6 +111,8 @@ export interface MarketSourceView {
   id: string;
   name: string;
   url: string;
+  /** Source type: JSON catalog or GitHub repository releases. */
+  kind: "json" | "github_releases";
   /** Last successful fetch timestamp (Unix seconds; 0 = never). */
   last_fetched: number;
   /** Valid entries in the cached catalog. */
@@ -125,6 +127,11 @@ export interface MarketEntryView {
   category: string;
   format: "source" | "binary";
   url: string;
+  /**
+   * Remote modification time (Unix seconds; 0 = unknown). GitHub releases
+   * sources carry the asset `updated_at`; JSON catalogs may provide it.
+   */
+  updated_at: number;
   source_id: string;
   source_name: string;
 }
@@ -145,6 +152,12 @@ export interface CustomRuleSetInput {
   tag: string;
   source: CustomRuleSetSource;
   last_updated: number;
+  /**
+   * Remote modification time (Unix seconds; 0 = unknown). New entries added
+   * from the market carry the entry's `updated_at`; backend preserves it for
+   * new IDs and backfills existing IDs from disk.
+   */
+  remote_updated_at?: number;
 }
 
 /**
@@ -227,10 +240,13 @@ export function localOverrideUpdateRuleSet(id: string): Promise<RuleSetUpdateOut
 
 /**
  * 添加市场源：后端拉取验证（失败报错且不保存）→ 落盘缓存 → 追加源。
- * 返回新建源的视图（含条目数）。
+ * 返回新建源的视图（含条目数与源类型）。
+ *
+ * `url` 支持 `owner/repo` 简写、完整 GitHub URL 或 JSON 目录 URL（后端自动识别）；
+ * `tag` 为 GitHub 源可选 release tag（空/缺省 = latest）。
  */
-export function localOverrideMarketAdd(name: string, url: string): Promise<MarketSourceView> {
-  return invoke<MarketSourceView>("local_override_market_add", { name, url });
+export function localOverrideMarketAdd(name: string, url: string, tag?: string): Promise<MarketSourceView> {
+  return invoke<MarketSourceView>("local_override_market_add", { name, url, tag: tag ?? null });
 }
 
 /** 删除市场源并清理其缓存文件；返回是否移除了源。 */

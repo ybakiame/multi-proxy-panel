@@ -87,6 +87,7 @@ fn local_override_serde_roundtrip() {
             id: "src1".to_string(),
             name: "示例市场".to_string(),
             url: "https://example.com/market.json".to_string(),
+            kind: MarketSourceKind::Json,
             last_fetched: 1234567890,
         }],
     };
@@ -99,6 +100,40 @@ fn local_override_serde_roundtrip() {
     assert!(json.contains("\"kind\":\"remote\""));
     assert!(json.contains("\"format\":\"binary\""));
     assert!(json.contains("\"kind\":\"manual\""));
+}
+
+#[test]
+fn market_source_kind_defaults_to_json_and_roundtrips() {
+    // 旧版文件无 `kind` 字段 → serde 默认 Json（存量兼容）。
+    let legacy: MarketSource = serde_json::from_str(
+        r#"{"id":"m1","name":"旧源","url":"https://e/market.json","last_fetched":7}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.kind, MarketSourceKind::Json);
+    assert_eq!(legacy.last_fetched, 7);
+
+    // Json 序列化形态：内部 tag `type`。
+    let json = serde_json::to_value(&legacy).unwrap();
+    assert_eq!(json["kind"]["type"], "json");
+
+    // GitHub releases 源序列化/反序列化往返。
+    let gh = MarketSource::github(
+        "m2".to_string(),
+        "DustinWin".to_string(),
+        "DustinWin/ruleset_geodata".to_string(),
+        "sing-box-ruleset".to_string(),
+    );
+    assert_eq!(gh.kind_str(), "github_releases");
+    assert_eq!(
+        gh.url,
+        "https://api.github.com/repos/DustinWin/ruleset_geodata/releases/tags/sing-box-ruleset"
+    );
+    let value = serde_json::to_value(&gh).unwrap();
+    assert_eq!(value["kind"]["type"], "github_releases");
+    assert_eq!(value["kind"]["owner_repo"], "DustinWin/ruleset_geodata");
+    assert_eq!(value["kind"]["tag"], "sing-box-ruleset");
+    let back: MarketSource = serde_json::from_value(value).unwrap();
+    assert_eq!(gh, back);
 }
 
 #[test]

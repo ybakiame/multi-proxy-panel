@@ -10,7 +10,9 @@
 
 use std::collections::HashSet;
 
-use pp_client::local_override::{LocalOverrideStore, MarketEntry, MarketManager, MarketSource};
+use pp_client::local_override::{
+    LocalOverrideStore, MarketEntry, MarketManager, MarketSource, MarketSourceKind,
+};
 use tauri::State;
 
 use super::views::{MarketEntryView, MarketSourceView};
@@ -33,52 +35,157 @@ fn entry_view(entry: MarketEntry, source: &MarketSource) -> MarketEntryView {
         category: entry.category,
         format: entry.format,
         url: entry.url,
+        updated_at: entry.updated_at,
         source_id: source.id.clone(),
         source_name: source.name.clone(),
     }
 }
 
-/// 添加市场源：名称/URL 必填、URL 唯一；拉取解析失败即报错且不保存。
+// ---------------------------------------------------------------------------
+// Source kind auto-detection
+// ---------------------------------------------------------------------------
+
+/// Auto-detected market source from user input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DetectedMarketSource {
+    /// GitHub repository releases (`owner/repo` + optional tag).
+    Github { owner_repo: String, tag: String },
+    /// Remote JSON catalog URL (existing behavior).
+    Json { url: String },
+}
+
+/// Detect the market source kind from a single user input.
+///
+/// 识别规则（`tag` 为显式参数，可为 `None`）：
+/// - `github.com/<owner>/<repo>[/releases/tag/<tag>]`（可带/不带 scheme，`www.` 可省）
+///   → GitHub；tag 优先取显式参数，其次取 URL 中的 `/releases/tag/<tag>`，空 = latest。
+/// - `owner/repo` 简写（owner 仅字母数字与连字符，避免把 `example.com/x.json` 误判）
+///   → GitHub，tag 取显式参数，空 = latest。
+/// - 其余 → JSON 目录 URL。
+fn detect_market_source(input: &str, tag: Option<&str>) -> DetectedMarketSource {
+    let raw = input.trim();
+    let explicit_tag = tag
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+
+    let without_scheme = raw
+        .strip_prefix("https://")
+        .or_else(|| raw.strip_prefix("http://"))
+        .unwrap_or(raw);
+    let host_and_path = without_scheme
+        .strip_prefix("www.")
+        .unwrap_or(without_scheme);
+
+    if let Some(rest) = host_and_path.strip_prefix("github.com/")
+        && let Some((owner, repo, url_tag)) = parse_github_path(rest)
+    {
+        return DetectedMarketSource::Github {
+            owner_repo: format!("{owner}/{repo}"),
+            tag: explicit_tag.or(url_tag).unwrap_or_default(),
+        };
+    }
+
+    if !raw.contains("://")
+        && raw.matches('/').count() == 1
+        && let Some((owner, repo)) = raw.split_once('/')
+        && is_github_owner(owner)
+        && is_github_repo(repo)
+    {
+        return DetectedMarketSource::Github {
+            owner_repo: format!("{owner}/{repo}"),
+            tag: explicit_tag.unwrap_or_default(),
+        };
+    }
+
+    DetectedMarketSource::Json {
+        url: raw.to_string(),
+    }
+}
+
+/// Parse `owner/repo[/releases/tag/<tag>]`; returns `(owner, repo, url_tag)`.
+fn parse_github_path(rest: &str) -> Option<(String, String, Option<String>)> {
+    let mut segs = rest.split('/').filter(|s| !s.is_empty());
+    let owner = segs.next()?.to_string();
+    let repo = segs.next()?.trim_end_matches(".git").to_string();
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    let tail: Vec<&str> = segs.collect();
+    let tag = if tail.len() >= 3 && tail[0] == "releases" && tail[1] == "tag" {
+        Some(tail[2].to_string())
+    } else {
+        None
+    };
+    Some((owner, repo, tag))
+}
+
+/// GitHub owner names are alphanumeric + hyphen only (no dots/underscores).
+fn is_github_owner(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// Repo segment must be non-empty and free of separators / query markers.
+fn is_github_repo(s: &str) -> bool {
+    !s.is_empty() && !s.contains(['/', ':', '?', '#']) && !s.chars().any(char::is_whitespace)
+}
+
+/// 添加时验证：GitHub 源要求过滤后有可用规则集资产；JSON 源维持现有验证（不强制非空）。
+fn validate_market_entries(source: &MarketSource, entries: &[MarketEntry]) -> Result<(), String> {
+    if matches!(source.kind, MarketSourceKind::GithubReleases { .. }) && entries.is_empty() {
+        return Err("该仓库 release 无可用规则集文件".to_string());
+    }
+    Ok(())
+}
+
+/// 添加市场源：名称/URL 必填、解析后 URL 唯一；拉取解析失败即报错且不保存。
+/// GitHub 源额外要求 release 过滤后有可用规则集资产（空则报错不保存）。
 pub(crate) async fn run_market_add(
     data_dir: &std::path::Path,
     name: String,
     url: String,
+    tag: Option<String>,
 ) -> Result<MarketSourceView, String> {
     let name = name.trim().to_string();
-    let url = url.trim().to_string();
+    let input = url.trim().to_string();
     if name.is_empty() {
         return Err("市场源名称不能为空".to_string());
     }
-    if url.is_empty() {
+    if input.is_empty() {
         return Err("市场源 URL 不能为空".to_string());
     }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut source = match detect_market_source(&input, tag.as_deref()) {
+        DetectedMarketSource::Github { owner_repo, tag } => {
+            MarketSource::github(id.clone(), name.clone(), owner_repo, tag)
+        }
+        DetectedMarketSource::Json { url } => MarketSource::json(id.clone(), name.clone(), url),
+    };
 
     let store = LocalOverrideStore::new(data_dir.to_path_buf());
     let mut ovr = store
         .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
-    if ovr.market_sources.iter().any(|s| s.url == url) {
-        return Err(format!("市场源 URL 已存在：{url}"));
+    if ovr.market_sources.iter().any(|s| s.url == source.url) {
+        return Err(format!("市场源已存在：{}", source.url));
     }
 
     let manager = MarketManager::new(data_dir.to_path_buf());
     // 拉取 + 解析验证：失败直接返回，不落盘、不保存。
     let (raw, entries) = manager
-        .fetch_catalog(&url)
+        .fetch_for_source(&source)
         .await
         .map_err(|e| format!("拉取市场目录失败：{e}"))?;
+    validate_market_entries(&source, &entries)?;
 
-    let id = uuid::Uuid::new_v4().to_string();
     manager
         .write_cache(&id, &raw)
         .map_err(|e| format!("写入市场缓存失败：{e}"))?;
 
-    let source = MarketSource {
-        id: id.clone(),
-        name: name.clone(),
-        url: url.clone(),
-        last_fetched: now_sec(),
-    };
+    let kind = source.kind_str().to_string();
+    let resolved_url = source.url.clone();
+    source.last_fetched = now_sec();
     ovr.market_sources.push(source);
     if let Err(e) = store.save(&ovr) {
         // 保存失败：清理刚写入的孤儿缓存，保持磁盘一致。
@@ -89,7 +196,8 @@ pub(crate) async fn run_market_add(
     Ok(MarketSourceView {
         id,
         name,
-        url,
+        url: resolved_url,
+        kind,
         last_fetched: ovr.market_sources.last().map_or(0, |s| s.last_fetched),
         entry_count: entries.len(),
     })
@@ -132,12 +240,12 @@ pub(crate) async fn run_market_refresh(
     let Some(idx) = ovr.market_sources.iter().position(|s| s.id == id) else {
         return Err(format!("市场源不存在：{id}"));
     };
-    let url = ovr.market_sources[idx].url.clone();
+    let source = ovr.market_sources[idx].clone();
 
     let manager = MarketManager::new(data_dir.to_path_buf());
     // 失败返回 Err：旧缓存保持不动。
     let (raw, entries) = manager
-        .fetch_catalog(&url)
+        .fetch_for_source(&source)
         .await
         .map_err(|e| format!("拉取市场目录失败：{e}"))?;
     manager
@@ -171,13 +279,17 @@ pub(crate) fn run_market_entries(
 }
 
 /// 添加市场源（拉取验证 + 缓存 + 保存）。
+///
+/// `url` 为单输入框内容（`owner/repo` 简写、完整 GitHub URL 或 JSON 目录 URL），
+/// 后端自动识别源类型；`tag` 为 GitHub 源可选 release tag（空/缺省 = latest）。
 #[tauri::command]
 pub async fn local_override_market_add(
     state: State<'_, AppState>,
     name: String,
     url: String,
+    tag: Option<String>,
 ) -> Result<MarketSourceView, String> {
-    run_market_add(&state.data_dir, name, url).await
+    run_market_add(&state.data_dir, name, url, tag).await
 }
 
 /// 删除市场源并清理缓存文件。
@@ -207,198 +319,5 @@ pub fn local_override_market_entries(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pp_client::local_override::LocalOverride;
-
-    async fn spawn_catalog_server(body: &'static str) -> String {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let app = axum::Router::new()
-            .route(
-                "/market.json",
-                axum::routing::get(move || async move { body }),
-            )
-            .route(
-                "/missing",
-                axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
-            );
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        format!("http://{addr}/market.json")
-    }
-
-    #[tokio::test]
-    async fn add_fetches_caches_and_persists_source() {
-        let url = spawn_catalog_server(
-            r#"[{"id":"ads","name":"广告","format":"binary","url":"https://e/ads.srs"}]"#,
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-
-        let view = run_market_add(dir.path(), "示例市场".to_string(), url.clone())
-            .await
-            .unwrap();
-        assert_eq!(view.name, "示例市场");
-        assert_eq!(view.entry_count, 1);
-        assert!(view.last_fetched > 0);
-
-        // 缓存落盘 + 源持久化。
-        let manager = MarketManager::new(dir.path().to_path_buf());
-        assert!(manager.market_source_file_path(&view.id).exists());
-        let reloaded = LocalOverrideStore::new(dir.path().to_path_buf())
-            .load()
-            .unwrap();
-        assert_eq!(reloaded.market_sources.len(), 1);
-        assert_eq!(reloaded.market_sources[0].url, url);
-
-        // URL 唯一性校验。
-        let err = run_market_add(dir.path(), "重复".to_string(), url)
-            .await
-            .unwrap_err();
-        assert!(err.contains("已存在"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn add_rejects_invalid_catalog_without_saving() {
-        let url = spawn_catalog_server("not a json array").await;
-        let dir = tempfile::tempdir().unwrap();
-
-        let err = run_market_add(dir.path(), "坏源".to_string(), url)
-            .await
-            .unwrap_err();
-        assert!(err.contains("拉取市场目录失败"), "{err}");
-        assert!(
-            LocalOverrideStore::new(dir.path().to_path_buf())
-                .load()
-                .unwrap()
-                .market_sources
-                .is_empty(),
-            "验证失败不得保存源"
-        );
-        let manager = MarketManager::new(dir.path().to_path_buf());
-        assert!(
-            !manager.market_dir().exists()
-                || std::fs::read_dir(manager.market_dir())
-                    .map(|mut d| d.next().is_none())
-                    .unwrap_or(true),
-            "验证失败不得留下缓存文件"
-        );
-    }
-
-    #[tokio::test]
-    async fn refresh_updates_cache_and_last_fetched() {
-        let url = spawn_catalog_server(
-            r#"[{"id":"ads","name":"广告","format":"binary","url":"https://e/ads.srs"}]"#,
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let added = run_market_add(dir.path(), "市场".to_string(), url)
-            .await
-            .unwrap();
-
-        // 手工把 last_fetched 归零并覆盖缓存，验证 refresh 会重拉更新。
-        let store = LocalOverrideStore::new(dir.path().to_path_buf());
-        let mut ovr = store.load().unwrap();
-        ovr.market_sources[0].last_fetched = 0;
-        store.save(&ovr).unwrap();
-        let manager = MarketManager::new(dir.path().to_path_buf());
-        manager.write_cache(&added.id, "[]").unwrap();
-
-        let count = run_market_refresh(dir.path(), &added.id).await.unwrap();
-        assert_eq!(count, 1);
-        let reloaded = store.load().unwrap();
-        assert!(reloaded.market_sources[0].last_fetched > 0);
-        assert_eq!(manager.cached_entry_count(&added.id), 1);
-    }
-
-    #[tokio::test]
-    async fn refresh_keeps_old_cache_on_failure() {
-        let url = spawn_catalog_server("[]").await;
-        let dir = tempfile::tempdir().unwrap();
-        let added = run_market_add(dir.path(), "市场".to_string(), url.clone())
-            .await
-            .unwrap();
-        let manager = MarketManager::new(dir.path().to_path_buf());
-        let old = std::fs::read_to_string(manager.market_source_file_path(&added.id)).unwrap();
-
-        // 让刷新失败：把 override 中该源的 url 指向返回 404 的端点。
-        let store = LocalOverrideStore::new(dir.path().to_path_buf());
-        let mut ovr = store.load().unwrap();
-        ovr.market_sources[0].url = url.replace("/market.json", "/missing");
-        store.save(&ovr).unwrap();
-
-        assert!(run_market_refresh(dir.path(), &added.id).await.is_err());
-        assert_eq!(
-            std::fs::read_to_string(manager.market_source_file_path(&added.id)).unwrap(),
-            old,
-            "刷新失败必须保留旧缓存"
-        );
-    }
-
-    #[tokio::test]
-    async fn remove_deletes_source_and_cache() {
-        let url = spawn_catalog_server(
-            r#"[{"id":"ads","name":"广告","format":"binary","url":"https://e/ads.srs"}]"#,
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let added = run_market_add(dir.path(), "市场".to_string(), url)
-            .await
-            .unwrap();
-        let manager = MarketManager::new(dir.path().to_path_buf());
-        assert!(manager.market_source_file_path(&added.id).exists());
-
-        assert!(run_market_remove(dir.path(), &added.id).unwrap());
-        assert!(!manager.market_source_file_path(&added.id).exists());
-        assert!(
-            LocalOverrideStore::new(dir.path().to_path_buf())
-                .load()
-                .unwrap()
-                .market_sources
-                .is_empty()
-        );
-        // 重复删除返回 false。
-        assert!(!run_market_remove(dir.path(), &added.id).unwrap());
-    }
-
-    #[tokio::test]
-    async fn entries_merges_all_source_caches_with_origin() {
-        let url = spawn_catalog_server(
-            r#"[{"id":"ads","name":"广告","format":"binary","url":"https://e/ads.srs"}]"#,
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let added = run_market_add(dir.path(), "示例市场".to_string(), url)
-            .await
-            .unwrap();
-
-        let entries = run_market_entries(dir.path()).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "ads");
-        assert_eq!(entries[0].source_id, added.id);
-        assert_eq!(entries[0].source_name, "示例市场");
-    }
-
-    #[test]
-    fn entries_empty_without_sources() {
-        let dir = tempfile::tempdir().unwrap();
-        // 无源 → 空列表（不报错）。
-        assert!(run_market_entries(dir.path()).unwrap().is_empty());
-        // 源存在但缓存缺失 → 仍为空。
-        let store = LocalOverrideStore::new(dir.path().to_path_buf());
-        store
-            .save(&LocalOverride {
-                market_sources: vec![MarketSource {
-                    id: "m1".to_string(),
-                    name: "空源".to_string(),
-                    url: "https://e/m.json".to_string(),
-                    last_fetched: 0,
-                }],
-                ..Default::default()
-            })
-            .unwrap();
-        assert!(run_market_entries(dir.path()).unwrap().is_empty());
-    }
-}
+#[path = "tests/market_tests.rs"]
+mod tests;
