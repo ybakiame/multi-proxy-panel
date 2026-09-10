@@ -4,13 +4,11 @@
 //! application, and rule set subscription control.
 
 mod convert;
-mod market;
 mod rules;
 mod rulesets;
 mod templates;
 mod views;
 
-pub use market::*;
 pub use rules::*;
 pub use rulesets::*;
 pub use templates::*;

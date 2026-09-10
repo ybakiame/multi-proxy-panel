@@ -24,6 +24,6 @@ export * from "./hooks/useProxyStatus";
 // 纯逻辑工具。
 export * from "./env";
 export * from "./logCapture";
-export * from "./market";
+export * from "./metaCubeCatalog";
 export * from "./rules";
 export * from "./toast";

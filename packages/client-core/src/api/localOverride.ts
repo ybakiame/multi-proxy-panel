@@ -102,38 +102,6 @@ export interface LocalOverrideView {
   applied_templates: AppliedTemplateView[];
   custom_rule_sets: CustomRuleSetView[];
   custom_templates: CustomTemplateView[];
-  /** 用户添加的规则集市场源（源列表 + 缓存条目数）。 */
-  market_sources: MarketSourceView[];
-}
-
-/** User-added market source (from `local_override_get`). */
-export interface MarketSourceView {
-  id: string;
-  name: string;
-  url: string;
-  /** Source type: JSON catalog or GitHub repository releases. */
-  kind: "json" | "github_releases";
-  /** Last successful fetch timestamp (Unix seconds; 0 = never). */
-  last_fetched: number;
-  /** Valid entries in the cached catalog. */
-  entry_count: number;
-}
-
-/** Market entry (from `local_override_market_entries`), with source origin. */
-export interface MarketEntryView {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  format: "source" | "binary";
-  url: string;
-  /**
-   * Remote modification time (Unix seconds; 0 = unknown). GitHub releases
-   * sources carry the asset `updated_at`; JSON catalogs may provide it.
-   */
-  updated_at: number;
-  source_id: string;
-  source_name: string;
 }
 
 export interface SaveLocalOverrideInput {
@@ -153,9 +121,8 @@ export interface CustomRuleSetInput {
   source: CustomRuleSetSource;
   last_updated: number;
   /**
-   * Remote modification time (Unix seconds; 0 = unknown). New entries added
-   * from the market carry the entry's `updated_at`; backend preserves it for
-   * new IDs and backfills existing IDs from disk.
+   * Remote modification time (Unix seconds; 0 = unknown). Backend preserves it
+   * for new IDs and backfills existing IDs from disk.
    */
   remote_updated_at?: number;
 }
@@ -236,30 +203,4 @@ export function localOverrideUpdateRulesetsNow(): Promise<RuleSetUpdateOutcome> 
 /** 智能更新单个自定义规则集（HEAD 比对跳过未变更项）；返回 1 条计数结果。 */
 export function localOverrideUpdateRuleSet(id: string): Promise<RuleSetUpdateOutcome> {
   return invoke<RuleSetUpdateOutcome>("local_override_update_rule_set", { id });
-}
-
-/**
- * 添加市场源：后端拉取验证（失败报错且不保存）→ 落盘缓存 → 追加源。
- * 返回新建源的视图（含条目数与源类型）。
- *
- * `url` 支持 `owner/repo` 简写、完整 GitHub URL 或 JSON 目录 URL（后端自动识别）；
- * `tag` 为 GitHub 源可选 release tag（空/缺省 = latest）。
- */
-export function localOverrideMarketAdd(name: string, url: string, tag?: string): Promise<MarketSourceView> {
-  return invoke<MarketSourceView>("local_override_market_add", { name, url, tag: tag ?? null });
-}
-
-/** 删除市场源并清理其缓存文件；返回是否移除了源。 */
-export function localOverrideMarketRemove(id: string): Promise<boolean> {
-  return invoke<boolean>("local_override_market_remove", { id });
-}
-
-/** 刷新单个市场源（重拉 + 落盘 + 更新时间）；返回条目数，失败报错并保留旧缓存。 */
-export function localOverrideMarketRefresh(id: string): Promise<number> {
-  return invoke<number>("local_override_market_refresh", { id });
-}
-
-/** 读取全部源的缓存条目（合并、带来源标注）；纯读缓存，不拉网络。 */
-export function localOverrideMarketEntries(): Promise<MarketEntryView[]> {
-  return invoke<MarketEntryView[]>("local_override_market_entries");
 }

@@ -21,8 +21,7 @@ export function isLocalOverrideView(value: LocalOverrideView | null | undefined)
     Array.isArray(value.singbox.rule_sets) &&
     Array.isArray(value.applied_templates) &&
     Array.isArray(value.custom_rule_sets) &&
-    Array.isArray(value.custom_templates) &&
-    Array.isArray(value.market_sources)
+    Array.isArray(value.custom_templates)
   );
 }
 

@@ -1,51 +1,39 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { SparklesIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
-  MARKET_ENTRIES_KEY,
-  RECOMMENDED_MARKET_SOURCES,
+  META_CUBE_SOURCE,
   buildSaveInput,
   localOverrideGet,
-  localOverrideMarketAdd,
-  localOverrideMarketEntries,
-  localOverrideMarketRefresh,
-  localOverrideMarketRemove,
   localOverrideSave,
+  searchMetaCubeEntries,
   toErrorMessage,
   toastError,
   toastSuccess,
 } from "@pp/client-core";
-import type { CustomRuleSetInput, LocalOverrideView, MarketEntryView, MarketSourceView } from "@pp/client-core";
+import type { CustomRuleSetInput, LocalOverrideView, MetaCubeEntry } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
 import { MarketEntryList } from "./MarketEntryList";
-import { MarketSourceFormSheet } from "./MarketSourceFormSheet";
-import { MarketSourceSection } from "./MarketSourceSection";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 
-/** 目录 JSON 数组格式示例（引导空态折叠展示）。 */
-const CATALOG_FORMAT_EXAMPLE = `[
-  {
-    "id": "ads",
-    "name": "广告拦截",
-    "description": "常见广告与追踪域名",
-    "category": "广告",
-    "format": "binary",
-    "url": "https://example.com/ads.srs"
-  }
-]`;
+/** 常用检索词快捷 Chip（点击填充检索框）。 */
+const POPULAR_KEYWORDS = ["cn", "ads", "google", "netflix", "youtube", "telegram"];
+
+const inputClass =
+  "h-12 w-full rounded-lg border border-border/70 bg-surface pl-10 pr-3 text-sm text-foreground outline-none " +
+  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 /**
  * 规则集市场页（路由 `/rules/rulesets/market`）。
  *
- * 内置静态目录已取消，市场内容全部来自**用户添加的远程 JSON 目录源**：
- * - 无源空态：引导卡 + 「添加市场源」按钮 + 目录格式示例（折叠）；
- * - 源管理区：源列表（名称 / URL / 条目数 / 上次拉取）+ 添加 / 刷新 / 删除；
- * - 条目区：合并全部源缓存条目（带来源 chip）+ 分类筛选 + 一键添加
- *   （写入 `custom_rule_sets`，已添加按 URL 匹配）；
- * - 数据源：`local_override_market_entries`（纯读缓存，不拉网络）；「刷新源」
- *   单独触发网络拉取。
+ * 市场为 **MetaCubeX/meta-rules-dat 固定源**（sing 分支 `geo/{geoip,geosite}/*.srs`）：
+ * - 内置文件名清单静态硬编码于 `@pp/client-core` 的 `metaCubeCatalog`，检索在本地
+ *   完成（大小写不敏感 `contains`），**不做运行时 GitHub API 调用**（规避 403 限流）；
+ * - 一键添加构建 Remote 规则集（raw 直链 + `binary`），写入 `custom_rule_sets`
+ *   后需在规则集管理页「立即更新」下载；已添加按 URL 匹配判定；
+ * - 自定义需求走规则集管理页的「添加」表单（远程 URL）。
  */
 export default function RuleSetMarket() {
   const queryClient = useQueryClient();
@@ -57,87 +45,29 @@ export default function RuleSetMarket() {
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
   });
-  const { data: rawEntries } = useQuery<MarketEntryView[]>({
-    queryKey: MARKET_ENTRIES_KEY,
-    queryFn: localOverrideMarketEntries,
-  });
 
   // 结构守卫：缓存残留异构形态时视为未加载，渲染加载/空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const customSets = asArray(overrideData?.custom_rule_sets);
-  const sources = asArray(overrideData?.market_sources);
-  const entries = asArray(rawEntries);
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
-    void queryClient.invalidateQueries({ queryKey: MARKET_ENTRIES_KEY });
-  };
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
   // ---- 局部 UI 状态 ----
-  const [formOpen, setFormOpen] = useState(false);
-  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [keyword, setKeyword] = useState("");
   const [addingKey, setAddingKey] = useState<string | null>(null);
-  const [addingRecommended, setAddingRecommended] = useState<string | null>(null);
 
-  // 已添加判定：按 URL 匹配（同 tag 不同 URL 由 Rust 校验报冲突）。
+  // 本地检索：空关键词返回空数组（渲染引导态）。
+  const results = useMemo(() => searchMetaCubeEntries(keyword), [keyword]);
+
+  // 已添加判定：按 URL 匹配。
   const addedUrls = useMemo(
     () => new Set(customSets.flatMap((rs) => (rs.source.kind === "remote" ? [rs.source.url] : []))),
     [customSets],
   );
 
-  // ---- 源管理 ----
-  const handleAddSource = async (name: string, url: string, tag?: string): Promise<boolean> => {
-    try {
-      const created = await localOverrideMarketAdd(name, url, tag);
-      toastSuccess(`已添加市场源「${created.name}」（${created.entry_count} 个条目）`);
-      invalidate();
-      return true;
-    } catch (err) {
-      toastError(toErrorMessage(err));
-      invalidate();
-      return false;
-    }
-  };
-
-  /** 推荐源「一键添加」：单输入框 + 自动识别（GitHub releases）。 */
-  const handleAddRecommended = async (ownerRepo: string, tag: string, name: string): Promise<void> => {
-    if (addingRecommended !== null) return;
-    setAddingRecommended(ownerRepo);
-    try {
-      await handleAddSource(name, ownerRepo, tag);
-    } finally {
-      setAddingRecommended(null);
-    }
-  };
-
-  const handleRefreshSource = async (source: MarketSourceView) => {
-    if (refreshingId !== null) return;
-    setRefreshingId(source.id);
-    try {
-      const count = await localOverrideMarketRefresh(source.id);
-      toastSuccess(`已刷新「${source.name}」，共 ${count} 个条目`);
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    } finally {
-      setRefreshingId(null);
-      invalidate();
-    }
-  };
-
-  const handleRemoveSource = async (source: MarketSourceView) => {
-    try {
-      await localOverrideMarketRemove(source.id);
-      toastSuccess(`已删除市场源「${source.name}」`);
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    } finally {
-      invalidate();
-    }
-  };
-
-  // ---- 一键添加条目：custom 段整段替换追加（Remote + 声明格式） ----
-  const handleAddEntry = async (entry: MarketEntryView) => {
+  // ---- 一键添加：custom 段整段替换追加（Remote + binary 声明格式） ----
+  const handleAddEntry = async (entry: MetaCubeEntry) => {
     if (!overrideData || addingKey !== null || addedUrls.has(entry.url)) return;
-    setAddingKey(`${entry.source_id}:${entry.id}`);
+    setAddingKey(entry.id);
     const input: CustomRuleSetInput = {
       id: crypto.randomUUID(),
       name: entry.name,
@@ -145,14 +75,12 @@ export default function RuleSetMarket() {
       source: { kind: "remote", url: entry.url, format: entry.format },
       // 新条目尚未下载，last_updated 归零，待「立即更新」。
       last_updated: 0,
-      // GitHub release asset 的 updated_at（JSON 目录可为 0）：写入远端更新时间，
-      // 供「有更新」判定使用，比 HEAD 更准。
-      remote_updated_at: entry.updated_at,
+      remote_updated_at: 0,
     };
     const base = buildSaveInput(overrideData);
     try {
       await localOverrideSave({ ...base, custom_rule_sets: [...base.custom_rule_sets, input] });
-      toastSuccess("已添加，点击立即更新下载");
+      toastSuccess(`已添加「${entry.name}」，点击立即更新下载`);
       invalidate();
     } catch (err) {
       // 保存失败（如 tag 冲突）保留现场，仅报错。
@@ -162,6 +90,8 @@ export default function RuleSetMarket() {
       setAddingKey(null);
     }
   };
+
+  const hasKeyword = keyword.trim().length > 0;
 
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -207,93 +137,81 @@ export default function RuleSetMarket() {
           </Card>
         )}
 
-        {overrideData && sources.length === 0 && (
+        {overrideData && (
           <>
+            {/* 固定源说明卡 */}
             <Card>
-              <Card.Content className="flex flex-col items-center gap-4 px-6 py-10 text-center">
-                <SparklesIcon className="size-10 text-muted" aria-hidden="true" />
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-medium text-foreground">市场目录为空</span>
-                  <span className="text-sm text-muted">添加一个规则集市场源</span>
+              <Card.Content className="flex flex-col gap-2 p-4">
+                <div className="flex items-center gap-2">
+                  <SparklesIcon className="size-5 shrink-0 text-accent" aria-hidden="true" />
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">{META_CUBE_SOURCE.name}</span>
                 </div>
-                <Button variant="primary" className="min-h-11 shrink-0 px-4" onPress={() => setFormOpen(true)}>
-                  添加市场源
-                </Button>
-                <details className="w-full text-left">
-                  <summary className="cursor-pointer text-xs text-muted">查看目录 JSON 格式示例</summary>
-                  <pre className="mt-2 overflow-x-auto rounded-lg border border-border/60 bg-surface-secondary/60 p-3 text-left font-mono text-xs leading-5 text-foreground">
-                    {CATALOG_FORMAT_EXAMPLE}
-                  </pre>
-                </details>
+                <span className="text-xs text-muted">{META_CUBE_SOURCE.description}</span>
+                <span className="text-xs text-muted">更新频率：{META_CUBE_SOURCE.updateFrequency}</span>
               </Card.Content>
             </Card>
 
-            <section className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-foreground">推荐市场源</span>
-              {RECOMMENDED_MARKET_SOURCES.map((rec) => {
-                const pending = addingRecommended === rec.ownerRepo;
-                return (
-                  <Card key={rec.ownerRepo}>
-                    <Card.Content className="flex flex-col gap-3 p-3">
-                      <div className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">{rec.name}</span>
-                        <span className="text-xs text-muted">{rec.description}</span>
-                        <span className="truncate font-mono text-xs text-muted">
-                          {rec.ownerRepo}
-                          {rec.tag ? ` @ ${rec.tag}` : " @ latest"}
-                        </span>
-                      </div>
-                      <Button
-                        variant="primary"
-                        className="min-h-11 shrink-0 self-end px-3"
-                        isDisabled={addingRecommended !== null}
-                        isPending={pending}
-                        onPress={() => void handleAddRecommended(rec.ownerRepo, rec.tag, rec.name)}
-                      >
-                        一键添加
-                      </Button>
-                    </Card.Content>
-                  </Card>
-                );
-              })}
-            </section>
-          </>
-        )}
-
-        {overrideData && sources.length > 0 && (
-          <>
-            <span className="text-xs text-muted">
-              条目来自已添加市场源的本地缓存；「刷新」会重新拉取目录（走 GitHub 代理设置），
-              添加后需在规则集管理页点击「立即更新」下载
-            </span>
-
-            <MarketSourceSection
-              sources={sources}
-              refreshingId={refreshingId}
-              onAdd={() => setFormOpen(true)}
-              onRefresh={(source) => void handleRefreshSource(source)}
-              onRemove={(source) => void handleRemoveSource(source)}
-            />
-
-            {entries.length === 0 ? (
-              <Card>
-                <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
-                  <span className="text-sm text-muted">暂无缓存条目，点击上方「刷新」拉取目录</span>
-                </Card.Content>
-              </Card>
-            ) : (
-              <MarketEntryList
-                entries={entries}
-                addedUrls={addedUrls}
-                addingKey={addingKey}
-                onAdd={(entry) => void handleAddEntry(entry)}
+            {/* 检索框 */}
+            <div className="relative">
+              <MagnifyingGlassIcon
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+                aria-hidden="true"
               />
+              <input
+                aria-label="检索规则集"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="输入关键词检索规则集"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={inputClass}
+              />
+            </div>
+
+            {hasKeyword ? (
+              results.length === 0 ? (
+                <Card>
+                  <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
+                    <span className="text-sm text-muted">没有匹配「{keyword.trim()}」的规则集</span>
+                  </Card.Content>
+                </Card>
+              ) : (
+                <>
+                  <span className="text-xs text-muted">
+                    共 {results.length} 个结果；添加后需在规则集管理页点击「立即更新」下载
+                  </span>
+                  <MarketEntryList
+                    entries={results}
+                    addedUrls={addedUrls}
+                    addingKey={addingKey}
+                    onAdd={(entry) => void handleAddEntry(entry)}
+                  />
+                </>
+              )
+            ) : (
+              <>
+                <span className="text-sm text-muted">输入关键词检索规则集（如 netflix / cn / google）</span>
+                <section className="flex flex-col gap-2">
+                  <span className="text-xs text-muted">常用关键词</span>
+                  <div className="flex flex-wrap gap-2">
+                    {POPULAR_KEYWORDS.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setKeyword(item)}
+                        className="min-h-11 shrink-0 rounded-full border border-border/60 bg-surface px-4 text-sm font-medium text-foreground transition-colors active:opacity-70"
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </>
             )}
           </>
         )}
       </div>
-
-      <MarketSourceFormSheet isOpen={formOpen} onClose={() => setFormOpen(false)} onSave={handleAddSource} />
     </div>
   );
 }
