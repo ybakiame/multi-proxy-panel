@@ -139,6 +139,7 @@ export default function Logs() {
             isIconOnly
             aria-label="刷新日志"
             isPending={refreshing}
+            className="size-11"
             onPress={() => void handleRefresh()}
           >
             {!refreshing && <ArrowPathIcon className="size-5" aria-hidden="true" />}

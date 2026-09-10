@@ -214,7 +214,7 @@ export default function Proxies() {
                         type="button"
                         onClick={() => setActiveGroupName(group.name)}
                         aria-pressed={isActive}
-                        className={`flex shrink-0 flex-col items-center gap-0 rounded-full border px-4 py-1.5 transition-colors ${
+                        className={`flex min-h-11 shrink-0 flex-col items-center gap-0 rounded-full border px-4 py-1.5 transition-colors ${
                           isActive ? "border-primary/60 bg-primary/10" : "border-border/60 bg-surface active:opacity-70"
                         }`}
                       >
@@ -238,7 +238,7 @@ export default function Proxies() {
                 isDisabled={groupTesting}
                 isPending={groupTesting}
                 onPress={() => void handleTestGroup(activeGroup)}
-                className="shrink-0"
+                className="size-11 shrink-0"
               >
                 {!groupTesting && <BoltIcon className="size-5" aria-hidden="true" />}
               </Button>

@@ -68,7 +68,7 @@ export function RuleModeSwitch({ value, running, clashApiEnabled }: RuleModeSwit
               key={mode.id}
               variant={value === mode.id ? "primary" : "secondary"}
               size="sm"
-              className="min-h-10 flex-1"
+              className="min-h-11 flex-1"
               isDisabled={busy}
               onPress={() => void handleSelect(mode.id)}
             >

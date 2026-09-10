@@ -77,7 +77,7 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
           <Modal.Header>
             <Modal.Heading>选择生效订阅</Modal.Heading>
           </Modal.Header>
-          <Modal.Body className="max-h-[55vh] overflow-y-auto">
+          <Modal.Body className="max-h-[62vh] overflow-y-auto">
             <div className="flex flex-col gap-2">
               {enabledSubs.length === 0 ? (
                 <div className="flex flex-col gap-1 py-8 text-center">

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { Button, ListBox, Modal, Select, Switch } from "@heroui/react";
+import { Button, Modal, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "@pp/client-core";
+import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 
 /** 规则集选择器选项（rule_set 匹配目标）：规则集 tag（社区 remote / 自定义 manual；规则集是纯资源无启停）。 */
 export interface RuleSetOption {
@@ -137,7 +138,7 @@ export function RuleEditSheet({
   /**
    * 规则集选择器候选：父层传入全部规则集 tag（规则集是纯资源，无启停概念）。
    * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（自定义规则集已删除/尚未
-   * 添加），追加为「原值保留」项——Select 显示原值且不强清，由用户决定改选或保留
+   * 添加），追加为「原值保留」项——选择器显示原值且不强清，由用户决定改选或保留
    * （保留且规则集不存在时，引用该 tag 的规则集不会注入、配置校验将报错）。
    */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
@@ -192,28 +193,13 @@ export function RuleEditSheet({
             {/* 匹配类型 */}
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-foreground">匹配类型</span>
-              <Select
-                aria-label="匹配类型"
+              <MobileSelectSheet
+                label="匹配类型"
                 value={matchType}
-                onChange={(value) => setMatchType(String(value ?? "domain"))}
-                isDisabled={saving}
-                fullWidth
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {MATCH_TYPE_OPTIONS.map((opt) => (
-                      <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
-                        {opt.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
+                onChange={setMatchType}
+                disabled={saving}
+                options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+              />
               {matchType === "app_package" && (
                 <span className="text-xs text-muted">应用包名匹配为 Android 专属能力</span>
               )}
@@ -224,36 +210,18 @@ export function RuleEditSheet({
               (matchType === "rule_set" ? (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-sm font-medium text-foreground">规则集</span>
-                  <Select
-                    aria-label="规则集"
+                  <MobileSelectSheet
+                    label="规则集"
                     value={target}
-                    onChange={(value) => setTarget(String(value ?? ""))}
-                    isDisabled={saving}
-                    fullWidth
-                  >
-                    <Select.Trigger>
-                      <Select.Value />
-                      <Select.Indicator />
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {effectiveRuleSetOptions.length === 0 && (
-                          <ListBox.Item id="__no-rule-set" textValue="暂无可用规则集" isDisabled>
-                            暂无可用规则集
-                          </ListBox.Item>
-                        )}
-                        {effectiveRuleSetOptions.map((opt) => (
-                          <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                            <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="truncate">{opt.label}</span>
-                              {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
-                            </span>
-                            <ListBox.ItemIndicator />
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
+                    onChange={setTarget}
+                    disabled={saving}
+                    placeholder="请选择规则集"
+                    options={effectiveRuleSetOptions.map((opt) => ({
+                      value: opt.value,
+                      label: opt.label,
+                      description: opt.hint,
+                    }))}
+                  />
                   {effectiveRuleSetOptions.length === 0 ? (
                     <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
                   ) : (
@@ -292,7 +260,7 @@ export function RuleEditSheet({
                     key={opt.id}
                     variant={action === opt.id ? "primary" : "secondary"}
                     size="sm"
-                    className="min-h-10 flex-1"
+                    className="min-h-11 flex-1"
                     isDisabled={saving}
                     onPress={() => setAction(opt.id)}
                   >
@@ -309,7 +277,7 @@ export function RuleEditSheet({
                 aria-expanded={advancedOpen}
                 disabled={saving}
                 onClick={() => setAdvancedOpen((open) => !open)}
-                className="flex min-h-10 w-full items-center justify-between gap-2 text-left"
+                className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
               >
                 <span className="text-sm font-medium text-foreground">高级选项</span>
                 <ChevronDownIcon

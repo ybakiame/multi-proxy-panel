@@ -195,7 +195,7 @@ export default function CustomRulesPage() {
           <Card>
             <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
               <span className="text-sm text-muted">规则数据不可用</span>
-              <Button variant="secondary" className="min-h-10 shrink-0 px-4" onPress={() => void invalidate()}>
+              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
                 重新加载
               </Button>
             </Card.Content>

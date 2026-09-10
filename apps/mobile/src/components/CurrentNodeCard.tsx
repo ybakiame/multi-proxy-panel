@@ -48,7 +48,7 @@ export function CurrentNodeCard({ running }: CurrentNodeCardProps) {
         type="button"
         onClick={() => navigate("/proxies")}
         aria-label="管理代理节点"
-        className="flex w-full items-center gap-3 rounded-xl text-left active:opacity-80"
+        className="flex min-h-12 w-full items-center gap-3 rounded-xl text-left active:opacity-80"
       >
         {group ? (
           <>

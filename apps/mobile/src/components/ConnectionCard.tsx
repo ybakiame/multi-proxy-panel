@@ -61,7 +61,7 @@ export function ConnectionCard({ conn, onClose, closing }: ConnectionCardProps) 
             aria-label={`关闭连接 ${conn.host}`}
             disabled={closing}
             onClick={() => onClose(conn.id)}
-            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted active:bg-danger/10 active:text-danger disabled:opacity-60"
+            className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted active:bg-danger/10 active:text-danger disabled:opacity-60"
           >
             <XMarkIcon className="size-4" aria-hidden="true" />
           </button>
