@@ -15,7 +15,8 @@
       // bash edit
       "permission": {
         "*": "ask",
-        "edit": "deny",
+        // 允许编辑权限，但需要手动授权
+        "edit": "ask",
         "bash": {
           "*": "deny",
           "grep *": "allow",
@@ -23,28 +24,30 @@
           "git log *": "allow",
           "git diff *": "allow",
           "git show *": "allow",
-          "rg *": "allow",
+          "rg *": "allow"
         },
         "task": {
           "*": "deny",
           "executor": "allow",
-          "reviewer": "allow",
-        },
-      },
+          "reviewer": "allow"
+        }
+      }
     },
     // 编码执行模型配置（推荐次一档模型进行执行，速度更快）
     "executor": {
       "mode": "subagent",
       "model": "deepseek/deepseek-v4-flash",
       "temperature": 0.1,
-      "steps": 100, // 非ds或flash模型需要减少步骤数量
-      "hidden": true, // 用户不直接 @，只通过 Orchestrator 调用
+      // 非ds或flash模型需要减少步骤数量,
+      "steps": 100,
+      // 用户不直接 @，只通过 Orchestrator 调用,
+      "hidden": true,
       "permission": {
         // 改文件前询问（可改成 allow 更激进）
         "edit": "allow",
         "bash": "allow",
-        "task": "deny",
-      },
+        "task": "deny"
+      }
     },
     // 审查模型配置（推荐强模型进行审查）
     "reviewer": {
@@ -56,8 +59,8 @@
       "permission": {
         "edit": "deny",
         "bash": "allow",
-        "task": "deny",
-      },
-    },
-  },
+        "task": "deny"
+      }
+    }
+  }
 }
