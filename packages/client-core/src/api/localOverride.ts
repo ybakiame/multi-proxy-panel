@@ -58,9 +58,27 @@ export interface CustomRuleSetView {
   name: string;
   tag: string;
   source: CustomRuleSetSource;
+  /** Local cache write time (Unix seconds; 0 = never downloaded). */
   last_updated: number;
+  /**
+   * Remote `Last-Modified` (Unix seconds; 0 = unknown). `> last_updated` means
+   * the remote has a newer version (frontend "有更新" chip).
+   */
+  remote_updated_at: number;
   /** Whether the backing file (manual 落盘 / remote cache) exists on disk. */
   cached: boolean;
+}
+
+/**
+ * Aggregated rule set update outcome (single or batch smart update).
+ *
+ * `skipped` = remote `Last-Modified` ≤ local `last_updated` (already latest);
+ * `failed` = HEAD / download error (best-effort per entry).
+ */
+export interface RuleSetUpdateOutcome {
+  updated: number;
+  skipped: number;
+  failed: number;
 }
 
 /**
@@ -197,8 +215,14 @@ export function localOverrideRevertTemplate(templateId: string): Promise<boolean
   return invoke<boolean>("local_override_revert_template", { templateId });
 }
 
-export function localOverrideUpdateRulesetsNow(): Promise<number> {
-  return invoke<number>("local_override_update_rulesets_now");
+/** 立即智能更新全部 Remote 规则集（HEAD 比对跳过未变更项）。 */
+export function localOverrideUpdateRulesetsNow(): Promise<RuleSetUpdateOutcome> {
+  return invoke<RuleSetUpdateOutcome>("local_override_update_rulesets_now");
+}
+
+/** 智能更新单个自定义规则集（HEAD 比对跳过未变更项）；返回 1 条计数结果。 */
+export function localOverrideUpdateRuleSet(id: string): Promise<RuleSetUpdateOutcome> {
+  return invoke<RuleSetUpdateOutcome>("local_override_update_rule_set", { id });
 }
 
 /**

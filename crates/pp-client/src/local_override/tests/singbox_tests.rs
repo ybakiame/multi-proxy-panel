@@ -248,6 +248,7 @@ fn sample_custom_rule_set(
         tag: tag.to_string(),
         source,
         last_updated: 0,
+        remote_updated_at: 0,
     }
 }
 

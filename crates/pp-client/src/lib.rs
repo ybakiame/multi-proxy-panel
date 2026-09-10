@@ -207,6 +207,72 @@ pub async fn fetch_resource_bytes(
     }
 }
 
+/// 解析 HTTP-date（RFC 7231 IMF-fixdate，如 `Sun, 06 Nov 1994 08:49:37 GMT`）
+/// 为 Unix 秒；RFC 2822 兼容（chrono `parse_from_rfc2822` 覆盖 `GMT` 命名时区）。
+fn parse_http_date(value: &str) -> Result<u64, String> {
+    chrono::DateTime::parse_from_rfc2822(value)
+        .map(|dt| dt.timestamp().max(0) as u64)
+        .map_err(|e| e.to_string())
+}
+
+/// 读取 `Last-Modified` 响应头（无则 `None`）；非 2xx 视为失败。
+fn read_last_modified(resp: reqwest::Response, url: &str) -> Result<Option<u64>, String> {
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("remote HEAD returned HTTP {status} ({url})"));
+    }
+    let Some(value) = resp.headers().get(reqwest::header::LAST_MODIFIED) else {
+        return Ok(None);
+    };
+    let text = value
+        .to_str()
+        .map_err(|e| format!("invalid Last-Modified header ({url}): {e}"))?;
+    parse_http_date(text)
+        .map(Some)
+        .map_err(|e| format!("invalid Last-Modified date ({url}): {e}"))
+}
+
+/// 通过 HEAD 请求读取远程资源的 `Last-Modified`（HTTP-date → Unix 秒）。
+///
+/// URL 归一化 / GitHub 代理前缀 / 本地代理策略与 [`fetch_resource_bytes`] 一致；
+/// 请求层错误重试一次。响应无 `Last-Modified` 头返回 `Ok(None)`；非 2xx、
+/// 非法日期头或网络错误均返回 `Err`（调用方按失败处理）。
+pub async fn fetch_resource_last_modified(
+    data_dir: &std::path::Path,
+    url: &str,
+    timeout: std::time::Duration,
+) -> pp_common::PanelResult<Option<u64>> {
+    use pp_common::PanelError;
+
+    let is_github = is_github_url(url);
+    let cfg = config::ClientConfig::load(data_dir).unwrap_or_default();
+    let request_url =
+        apply_github_proxy_prefix(&normalize_resource_url(url), &cfg.github_proxy_prefix);
+    let client = build_fetch_client(timeout, &cfg);
+
+    let result = match client.head(&request_url).send().await {
+        Ok(resp) => read_last_modified(resp, &request_url),
+        // 请求层错误（connect/timeout 等）重试一次；仍失败以最后一次错误为准。
+        Err(_) => match client.head(&request_url).send().await {
+            Ok(resp) => read_last_modified(resp, &request_url),
+            Err(e) => Err(format!("remote HEAD failed ({request_url}): {e}")),
+        },
+    };
+
+    match result {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if is_github {
+                Err(PanelError::Client(format!(
+                    "{e}（GitHub 直连失败：可在「设置 → GitHub 访问」中配置代理前缀或开启「走本地代理」后重试）"
+                )))
+            } else {
+                Err(PanelError::Client(e))
+            }
+        }
+    }
+}
+
 /// 远程资源文本拉取（Hub 订阅 / 脚本 / 嗅探共用入口），语义与
 /// [`fetch_resource_bytes`] 一致（GitHub 代理前缀 / 走本地代理 / 重试 / 提示）。
 ///
@@ -227,8 +293,69 @@ pub async fn fetch_resource_text(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_github_proxy_prefix, fetch_resource_text, is_github_url, normalize_resource_url,
+        apply_github_proxy_prefix, fetch_resource_last_modified, fetch_resource_text,
+        is_github_url, normalize_resource_url, parse_http_date,
     };
+
+    /// HTTP-date（IMF-fixdate）解析：已知 RFC 示例 → epoch；`GMT` 命名时区可解析；
+    /// 非法输入报错。
+    #[test]
+    fn parse_http_date_handles_imf_fixdate() {
+        assert_eq!(
+            parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap(),
+            784_111_777
+        );
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT").unwrap(), 0);
+        assert!(parse_http_date("not a date").is_err());
+    }
+
+    /// HEAD 智能跳过基础：有 Last-Modified 返回其 epoch；无头返回 None；
+    /// 非 2xx 返回错误。
+    #[tokio::test]
+    async fn fetch_resource_last_modified_reads_header_and_handles_absent() {
+        use axum::http::header;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new()
+            .route(
+                "/dated",
+                axum::routing::head(|| async {
+                    (
+                        [(header::LAST_MODIFIED, "Sun, 06 Nov 1994 08:49:37 GMT")],
+                        "",
+                    )
+                }),
+            )
+            .route("/plain", axum::routing::head(|| async { "" }))
+            .route(
+                "/missing",
+                axum::routing::head(|| async { axum::http::StatusCode::NOT_FOUND }),
+            );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let timeout = std::time::Duration::from_secs(5);
+
+        let dated =
+            fetch_resource_last_modified(dir.path(), &format!("http://{addr}/dated"), timeout)
+                .await
+                .unwrap();
+        assert_eq!(dated, Some(784_111_777));
+
+        let plain =
+            fetch_resource_last_modified(dir.path(), &format!("http://{addr}/plain"), timeout)
+                .await
+                .unwrap();
+        assert_eq!(plain, None, "无 Last-Modified 头应为 None");
+
+        let err =
+            fetch_resource_last_modified(dir.path(), &format!("http://{addr}/missing"), timeout)
+                .await
+                .unwrap_err();
+        assert!(err.to_string().contains("HTTP 404"), "{err}");
+    }
 
     #[test]
     fn is_github_url_matches_known_github_hosts() {

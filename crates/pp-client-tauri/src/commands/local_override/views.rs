@@ -87,8 +87,33 @@ pub struct CustomRuleSetView {
     pub name: String,
     pub tag: String,
     pub source: CustomRuleSetSource,
+    /// Local cache write time (Unix seconds; 0 = never downloaded).
     pub last_updated: u64,
+    /// Remote `Last-Modified` (Unix seconds; 0 = unknown). `> last_updated`
+    /// means the remote has a newer version (frontend "有更新" chip).
+    pub remote_updated_at: u64,
     pub cached: bool,
+}
+
+/// Aggregated rule set update outcome (single or batch smart update).
+///
+/// `skipped` = remote `Last-Modified` ≤ local `last_updated` (already latest);
+/// `failed` = HEAD / download error (best-effort per entry).
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct RuleSetUpdateOutcomeView {
+    pub updated: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+impl From<pp_client::local_override::RuleSetUpdateOutcome> for RuleSetUpdateOutcomeView {
+    fn from(o: pp_client::local_override::RuleSetUpdateOutcome) -> Self {
+        Self {
+            updated: o.updated,
+            skipped: o.skipped,
+            failed: o.failed,
+        }
+    }
 }
 
 /// User-defined scenario template view.
@@ -243,6 +268,7 @@ impl CustomRuleSetView {
             tag: model.tag.clone(),
             source: model.source.clone(),
             last_updated: model.last_updated,
+            remote_updated_at: model.remote_updated_at,
             cached: manager.has_custom_rule_set_file(model),
         }
     }

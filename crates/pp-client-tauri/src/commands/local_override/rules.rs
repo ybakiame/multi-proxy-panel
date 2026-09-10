@@ -54,6 +54,18 @@ pub(crate) fn run_save(
         .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
     ovr.market_sources = existing.market_sources;
+    // `remote_updated_at` 由后端 HEAD 维护、不在前端 save 契约中：按 id 从磁盘
+    // 现值回填，避免整段替换落盘时把已探测到的远端更新时间清零。
+    let existing_remote: std::collections::HashMap<&str, u64> = existing
+        .custom_rule_sets
+        .iter()
+        .map(|rs| (rs.id.as_str(), rs.remote_updated_at))
+        .collect();
+    for rs in &mut ovr.custom_rule_sets {
+        if let Some(remote) = existing_remote.get(rs.id.as_str()) {
+            rs.remote_updated_at = *remote;
+        }
+    }
 
     let manager = RuleSetManager::new(data_dir.to_path_buf());
     manager
@@ -112,6 +124,7 @@ mod tests {
                         .to_string(),
                 },
                 last_updated: 0,
+                remote_updated_at: 0,
             }],
             custom_templates: Vec::new(),
             market_sources: Vec::new(),

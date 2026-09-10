@@ -186,6 +186,7 @@ fn migrate_legacy_builtins(ovr: &mut LocalOverride) -> bool {
                     format: RuleSetFormat::Binary,
                 },
                 last_updated: 0,
+                remote_updated_at: 0,
             });
         }
         ovr.rule_set_subscriptions.clear();

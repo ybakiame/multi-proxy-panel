@@ -1,11 +1,14 @@
 import { Chip, Card } from "@heroui/react";
-import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import type { CustomRuleSetView } from "@pp/client-core";
 
 interface CustomRuleSetCardProps {
   ruleSet: CustomRuleSetView;
+  /** 单卡更新进行中（按钮旋转禁用）。 */
+  updating: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onUpdate: () => void;
 }
 
 /** 来源类型 label（对齐 CustomRuleSetSource）。 */
@@ -19,15 +22,25 @@ function formatUpdated(lastUpdated: number): string {
   return new Date(lastUpdated * 1000).toLocaleString();
 }
 
+/** 远程 `Last-Modified` 展示（0 = 未知）。 */
+function formatRemote(remoteUpdatedAt: number): string {
+  if (remoteUpdatedAt <= 0) return "未知";
+  return new Date(remoteUpdatedAt * 1000).toLocaleString();
+}
+
 /**
  * 自定义规则集卡（ADR-0003 M5.4 规则集管理子页）。
  *
  * 自「规则集移除 enabled」起规则集是纯资源：卡片不再有启停 Switch，展示
  * 名称 / tag / 来源类型 chip / 缓存状态 chip / 更新时间，底部「编辑 / 删除」入口。
- * 删除经父层 AlertDialog 确认。
+ * 自「规则集更新增强」起额外展示**远程最新更新时间**（`remote_updated_at`，0 =
+ * 未知）并在远端更新于本地缓存时显示「有更新」warning chip；Remote 卡片提供单卡
+ * 更新图标按钮（HEAD 智能跳过）。删除经父层 AlertDialog 确认。
  */
-export function CustomRuleSetCard({ ruleSet, onEdit, onDelete }: CustomRuleSetCardProps) {
-  const { name, tag, cached } = ruleSet;
+export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdate }: CustomRuleSetCardProps) {
+  const { name, tag, cached, remote_updated_at: remoteUpdatedAt, last_updated: lastUpdated } = ruleSet;
+  const isRemote = ruleSet.source.kind === "remote";
+  const hasUpdate = isRemote && remoteUpdatedAt > lastUpdated;
   return (
     <Card>
       <div className="flex items-center gap-1 px-2 py-1 pl-0">
@@ -37,11 +50,16 @@ export function CustomRuleSetCard({ ruleSet, onEdit, onDelete }: CustomRuleSetCa
             <Chip size="sm" variant="soft" color="accent" className="shrink-0">
               {sourceLabel(ruleSet)}
             </Chip>
+            {hasUpdate && (
+              <Chip size="sm" variant="soft" color="warning" className="shrink-0">
+                有更新
+              </Chip>
+            )}
           </span>
           <span className="truncate text-xs text-muted">
             规则集引用名：<span className="font-mono text-foreground/80">{tag}</span>
           </span>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted">
             {cached ? (
               <Chip size="sm" variant="soft" color="accent" className="shrink-0">
                 已缓存
@@ -51,11 +69,28 @@ export function CustomRuleSetCard({ ruleSet, onEdit, onDelete }: CustomRuleSetCa
                 未缓存
               </Chip>
             )}
-            <span className="shrink-0">更新于 {formatUpdated(ruleSet.last_updated)}</span>
+            <span className="shrink-0">本地更新于 {formatUpdated(lastUpdated)}</span>
           </span>
+          {isRemote && (
+            <span className="truncate text-xs text-muted">
+              远程更新于 <span className="text-foreground/80">{formatRemote(remoteUpdatedAt)}</span>
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-1 border-t border-border/40 py-0.5 pr-1">
+        {isRemote && (
+          <button
+            type="button"
+            onClick={onUpdate}
+            disabled={updating}
+            aria-label={`更新规则集 ${name.trim() || tag}`}
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-foreground active:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ArrowPathIcon className={`size-4 ${updating ? "animate-spin" : ""}`} aria-hidden="true" />
+            {updating ? "更新中…" : "更新"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onEdit}

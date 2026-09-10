@@ -110,6 +110,7 @@ pub fn run() {
             pp_client_tauri::commands::local_override_apply_template,
             pp_client_tauri::commands::local_override_revert_template,
             pp_client_tauri::commands::local_override_update_rulesets_now,
+            pp_client_tauri::commands::local_override_update_rule_set,
             pp_client_tauri::commands::local_override_market_add,
             pp_client_tauri::commands::local_override_market_remove,
             pp_client_tauri::commands::local_override_market_refresh,

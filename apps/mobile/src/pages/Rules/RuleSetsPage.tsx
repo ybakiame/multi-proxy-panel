@@ -7,6 +7,7 @@ import {
   buildSaveInput,
   localOverrideGet,
   localOverrideSave,
+  localOverrideUpdateRuleSet,
   localOverrideUpdateRulesetsNow,
   toErrorMessage,
   toastError,
@@ -31,15 +32,18 @@ interface RuleSetSectionSpec {
 }
 
 interface RuleSetSectionProps extends RuleSetSectionSpec {
+  /** 正在单卡更新的规则集 id（null = 无）。 */
+  updatingId: string | null;
   onEdit: (ruleSet: CustomRuleSetView) => void;
   onDelete: (ruleSet: CustomRuleSetView) => void;
+  onUpdate: (ruleSet: CustomRuleSetView) => void;
 }
 
 /**
  * 单来源分区（社区 / 自定义）：区头标题 + 计数，条目为 `CustomRuleSetCard`；
  * 空分区渲染简短引导，引导新用户走顶部「添加」入口。
  */
-function RuleSetSection({ title, emptyCopy, sets, onEdit, onDelete }: RuleSetSectionProps) {
+function RuleSetSection({ title, emptyCopy, sets, updatingId, onEdit, onDelete, onUpdate }: RuleSetSectionProps) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -60,8 +64,10 @@ function RuleSetSection({ title, emptyCopy, sets, onEdit, onDelete }: RuleSetSec
             <CustomRuleSetCard
               key={ruleSet.id}
               ruleSet={ruleSet}
+              updating={updatingId === ruleSet.id}
               onEdit={() => onEdit(ruleSet)}
               onDelete={() => onDelete(ruleSet)}
+              onUpdate={() => onUpdate(ruleSet)}
             />
           ))}
         </div>
@@ -78,10 +84,11 @@ function RuleSetSection({ title, emptyCopy, sets, onEdit, onDelete }: RuleSetSec
  * - 「自定义规则集」区：`source.kind === "manual"`（手动 JSON）。
  *
  * 自「规则集移除 enabled」起规则集是**纯资源**：
- * - 卡片不再有启停 Switch（名称 / tag / 来源 chip / 缓存状态 / 更新时间 / 编辑 / 删除）；
- * - 顶部「立即更新」同步更新**全部** Remote（`localOverrideUpdateRulesetsNow`，await
- *   下载完成后保存），成功 toast 汇总成功/失败数（失败数 = Remote 数 - 成功数），
- *   invalidate 触发重拉即见 cached / last_updated 变化；
+ * - 卡片不再有启停 Switch（名称 / tag / 来源 chip / 缓存状态 / 本地与远程更新时间 / 编辑 / 删除）；
+ * - 顶部「立即更新」智能更新**全部** Remote（`localOverrideUpdateRulesetsNow`：先 HEAD
+ *   比对 `Last-Modified` 跳过未变更项），toast 汇总「更新 N，已最新 M，失败 K」；
+ * - 每张 Remote 卡片另有单卡更新按钮（`localOverrideUpdateRuleSet`），同样智能跳过；
+ * - invalidate 触发重拉即见 cached / last_updated / remote_updated_at 变化；
  * - 是否注入仍由引用它的规则决定（引用它的规则被注入时才注入该规则集）。
  */
 export default function RuleSetsPage() {
@@ -112,6 +119,7 @@ export default function RuleSetsPage() {
   const [editingSet, setEditingSet] = useState<CustomRuleSetView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomRuleSetView | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const toastRuleSaved = (base: string) => {
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
@@ -131,23 +139,18 @@ export default function RuleSetsPage() {
     }
   };
 
-  // ---- 立即更新（全部 Remote）：后端只返回成功数，失败数 = Remote 数 - 成功数 ----
+  // ---- 立即更新（全部 Remote，智能跳过）：返回 updated / skipped / failed 汇总 ----
   const handleUpdateNow = async (): Promise<boolean> => {
     if (updating) return false;
-    const remoteCount = remoteSets.length;
-    if (remoteCount === 0) {
+    if (remoteSets.length === 0) {
       toastWarning("暂无远程规则集可更新");
       return true;
     }
     setUpdating(true);
     try {
-      const updated = await localOverrideUpdateRulesetsNow();
-      const failed = remoteCount - updated;
+      const { updated, skipped, failed } = await localOverrideUpdateRulesetsNow();
       const suffix = coreRunning ? "，重启代理后生效" : "";
-      const summary =
-        failed > 0
-          ? `已更新 ${updated} 个远程规则集，${failed} 个失败${suffix}`
-          : `已更新 ${updated} 个远程规则集${suffix}`;
+      const summary = `更新 ${updated}，已最新 ${skipped}，失败 ${failed}${suffix}`;
       if (failed > 0) {
         toastWarning(summary);
       } else {
@@ -161,6 +164,29 @@ export default function RuleSetsPage() {
       return false;
     } finally {
       setUpdating(false);
+    }
+  };
+
+  // ---- 单卡更新（同样智能跳过）：updated=已更新 / skipped=已是最新 / failed=失败 ----
+  const handleUpdateOne = async (ruleSet: CustomRuleSetView): Promise<void> => {
+    if (updatingId !== null) return;
+    setUpdatingId(ruleSet.id);
+    const label = ruleSet.name.trim() || ruleSet.tag;
+    try {
+      const { updated, skipped } = await localOverrideUpdateRuleSet(ruleSet.id);
+      if (updated > 0) {
+        toastSuccess(coreRunning ? `规则集「${label}」已更新，重启代理后生效` : `规则集「${label}」已更新`);
+      } else if (skipped > 0) {
+        toastSuccess(`规则集「${label}」已是最新`);
+      } else {
+        toastWarning(`规则集「${label}」更新失败`);
+      }
+      invalidate();
+    } catch (err) {
+      toastError(toErrorMessage(err));
+      invalidate();
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -285,8 +311,10 @@ export default function RuleSetsPage() {
               title="社区规则集"
               emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
               sets={remoteSets}
+              updatingId={updatingId}
               onEdit={openEdit}
               onDelete={setPendingDelete}
+              onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
             />
 
             {/* 自定义规则集：手动 JSON（manual） */}
@@ -294,8 +322,10 @@ export default function RuleSetsPage() {
               title="自定义规则集"
               emptyCopy="手动输入 JSON 规则内容"
               sets={manualSets}
+              updatingId={updatingId}
               onEdit={openEdit}
               onDelete={setPendingDelete}
+              onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
             />
           </div>
         )}

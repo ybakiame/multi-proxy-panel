@@ -344,8 +344,17 @@ pub struct CustomRuleSet {
     /// Content source.
     pub source: CustomRuleSetSource,
     /// Last successful update timestamp (Remote only; 0 until first success).
+    ///
+    /// 语义为**本地缓存写入时间**（下载完成时刻）。
     #[serde(default)]
     pub last_updated: u64,
+    /// Remote source's latest modification time (Remote only; 0 = unknown).
+    ///
+    /// 取自远端 `Last-Modified` 响应头（Unix 秒）；`remote_updated_at >
+    /// last_updated` 即表示远端已有新版本（前端据此显示「有更新」标记）。
+    /// 无该响应头时保持 0。旧版文件无此字段时 serde 默认 0。
+    #[serde(default)]
+    pub remote_updated_at: u64,
 }
 
 impl CustomRuleSet {

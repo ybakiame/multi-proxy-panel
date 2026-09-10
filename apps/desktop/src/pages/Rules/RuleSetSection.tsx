@@ -89,13 +89,9 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
     }
     setUpdating(true);
     try {
-      const updated = await localOverrideUpdateRulesetsNow();
-      const failed = remoteCount - updated;
+      const { updated, skipped, failed } = await localOverrideUpdateRulesetsNow();
       const suffix = coreRunning ? "，重启代理后生效" : "";
-      const summary =
-        failed > 0
-          ? `已更新 ${updated} 个远程规则集，${failed} 个失败${suffix}`
-          : `已更新 ${updated} 个远程规则集${suffix}`;
+      const summary = `更新 ${updated}，已最新 ${skipped}，失败 ${failed}${suffix}`;
       if (failed > 0) {
         toastWarning(summary);
       } else {
