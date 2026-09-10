@@ -34,7 +34,7 @@ set -euo pipefail
 #     tfogo_checklinkname0,with_tailscale,ts_omit_*）
 #     -ldflags 含 `-checklinkname=0`、`-X runtime.godebugDefault=...`
 #     （官方 release 构建同款）、-X sing-box constant.Version、-s -w -buildid=
-#     差异：-androidapi 26（对齐 App minSdk）、-javapkg com.proxypanel.core
+#     差异：-androidapi 33（对齐 App minSdk）、-javapkg com.proxypanel.core
 #     （官方为 21 / io.nekohasekai）。
 #   - 同步提醒：升级 sing-box 或调整下方 `-tags` 后，请同步更新关于页常量
 #     apps/mobile/src/coreBuildInfo.ts 的 SING_BOX_BUILD_TAGS（两者必须一致）；
@@ -128,7 +128,7 @@ mkdir -p "$(dirname "$OUTPUT_AAR")"
 cd "$REPO_ROOT/apps/mobile/panel-core"
 gomobile bind -v -x \
     -target android/arm64,android/amd64 \
-    -androidapi 26 \
+    -androidapi 33 \
     -javapkg com.proxypanel.core \
     -trimpath \
     -buildvcs=false \

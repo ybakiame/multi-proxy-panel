@@ -19,10 +19,10 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.proxypanel.client"
-        // minSdk 26：TUN/VpnService 与系统通知等能力的最低要求。
+        // minSdk 33（Android 13）：TUN/VpnService 精确路由 + excludeRoute、通知运行时权限等能力的最低要求。
         // 注意：本文件由 `tauri android init` 生成，重新生成时 minSdk 会回落到
-        // tauri.conf.json `bundle.android.minSdkVersion` 的值（已同步设置为 26）。
-        minSdk = 26
+        // tauri.conf.json `bundle.android.minSdkVersion` 的值（已同步设置为 33）。
+        minSdk = 33
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")

@@ -159,7 +159,7 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     /**
      * RFC3339 本地时间格式（毫秒精度，如 `2026-08-02T22:12:30.123+08:00`）。
      * 与 Rust 日志页 `LogEntry.ts` 对齐，供日志查看器 `get_logs` 解析排序。
-     * `java.time` 自 API 26 起可用（minSdk 26，无需 desugaring）。
+     * `java.time` 自 API 26 起可用（minSdk 33，无需 desugaring）。
      */
     private val LOG_TS_FORMATTER: DateTimeFormatter =
       DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
@@ -259,9 +259,7 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
           .setSession(applicationInfo.loadLabel(packageManager).toString())
           .setMtu(options.mtu)
 
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        builder.setMetered(false)
-      }
+      builder.setMetered(false)
 
       // 本应用必须排除在 VPN 之外：核心出站（代理连接 / DoH）由本进程发起，若被
       // tun 回环会成环导致「有 VPN 图标但流量不通」。SFA 惯例始终排除自身。
@@ -299,54 +297,35 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
           Log.w(TAG, "no dns server address available: ${e.message}")
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-          // API 33+ 支持精确路由 + excludeRoute。
-          val inet4RouteAddress = options.inet4RouteAddress
-          if (inet4RouteAddress.hasNext()) {
-            while (inet4RouteAddress.hasNext()) {
-              val route = inet4RouteAddress.next()
-              builder.addRoute(route.address(), route.prefix())
-            }
-          } else {
-            builder.addRoute("0.0.0.0", 0)
-          }
-
-          val inet6RouteAddress = options.inet6RouteAddress
-          if (inet6RouteAddress.hasNext()) {
-            while (inet6RouteAddress.hasNext()) {
-              val route = inet6RouteAddress.next()
-              builder.addRoute(route.address(), route.prefix())
-            }
-          } else {
-            builder.addRoute("::", 0)
-          }
-
-          val inet4RouteExclude = options.inet4RouteExcludeAddress
-          while (inet4RouteExclude.hasNext()) {
-            addExcludeRoute(builder, inet4RouteExclude.next())
-          }
-
-          val inet6RouteExclude = options.inet6RouteExcludeAddress
-          while (inet6RouteExclude.hasNext()) {
-            addExcludeRoute(builder, inet6RouteExclude.next())
+        // minSdk 33：支持精确路由 + excludeRoute。
+        val inet4RouteAddress = options.inet4RouteAddress
+        if (inet4RouteAddress.hasNext()) {
+          while (inet4RouteAddress.hasNext()) {
+            val route = inet4RouteAddress.next()
+            builder.addRoute(route.address(), route.prefix())
           }
         } else {
-          // 旧 API 只能 addRoute，走核心算好的 auto-route 区间。
-          val inet4RouteRange = options.inet4RouteRange
-          if (inet4RouteRange.hasNext()) {
-            while (inet4RouteRange.hasNext()) {
-              val route = inet4RouteRange.next()
-              builder.addRoute(route.address(), route.prefix())
-            }
-          }
+          builder.addRoute("0.0.0.0", 0)
+        }
 
-          val inet6RouteRange = options.inet6RouteRange
-          if (inet6RouteRange.hasNext()) {
-            while (inet6RouteRange.hasNext()) {
-              val route = inet6RouteRange.next()
-              builder.addRoute(route.address(), route.prefix())
-            }
+        val inet6RouteAddress = options.inet6RouteAddress
+        if (inet6RouteAddress.hasNext()) {
+          while (inet6RouteAddress.hasNext()) {
+            val route = inet6RouteAddress.next()
+            builder.addRoute(route.address(), route.prefix())
           }
+        } else {
+          builder.addRoute("::", 0)
+        }
+
+        val inet4RouteExclude = options.inet4RouteExcludeAddress
+        while (inet4RouteExclude.hasNext()) {
+          addExcludeRoute(builder, inet4RouteExclude.next())
+        }
+
+        val inet6RouteExclude = options.inet6RouteExcludeAddress
+        while (inet6RouteExclude.hasNext()) {
+          addExcludeRoute(builder, inet6RouteExclude.next())
         }
 
         // 分应用代理（可选）。
@@ -383,7 +362,8 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
       return pfd.fd
     }
 
-    override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+    // minSdk 33 后恒 false（/proc 回退仅 API < 29 需要）。
+    override fun useProcFS(): Boolean = false
 
     /**
      * 连接归属查询：panelcore 保持最小实现（不解析 uid/进程），返回
@@ -670,11 +650,9 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
   }
 
   private fun startForegroundWithNotification() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val channel =
-        NotificationChannel(CHANNEL_ID, "ProxyPanel VPN", NotificationManager.IMPORTANCE_LOW)
-      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
+    val channel =
+      NotificationChannel(CHANNEL_ID, "ProxyPanel VPN", NotificationManager.IMPORTANCE_LOW)
+    getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
     val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
     val contentIntent =
@@ -1277,9 +1255,8 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
  * 出站拨号报 `no available network interface`。
  *
  * 设计对齐 SFA（SagerNet/sing-box-for-android）DefaultNetworkMonitor：
- * - 注册按 API 分级（minSdk 26）：31+ 用 registerBestMatchingNetworkCallback，
- *   28–30 用 requestNetwork（REQUEST 模式；registerDefaultNetworkCallback 自
- *   Android P 起会把 VPN 网络自身报为默认），26–27 用 registerDefaultNetworkCallback；
+ * - 注册：minSdk 33 后统一用 registerBestMatchingNetworkCallback（31+ 分支），
+ *   28–30 / 26–27 的低版本分支已不可达；
  * - 防御性过滤：capabilities 含 TRANSPORT_VPN 的网络（含本服务 tun）绝不上报
  *   为默认接口；
  * - 回调只更新状态快照，取 LinkProperties / 接口 index（最多重试 10 次、间隔
@@ -1382,16 +1359,8 @@ internal object DefaultInterfaceMonitor {
       ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
 
   private fun register(connectivity: ConnectivityManager) {
-    when {
-      Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-        connectivity.registerBestMatchingNetworkCallback(request, callback, mainHandler)
-      Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
-        // REQUEST 模式：只报告默认网络，避免 P+ registerDefaultNetworkCallback
-        // 把 VPN 网络自身报为默认（需 CHANGE_NETWORK_STATE 权限）。
-        connectivity.requestNetwork(request, callback, mainHandler)
-      else ->
-        connectivity.registerDefaultNetworkCallback(callback, mainHandler)
-    }
+    // minSdk 33：恒走 31+ 的 registerBestMatchingNetworkCallback（低版本分支已不可达）。
+    connectivity.registerBestMatchingNetworkCallback(request, callback, mainHandler)
   }
 
   private fun push() {
