@@ -3,11 +3,21 @@ import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
 
+/** 规则集选择器选项（rule_set 匹配目标）：规则集是纯资源无启停，全部可用。 */
+export interface RuleSetOption {
+  /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
+  value: string;
+  /** 下拉显示名（自定义规则集 tag）。 */
+  label: string;
+}
+
 export interface RuleEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   initial?: LocalRuleView | null;
   onSave: (rule: LocalRuleInput) => void;
+  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先添加规则集。 */
+  ruleSetOptions?: RuleSetOption[];
 }
 
 /** 规则表单内容，key 由调用方控制，确保 initial 变化时重新挂载、状态重置。 */
@@ -15,10 +25,12 @@ function RuleEditForm({
   initial,
   onSave,
   onClose,
+  ruleSetOptions,
 }: {
   initial?: LocalRuleView | null;
   onSave: (rule: LocalRuleInput) => void;
   onClose: () => void;
+  ruleSetOptions: RuleSetOption[];
 }) {
   const [matchType, setMatchType] = useState(initial?.match_type ?? "domain");
   const [target, setTarget] = useState(initial?.target ?? "");
@@ -42,6 +54,21 @@ function RuleEditForm({
     ],
     [],
   );
+
+  /**
+   * 规则集选择器候选：编辑已有 `rule_set` 规则时若其原 target 不在候选中
+   * （自定义规则集已删除/尚未添加），追加为「原值保留」项——选择器显示原值且不强清，
+   * 由用户决定改选或保留。
+   */
+  const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
+    const stale =
+      matchType === "rule_set" &&
+      initial?.match_type === "rule_set" &&
+      target.trim() !== "" &&
+      !ruleSetOptions.some((opt) => opt.value === target);
+    if (!stale) return ruleSetOptions;
+    return [...ruleSetOptions, { value: target, label: target }];
+  }, [matchType, initial, target, ruleSetOptions]);
 
   const handleSave = useCallback(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -94,15 +121,47 @@ function RuleEditForm({
 
         {!isFinal && (
           <div className="flex flex-col gap-1">
-            <Label htmlFor="rule-target">匹配目标</Label>
-            <Input
-              id="rule-target"
-              aria-label="匹配目标"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder={matchType === "rule_set" ? "自定义规则集 tag" : "例如：googleapis.com"}
-              fullWidth
-            />
+            <Label>{matchType === "rule_set" ? "规则集" : "匹配目标"}</Label>
+            {matchType === "rule_set" ? (
+              <>
+                <Select
+                  aria-label="规则集"
+                  placeholder="请选择规则集"
+                  value={target}
+                  onChange={(value) => setTarget(String(value ?? ""))}
+                  fullWidth
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {effectiveRuleSetOptions.map((opt) => (
+                        <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                          {opt.label}
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                {effectiveRuleSetOptions.length === 0 ? (
+                  <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
+                ) : (
+                  <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+                )}
+              </>
+            ) : (
+              <Input
+                id="rule-target"
+                aria-label="匹配目标"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="例如：googleapis.com"
+                fullWidth
+              />
+            )}
           </div>
         )}
 
@@ -188,7 +247,7 @@ function RuleEditForm({
   );
 }
 
-export function RuleEditModal({ isOpen, onClose, initial, onSave }: RuleEditModalProps) {
+export function RuleEditModal({ isOpen, onClose, initial, onSave, ruleSetOptions = [] }: RuleEditModalProps) {
   // key 确保 initial 变化时表单重新挂载、状态重置
   const formKey = initial?.id ?? "__new__";
 
@@ -205,7 +264,13 @@ export function RuleEditModal({ isOpen, onClose, initial, onSave }: RuleEditModa
           <Modal.Header>
             <Modal.Heading>{initial ? "编辑规则" : "新增规则"}</Modal.Heading>
           </Modal.Header>
-          <RuleEditForm key={formKey} initial={initial} onSave={onSave} onClose={onClose} />
+          <RuleEditForm
+            key={formKey}
+            initial={initial}
+            onSave={onSave}
+            onClose={onClose}
+            ruleSetOptions={ruleSetOptions}
+          />
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>

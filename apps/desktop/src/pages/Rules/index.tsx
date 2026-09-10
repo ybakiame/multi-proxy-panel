@@ -2,16 +2,21 @@ import { useState } from "react";
 import { Alert, AlertDialog, Button, Card, Switch } from "@heroui/react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { localOverrideGet, localOverrideSave, toErrorMessage } from "@pp/client-core";
+import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } from "@pp/client-core";
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
 import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
+import { RuleSetSection } from "./RuleSetSection";
+import { TemplateSection } from "./TemplateSection";
 import { buildSaveInput, ruleSummary, viewToInput } from "./types";
 
 export default function Rules() {
   const queryClient = useQueryClient();
+  const { data: status } = useProxyStatus();
+  // 本地规则 / 模板 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
+  const coreRunning = status?.core_running ?? false;
 
   const {
     data: overrideData,
@@ -28,17 +33,22 @@ export default function Rules() {
 
   // 单核心（sing-box）：直接消费 singbox 桶。
   const currentCore = overrideData ? overrideData.singbox : null;
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
 
-  const persist = async (value: CoreLocalOverrideInput) => {
+  const toastRuleSaved = (base: string) => {
+    toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
+  };
+
+  const persist = async (value: CoreLocalOverrideInput, successMessage: string) => {
     if (!overrideData) return;
     const input = buildSaveInput(overrideData, value);
     try {
       await localOverrideSave(input);
-      toastSuccess("已保存");
-      void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
+      toastRuleSaved(successMessage);
+      invalidate();
     } catch (err) {
       toastError(toErrorMessage(err));
-      void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
+      invalidate();
     }
   };
 
@@ -48,14 +58,15 @@ export default function Rules() {
       ...viewToInput(currentCore),
       enabled: !currentCore.enabled,
     };
-    await persist(next);
+    await persist(next, next.enabled ? "本地规则已启用" : "本地规则已关闭");
   };
 
   const handleToggleRule = async (id: string) => {
     if (!overrideData || !currentCore) return;
+    const target = currentCore.rules.find((r) => r.id === id);
     const nextRules = currentCore.rules.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
-    await persist(next);
+    await persist(next, target?.enabled ? "规则已停用" : "规则已启用");
   };
 
   const handleMoveUp = async (index: number) => {
@@ -68,7 +79,7 @@ export default function Rules() {
       ...viewToInput(currentCore),
       rules: rules.map((r, i) => ({ ...r, sort_order: i })),
     };
-    await persist(next);
+    await persist(next, "规则顺序已调整");
   };
 
   const handleMoveDown = async (index: number) => {
@@ -81,7 +92,7 @@ export default function Rules() {
       ...viewToInput(currentCore),
       rules: rules.map((r, i) => ({ ...r, sort_order: i })),
     };
-    await persist(next);
+    await persist(next, "规则顺序已调整");
   };
 
   const handleDelete = async () => {
@@ -89,7 +100,7 @@ export default function Rules() {
     const nextRules = currentCore.rules.filter((r) => r.id !== deleteRule.id);
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
     setDeleteRule(null);
-    await persist(next);
+    await persist(next, "规则已删除");
   };
 
   const handleSaveRule = async (rule: LocalRuleInput) => {
@@ -104,7 +115,7 @@ export default function Rules() {
       nextRules = [...viewToInput(currentCore).rules, { ...rule, sort_order: currentCore.rules.length }];
     }
     const next: CoreLocalOverrideInput = { ...viewToInput(currentCore), rules: nextRules };
-    await persist(next);
+    await persist(next, exists ? "规则已保存" : "规则已添加");
   };
 
   const error = queryError ? toErrorMessage(queryError) : null;
@@ -113,7 +124,7 @@ export default function Rules() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">规则</h1>
-        <p className="text-sm text-muted">本地规则卡片管理（自定义规则集为唯一规则集来源）</p>
+        <p className="text-sm text-muted">本地规则卡片、场景模板与规则集管理</p>
       </div>
 
       {error && (
@@ -151,6 +162,9 @@ export default function Rules() {
               </Switch>
             </Card.Content>
           </Card>
+
+          {/* 场景模板（自定义） */}
+          <TemplateSection overrideData={overrideData} coreRunning={coreRunning} onChanged={invalidate} />
 
           {/* 规则卡片 */}
           <div className="flex flex-col gap-3">
@@ -193,6 +207,9 @@ export default function Rules() {
               </div>
             )}
           </div>
+
+          {/* 规则集管理（社区 / 自定义） */}
+          <RuleSetSection overrideData={overrideData} coreRunning={coreRunning} onChanged={invalidate} />
         </>
       )}
 
@@ -201,6 +218,7 @@ export default function Rules() {
         onClose={() => setEditOpen(false)}
         initial={editingRule}
         onSave={(r) => void handleSaveRule(r)}
+        ruleSetOptions={(overrideData?.custom_rule_sets ?? []).map((rs) => ({ value: rs.tag, label: rs.tag }))}
       />
 
       <AlertDialog.Backdrop
