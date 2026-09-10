@@ -45,6 +45,9 @@ async fn start_reloads_disk_config_so_tun_toggle_takes_effect() {
     );
     disk.active_subscription_id = Some(sub_id);
     disk.tun_enabled = false;
+    // 本测试只验证启动时从磁盘重载 TUN 开关，断言不依赖 Clash API；
+    // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待 + 模式推送重试。
+    disk.clash_api_enabled = false;
     disk.save().unwrap();
 
     // Cached old snapshot: TUN still on (simulates ClientState created before user turned off TUN).

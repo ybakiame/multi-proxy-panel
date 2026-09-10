@@ -147,6 +147,9 @@ async fn start_with_remote_snippet_runs_mitm_and_scheduler() {
     let mut cfg = test_config(&dir, base);
     cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
+    // 本测试只验证远程 snippet → MITM + 调度器链路，断言不依赖 Clash API；
+    // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待 + 模式推送重试。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
     let mock = Arc::new(MockSystemProxy::new());
     let mut state = ClientState::with_system_proxy(cfg, mock.clone());
@@ -515,6 +518,9 @@ async fn start_with_profile_applies_template_groups_and_js_override() {
     );
     cfg.active_subscription_id = Some(sub.id);
     cfg.mitm_enabled = true;
+    // 本测试只验证模板分组 + JS override + 合成配置注入，断言不依赖 Clash API；
+    // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待 + 模式推送重试。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
