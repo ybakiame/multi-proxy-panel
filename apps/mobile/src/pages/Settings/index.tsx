@@ -1,10 +1,8 @@
 import { Card, Spinner } from "@heroui/react";
-import { DocumentTextIcon } from "@heroicons/react/24/outline";
-import { useNavigate } from "react-router-dom";
-import { EntryLinkCard } from "../../components/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
 import { AboutCard } from "./AboutCard";
 import { ClashApiCard } from "./ClashApiCard";
+import { DeveloperToolsCard } from "./DeveloperToolsCard";
 import { GithubAccessCard } from "./GithubAccessCard";
 import { NetworkCard } from "./NetworkCard";
 import { VpnNotificationCard } from "./VpnNotificationCard";
@@ -18,14 +16,13 @@ import { useSettingsConfig } from "./useSettingsConfig";
  * 2. Clash API：启用 Switch + 端口 + 可选密钥；
  * 3. 网络：本地混合端口；
  * 4. GitHub 访问：代理前缀；
- * 5. 日志入口卡（点击进 `/logs`）；
+ * 5. 开发者工具：日志入口 + 当前配置预览入口（配置预览 Modal 自首页迁入）；
  * 6. 关于：应用名 + 一行说明（无版本数据源，不显示版本）。
  *
  * 全部字段经 @pp/client-core 的 useClientConfig / useSaveConfig（patch 叠加 +
  * toast + 失败回滚），数字输入校验端口 1-65535；配置加载完成前字段禁用。
  */
 export default function Settings() {
-  const navigate = useNavigate();
   const settings = useSettingsConfig();
 
   return (
@@ -48,12 +45,7 @@ export default function Settings() {
           <ClashApiCard settings={settings} />
           <NetworkCard settings={settings} />
           <GithubAccessCard settings={settings} />
-          <EntryLinkCard
-            icon={<DocumentTextIcon className="size-6" aria-hidden="true" />}
-            title="日志"
-            description="查看运行与内核日志，支持导出与清空"
-            onPress={() => navigate("/logs")}
-          />
+          <DeveloperToolsCard />
           <AboutCard />
         </div>
       )}

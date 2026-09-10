@@ -19,7 +19,6 @@ import {
   vpnLastError,
 } from "@pp/client-core";
 import type { ClientStatus, SubscriptionView } from "@pp/client-core";
-import { ConfigPreviewModal } from "../components/ConfigPreviewModal";
 import { ConnectionsEntryCard } from "../components/ConnectionsEntryCard";
 import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
@@ -35,14 +34,17 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 首页（仪表盘，ADR-0003 M5）。区块自上而下：
  *
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
- * 2. 状态卡（StatusCard）；3. 当前节点卡（CurrentNodeCard，点击进代理选择页）；
- * 4. 流量统计卡（TrafficCard，2s 轮询）+ 当前连接入口（ConnectionsEntryCard，点击进连接页）；
- * 5. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
+ * 2. 状态卡（StatusCard）；
+ * 3. 运行依赖区（仅核心运行中渲染，未运行时整组隐藏，相关轮询亦不发起）：
+ *    当前节点卡（CurrentNodeCard，点击进代理选择页）+ 流量统计卡（TrafficCard，2s 轮询）
+ *    + 当前连接入口（ConnectionsEntryCard，点击进连接页）；
+ * 4. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
  *    「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
- * 6. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）；
- * 7. 出站模式分段控件（RuleModeSwitch，仅核心运行中渲染；未运行时由状态卡 chip 展示已保存模式）；
- * 8. 快捷入口：配置预览。
+ * 5. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）；
+ * 6. 出站模式分段控件（RuleModeSwitch，仅核心运行中渲染；未运行时由状态卡 chip 展示已保存模式）。
+ *
+ * 配置预览等开发者入口已迁移至设置页「开发者工具」分组。
  */
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -67,7 +69,6 @@ export default function Dashboard() {
 
   // ---- 局部 UI 状态 ----
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   // 最近启停/授权的同步错误（展示于主操作卡片内）；`vpn_not_authorized` 由下方
   // 「需要 VPN 授权」引导接管，自动授权/重试链路期间主按钮呈 busy 态。
   const [actionError, setActionError] = useState<string | null>(null);
@@ -199,14 +200,19 @@ export default function Dashboard() {
       {/* 2. 状态卡 */}
       <StatusCard running={running} ruleMode={ruleMode} />
 
-      {/* 3. 当前节点卡（点击进入代理选择页） */}
-      <CurrentNodeCard running={running} />
+      {/* 3+4. 运行依赖区（仅核心运行中渲染；未运行时整组隐藏，相关轮询不发起） */}
+      {running && (
+        <>
+          {/* 当前节点卡（点击进入代理选择页） */}
+          <CurrentNodeCard running={running} />
 
-      {/* 4. 流量统计卡 */}
-      <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
+          {/* 流量统计卡 */}
+          <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
 
-      {/* 4.5 当前连接入口（点击进连接页） */}
-      <ConnectionsEntryCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
+          {/* 当前连接入口（点击进连接页） */}
+          <ConnectionsEntryCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
+        </>
+      )}
 
       {/* 5+6. 主操作 + VPN 授权引导 */}
       <Card>
@@ -279,42 +285,17 @@ export default function Dashboard() {
         </Card.Content>
       </Card>
 
-      {/* 7. 出站模式（仅核心运行中渲染；未运行时状态卡仍展示已保存模式，切换仅运行期有意义） */}
+      {/* 6. 出站模式（仅核心运行中渲染；未运行时状态卡仍展示已保存模式，切换仅运行期有意义） */}
       {running && (
         <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={config?.clash_api_enabled ?? false} />
       )}
 
-      {/* 8. 快捷入口：配置预览 */}
-      <Card>
-        <Card.Header>
-          <Card.Title>快捷入口</Card.Title>
-          <Card.Description>开发与排障辅助</Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-3">
-          <Button
-            variant="secondary"
-            size="lg"
-            className="min-h-11 w-full"
-            isDisabled={!canStart}
-            onPress={() => setPreviewOpen(true)}
-          >
-            配置预览
-          </Button>
-          {!canStart && <p className="text-center text-xs text-muted">选择生效订阅后可预览合成配置</p>}
-        </Card.Content>
-      </Card>
-
-      {/* 订阅切换 Sheet 与配置预览 Modal */}
+      {/* 订阅切换 Sheet */}
       <SubscriptionSheet
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
         subscriptions={subscriptions}
         activeSubscriptionId={config?.active_subscription_id ?? null}
-      />
-      <ConfigPreviewModal
-        isOpen={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        subscriptionId={config?.active_subscription_id}
       />
     </PageShell>
   );
