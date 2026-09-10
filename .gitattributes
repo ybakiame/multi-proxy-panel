@@ -1,0 +1,118 @@
+# ============================================================
+# 默认行为：所有文本文件统一使用 LF 换行
+# ============================================================
+* text=auto eol=lf
+
+# ============================================================
+# 明确指定为文本文件（强制 LF）
+# ============================================================
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.vue       text eol=lf
+*.svelte    text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.sass      text eol=lf
+*.less      text eol=lf
+*.html      text eol=lf
+*.htm       text eol=lf
+*.md        text eol=lf
+*.markdown  text eol=lf
+*.mdx       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.xml       text eol=lf
+# iml 为 idea 使用 本质仍为 xml
+*.iml       text eol=lf
+*.svg       text eol=lf
+*.txt       text eol=lf
+
+# 脚本类
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.zsh       text eol=lf
+*.fish      text eol=lf
+*.ps1       text eol=lf
+*.bat       text eol=lf
+*.cmd       text eol=lf
+
+# Rust
+*.rs        text eol=lf
+*.toml      text eol=lf
+Cargo.lock  text eol=lf
+
+# ============================================================
+# 明确指定为二进制文件（不做换行转换）
+# ============================================================
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.icns      binary
+*.bmp       binary
+*.tiff      binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.7z        binary
+*.rar       binary
+*.jar       binary
+*.apk       binary
+*.aab       binary
+*.so        binary
+*.dll       binary
+*.dylib     binary
+*.a         binary
+*.lib       binary
+*.exe       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp3       binary
+*.mp4       binary
+*.mov       binary
+*.webm       binary
+*.wav       binary
+
+# ============================================================
+# 特殊文件处理
+# ============================================================
+
+# 锁文件：避免因换行导致 diff 噪音，但不建议合并
+package-lock.json   text eol=lf -diff
+bun.lockb           binary
+yarn.lock           text eol=lf -diff
+pnpm-lock.yaml      text eol=lf -diff
+
+# Git 内部文件
+.gitattributes      text eol=lf
+.gitignore          text eol=lf
+.gitmodules         text eol=lf
+.gitconfig          text eol=lf
+
+# Docker
+Dockerfile          text eol=lf
+Dockerfile.*        text eol=lf
+*.dockerfile        text eol=lf
+.dockerignore       text eol=lf
+
+# ============================================================
+# 语言统计（可选，让 GitHub 识别生成文件）
+# ============================================================
+*.min.js            linguist-generated=true
+*.min.css           linguist-generated=true
+dist/**             linguist-generated=true
+target/**           linguist-vendored=true
+node_modules/**     linguist-vendored=true
