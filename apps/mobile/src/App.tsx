@@ -9,6 +9,7 @@ import Logs from "./pages/Logs";
 import Proxies from "./pages/Proxies";
 import Rules from "./pages/Rules";
 import CustomRulesPage from "./pages/Rules/CustomRulesPage";
+import RuleSetMarket from "./pages/Rules/RuleSetMarket";
 import RuleSetsPage from "./pages/Rules/RuleSetsPage";
 import Settings from "./pages/Settings";
 import Subscriptions from "./pages/Subscriptions";
@@ -113,6 +114,7 @@ function AppContent() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/rules/custom" element={<CustomRulesPage />} />
           <Route path="/rules/rulesets" element={<RuleSetsPage />} />
+          <Route path="/rules/rulesets/market" element={<RuleSetMarket />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="*" element={<Navigate to="/" replace />} />

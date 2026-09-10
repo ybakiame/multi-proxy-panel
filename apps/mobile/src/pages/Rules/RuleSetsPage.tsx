@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, PlusIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { Alert, AlertDialog, Button, Card, Chip, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
@@ -15,6 +15,7 @@ import {
   useProxyStatus,
 } from "@pp/client-core";
 import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
+import { useNavigate } from "react-router-dom";
 import { BackHeader } from "../../components/BackHeader";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
@@ -84,6 +85,7 @@ function RuleSetSection({ title, emptyCopy, sets, onEdit, onDelete }: RuleSetSec
  * - 是否注入仍由引用它的规则决定（引用它的规则被注入时才注入该规则集）。
  */
 export default function RuleSetsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
   // 本地规则 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
@@ -267,6 +269,14 @@ export default function RuleSetsPage() {
               >
                 <ArrowPathIcon className="size-4" aria-hidden="true" />
                 立即更新
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-11 shrink-0 px-3"
+                onPress={() => navigate("/rules/rulesets/market")}
+              >
+                <SparklesIcon className="size-4" aria-hidden="true" />
+                市场
               </Button>
             </div>
 
