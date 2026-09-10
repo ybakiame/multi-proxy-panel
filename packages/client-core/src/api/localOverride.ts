@@ -84,6 +84,31 @@ export interface LocalOverrideView {
   applied_templates: AppliedTemplateView[];
   custom_rule_sets: CustomRuleSetView[];
   custom_templates: CustomTemplateView[];
+  /** 用户添加的规则集市场源（源列表 + 缓存条目数）。 */
+  market_sources: MarketSourceView[];
+}
+
+/** User-added market source (from `local_override_get`). */
+export interface MarketSourceView {
+  id: string;
+  name: string;
+  url: string;
+  /** Last successful fetch timestamp (Unix seconds; 0 = never). */
+  last_fetched: number;
+  /** Valid entries in the cached catalog. */
+  entry_count: number;
+}
+
+/** Market entry (from `local_override_market_entries`), with source origin. */
+export interface MarketEntryView {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  format: "source" | "binary";
+  url: string;
+  source_id: string;
+  source_name: string;
 }
 
 export interface SaveLocalOverrideInput {
@@ -174,4 +199,27 @@ export function localOverrideRevertTemplate(templateId: string): Promise<boolean
 
 export function localOverrideUpdateRulesetsNow(): Promise<number> {
   return invoke<number>("local_override_update_rulesets_now");
+}
+
+/**
+ * 添加市场源：后端拉取验证（失败报错且不保存）→ 落盘缓存 → 追加源。
+ * 返回新建源的视图（含条目数）。
+ */
+export function localOverrideMarketAdd(name: string, url: string): Promise<MarketSourceView> {
+  return invoke<MarketSourceView>("local_override_market_add", { name, url });
+}
+
+/** 删除市场源并清理其缓存文件；返回是否移除了源。 */
+export function localOverrideMarketRemove(id: string): Promise<boolean> {
+  return invoke<boolean>("local_override_market_remove", { id });
+}
+
+/** 刷新单个市场源（重拉 + 落盘 + 更新时间）；返回条目数，失败报错并保留旧缓存。 */
+export function localOverrideMarketRefresh(id: string): Promise<number> {
+  return invoke<number>("local_override_market_refresh", { id });
+}
+
+/** 读取全部源的缓存条目（合并、带来源标注）；纯读缓存，不拉网络。 */
+export function localOverrideMarketEntries(): Promise<MarketEntryView[]> {
+  return invoke<MarketEntryView[]>("local_override_market_entries");
 }

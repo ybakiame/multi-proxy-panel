@@ -3,7 +3,7 @@
 //! Provides frontend-facing commands for rule card management, template
 //! application, and rule set subscription control.
 
-use pp_client::local_override::{LocalOverrideStore, RuleSetManager};
+use pp_client::local_override::{LocalOverrideStore, MarketManager, RuleSetManager};
 use tauri::State;
 
 use crate::state::AppState;
@@ -23,7 +23,8 @@ pub(crate) fn load_override_view(data_dir: &std::path::Path) -> Result<LocalOver
         .load()
         .map_err(|e| format!("failed to load local override: {e}"))?;
     let manager = RuleSetManager::new(data_dir.to_path_buf());
-    Ok(LocalOverrideView::from_model(&ovr, &manager))
+    let market = MarketManager::new(data_dir.to_path_buf());
+    Ok(LocalOverrideView::from_model(&ovr, &manager, &market))
 }
 
 /// Get full local override config.
@@ -38,23 +39,38 @@ pub fn local_override_get(state: State<'_, AppState>) -> Result<LocalOverrideVie
 /// `rules`). Manual contents are persisted to disk and backing files of
 /// removed / switched custom rule sets are best-effort cleaned before the
 /// JSON is written, so injected local rule_set paths always resolve.
+///
+/// `market_sources` 不属于前端 save 契约（由专用市场命令管理）：保存时保留磁盘
+/// 现值，避免在规则/规则集页编辑时清空市场源。
+pub(crate) fn run_save(
+    data_dir: &std::path::Path,
+    input: SaveLocalOverrideInput,
+) -> Result<(), String> {
+    let mut ovr = convert_input_to_model(input)?;
+    validate_local_override(&ovr).map_err(|e| format!("validation failed: {e}"))?;
+
+    let store = LocalOverrideStore::new(data_dir.to_path_buf());
+    let existing = store
+        .load()
+        .map_err(|e| format!("failed to load local override: {e}"))?;
+    ovr.market_sources = existing.market_sources;
+
+    let manager = RuleSetManager::new(data_dir.to_path_buf());
+    manager
+        .sync_custom_rule_set_files(&ovr.custom_rule_sets)
+        .map_err(|e| format!("failed to persist custom rule set files: {e}"))?;
+
+    store
+        .save(&ovr)
+        .map_err(|e| format!("failed to save local override: {e}"))
+}
+
 #[tauri::command]
 pub fn local_override_save(
     state: State<'_, AppState>,
     input: SaveLocalOverrideInput,
 ) -> Result<(), String> {
-    let ovr = convert_input_to_model(input)?;
-    validate_local_override(&ovr).map_err(|e| format!("validation failed: {e}"))?;
-
-    let manager = RuleSetManager::new(state.data_dir.clone());
-    manager
-        .sync_custom_rule_set_files(&ovr.custom_rule_sets)
-        .map_err(|e| format!("failed to persist custom rule set files: {e}"))?;
-
-    let store = LocalOverrideStore::new(state.data_dir.clone());
-    store
-        .save(&ovr)
-        .map_err(|e| format!("failed to save local override: {e}"))
+    run_save(&state.data_dir, input)
 }
 
 #[cfg(test)]
@@ -98,6 +114,7 @@ mod tests {
                 last_updated: 0,
             }],
             custom_templates: Vec::new(),
+            market_sources: Vec::new(),
         };
         ovr.singbox.rules.push(sample_rule("r1", 0));
         ovr.custom_templates.push(CustomTemplate {
@@ -121,10 +138,59 @@ mod tests {
         assert!(view.custom_rule_sets.is_empty());
         assert!(view.custom_templates.is_empty());
         assert!(view.applied_templates.is_empty());
+        assert!(view.market_sources.is_empty());
         assert!(view.singbox.enabled);
         // 重复读取结果一致，不写盘、不注入内置数据。
         let view2 = load_override_view(dir.path()).unwrap();
         assert!(view2.custom_rule_sets.is_empty());
+    }
+
+    /// 前端 save 契约不含 `market_sources`：保存规则/规则集时必须保留磁盘上
+    /// 已添加的市场源，且视图输出源列表 + 缓存条目数。
+    #[test]
+    fn save_preserves_market_sources_and_view_exposes_entry_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let ovr = LocalOverride {
+            market_sources: vec![pp_client::local_override::MarketSource {
+                id: "m1".to_string(),
+                name: "示例市场".to_string(),
+                url: "https://e/market.json".to_string(),
+                last_fetched: 7,
+            }],
+            ..Default::default()
+        };
+        let store = LocalOverrideStore::new(dir.path().to_path_buf());
+        store.save(&ovr).unwrap();
+        MarketManager::new(dir.path().to_path_buf())
+            .write_cache(
+                "m1",
+                r#"[{"id":"ads","name":"广告","format":"binary","url":"https://e/ads.srs"}]"#,
+            )
+            .unwrap();
+
+        // 走前端 save 契约（无 market_sources）→ 不应清空市场源。
+        run_save(
+            dir.path(),
+            SaveLocalOverrideInput {
+                singbox: CoreLocalOverrideInput {
+                    rules: Vec::new(),
+                    rule_sets: Vec::new(),
+                    enabled: true,
+                },
+                applied_templates: Vec::new(),
+                custom_rule_sets: Vec::new(),
+                custom_templates: Vec::new(),
+            },
+        )
+        .unwrap();
+        let reloaded = store.load().unwrap();
+        assert_eq!(reloaded.market_sources.len(), 1, "save 不得清空市场源");
+        assert_eq!(reloaded.market_sources[0].id, "m1");
+
+        let view = load_override_view(dir.path()).unwrap();
+        assert_eq!(view.market_sources.len(), 1);
+        assert_eq!(view.market_sources[0].last_fetched, 7);
+        assert_eq!(view.market_sources[0].entry_count, 1);
     }
 
     #[test]

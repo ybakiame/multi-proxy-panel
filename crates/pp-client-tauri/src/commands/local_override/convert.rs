@@ -147,6 +147,8 @@ pub(super) fn convert_input_to_model(
             .into_iter()
             .map(convert_custom_template_input)
             .collect::<Result<Vec<_>, _>>()?,
+        // 市场源不由前端 save 契约承载：此处留空，`run_save` 保存时从磁盘现值回填。
+        market_sources: Vec::new(),
     })
 }
 

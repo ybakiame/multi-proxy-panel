@@ -122,6 +122,8 @@ export type {
   CustomTemplateView,
   CustomTemplateInput,
   LocalOverrideView,
+  MarketSourceView,
+  MarketEntryView,
   SaveLocalOverrideInput,
   CoreLocalOverrideInput,
   LocalRuleInput,
@@ -134,6 +136,10 @@ export {
   localOverrideApplyTemplate,
   localOverrideRevertTemplate,
   localOverrideUpdateRulesetsNow,
+  localOverrideMarketAdd,
+  localOverrideMarketRemove,
+  localOverrideMarketRefresh,
+  localOverrideMarketEntries,
 } from "./localOverride";
 
 // ---------------------------------------------------------------------------

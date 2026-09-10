@@ -81,6 +81,12 @@ fn local_override_serde_roundtrip() {
             rules: vec!["r1".to_string(), "r2".to_string()],
             created_at: 1234567890,
         }],
+        market_sources: vec![MarketSource {
+            id: "src1".to_string(),
+            name: "示例市场".to_string(),
+            url: "https://example.com/market.json".to_string(),
+            last_fetched: 1234567890,
+        }],
     };
 
     let json = serde_json::to_string(&orig).unwrap();
@@ -154,6 +160,7 @@ fn serde_missing_fields_defaults() {
     assert!(parsed.applied_templates.is_empty());
     assert!(parsed.custom_rule_sets.is_empty());
     assert!(parsed.custom_templates.is_empty());
+    assert!(parsed.market_sources.is_empty());
     assert!(parsed.singbox.enabled); // default_true
 }
 

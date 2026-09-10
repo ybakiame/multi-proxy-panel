@@ -5,7 +5,7 @@
 
 use pp_client::local_override::{
     AppliedTemplate, CoreLocalOverride, CustomRuleSetSource, LocalOverride, LocalRule,
-    RuleSetManager,
+    MarketManager, MarketSource, RuleSetFormat, RuleSetManager,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,13 +17,15 @@ use serde::{Deserialize, Serialize};
 ///
 /// 自「废弃内置规则集订阅」起不再输出 `rule_set_subscriptions` 段；自定义规则集
 /// 状态（含 `cached` / `last_updated`）由 `custom_rule_sets` 段承载，前端统一走本
-/// 命令消费。
+/// 命令消费。自「市场改为用户自定义源」起额外输出 `market_sources`（源列表 +
+/// 条目数），市场条目本体走 `local_override_market_entries` 读缓存。
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalOverrideView {
     pub singbox: CoreLocalOverrideView,
     pub applied_templates: Vec<AppliedTemplateView>,
     pub custom_rule_sets: Vec<CustomRuleSetView>,
     pub custom_templates: Vec<CustomTemplateView>,
+    pub market_sources: Vec<MarketSourceView>,
 }
 
 /// Per-core local override view.
@@ -104,12 +106,45 @@ pub struct CustomTemplateView {
     pub created_at: u64,
 }
 
+/// User-added market source view (from `local_override_get`).
+///
+/// `entry_count` 为本地缓存目录中的有效条目数（纯读缓存，不拉网络）。
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketSourceView {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    /// Last successful fetch timestamp (Unix seconds; 0 = never).
+    pub last_fetched: u64,
+    /// Valid entries in the cached catalog.
+    pub entry_count: usize,
+}
+
+/// Market entry view (from `local_override_market_entries`).
+///
+/// 合并全部源缓存条目，`source_id` / `source_name` 标注来源。
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketEntryView {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub format: RuleSetFormat,
+    pub url: String,
+    pub source_id: String,
+    pub source_name: String,
+}
+
 // ---------------------------------------------------------------------------
 // Conversions (pp-client types → View types)
 // ---------------------------------------------------------------------------
 
 impl LocalOverrideView {
-    pub(crate) fn from_model(model: &LocalOverride, manager: &RuleSetManager) -> Self {
+    pub(crate) fn from_model(
+        model: &LocalOverride,
+        manager: &RuleSetManager,
+        market: &MarketManager,
+    ) -> Self {
         Self {
             singbox: CoreLocalOverrideView::from_model(&model.singbox),
             applied_templates: model
@@ -126,6 +161,11 @@ impl LocalOverrideView {
                 .custom_templates
                 .iter()
                 .map(|tpl| CustomTemplateView::from_model(tpl, model))
+                .collect(),
+            market_sources: model
+                .market_sources
+                .iter()
+                .map(|src| MarketSourceView::from_model(src, market))
                 .collect(),
         }
     }
@@ -221,6 +261,18 @@ impl CustomTemplateView {
             rules: model.rules.clone(),
             invalid_count,
             created_at: model.created_at,
+        }
+    }
+}
+
+impl MarketSourceView {
+    pub(crate) fn from_model(model: &MarketSource, market: &MarketManager) -> Self {
+        Self {
+            id: model.id.clone(),
+            name: model.name.clone(),
+            url: model.url.clone(),
+            last_fetched: model.last_fetched,
+            entry_count: market.cached_entry_count(&model.id),
         }
     }
 }

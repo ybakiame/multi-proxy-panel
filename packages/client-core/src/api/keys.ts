@@ -18,6 +18,9 @@ export const TASKS_KEY = ["tasks"] as const;
 
 export const LOCAL_OVERRIDE_KEY = ["localOverride"] as const;
 
+/** 规则集市场条目（合并全部源缓存；纯读缓存，不拉网络）。 */
+export const MARKET_ENTRIES_KEY = ["marketEntries"] as const;
+
 export const PROFILES_KEY = ["profiles"] as const;
 /** 单个覆写模板详情（Override 页，按选中 id 参数化）。 */
 export const profileKey = (id: string | null) => ["profile", id] as const;
