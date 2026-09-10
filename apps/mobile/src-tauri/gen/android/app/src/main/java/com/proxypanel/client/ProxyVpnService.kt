@@ -17,21 +17,37 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import com.proxypanel.core.libbox.BoxService
+import com.proxypanel.core.libbox.BridgeOptions
+import com.proxypanel.core.libbox.BridgeSession
+import com.proxypanel.core.libbox.CommandClient
+import com.proxypanel.core.libbox.CommandClientHandler
+import com.proxypanel.core.libbox.CommandClientOptions
+import com.proxypanel.core.libbox.CommandServer
+import com.proxypanel.core.libbox.CommandServerHandler
+import com.proxypanel.core.libbox.ConnectionEvents
+import com.proxypanel.core.libbox.ConnectionOwner
 import com.proxypanel.core.libbox.InterfaceUpdateListener
 import com.proxypanel.core.libbox.Libbox
 import com.proxypanel.core.libbox.LocalDNSTransport
+import com.proxypanel.core.libbox.LogIterator
 import com.proxypanel.core.libbox.NetworkInterface as LibboxNetworkInterface
 import com.proxypanel.core.libbox.NetworkInterfaceIterator
+import com.proxypanel.core.libbox.NeighborUpdateListener
+import com.proxypanel.core.libbox.OutboundGroupItemIterator
+import com.proxypanel.core.libbox.OutboundGroupIterator
+import com.proxypanel.core.libbox.OverrideOptions
 import com.proxypanel.core.libbox.PlatformInterface
+import com.proxypanel.core.libbox.PlatformUser
 import com.proxypanel.core.libbox.RoutePrefix
 import com.proxypanel.core.libbox.SetupOptions
+import com.proxypanel.core.libbox.ShellSession
+import com.proxypanel.core.libbox.StatusMessage
 import com.proxypanel.core.libbox.StringIterator
+import com.proxypanel.core.libbox.SystemProxyStatus
 import com.proxypanel.core.libbox.TunOptions
 import com.proxypanel.core.libbox.WIFIState
 import com.proxypanel.core.libbox.Notification as LibboxNotification
@@ -47,15 +63,19 @@ import java.time.format.DateTimeFormatter
  * TUN/VPN 前台服务：通过 libbox（sing-box）驱动，由 [VpnPlugin] 的
  * start/stop 命令控制启停。
  *
- * 启动序列（对齐 sing-box experimental/libbox 与 SFA 官方语义）：
+ * 启动序列（sing-box 1.14 libbox / SFA 官方语义）：
  *   1. Libbox.setup(SetupOptions) 设置数据路径（进程内仅一次）
- *   2. Libbox.newService(config, platformInterface) 解析配置并创建服务
- *   3. BoxService.start() 启动核心（openTun 由 [PlatformInterface] 回调，
- *      用 VpnService.Builder.establish() 取得 pfd，保留所有权并返回 `pfd.fd`
+ *   2. CommandServer(this, platformInterface) 创建核心服务
+ *   3. CommandServer.start() + startOrReloadService(config, OverrideOptions)
+ *      启动核心（openTun 由 [PlatformInterface] 回调，用
+ *      VpnService.Builder.establish() 取得 pfd，保留所有权并返回 `pfd.fd`
  *      原始 fd 号给核心；核心侧 `dup(fd)` 出一份独立 fd 供 tun 使用）
+ *   4. 另起 [CommandClient]（CommandLog 流）承接核心日志，重建「环形缓冲 +
+ *      logs/libbox.log」行为（1.14 已移除 PlatformInterface.writeLog）
  *
- * 停止序列：先 close pfd（原始 fd），再 BoxService.close()（关闭核心持有的
- * dup fd / tun 接口），随后 VpnService 撤销 VPN。
+ * 停止序列：先 close pfd（原始 fd），再 CommandServer.closeService()（关闭核心
+ * 持有的 dup fd / tun 接口），最后 CommandServer.close()（停止 gRPC listener），
+ * 随后 VpnService 撤销 VPN。
  *
  * fd 生命周期对齐 SFA：**不调用 detachFd()**。detachFd 会把原始 fd 所有权转交
  * 出去且 Kotlin 侧 `close()` 变成空操作，导致原始 fd 无人关闭（fd 泄漏）并绕过
@@ -63,10 +83,10 @@ import java.time.format.DateTimeFormatter
  *
  * 重复启动防护：`startInProgress` 标志保证同一时刻只有一个 startBox 序列；
  * 重启（服务存活时再次收到 start）在 startBox 内先有序关闭旧实例再启动新实例，
- * 禁止两个 BoxService 并发 establish()（并发 establish 会撤销前一 tun 导致
+ * 禁止两个 CommandServer 并发 establish()（并发 establish 会撤销前一 tun 导致
  * 启动期即报 file already closed）。
  */
-class ProxyVpnService : VpnService() {
+class ProxyVpnService : VpnService(), CommandServerHandler {
 
   companion object {
     private const val TAG = "ProxyVpnService"
@@ -111,14 +131,27 @@ class ProxyVpnService : VpnService() {
       private set
 
     /**
-     * libbox writeLog 环形缓冲（最近 200 行）：启动失败时附带进 lastError，
-     * 让前端 Alert 直接看到 Go 侧完整错误链（如 "query tun name" /
+     * libbox 日志环形缓冲行数，同时作为核心侧 `SetupOptions.logMaxLines`
+     * （CommandClient 连接时按该上限重放已保存日志）。
+     */
+    private const val LIBBOX_LOG_BUFFER_SIZE = 200
+
+    /**
+     * libbox 日志环形缓冲（最近 [LIBBOX_LOG_BUFFER_SIZE] 行）：启动失败时附带进
+     * lastError，让前端 Alert 直接看到 Go 侧完整错误链（如 "query tun name" /
      * "dup tun file descriptor" / "initialize inbound/tun" 前缀），定位异步失败。
      *
-     * 每行以 `[RFC3339] ` 时间戳前缀开头（[writeLog] 统一写入，与
+     * 每行以 `[RFC3339] ` 时间戳前缀开头（[logClientHandler] 统一写入，与
      * `logs/libbox.log` 同源），文件超限截断时重建内容仍为可解析的完整行。
      */
-    private val libboxLogBuffer = ArrayDeque<String>(200)
+    private val libboxLogBuffer = ArrayDeque<String>(LIBBOX_LOG_BUFFER_SIZE)
+
+    /**
+     * 日志文件待重置标记：CommandClient 首次连接/重连时核心会以 Reset 重放
+     * 完整日志（[clearLibboxLogBuffer]），下一批 writeLogs 需先清空文件再写入，
+     * 避免重放内容与既有文件重复。
+     */
+    private var libboxLogFileResetPending = false
 
     /** `logs/libbox.log` 大小上限（字节），超限时删除重建写入最新缓冲。 */
     private const val LIBBOX_LOG_MAX_BYTES = 1024 * 1024
@@ -153,12 +186,26 @@ class ProxyVpnService : VpnService() {
     private var startInProgress = false
 
     /**
-     * 当前注册的 BoxService 及其 tun pfd，进程级共享（跨实例）：
-     * 重启时新实例的 startBox 需先关闭旧实例残留的 box（「先有序 stop 再 start」），
-     * 而旧实例迟到的 stopBox 不得关闭新实例已启动的 box（用 [boxOwner] 判定归属）。
+     * 当前注册的 CommandServer 及其 tun pfd，进程级共享（跨实例）：
+     * 重启时新实例的 startBox 需先关闭旧实例残留的 server（「先有序 stop 再 start」），
+     * 而旧实例迟到的 stopBox 不得关闭新实例已启动的 server（用 [boxOwner] 判定归属）。
      * 所有访问必须在 [lifecycleLock] 临界区内进行。
+     *
+     * sing-box 1.14 起 `Libbox.newService` + `BoxService` 被移除，改由
+     * `CommandServer`（`start()` + `startOrReloadService()` / `closeService()` / `close()`）
+     * 承载核心生命周期；`CommandServerHandler` 由本服务实现。
      */
-    private var boxService: BoxService? = null
+    @Volatile
+    private var commandServer: CommandServer? = null
+
+    /**
+     * 日志通道客户端：sing-box 1.14 移除了 `PlatformInterface.writeLog`，日志经
+     * `CommandServer` 的 gRPC 日志流（CommandLog）对外提供。本服务用
+     * [CommandClient] 连接自身 server，在 [logClientHandler.writeLogs] 中重建
+     * 「环形缓冲 + logs/libbox.log 落盘」的旧行为。
+     */
+    @Volatile
+    private var commandClient: CommandClient? = null
 
     private var tunFd: ParcelFileDescriptor? = null
 
@@ -169,6 +216,10 @@ class ProxyVpnService : VpnService() {
   /** Stop request flag: when stop arrives during startBox background thread startup, orderly close after startup completes. */
   @Volatile
   private var stopRequested = false
+
+  /** 最近一次应用的 sing-box JSON 配置，供 CommandServerHandler.serviceReload() 重放。 */
+  @Volatile
+  private var lastConfig: String? = null
 
   /** Notification preference flags (read from intent extras or VpnPlugin companion). */
   @Volatile
@@ -234,8 +285,16 @@ class ProxyVpnService : VpnService() {
 
       if (options.autoRoute) {
         // DNS 劫持地址由核心按 inet4 首地址推导（需保留一个可用 IP）。
+        // sing-box 1.14 起 getDNSServerAddress() 返回 StringIterator（可含多个地址），
+        // 逐个注入 Builder（旧版为单值 StringBox.value）。
         try {
-          builder.addDnsServer(options.dnsServerAddress.value)
+          val dnsServers = options.dnsServerAddress
+          while (dnsServers.hasNext()) {
+            val dnsServer = dnsServers.next()
+            if (!dnsServer.isNullOrEmpty()) {
+              builder.addDnsServer(dnsServer)
+            }
+          }
         } catch (e: Exception) {
           Log.w(TAG, "no dns server address available: ${e.message}")
         }
@@ -324,30 +383,28 @@ class ProxyVpnService : VpnService() {
       return pfd.fd
     }
 
-    override fun writeLog(message: String) {
-      // 时间戳前缀与 Rust 日志页 `LogEntry.ts` 对齐：环形缓冲与 `logs/libbox.log`
-      // 统一存 `[RFC3339] message`，Rust `get_logs` 按行解析后合并展示。
-      val line = "[${timestampNow()}] $message"
-      Log.i(TAG, message)
-      appendLibboxLog(line)
-      appendToLibboxLogFile(line)
-    }
-
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
+    /**
+     * 连接归属查询：panelcore 保持最小实现（不解析 uid/进程），返回
+     * `userId = -1` 的 [ConnectionOwner] 表示「未找到」，与旧版返回 -1 的
+     * 语义一致（分应用/进程规则不生效，行为不变）。
+     *
+     * sing-box 1.14 起返回类型由 `Int` 改为 `ConnectionOwner`。
+     */
     override fun findConnectionOwner(
       ipProtocol: Int,
       sourceAddress: String,
       sourcePort: Int,
       destinationAddress: String,
       destinationPort: Int,
-    ): Int = -1
-
-    override fun packageNameByUid(uid: Int): String =
-      if (uid == Process.myUid()) this@ProxyVpnService.packageName else ""
-
-    override fun uidByPackageName(packageName: String): Int =
-      if (packageName == this@ProxyVpnService.packageName) Process.myUid() else -1
+    ): ConnectionOwner {
+      val owner = ConnectionOwner()
+      owner.userId = -1
+      owner.userName = ""
+      owner.processPath = ""
+      return owner
+    }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
       // 默认网络接口监控：把物理接口 name/index 推给核心，供
@@ -419,14 +476,68 @@ class ProxyVpnService : VpnService() {
 
     override fun readWIFIState(): WIFIState = WIFIState("", "")
 
-    override fun systemCertificates(): StringIterator = EmptyStringIterator
-
     override fun clearDNSCache() {
       // 无本地 DNS 缓存（最小实现）。
     }
 
     override fun sendNotification(notification: LibboxNotification) {
       // 通知透传留待后续实现。
+    }
+
+    override fun cancelNotification(identifier: String, typeID: Int) {
+      // panelcore 未使用核心通知通道（通知由本服务的 NotificationCompat 管理）。
+    }
+
+    // --- 以下为 sing-box 1.14 PlatformInterface 新增能力，panelcore 均未启用，
+    //     保持最小 stub（返回「不支持/空值」），避免核心调用到未实现逻辑。 ---
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener?) {
+      // 未启用邻居表解析（路由规则不使用 neighbor 来源）。
+    }
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {
+      // 未启用邻居表解析。
+    }
+
+    override fun registerMyInterface(name: String?) {
+      // 未启用核心侧 my-interface 跟踪；默认接口由 [DefaultInterfaceMonitor] 推送。
+    }
+
+    override fun usePlatformShell(): Boolean = false
+
+    override fun checkPlatformShell() {
+      throw UnsupportedOperationException("android: platform shell not supported")
+    }
+
+    override fun openShellSession(
+      user: PlatformUser?,
+      command: String?,
+      environ: StringIterator?,
+      term: String?,
+      rows: Int,
+      cols: Int,
+    ): ShellSession {
+      throw UnsupportedOperationException("android: platform shell not supported")
+    }
+
+    override fun lookupUser(username: String?): PlatformUser {
+      throw UnsupportedOperationException("android: platform shell not supported")
+    }
+
+    override fun lookupSFTPServer(): String {
+      throw UnsupportedOperationException("android: sftp not supported")
+    }
+
+    override fun readSystemSSHHostKey(): String {
+      throw UnsupportedOperationException("android: system ssh host key not supported")
+    }
+
+    override fun tailscaleHostname(): String = ""
+
+    override fun usePlatformBridge(): Boolean = false
+
+    override fun createBridge(options: BridgeOptions?): BridgeSession {
+      throw UnsupportedOperationException("android: bridge not supported")
     }
 
     override fun localDNSTransport(): LocalDNSTransport? = null
@@ -748,34 +859,43 @@ class ProxyVpnService : VpnService() {
     // 数据路径（对齐 SFA Application.kt:99-110）：basePath 用内部 filesDir，
     // workingPath 用外部 files 目录（外部存储可用时）供核心缓存使用，tempPath
     // 用 cacheDir；外部目录不可用时回退内部 filesDir。fixAndroidStack 开启以
-    // 修复 Android 上 Go 栈回溯问题。username 留空回退 os.Getuid()（单应用场景）。
+    // 修复 Android 上 Go 栈回溯问题。logMaxLines 供 CommandClient 连接时重放
+    // 已保存日志（1.14 日志通道，替代旧 PlatformInterface.writeLog）。
     val workingDir = getExternalFilesDir(null)
     val setup =
       SetupOptions().apply {
         basePath = filesDir.absolutePath
         workingPath = workingDir?.absolutePath ?: filesDir.absolutePath
         tempPath = cacheDir.absolutePath
-        isTVOS = false
         fixAndroidStack = true
+        logMaxLines = LIBBOX_LOG_BUFFER_SIZE.toLong()
       }
     setupLibbox(setup)
 
-    val service = Libbox.newService(config, platformInterface)
-    // 注册、有序重启与 start 放同一临界区（跨实例共享 lifecycleLock）：
-    //   - 若存在旧 box（重启：服务存活时再次 start / 旧实例残留），先有序关闭
-    //     再启动新实例，杜绝两个 BoxService 并发 establish()；
-    //   - stopBox 的锁会等待 start() 完成再 close，避免停止线程在启动期间
+    lastConfig = config
+
+    // 注册、有序重启与启动放同一临界区（跨实例共享 lifecycleLock）：
+    //   - 若存在旧 server（重启：服务存活时再次 start / 旧实例残留），先有序关闭
+    //     再启动新实例，杜绝两个 CommandServer 并发 establish()；
+    //   - stopBox 的锁会等待启动完成再 close，避免停止线程在启动期间
     //     close 半启动的服务；
-    //   - start 抛异常时立即 close 该实例并复位状态，清理半启动痕迹。
+    //   - start/startOrReloadService 抛异常时立即 close 该实例并复位状态，
+    //     清理半启动痕迹。
     synchronized(lifecycleLock) {
-      // 先有序 stop 再 start：关闭上一轮实例持有的 box 与 tun fd。
-      boxService?.let { old ->
-        boxService = null
+      // 先有序 stop 再 start：关闭上一轮实例持有的 server 与 tun fd。
+      stopLogClient()
+      commandServer?.let { old ->
+        commandServer = null
         boxOwner = null
+        try {
+          old.closeService()
+        } catch (e: Exception) {
+          Log.e(TAG, "failed to close previous libbox service", e)
+        }
         try {
           old.close()
         } catch (e: Exception) {
-          Log.e(TAG, "failed to close previous libbox service", e)
+          Log.e(TAG, "failed to close previous command server", e)
         }
       }
       tunFd?.let { old ->
@@ -787,22 +907,195 @@ class ProxyVpnService : VpnService() {
       }
       tunFd = null
 
-      boxService = service
-      boxOwner = this
+      val server = CommandServer(this, platformInterface)
       try {
-        service.start()
+        server.start()
+        commandServer = server
+        // 尽早连接日志通道：捕获 startOrReloadService 期间（含失败）的核心日志，
+        // 供启动失败时 lastError 附带 Go 侧错误链。connect 在后台线程执行，不阻塞。
+        startLogClient()
+        server.startOrReloadService(config, OverrideOptions())
       } catch (e: Exception) {
-        // 半启动清理：注册了但 start 抛异常（可能 openTun 已成功、后续 inbound
-        // 失败），立即 close 该实例、回收 tun pfd 并复位，防 fd 泄漏。
-        boxService = null
-        boxOwner = null
-        runCatching { service.close() }
+        // 半启动清理：server 已创建但 start/应用配置抛异常（可能 openTun 已成功、
+        // 后续 inbound 失败），立即 close 该实例、回收 tun pfd 并复位，防 fd 泄漏。
+        stopLogClient()
+        runCatching { server.closeService() }
+        runCatching { server.close() }
         runCatching { tunFd?.close() }
         tunFd = null
+        if (commandServer === server) {
+          commandServer = null
+        }
         throw e
       }
+      boxOwner = this
     }
   }
+
+  // --- CommandServerHandler：核心侧回调（sing-box 1.14 新增） ---
+
+  /**
+   * 核心请求停止服务（如致命错误）：复用与显式 STOP 相同的后台有序关闭路径，
+   * 避免在 Go 回调线程内同步阻塞。
+   */
+  override fun serviceStop() {
+    Log.i(TAG, "libbox requested service stop")
+    handleStop()
+  }
+
+  /**
+   * 核心请求重载：用最近一次配置重放 `startOrReloadService`。panelcore 的配置
+   * 由 Rust 侧显式 start 驱动，此回调通常不触发；实现为幂等重放并回收旧 tun fd。
+   */
+  override fun serviceReload() {
+    val config = lastConfig ?: return
+    Log.i(TAG, "libbox requested service reload")
+    Thread {
+      try {
+        synchronized(lifecycleLock) {
+          val server = commandServer ?: return@synchronized
+          runCatching { tunFd?.close() }
+          tunFd = null
+          server.startOrReloadService(config, OverrideOptions())
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "libbox service reload failed", e)
+        lastError = buildExceptionChain(e)
+      }
+    }.start()
+  }
+
+  /** 系统代理由 Rust 侧 sysproxy 管理，核心侧不参与。 */
+  override fun getSystemProxyStatus(): SystemProxyStatus {
+    val status = SystemProxyStatus()
+    status.available = false
+    status.enabled = false
+    return status
+  }
+
+  override fun setSystemProxyEnabled(isEnabled: Boolean) {
+    // panelcore 未启用核心侧系统代理（由 Rust 侧 sysproxy 负责）。
+  }
+
+  override fun triggerNativeCrash() {
+    Thread {
+      Thread.sleep(200)
+      throw RuntimeException("debug native crash")
+    }.start()
+  }
+
+  override fun writeDebugMessage(message: String?) {
+    if (message != null) {
+      Log.d(TAG, message)
+    }
+  }
+
+  override fun connectSSHAgent(): Int = -1
+
+  /**
+   * 连接本进程 CommandServer 的日志流（CommandLog），重建旧 `writeLog` 的
+   * 「环形缓冲 + logs/libbox.log」行为。connect() 阻塞（含重试），放后台线程。
+   */
+  private fun startLogClient() {
+    stopLogClient()
+    val options =
+      CommandClientOptions().apply {
+        addCommand(Libbox.CommandLog)
+        statusInterval = 1_000_000_000L
+      }
+    val client =
+      try {
+        CommandClient(logClientHandler, options)
+      } catch (e: Exception) {
+        Log.e(TAG, "failed to create log command client", e)
+        return
+      }
+    commandClient = client
+    Thread {
+      try {
+        client.connect()
+      } catch (e: Exception) {
+        Log.e(TAG, "log command client connect failed", e)
+      }
+    }.start()
+  }
+
+  /** 断开日志通道客户端（幂等；不阻塞调用线程）。 */
+  private fun stopLogClient() {
+    val client = commandClient
+    commandClient = null
+    if (client != null) {
+      Thread {
+        runCatching { client.disconnect() }
+      }.start()
+    }
+  }
+
+  /**
+   * 日志通道回调：把核心日志写入环形缓冲与 `logs/libbox.log`。时间戳前缀与
+   * Rust 日志页 `LogEntry.ts` 对齐（`[RFC3339] message`），Rust `get_logs`
+   * 按行解析后合并展示。
+   */
+  private val logClientHandler =
+    object : CommandClientHandler {
+      override fun connected() {
+        Log.i(TAG, "libbox log channel connected")
+      }
+
+      override fun disconnected(message: String?) {
+        Log.i(TAG, "libbox log channel disconnected: $message")
+      }
+
+      override fun setDefaultLogLevel(level: Int) {
+        // 核心日志级别由配置 log.level 决定，无需平台调整。
+      }
+
+      override fun clearLogs() {
+        // 首次连接/重连时核心以 Reset 重放完整日志：清空缓冲并标记文件待重置。
+        clearLibboxLogBuffer()
+      }
+
+      override fun writeLogs(messageList: LogIterator?) {
+        if (messageList == null) {
+          return
+        }
+        val lines = ArrayList<String>()
+        while (messageList.hasNext()) {
+          val entry = messageList.next() ?: continue
+          val message = entry.message ?: ""
+          Log.i(TAG, message)
+          lines.add("[${timestampNow()}] $message")
+        }
+        if (lines.isNotEmpty()) {
+          appendLibboxLogs(lines)
+          appendToLibboxLogFile(lines)
+        }
+      }
+
+      override fun writeStatus(message: StatusMessage?) {
+        // panelcore 未消费状态流。
+      }
+
+      override fun writeGroups(message: OutboundGroupIterator?) {
+        // panelcore 未消费分组流。
+      }
+
+      override fun writeOutbounds(message: OutboundGroupItemIterator?) {
+        // panelcore 未消费出站流。
+      }
+
+      override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) {
+        // panelcore 未消费 Clash 模式流。
+      }
+
+      override fun updateClashMode(newMode: String?) {
+        // panelcore 未消费 Clash 模式流。
+      }
+
+      override fun writeConnectionEvents(events: ConnectionEvents?) {
+        // panelcore 未消费连接事件流。
+      }
+    }
 
   /**
    * 每进程只调用一次 Libbox.setup：重复 setup 会重置 Go 侧全局状态（日志、数据
@@ -821,13 +1114,23 @@ class ProxyVpnService : VpnService() {
     }
   }
 
-  /** 追加一行 libbox 日志到环形缓冲，超出容量弹出最旧。 */
-  private fun appendLibboxLog(message: String) {
+  /** 批量追加 libbox 日志到环形缓冲，超出容量弹出最旧。 */
+  private fun appendLibboxLogs(lines: List<String>) {
     synchronized(libboxLogBuffer) {
-      libboxLogBuffer.addLast(message)
-      while (libboxLogBuffer.size > 200) {
-        libboxLogBuffer.removeFirst()
+      for (line in lines) {
+        libboxLogBuffer.addLast(line)
+        while (libboxLogBuffer.size > LIBBOX_LOG_BUFFER_SIZE) {
+          libboxLogBuffer.removeFirst()
+        }
       }
+    }
+  }
+
+  /** 清空日志环形缓冲并标记文件待重置（核心重连重放完整日志前调用）。 */
+  private fun clearLibboxLogBuffer() {
+    synchronized(libboxLogBuffer) {
+      libboxLogBuffer.clear()
+      libboxLogFileResetPending = true
     }
   }
 
@@ -842,22 +1145,30 @@ class ProxyVpnService : VpnService() {
   private fun timestampNow(): String = LOG_TS_FORMATTER.format(OffsetDateTime.now())
 
   /**
-   * 追加 libbox 日志到 `filesDir/logs/libbox.log`（与 Rust 的 data_dir/logs 同目录，
-   * 供日志导出排查 Go 侧错误链）。超过 1MB 时截断：删除重建写入最新缓冲。
-   * 任何写入异常一律静默，不得影响 VPN 主流程。
+   * 批量追加 libbox 日志到 `filesDir/logs/libbox.log`（与 Rust 的 data_dir/logs
+   * 同目录，供日志导出排查 Go 侧错误链）。重连重放时先清空文件；超过 1MB 时
+   * 截断：删除重建写入最新缓冲。任何写入异常一律静默，不得影响 VPN 主流程。
    */
-  private fun appendToLibboxLogFile(message: String) {
+  private fun appendToLibboxLogFile(lines: List<String>) {
     try {
       val logDir = File(filesDir, "logs")
       if (!logDir.isDirectory && !logDir.mkdirs()) {
         return
       }
       val logFile = File(logDir, "libbox.log")
-      if (logFile.exists() && logFile.length() > LIBBOX_LOG_MAX_BYTES) {
+      val reset =
+        synchronized(libboxLogBuffer) {
+          val pending = libboxLogFileResetPending
+          libboxLogFileResetPending = false
+          pending
+        }
+      if (reset) {
+        logFile.writeText("")
+      } else if (logFile.exists() && logFile.length() > LIBBOX_LOG_MAX_BYTES) {
         logFile.delete()
-        logFile.writeText(libboxLogTail(200))
+        logFile.writeText(libboxLogTail(LIBBOX_LOG_BUFFER_SIZE))
       }
-      logFile.appendText(message + "\n")
+      logFile.appendText(lines.joinToString("\n", postfix = "\n"))
     } catch (_: Exception) {
       // 静默：日志写入失败不影响 VPN 主流程。
     }
@@ -895,11 +1206,12 @@ class ProxyVpnService : VpnService() {
         return
       }
       running = false
-      val service = boxService ?: return
-      boxService = null
+      val server = commandServer
+      commandServer = null
       boxOwner = null
-      // 关闭顺序对齐 SFA（BoxService.kt serviceStop/stopService）：先关 pfd（原始
-      // tun fd），再关 BoxService（关闭核心持有的 dup fd / tun 接口）。
+      stopLogClient()
+      // 关闭顺序：先关 pfd（原始 tun fd），再关核心服务（关闭核心持有的 dup fd /
+      // tun 接口），最后关 CommandServer（gRPC listener）。
       try {
         tunFd?.close()
       } catch (e: Exception) {
@@ -907,11 +1219,18 @@ class ProxyVpnService : VpnService() {
         lastError = buildExceptionChain(e)
       }
       tunFd = null
-      try {
-        service.close()
-      } catch (e: Exception) {
-        Log.e(TAG, "failed to close libbox service", e)
-        lastError = buildExceptionChain(e)
+      if (server != null) {
+        try {
+          server.closeService()
+        } catch (e: Exception) {
+          Log.e(TAG, "failed to close libbox service", e)
+          lastError = buildExceptionChain(e)
+        }
+        try {
+          server.close()
+        } catch (e: Exception) {
+          Log.e(TAG, "failed to close command server", e)
+        }
       }
     }
   }
@@ -948,12 +1267,6 @@ class ProxyVpnService : VpnService() {
     } catch (e: Exception) {
       Log.w(TAG, "excludeRoute failed for ${route.address()}: ${e.message}")
     }
-  }
-
-  private object EmptyStringIterator : StringIterator {
-    override fun hasNext(): Boolean = false
-    override fun next(): String = ""
-    override fun len(): Int = 0
   }
 }
 

@@ -10,8 +10,9 @@ set -euo pipefail
 #   ./apps/mobile/scripts/build-panel-core.sh [OUTPUT_AAR]
 #
 # 环境要求:
-#   - Go 工具链（go1.24.5，推荐 ~/go-sdk/go；系统 go1.26.x 与 sagernet
-#     gomobile v0.1.8 不兼容，勿用）
+#   - Go 工具链（sing-box 1.14.0 要求 go >= 1.25.5；脚本优先探测
+#     ~/go-sdk/go（go1.24.5），由 GOTOOLCHAIN=auto 自动切换到满足要求的
+#     工具链；gomobile fork 已同步升级到 v0.1.12）
 #   - JDK 17 或 21（javac/jar，gomobile 生成 Java 绑定）
 #   - Android SDK + NDK（含 clang 交叉编译工具链）
 #   - 可设置的环境变量:
@@ -22,15 +23,17 @@ set -euo pipefail
 #       ANDROID_NDK_HOME    NDK 根目录
 #
 # 构建说明:
-#   - 使用 SagerNet 维护的 gomobile fork（v0.1.8，sing-box 官方构建所用）：
+#   - 使用 SagerNet 维护的 gomobile fork（v0.1.12，对齐 sing-box 1.14.0
+#     go.mod 的 require）：
 #     上游 golang.org/x/mobile 以 go1.24/1.25/1.26 构建时会出现
 #     `invalid reference to os.checkPidfdOnce` 链接错误。
-#   - bind 参数逐项对齐 sing-box 官方 cmd/internal/build_libbox（v1.12.9）：
-#     -tags = libbox release tags
-#     （with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,
-#     with_conntrack,with_tailscale）
-#     -ldflags 含 `-checklinkname=0`（官方 release 构建同款）、
-#     -X sing-box constant.Version、-s -w -buildid=
+#   - bind 参数逐项对齐 sing-box 官方 cmd/internal/build_libbox（v1.14.0）：
+#     -tags = libbox 主变体 release tags
+#     （with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,
+#     with_clash_api,with_usbip,with_openvpn,with_openconnect,badlinkname,
+#     tfogo_checklinkname0,with_tailscale,ts_omit_*）
+#     -ldflags 含 `-checklinkname=0`、`-X runtime.godebugDefault=...`
+#     （官方 release 构建同款）、-X sing-box constant.Version、-s -w -buildid=
 #     差异：-androidapi 26（对齐 App minSdk）、-javapkg com.proxypanel.core
 #     （官方为 21 / io.nekohasekai）。
 #   - ABI 只编 arm64-v8a + x86_64，与
@@ -51,9 +54,9 @@ OUTPUT_AAR="${1:-$REPO_ROOT/apps/mobile/src-tauri/gen/android/app/libs/panelcore
 
 # 环境默认值
 GOPATH="${GOPATH:-$HOME/go-work}"
-GOMOBILE_TAG="v0.1.8"
+GOMOBILE_TAG="v0.1.12"
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-SING_BOX_VERSION="v1.12.9"
+SING_BOX_VERSION="v1.14.0"
 SING_BOX_VERSION_NUM="${SING_BOX_VERSION#v}"
 
 # 探测 Go 工具链（GO_ROOT 优先，其次 ~/go-sdk，最后 PATH）
@@ -126,8 +129,8 @@ gomobile bind -v -x \
     -javapkg com.proxypanel.core \
     -trimpath \
     -buildvcs=false \
-    -ldflags "-X github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION_NUM -s -w -buildid= -checklinkname=0" \
-    -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_conntrack,with_tailscale" \
+    -ldflags "-X github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION_NUM -X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -s -w -buildid= -checklinkname=0" \
+    -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,with_clash_api,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird" \
     -o "$OUTPUT_AAR" \
     github.com/sagernet/sing-box/experimental/libbox
 

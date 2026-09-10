@@ -414,16 +414,16 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 
 | 工具 | 版本要求 | 说明 |
 |------|----------|------|
-| Go | **1.24.5**（推荐 `~/go-sdk/go`） | ⚠️ 系统 go1.26.x 与 sagernet gomobile v0.1.8 不兼容（`os.checkPidfdOnce` 链接错误） |
+| Go | **1.25.5+**（脚本优先探测 `~/go-sdk/go`） | sing-box 1.14.0 要求 `go >= 1.25.5`；脚本由 `GOTOOLCHAIN=auto` 自动切换到满足要求的工具链（gomobile 同步升级到 **v0.1.12**，对齐 sing-box 1.14.0 `go.mod`） |
 | JDK | 17 或 21（`JAVA_HOME`） | gomobile 生成 Java 绑定 + Gradle |
-| Android SDK + NDK | NDK 27.2+（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 含 clang 交叉编译工具链 |
+| Android SDK + NDK | **NDK 28.0.13004108**（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 官方 sing-box 1.14 固定版本；`with_naive_outbound` 的 cronet 预编译库在 NDK 27 下 arm64 链接会报 `unknown relocation (315)`，必须 NDK 28 |
 | gh CLI | 已登录 | GEO 脚本读取 MetaCubeX/meta-rules-dat 的 latest release 元数据 |
 | Bun | 1.3+ | 前端与 tauri CLI |
 
 ### 完整步骤
 
 ```bash
-export ANDROID_NDK_HOME=~/Android/Sdk/ndk/27.2.12479018  # 按本机实际版本
+export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 1.14 固定 NDK 28；按本机实际路径
 
 # 1. GEO 数据（mihomo 启动必需；APK 内置避免首启无代理下载失败）
 ./apps/mobile/scripts/update-android-geodata.sh
@@ -462,7 +462,8 @@ bun run tauri android build --apk --target aarch64 --target x86_64
 |------|------|------|
 | `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
 | `gnu/stubs-32.h not found` | 缺 `.cargo/config.toml` 的 bindgen sysroot | 见上一节 |
-| `invalid reference to os.checkPidfdOnce` | 用了系统 go1.26 构建 gomobile | 换 `~/go-sdk/go`（1.24.5） |
+| `invalid reference to os.checkPidfdOnce` | gomobile fork 版本过旧（v0.1.8）与 Go 工具链不匹配 | 升级 gomobile 到 v0.1.12（脚本已内置）；工具链由 `GOTOOLCHAIN=auto` 自动切换 |
+| `unknown relocation (315) ... libcronet.a` | NDK 版本过低（< 28），`with_naive_outbound` 的 cronet 预编译库无法链接 | 安装并指定 NDK 28.0.13004108（`ANDROID_NDK_HOME`） |
 | Gradle 下载依赖超时 | 网络受限 | 配代理（`~/.gradle/gradle.properties` 的 `systemProp.http(s).proxy*`） |
 | mihomo 首启失败 | GEO 数据缺失 | 跑 `update-android-geodata.sh` 后重新打包 |
 
