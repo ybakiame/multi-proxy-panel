@@ -17,6 +17,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.proxypanel.core.libbox.Libbox
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -189,6 +190,16 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     // When null, the key is removed by JSONObject, and Rust side `#[serde(default)]` falls back to None.
     result.put("last_error", ProxyVpnService.lastError)
     invoke.resolve(result)
+  }
+
+  /**
+   * 返回编译进 panelcore.aar 的 sing-box 版本：`libbox.Version()` 读取构建期
+   * ldflags 注入的 `constant.Version`（见 build-panel-core.sh 的 `-X ...Version`），
+   * 供关于页动态展示，避免前端硬编码版本号。无需先 `Libbox.setup()`。
+   */
+  @Command
+  fun coreVersion(invoke: Invoke) {
+    invoke.resolveObject(Libbox.version())
   }
 
   /**

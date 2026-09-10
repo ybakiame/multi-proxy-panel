@@ -82,6 +82,16 @@ export function toastModeOverride(): Promise<string | null> {
 }
 
 /**
+ * Read the sing-box version compiled into `panelcore.aar` (Android only).
+ *
+ * 经 Rust `core_version` 命令读取 Kotlin `Libbox.version()`（构建期 ldflags 注入），
+ * 返回如 `1.14.0` 的纯版本号；关于页据此动态展示核心版本。
+ */
+export function coreVersion(): Promise<string> {
+  return invoke<string>("core_version");
+}
+
+/**
  * Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
  */
 export function notifyPrefsChanged(showTraffic: boolean, showSelection: boolean): Promise<void> {

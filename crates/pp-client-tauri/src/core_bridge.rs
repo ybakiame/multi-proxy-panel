@@ -198,6 +198,21 @@ pub async fn vpn_last_error() -> Option<String> {
     resp.last_error
 }
 
+/// Read the sing-box version compiled into `panelcore.aar` (Android only).
+///
+/// 经 `vpn` 插件的 `coreVersion` 命令调用 Kotlin `Libbox.version()`，返回构建期
+/// ldflags 注入的 sing-box 版本（如 `1.14.0`）。关于页据此动态展示核心版本，
+/// 无需前端硬编码；版本由 build-panel-core.sh 的 `-X ...constant.Version` 决定。
+#[tauri::command]
+pub async fn core_version() -> Result<String, String> {
+    let handle =
+        vpn_plugin_handle().ok_or_else(|| "VPN 插件未初始化，请重启应用后重试".to_string())?;
+    handle
+        .run_mobile_plugin_async::<String>("coreVersion", ())
+        .await
+        .map_err(|e| format!("读取 sing-box 版本失败: {e}"))
+}
+
 /// Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
 ///
 /// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5），逻辑原样：把通知偏好

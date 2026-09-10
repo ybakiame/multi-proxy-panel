@@ -118,6 +118,8 @@ pub fn run() {
             #[cfg(target_os = "android")]
             pp_client_tauri::core_bridge::vpn_last_error,
             #[cfg(target_os = "android")]
+            pp_client_tauri::core_bridge::core_version,
+            #[cfg(target_os = "android")]
             pp_client_tauri::core_bridge::notify_prefs_changed,
         ]);
 

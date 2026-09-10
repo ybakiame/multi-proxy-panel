@@ -27,6 +27,8 @@ export const CORES_KEY = ["cores"] as const;
 export const CORES_LIST_KEY = ["cores_list"] as const;
 export const REMOTE_VERSIONS_KEY = ["remote_core_versions"] as const;
 export const VPN_ERROR_KEY = ["vpnLastError"] as const;
+/** sing-box 核心版本（Android，经 libbox.Version() 读取）。 */
+export const CORE_VERSION_KEY = ["core_version"] as const;
 
 export const PLATFORM_KEY = ["platform_info"] as const;
 export const TUN_AUTH_KEY = ["tun_auth"] as const;

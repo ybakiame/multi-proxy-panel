@@ -18,6 +18,7 @@ export * from "./atoms/ui";
 // React Query 数据 hooks。
 export * from "./hooks/useCapabilities";
 export * from "./hooks/useClientConfig";
+export * from "./hooks/useCoreVersion";
 export * from "./hooks/useProxyStatus";
 
 // 纯逻辑工具。

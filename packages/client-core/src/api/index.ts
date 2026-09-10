@@ -153,6 +153,7 @@ export {
   platformInfo,
   requestVpnPermission,
   vpnLastError,
+  coreVersion,
   notifyPrefsChanged,
   tunAuthStatus,
   authorizeTun,
