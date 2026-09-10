@@ -271,6 +271,10 @@ async fn start_accepts_clash_format_with_singbox_core() {
     cfg.active_subscription_id = Some(sub.id);
     cfg.mitm_enabled = false;
     cfg.system_proxy_enabled = true;
+    // 本测试无真实 Clash API 服务；默认开启会让启动阻塞在 readiness 等待 + 模式推送
+    // 重试（本机对未监听回环端口为超时而非立即拒绝），fake core 会在阻塞期间退出，
+    // 导致 core_running 断言失败。关闭 Clash API 只验证订阅格式兼容路径。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
@@ -325,6 +329,9 @@ async fn start_with_subscription_store_fetches_and_starts() {
     );
     cfg.active_subscription_id = Some(sub.id);
     cfg.mitm_enabled = false;
+    // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待与模式推送重试
+    // （fake core 只 sleep 5s，会在此期间退出导致 core_running 断言失败）。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
@@ -686,6 +693,8 @@ async fn injected_notifier_receives_task_notify() {
     let mut cfg = test_config(&dir, base);
     cfg.active_subscription_id = Some(sub_id);
     cfg.mitm_enabled = true;
+    // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待 + 模式推送重试。
+    cfg.clash_api_enabled = false;
     cfg.save().unwrap();
     let notifier = Arc::new(RecordingNotifier::new());
     let mut state = ClientState::with_notifier(cfg, notifier.clone());
@@ -693,15 +702,19 @@ async fn injected_notifier_receives_task_notify() {
 
     // Manually run task containing $notify, verify notification reaches injected notifier.
     let scheduler = state.scheduler_handle().expect("scheduler should run");
+    // 后台循环对「从未执行但已有历史匹配时刻」的任务会补跑一次（is_due 语义），
+    // 会污染通知计数；先停掉后台循环，只保留手动触发路径，保证断言确定性。
+    scheduler.stop().await;
+    let before = notifier.calls().len();
     let out = scheduler.run_now("每日签到").await.unwrap();
     assert_eq!(out.0["code"], 0);
     let calls = notifier.calls();
     assert_eq!(
-        calls.len(),
+        calls.len() - before,
         1,
         "task $notify should trigger one notification"
     );
-    assert_eq!(calls[0].0, "签到成功");
+    assert_eq!(calls[before].0, "签到成功");
 
     state.stop().await;
 }
