@@ -140,6 +140,19 @@ export default function Rules() {
     return ok;
   };
 
+  const handleUpdateTemplate = async (template: CustomTemplateInput): Promise<boolean> => {
+    if (!overrideData) return false;
+    // 编辑保存：整段替换该模板（rules 已由表单合并失效引用）；invalid_count 由服务端
+    // 按引用重算（persistTemplates 落盘时丢弃），本地视图先归零待 invalidate 重读。
+    const nextView: CustomTemplateView = { ...template, invalid_count: 0 };
+    const next = overrideData.custom_templates.map((t) => (t.id === template.id ? nextView : t));
+    const ok = await persistTemplates(next);
+    if (ok) {
+      toastRuleSaved("场景模板已更新");
+    }
+    return ok;
+  };
+
   const handleDeleteTemplate = async (template: CustomTemplateView): Promise<boolean> => {
     if (!overrideData) return false;
     const next = overrideData.custom_templates.filter((t) => t.id !== template.id);
@@ -219,6 +232,7 @@ export default function Rules() {
             onApply={(id) => handleApplyTemplate(id)}
             onRevert={(id) => handleRevertTemplate(id)}
             onCreate={(template) => handleCreateTemplate(template)}
+            onUpdate={(template) => handleUpdateTemplate(template)}
             onDelete={(template) => handleDeleteTemplate(template)}
           />
         </div>
