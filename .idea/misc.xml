@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ExternalStorageConfigurationManager" enabled="true" />
+  <component name="FrameworkDetectionExcludesConfiguration">
+    <file type="web" url="file://$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.11.5/mobile/android" />
+    <file type="web" url="file://$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-notification-2.4.0/android" />
+    <file type="web" url="file://$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-opener-2.5.5/android" />
+    <file type="web" url="file://$PROJECT_DIR$/apps/mobile/src-tauri/gen/android" />
+  </component>
   <component name="ProjectRootManager" version="2">
     <output url="file://$PROJECT_DIR$/out" />
   </component>

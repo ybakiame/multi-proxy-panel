@@ -19,8 +19,29 @@
         <option name="externalProjectPath" value="$PROJECT_DIR$/.reference/husi" />
       </GradleProjectSettings>
       <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android/buildSrc" name="buildSrc">
+                <projects>
+                  <project path="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android/buildSrc" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
         <option name="externalProjectPath" value="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android" />
         <option name="gradleJvm" value="21" />
+        <option name="modules">
+          <set>
+            <option value="$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.11.5/mobile/android" />
+            <option value="$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-notification-2.4.0/android" />
+            <option value="$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-opener-2.5.5/android" />
+            <option value="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android" />
+            <option value="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android/app" />
+            <option value="$PROJECT_DIR$/apps/mobile/src-tauri/gen/android/buildSrc" />
+          </set>
+        </option>
       </GradleProjectSettings>
     </option>
   </component>
