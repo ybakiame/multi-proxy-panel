@@ -16,6 +16,7 @@ mod profile;
 mod proxies;
 mod proxy;
 mod subscription;
+mod subscription_nodes;
 mod task;
 
 pub use config::*;
@@ -27,6 +28,7 @@ pub use profile::*;
 pub use proxies::*;
 pub use proxy::*;
 pub use subscription::*;
+pub use subscription_nodes::*;
 pub use task::*;
 
 use pp_client::SubFormat;

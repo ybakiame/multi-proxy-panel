@@ -164,6 +164,7 @@ pub fn run() {
             pp_client_tauri::commands::set_subscription_enabled,
             pp_client_tauri::commands::set_active_subscription,
             pp_client_tauri::commands::refresh_subscription,
+            pp_client_tauri::commands::subscription_node_tags,
             commands::list_cores,
             commands::list_remote_core_versions,
             commands::list_downloaded_versions,

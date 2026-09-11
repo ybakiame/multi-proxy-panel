@@ -134,6 +134,39 @@ pub struct CachedSubscriptionContent {
     pub singbox_nodes: Vec<Value>,
 }
 
+/// A subscription node tag exposed to the frontend (static, cache-derived).
+///
+/// sing-box nodes carry no separate display name, so `name` always equals `tag`;
+/// both fields are kept so the frontend can bind a label and a value without a
+/// special case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeTagView {
+    /// Display name (equals `tag` for sing-box nodes).
+    pub name: String,
+    /// sing-box outbound `tag`, identical to the runtime Clash API proxy name.
+    pub tag: String,
+}
+
+/// Extract `(name, tag)` views from cached sing-box nodes.
+///
+/// Rebuilds the `{ "outbounds": ... }` wrapper and runs [`extract_nodes_singbox`]
+/// — the exact same path config generation takes — so leaf-type filtering and
+/// duplicate-tag suffixing (`-2` / `-3`) match the runtime config. Config slices
+/// only rename their own colliding outbounds, never the subscription nodes, so
+/// these tags equal the Clash API `proxies` names while the core runs.
+pub fn node_tags_from_nodes(nodes: &[Value]) -> Vec<NodeTagView> {
+    extract_nodes_singbox(&serde_json::json!({ "outbounds": nodes }))
+        .iter()
+        .filter_map(|node| {
+            let tag = node.get("tag").and_then(Value::as_str)?;
+            Some(NodeTagView {
+                name: tag.to_string(),
+                tag: tag.to_string(),
+            })
+        })
+        .collect()
+}
+
 /// Generic subscription fetch (module-level entry): GET (no_proxy, 30s timeout)
 /// → sniff format.
 ///

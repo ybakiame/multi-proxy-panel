@@ -96,6 +96,7 @@ pub fn run() {
             pp_client_tauri::commands::set_subscription_enabled,
             pp_client_tauri::commands::set_active_subscription,
             pp_client_tauri::commands::refresh_subscription,
+            pp_client_tauri::commands::subscription_node_tags,
             pp_client_tauri::commands::proxies_list,
             pp_client_tauri::commands::proxies_select,
             pp_client_tauri::commands::proxies_test_delay,

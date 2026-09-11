@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use pp_common::{PanelError, PanelResult};
 use uuid::Uuid;
 
-use super::{CachedSubscriptionContent, Subscription};
+use super::{CachedSubscriptionContent, NodeTagView, Subscription};
 
 /// Subscription storage: read/write `data_dir/subscriptions.json` (load / save /
 /// add / remove / set_enabled / set_profile_id).
@@ -218,5 +218,23 @@ impl SubscriptionStore {
                 "failed to clear subscription cache"
             ),
         }
+    }
+}
+
+/// Read node tags from a subscription's local content cache
+/// (`data_dir/subscription_cache/<id>.json`) without a running core or network.
+///
+/// Tags follow [`super::node_tags_from_nodes`] (same rules as runtime config
+/// injection). Missing / unreadable / corrupted cache yields an empty list
+/// (mirrors [`SubscriptionStore::load_cached_content`] tolerance; the frontend
+/// does not need to distinguish "no cache" from "no nodes").
+pub fn cached_node_tags(
+    data_dir: &std::path::Path,
+    subscription_id: Uuid,
+) -> PanelResult<Vec<NodeTagView>> {
+    let store = SubscriptionStore::new(data_dir.to_path_buf());
+    match store.load_cached_content(subscription_id) {
+        Some(cached) => Ok(super::node_tags_from_nodes(&cached.singbox_nodes)),
+        None => Ok(Vec::new()),
     }
 }

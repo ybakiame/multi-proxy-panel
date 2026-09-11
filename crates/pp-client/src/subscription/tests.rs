@@ -473,3 +473,92 @@ fn subscription_cache_cleared_on_url_change() {
         .unwrap();
     assert!(store.load_cached_content(sub.id).is_some());
 }
+
+// ---------- cached_node_tags (static node list from cache) ----------
+
+/// Cache hit → tags in cache order, non-leaf outbounds (selector) skipped.
+#[test]
+fn cached_node_tags_reads_leaf_tags_in_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SubscriptionStore::new(dir.path().to_path_buf());
+    let sub = store
+        .add("sub", "https://example.com/sub", true, None)
+        .unwrap();
+    store
+        .write_cached_content(
+            sub.id,
+            &CachedSubscriptionContent {
+                format: SubFormat::SingBoxJson,
+                singbox_nodes: vec![
+                    serde_json::json!({ "tag": "n1", "type": "vless" }),
+                    serde_json::json!({ "tag": "n2", "type": "shadowsocks" }),
+                    serde_json::json!({ "tag": "proxy", "type": "selector" }),
+                ],
+            },
+        )
+        .unwrap();
+
+    let tags = cached_node_tags(dir.path(), sub.id).unwrap();
+    assert_eq!(
+        tags,
+        vec![
+            NodeTagView {
+                name: "n1".to_string(),
+                tag: "n1".to_string(),
+            },
+            NodeTagView {
+                name: "n2".to_string(),
+                tag: "n2".to_string(),
+            },
+        ]
+    );
+}
+
+/// Duplicate tags get `-2` suffix, identical to runtime
+/// `extract_nodes_singbox` injection.
+#[test]
+fn cached_node_tags_dedups_like_runtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SubscriptionStore::new(dir.path().to_path_buf());
+    let sub = store
+        .add("sub", "https://example.com/sub", true, None)
+        .unwrap();
+    store
+        .write_cached_content(
+            sub.id,
+            &CachedSubscriptionContent {
+                format: SubFormat::SingBoxJson,
+                singbox_nodes: vec![
+                    serde_json::json!({ "tag": "dup", "type": "vless" }),
+                    serde_json::json!({ "tag": "dup", "type": "vless" }),
+                ],
+            },
+        )
+        .unwrap();
+
+    let tags = cached_node_tags(dir.path(), sub.id).unwrap();
+    let tags: Vec<&str> = tags.iter().map(|t| t.tag.as_str()).collect();
+    assert_eq!(tags, vec!["dup", "dup-2"]);
+}
+
+/// Missing cache → empty list (not an error).
+#[test]
+fn cached_node_tags_missing_cache_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let tags = cached_node_tags(dir.path(), Uuid::new_v4()).unwrap();
+    assert!(tags.is_empty());
+}
+
+/// Corrupted cache → empty list (tolerated, mirrors store).
+#[test]
+fn cached_node_tags_corrupted_cache_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SubscriptionStore::new(dir.path().to_path_buf());
+    let sub = store
+        .add("sub", "https://example.com/sub", true, None)
+        .unwrap();
+    let path = store.cache_file(sub.id);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "{ not json").unwrap();
+    assert!(cached_node_tags(dir.path(), sub.id).unwrap().is_empty());
+}
