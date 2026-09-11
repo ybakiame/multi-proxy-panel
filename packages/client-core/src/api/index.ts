@@ -166,6 +166,8 @@ export type {
   SelectorOutbound,
   UrlTestOutbound,
   GroupOutbound,
+  ExperimentalSlice,
+  CacheFileSlice,
 } from "./configSlices";
 export {
   SLICE_VERSION,

@@ -255,6 +255,40 @@ export interface OutboundsSlice {
 }
 
 // ---------------------------------------------------------------------------
+// Experimental slice
+// ---------------------------------------------------------------------------
+
+/**
+ * sing-box `experimental.cache_file` (curated fields).
+ *
+ * Mirrors Rust `CacheFileSlice` (`experimental.rs`): `enabled` / `path` /
+ * `cache_id` / `store_fakeip`. The 1.14-deprecated `store_rdrc` / `rdrc_timeout`
+ * are never emitted, and `store_dns` is intentionally out of scope.
+ */
+export interface CacheFileSlice {
+  /** Whether the cache file is enabled. */
+  enabled: boolean;
+  /** Path to the cache file (empty = sing-box default `cache.db`). */
+  path: string;
+  /** Identifier for a separate store inside the cache file (empty = none). */
+  cache_id: string;
+  /** Store fakeip records in the cache file. */
+  store_fakeip: boolean;
+}
+
+/**
+ * Experimental slice: structured form of the sing-box `experimental` section.
+ *
+ * Only `cache_file` is curated; `clash_api` stays owned by its dedicated
+ * mandatory-slice page and `v2ray_api` / `debug` are out of scope.
+ */
+export interface ExperimentalSlice {
+  /** Slice master switch; `false` never injects the experimental slice. */
+  enabled: boolean;
+  cache_file: CacheFileSlice;
+}
+
+// ---------------------------------------------------------------------------
 // Container
 // ---------------------------------------------------------------------------
 
@@ -269,6 +303,7 @@ export interface ConfigSlices {
   version: number;
   dns: DnsSlice;
   outbounds: OutboundsSlice;
+  experimental: ExperimentalSlice;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +364,15 @@ export function defaultConfigSlices(): ConfigSlices {
     outbounds: {
       enabled: false,
       items: [],
+    },
+    experimental: {
+      enabled: false,
+      cache_file: {
+        enabled: false,
+        path: "",
+        cache_id: "",
+        store_fakeip: false,
+      },
     },
   };
 }

@@ -11,6 +11,7 @@ import Config from "./pages/Config";
 import ClashApiPage from "./pages/Config/ClashApiPage";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
 import DnsPage from "./pages/Config/Dns";
+import ExperimentalPage from "./pages/Config/ExperimentalPage";
 import NetworkPage from "./pages/Config/NetworkPage";
 import OutboundsPage from "./pages/Config/Outbounds";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
@@ -94,7 +95,7 @@ function TauriRequired() {
  * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
  *   `/connections` 连接页、`/logs` 日志页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
  *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`、
- *   `/config/network`、`/config/clash-api` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
+ *   `/config/network`、`/config/clash-api`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
  * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向
  *   （HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
@@ -126,6 +127,7 @@ function AppContent() {
           <Route path="/config/outbounds" element={<OutboundsPage />} />
           <Route path="/config/network" element={<NetworkPage />} />
           <Route path="/config/clash-api" element={<ClashApiPage />} />
+          <Route path="/config/experimental" element={<ExperimentalPage />} />
           <Route path="/config/rules" element={<CustomRulesPage />} />
           <Route path="/config/rulesets" element={<RuleSetsPage />} />
           <Route path="/config/rulesets/market" element={<RuleSetMarket />} />

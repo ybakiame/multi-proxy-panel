@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowsRightLeftIcon,
+  BeakerIcon,
   BoltIcon,
   GlobeAltIcon,
   ListBulletIcon,
@@ -32,7 +33,8 @@ import { MasterSwitchCard } from "./MasterSwitchCard";
  * 自上而下：
  * 1. 总开关卡：`singbox.enabled`（关闭后本地规则与规则集不注入运行配置）；
  * 2. 配置切片入口：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）、
- *    网络（TUN，`/config/network`）、Clash API（`/config/clash-api`）；
+ *    网络（TUN，`/config/network`）、Clash API（`/config/clash-api`）、
+ *    Experimental（`/config/experimental`）；
  * 3. 规则入口：自定义规则（`/config/rules`）、规则集管理（`/config/rulesets`）。
  *
  * 网络（TUN）与 Clash API 为必选切片（ADR-0005 后续决策）：始终启用、无切片级关闭开关，
@@ -163,6 +165,12 @@ export default function Config() {
             title="Clash API"
             description="仪表盘与节点页数据源 · 调整端口与密钥"
             onPress={() => navigate("/config/clash-api")}
+          />
+          <EntryLinkCard
+            icon={<BeakerIcon className="size-6" aria-hidden="true" />}
+            title="Experimental"
+            description="实验性缓存与 fakeip 持久化配置"
+            onPress={() => navigate("/config/experimental")}
           />
         </div>
       )}
