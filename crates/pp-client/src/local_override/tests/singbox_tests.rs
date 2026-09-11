@@ -419,3 +419,117 @@ fn custom_remote_source_format_injected_with_source_format() {
     assert_eq!(entries[0]["format"], "source");
     assert!(entries[0]["path"].as_str().unwrap().ends_with("r2.json"));
 }
+
+/// Build a manual custom rule set and write its backing file so it is
+/// injectable. Returns `(manager, rule_set)`.
+fn manual_custom_with_backing(
+    dir: &tempfile::TempDir,
+    id: &str,
+    tag: &str,
+) -> (RuleSetManager, super::CustomRuleSet) {
+    let mgr = RuleSetManager::new(dir.path().to_path_buf());
+    let rs = sample_custom_rule_set(
+        id,
+        tag,
+        crate::local_override::CustomRuleSetSource::Manual {
+            content: "[]".to_string(),
+        },
+    );
+    let path = mgr.custom_rule_set_file_path(id, super::RuleSetFormat::Source);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "[]").unwrap();
+    (mgr, rs)
+}
+
+// -----------------------------------------------------------------------
+// DNS rule_set references (P2-E2a)
+// -----------------------------------------------------------------------
+
+/// A custom rule set referenced only by a rendered DNS rule (array form) is
+/// injected — DNS-only references must not leave a dangling `rule_set` tag.
+#[test]
+fn custom_rule_set_injected_when_referenced_only_by_dns_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mgr, rs) = manual_custom_with_backing(&dir, "d1", "dns-custom");
+    let empty_rules: [LocalRule; 0] = [];
+
+    let mut config = json!({
+        "dns": {
+            "rules": [
+                { "rule_set": ["dns-custom"], "action": "route", "server": "local" }
+            ]
+        }
+    });
+    apply_custom_rule_sets(&mut config, &mgr, &empty_rules, &[rs]);
+
+    let entries = rule_set_entries(&config);
+    assert_eq!(entries.len(), 1, "DNS-only reference must inject the entry");
+    assert_eq!(entries[0]["type"], "local");
+    assert_eq!(entries[0]["tag"], "dns-custom");
+    assert_eq!(entries[0]["format"], "source");
+}
+
+/// The single-string form of the DNS `rule_set` field is recognized too.
+#[test]
+fn dns_rule_set_string_form_is_recognized() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mgr, rs) = manual_custom_with_backing(&dir, "d2", "dns-string");
+    let empty_rules: [LocalRule; 0] = [];
+
+    let mut config = json!({
+        "dns": {
+            "rules": [
+                { "rule_set": "dns-string", "action": "route", "server": "local" }
+            ]
+        }
+    });
+    apply_custom_rule_sets(&mut config, &mgr, &empty_rules, &[rs]);
+
+    let entries = rule_set_entries(&config);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["tag"], "dns-string");
+}
+
+/// A tag referenced by both a route rule and a DNS rule yields exactly one
+/// `route.rule_set` entry (merged, deduplicated).
+#[test]
+fn custom_rule_set_referenced_by_route_and_dns_injected_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mgr, rs) = manual_custom_with_backing(&dir, "s1", "shared-tag");
+
+    let mut config = json!({
+        "dns": {
+            "rules": [
+                { "rule_set": ["shared-tag"], "action": "route", "server": "local" }
+            ]
+        }
+    });
+    apply_custom_rule_sets(&mut config, &mgr, &[referencing_rule("shared-tag")], &[rs]);
+
+    let entries = rule_set_entries(&config);
+    assert_eq!(entries.len(), 1, "route + DNS references must dedupe");
+    assert_eq!(entries[0]["tag"], "shared-tag");
+}
+
+/// A DNS rule referencing a tag with no matching custom rule set (or a missing
+/// backing file) injects nothing — same tolerance as the route side.
+#[test]
+fn dns_rule_referencing_unknown_tag_injects_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mgr, rs) = manual_custom_with_backing(&dir, "u1", "known-tag");
+    let empty_rules: [LocalRule; 0] = [];
+
+    let mut config = json!({
+        "dns": {
+            "rules": [
+                { "rule_set": ["missing-tag"], "action": "route", "server": "local" }
+            ]
+        }
+    });
+    apply_custom_rule_sets(&mut config, &mgr, &empty_rules, &[rs]);
+
+    assert!(
+        rule_set_entries(&config).is_empty(),
+        "unknown DNS tag must not inject anything"
+    );
+}

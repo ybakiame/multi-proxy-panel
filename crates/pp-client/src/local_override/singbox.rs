@@ -84,17 +84,25 @@ fn append_route_rule_set_entries(
 }
 
 /// Inject `type: local` rule_set entries for custom rule sets that are
-/// **referenced by at least one of the given (already injected) `rule_set`
-/// rules**, and whose backing file exists on disk.
+/// **referenced by at least one already-injected `rule_set` reference**, and
+/// whose backing file exists on disk.
+///
+/// References are collected from two places (merged, deduplicated):
+///
+/// 1. Enabled rule cards with `match_type == rule_set` (route rules).
+/// 2. Already-rendered DNS rules in `config.dns.rules[].rule_set`. The DNS slice
+///    is applied before this layer (ADR-0005 §3.2 ⓪), so the rendered config
+///    already carries these references; both the array and single-string forms
+///    of the `rule_set` match field are accepted.
 ///
 /// Reference-driven semantics (aligns with user expectations of the rule
 /// editor):
 ///
-/// - A custom rule set that no passed-in `rule_set` rule references is **not**
-///   injected — merely adding a rule set (without a rule card using its tag)
-///   must not touch the generated config.
+/// - A custom rule set that no reference points at is **not** injected — merely
+///   adding a rule set (without a rule card or DNS rule using its tag) must not
+///   touch the generated config.
 /// - Since the「移除 enabled」refactor rule sets are pure resources: no enabled
-///   gate remains. A rule set referenced by an injected rule but with a
+///   gate remains. A rule set referenced by an injected reference but with a
 ///   **missing backing file** is skipped. In that case the referencing rule
 ///   keeps a dangling tag and `sing-box check` fails with a clear
 ///   "rule set not found: <tag>"-style error — an explicit, user-perceivable
@@ -104,7 +112,7 @@ fn append_route_rule_set_entries(
 /// Entry shape aligns with [`build_singbox_rule_set_entry`]'s local output:
 /// `{ "type": "local", "tag", "format": "source"|"binary", "path" }`.
 /// Only entries are appended — matching rules still come from user rule
-/// cards referencing the custom tag.
+/// cards / DNS rules referencing the custom tag.
 pub fn apply_custom_rule_sets(
     config: &mut Value,
     manager: &RuleSetManager,
@@ -115,13 +123,17 @@ pub fn apply_custom_rule_sets(
         return;
     };
 
-    // Tags referenced by enabled `rule_set` rules (the only references the
-    // generated config's rules actually use).
-    let referenced_tags: HashSet<&str> = rules
+    // Tags referenced by enabled `rule_set` rule cards (route rules).
+    let mut referenced_tags: HashSet<String> = rules
         .iter()
         .filter(|r| r.enabled && matches!(r.match_type, RuleMatchType::RuleSet))
-        .map(|r| r.target.as_str())
+        .map(|r| r.target.clone())
         .collect();
+
+    // Plus tags referenced by already-rendered DNS rules. Merged into one set so
+    // a tag referenced by both route and DNS yields exactly one entry.
+    referenced_tags.extend(collect_dns_rule_set_tags(obj));
+
     if referenced_tags.is_empty() {
         return;
     }
@@ -155,6 +167,41 @@ pub fn apply_custom_rule_sets(
         .collect();
 
     append_route_rule_set_entries(obj, entries);
+}
+
+/// Collect `rule_set` tags referenced by already-rendered DNS rules
+/// (`config.dns.rules[].rule_set`).
+///
+/// The sing-box `rule_set` match field accepts either a single string or an
+/// array of strings; both forms are collected. Missing / malformed DNS rules
+/// contribute nothing (matching the route-side tolerance for unknown tags).
+fn collect_dns_rule_set_tags(obj: &serde_json::Map<String, Value>) -> HashSet<String> {
+    obj.get("dns")
+        .and_then(Value::as_object)
+        .and_then(|dns| dns.get("rules"))
+        .and_then(Value::as_array)
+        .map(|rules| {
+            rules
+                .iter()
+                .filter_map(|rule| rule.get("rule_set"))
+                .flat_map(rule_set_tags)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Flatten a `rule_set` match field value into its tag strings (single string
+/// or array of strings; anything else is ignored).
+fn rule_set_tags(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(tag) => vec![tag.clone()],
+        Value::Array(tags) => tags
+            .iter()
+            .filter_map(Value::as_str)
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn build_singbox_rule_set_entry(rs: &super::LocalRuleSetRef) -> Option<Value> {
