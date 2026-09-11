@@ -31,10 +31,11 @@ import type {
   ProxyList,
 } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
-import { asArray, isLocalOverrideView } from "./localOverrideGuards";
+import { isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
 import type { OutboundOption, RuleSetOption } from "./RuleEditSheet";
+import { buildRuleSetOptions } from "./ruleSetOptions";
 import { RuleListSection } from "./RuleListSection";
 
 /**
@@ -94,17 +95,11 @@ export default function CustomRulesPage() {
   const [pendingDelete, setPendingDelete] = useState<LocalRuleView | null>(null);
 
   /**
-   * 规则集选择器候选：全部自定义规则集（社区 remote / 自定义 manual）。自
-   * 「规则集移除 enabled」起规则集是纯资源无启停概念，注入与否由引用它的规则决定。
+   * 规则集选择器候选：可引用集合 = 启用中的内置规则集引用 + 全部自定义规则集。
+   * 与 DNS 规则表单同源（`buildRuleSetOptions`），规则集是纯资源无启停概念，
+   * 注入与否由引用它的规则决定。
    */
-  const ruleSetOptions = useMemo<RuleSetOption[]>(() => {
-    if (!overrideData) return [];
-    return asArray(overrideData.custom_rule_sets).map((rs) => ({
-      value: rs.tag,
-      label: rs.tag,
-      hint: rs.name.trim() || undefined,
-    }));
-  }, [overrideData]);
+  const ruleSetOptions = useMemo<RuleSetOption[]>(() => buildRuleSetOptions(overrideData), [overrideData]);
 
   /**
    * 指定出站候选 tag 并集（ADR-0005 §3.1）：静态订阅节点 + 运行中模板分组 + 切片出站

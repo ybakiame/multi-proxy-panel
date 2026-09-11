@@ -3,18 +3,12 @@ import { TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal, Switch } from "@heroui/react";
 import type { DnsMatchType, DnsRule } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
+import type { RuleSetOption } from "../ruleSetOptions";
 import { DNS_MATCH_TYPE_OPTIONS, DNS_TARGET_PLACEHOLDER } from "./dnsUtils";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
-
-/**
- * 首版表单仅暴露域名类匹配；`rule_set` 需规则集引用闭环，P1 解锁。
- *
- * client-core / Rust schema 仍保留该枚举值，用于已有数据展示与后续解锁。
- */
-const FORM_MATCH_TYPE_OPTIONS = DNS_MATCH_TYPE_OPTIONS.filter((option) => option.value !== "rule_set");
 
 /** server_tag 下拉选项（页面从已定义 server tag 生成）。 */
 export interface DnsServerOption {
@@ -29,6 +23,8 @@ interface DnsRuleFormSheetProps {
   editing: DnsRule | null;
   /** 已定义 server tag 选项；空数组时提示先添加服务器。 */
   serverOptions: DnsServerOption[];
+  /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加。 */
+  ruleSetOptions?: RuleSetOption[];
   onClose: () => void;
   /** 保存（仅更新内存草稿，落盘由页面统一执行）。 */
   onSave: (rule: DnsRule) => void;
@@ -46,6 +42,7 @@ export function DnsRuleFormSheet({
   isOpen,
   editing,
   serverOptions,
+  ruleSetOptions = [],
   onClose,
   onSave,
   onDeleteRequest,
@@ -84,7 +81,31 @@ export function DnsRuleFormSheet({
     ];
   }, [editing, serverOptions]);
 
-  const targetError = target.trim() === "" ? "请输入匹配目标" : null;
+  /**
+   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（规则集已删除/尚未添加），
+   * 追加「原值保留」项——选择器显示原值且不强清，由用户决定改选或保留（同
+   * `RuleEditSheet`；保留且规则集不存在时，引用该 tag 的规则集不会注入）。
+   */
+  const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
+    const stale =
+      matchType === "rule_set" &&
+      editing?.match_type === "rule_set" &&
+      target.trim() !== "" &&
+      !ruleSetOptions.some((option) => option.value === target);
+    if (!stale) return ruleSetOptions;
+    return [...ruleSetOptions, { value: target, label: target, hint: "当前无此规则集（原值保留）" }];
+  }, [matchType, editing, target, ruleSetOptions]);
+
+  const targetError =
+    matchType === "rule_set"
+      ? target.trim() === ""
+        ? "请选择规则集"
+        : effectiveRuleSetOptions.some((option) => option.value === target.trim())
+          ? null
+          : "规则集不存在"
+      : target.trim() === ""
+        ? "请输入匹配目标"
+        : null;
   const serverError =
     serverTag.trim() === ""
       ? "请选择目标 DNS 服务器"
@@ -127,29 +148,47 @@ export function DnsRuleFormSheet({
                 label="匹配类型"
                 value={matchType}
                 onChange={(value) => setMatchType(value as DnsMatchType)}
-                options={FORM_MATCH_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                options={DNS_MATCH_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               />
             </div>
 
-            {/* 匹配目标 */}
+            {/* 匹配目标（rule_set 走规则集选择器，其余类型文本框输入） */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="dns-rule-target" className="text-sm font-medium text-foreground">
-                匹配目标
-              </label>
-              <input
-                id="dns-rule-target"
-                aria-label="匹配目标"
-                aria-required="true"
-                value={target}
-                onChange={(event) => setTarget(event.target.value)}
-                placeholder={DNS_TARGET_PLACEHOLDER[matchType]}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className={`${inputClass} font-mono`}
-              />
-              {targetError ? (
+              <span className="text-sm font-medium text-foreground">
+                {matchType === "rule_set" ? "规则集" : "匹配目标"}
+              </span>
+              {matchType === "rule_set" ? (
+                <MobileSelectSheet
+                  label="规则集"
+                  value={target}
+                  onChange={setTarget}
+                  placeholder="请选择规则集"
+                  options={effectiveRuleSetOptions.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                    description: option.hint,
+                  }))}
+                />
+              ) : (
+                <input
+                  id="dns-rule-target"
+                  aria-label="匹配目标"
+                  aria-required="true"
+                  value={target}
+                  onChange={(event) => setTarget(event.target.value)}
+                  placeholder={DNS_TARGET_PLACEHOLDER[matchType]}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`${inputClass} font-mono`}
+                />
+              )}
+              {matchType === "rule_set" && effectiveRuleSetOptions.length === 0 ? (
+                <span className="text-xs text-muted">当前没有可用规则集，可先在 配置→规则集管理 添加</span>
+              ) : targetError ? (
                 <span className="text-xs text-warning">{targetError}</span>
+              ) : matchType === "rule_set" ? (
+                <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
               ) : (
                 <span className="text-xs text-muted">按所选匹配类型填写目标值</span>
               )}

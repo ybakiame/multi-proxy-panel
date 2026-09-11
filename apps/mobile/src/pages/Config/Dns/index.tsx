@@ -3,16 +3,28 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   CONFIG_SLICES_KEY,
+  LOCAL_OVERRIDE_KEY,
   configSlicesGet,
   configSlicesSave,
+  localOverrideGet,
   toErrorMessage,
   toastError,
   toastSuccess,
   useCapabilities,
   useProxyStatus,
 } from "@pp/client-core";
-import type { ConfigSlices, DnsMode, DnsRule, DnsServer, DnsSlice, DnsStrategy } from "@pp/client-core";
+import type {
+  ConfigSlices,
+  DnsMode,
+  DnsRule,
+  DnsServer,
+  DnsSlice,
+  DnsStrategy,
+  LocalOverrideView,
+} from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
+import { isLocalOverrideView } from "../localOverrideGuards";
+import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
 import { DnsMasterSwitchCard } from "./DnsMasterSwitchCard";
 import { DnsModeCard } from "./DnsModeCard";
@@ -57,6 +69,14 @@ export default function DnsPage() {
   // 结构守卫：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const slices = isConfigSlices(rawSlices) ? rawSlices : null;
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
+
+  // 规则集候选数据源：复用规则页同 key 缓存（LOCAL_OVERRIDE_KEY），不新增请求模式。
+  const { data: rawOverride } = useQuery<LocalOverrideView>({
+    queryKey: LOCAL_OVERRIDE_KEY,
+    queryFn: localOverrideGet,
+  });
+  const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
+  const ruleSetOptions = useMemo(() => buildRuleSetOptions(overrideData), [overrideData]);
 
   // ---- 内存草稿（query 数据变化时渲染期同步，copy-on-write 编辑） ----
   const [draft, setDraft] = useState<DnsSlice | null>(null);
@@ -309,6 +329,7 @@ export default function DnsPage() {
         isOpen={ruleSheetOpen}
         editing={editingRule}
         serverOptions={serverTagOptions}
+        ruleSetOptions={ruleSetOptions}
         onClose={() => setRuleSheetOpen(false)}
         onSave={handleSaveRule}
         onDeleteRequest={handleRuleDeleteRequest}

@@ -4,16 +4,9 @@ import { Button, Modal, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS, buildOutboundAction, isOutboundAction, outboundTagFromAction } from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
+import type { RuleSetOption } from "./ruleSetOptions";
 
-/** 规则集选择器选项（rule_set 匹配目标）：规则集 tag（社区 remote / 自定义 manual；规则集是纯资源无启停）。 */
-export interface RuleSetOption {
-  /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
-  value: string;
-  /** 下拉显示名（自定义规则集 tag）。 */
-  label: string;
-  /** 可选说明行（如不可用原值的提示）。 */
-  hint?: string;
-}
+export type { RuleSetOption } from "./ruleSetOptions";
 
 /** 指定出站动作的可选出站 tag（订阅节点 / 模板出站 / 切片出站并集）。 */
 export interface OutboundOption {
