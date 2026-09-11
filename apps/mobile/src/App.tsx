@@ -8,9 +8,9 @@ import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Proxies from "./pages/Proxies";
 import Config from "./pages/Config";
-import ComingSoonPage from "./pages/Config/ComingSoonPage";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
 import DnsPage from "./pages/Config/Dns";
+import OutboundsPage from "./pages/Config/Outbounds";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
 import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
@@ -122,7 +122,7 @@ function AppContent() {
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/config" element={<Config />} />
           <Route path="/config/dns" element={<DnsPage />} />
-          <Route path="/config/outbounds" element={<ComingSoonPage title="自定义出站" />} />
+          <Route path="/config/outbounds" element={<OutboundsPage />} />
           <Route path="/config/rules" element={<CustomRulesPage />} />
           <Route path="/config/rulesets" element={<RuleSetsPage />} />
           <Route path="/config/rulesets/market" element={<RuleSetMarket />} />
