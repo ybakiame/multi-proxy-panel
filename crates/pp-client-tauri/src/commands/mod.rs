@@ -1,12 +1,14 @@
 //! Shared command layer for the `pp-client-tauri` crate.
 //!
 //! Desktop / Mobile 壳以路径注册双端通用命令（见 ADR-0003 §3.2）：[`config`] /
-//! [`profile`] / [`subscription`] / [`preview`] 与 [`proxy`] / [`proxies`] /
-//! [`connections`] / [`task`] / [`local_override`] 为迁移自桌面壳的双端通用命令
-//! 模块，经 `pub use` glob 聚合到本层，壳以 `pp_client_tauri::commands::<name>`
-//! 注册。其余为命令共享辅助：桌面通知器（[`TauriNotifier`]）与纯转换/解析函数。
+//! [`config_slices`] / [`profile`] / [`subscription`] / [`preview`] 与 [`proxy`] /
+//! [`proxies`] / [`connections`] / [`task`] / [`local_override`] 为双端通用命令
+//! 模块（其中 [`config_slices`] 为 ADR-0005 新增），经 `pub use` glob 聚合到本层，
+//! 壳以 `pp_client_tauri::commands::<name>` 注册。其余为命令共享辅助：桌面通知器
+//! （[`TauriNotifier`]）与纯转换/解析函数。
 
 mod config;
+mod config_slices;
 mod connections;
 mod local_override;
 mod preview;
@@ -17,6 +19,7 @@ mod subscription;
 mod task;
 
 pub use config::*;
+pub use config_slices::*;
 pub use connections::*;
 pub use local_override::*;
 pub use preview::*;
