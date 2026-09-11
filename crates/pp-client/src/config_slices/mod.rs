@@ -14,6 +14,12 @@
 //! The slice layer is injected as the **first** step of the client config
 //! pipeline (before profile YAML/JS overrides, ADR-0005 §3.2). This module only
 //! builds the module and its tests; wiring into the pipeline is a later phase.
+//!
+//! Rendering targets **sing-box >= 1.14.0**; compatibility with older releases
+//! is intentionally not maintained. Fields emitted here are verified against the
+//! 1.14 configuration docs: vmess `alter_id` / `security`, vless `flow`, the
+//! V2Ray transport kinds (`ws` / `grpc` / `http` / `httpupgrade`), hysteria2
+//! `obfs`, and the 1.12+ type-based DNS server format are all still valid.
 
 pub mod apply;
 pub mod dns;
