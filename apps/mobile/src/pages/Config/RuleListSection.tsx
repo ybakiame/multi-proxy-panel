@@ -5,8 +5,6 @@ import { RuleCard } from "./RuleCard";
 
 interface RuleListSectionProps {
   rules: LocalRuleView[];
-  /** 被任意场景模板引用的规则 id 集合（用于「未分配模板」提示）。 */
-  referencedRuleIds: ReadonlySet<string>;
   onToggle: (rule: LocalRuleView, next: boolean) => void;
   onMove: (index: number, dir: -1 | 1) => void;
   onEdit: (rule: LocalRuleView) => void;
@@ -17,16 +15,15 @@ interface RuleListSectionProps {
  * 规则页 3 区：自定义规则列表（ADR-0003 M5.4）。
  *
  * 区头「添加规则」按钮进编辑 Sheet（新建模式）；卡片列表支持启停 / 上下移 /
- * 点击编辑；无规则时展示空态引导文案。引用语义下注入只覆盖被已应用模板引用的
- * 启用规则，未被任何模板引用的规则卡由 `RuleCard` 出「未分配模板」提示。
+ * 点击编辑；无规则时展示空态引导文案。启用的规则在核心启动时全量注入。
  */
-export function RuleListSection({ rules, referencedRuleIds, onToggle, onMove, onEdit, onAdd }: RuleListSectionProps) {
+export function RuleListSection({ rules, onToggle, onMove, onEdit, onAdd }: RuleListSectionProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">自定义规则</span>
-          <span className="text-xs text-muted">启用且被已应用模板引用才会注入；自上而下顺序匹配</span>
+          <span className="text-xs text-muted">启用的规则会注入启动配置；自上而下顺序匹配</span>
         </div>
         <Button variant="primary" className="h-11 shrink-0 px-4" onPress={onAdd}>
           <PlusIcon className="size-4" aria-hidden="true" />
@@ -49,7 +46,6 @@ export function RuleListSection({ rules, referencedRuleIds, onToggle, onMove, on
               rule={rule}
               index={index}
               total={rules.length}
-              referencedByTemplate={referencedRuleIds.has(rule.id)}
               onToggle={(next) => onToggle(rule, next)}
               onMove={(dir) => onMove(index, dir)}
               onEdit={() => onEdit(rule)}

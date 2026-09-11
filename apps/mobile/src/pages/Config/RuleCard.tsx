@@ -1,5 +1,5 @@
 import { ArrowDownIcon, ArrowUpIcon } from "@heroicons/react/24/outline";
-import { Card, Chip, Switch } from "@heroui/react";
+import { Card, Switch } from "@heroui/react";
 import type { LocalRuleView } from "@pp/client-core";
 import { actionLabel, isOutboundAction, matchTypeLabel, outboundTagFromAction, ruleSummary } from "@pp/client-core";
 
@@ -7,8 +7,6 @@ interface RuleCardProps {
   rule: LocalRuleView;
   index: number;
   total: number;
-  /** 是否被至少一个自定义场景模板引用（未被引用的规则不注入启动配置，出「未分配模板」提示）。 */
-  referencedByTemplate: boolean;
   onToggle: (next: boolean) => void;
   onMove: (dir: -1 | 1) => void;
   onEdit: () => void;
@@ -49,14 +47,11 @@ function OrderButton({
 /**
  * 单条自定义规则卡（ADR-0003 M5.4）。
  *
- * 自「场景模板改为规则引用 + 应用激活」起注入条件 = `enabled && 被已应用模板引用`：
  * - 左侧主体（规则名或「类型: 目标」摘要 + 类型/目标/动作/标记详情行）点击进编辑 Sheet；
- * - 动作 badge（代理/直连/拒绝语义色）；右侧启停 Switch——语义是**模板内启停**
- *   （规则只在所属场景模板被应用时随模板注入，禁用规则即使被模板引用也会被跳过）；
- * - 未被任何模板引用的规则出 warning「未分配模板」chip + 说明（不会注入启动配置）；
+ * - 动作 badge（代理/直连/拒绝语义色）；右侧启停 Switch——启用的规则在核心启动时注入；
  * - 底部栏：顺序提示 + 上移/下移（边界禁用，重排由页面层回写 sort_order）。
  */
-export function RuleCard({ rule, index, total, referencedByTemplate, onToggle, onMove, onEdit }: RuleCardProps) {
+export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleCardProps) {
   const isOutbound = isOutboundAction(rule.action);
   const badgeClass = isOutbound
     ? "bg-accent/10 text-accent"
@@ -69,7 +64,6 @@ export function RuleCard({ rule, index, total, referencedByTemplate, onToggle, o
     (rule.no_resolve ? " · no-resolve" : "") +
     (rule.invert ? " · invert" : "") +
     (rule.note ? ` · ${rule.note}` : "");
-  const notInTemplate = !referencedByTemplate;
 
   return (
     <Card className="overflow-hidden">
@@ -80,21 +74,11 @@ export function RuleCard({ rule, index, total, referencedByTemplate, onToggle, o
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium leading-5 ${badgeClass}`}>
               {actionLabel(rule.action)}
             </span>
-            {notInTemplate && (
-              <Chip size="sm" variant="soft" color="warning" className="shrink-0">
-                未分配模板
-              </Chip>
-            )}
           </span>
           <span className="truncate text-xs text-muted">{metaDetail}</span>
-          {notInTemplate && (
-            <span className="text-xs text-warning">
-              未被任何场景模板引用：启用后也不会注入启动配置，请先在「场景模板」中新建并应用包含它的模板
-            </span>
-          )}
         </button>
         <Switch
-          aria-label={`${referencedByTemplate ? "在模板中启停规则" : "启用规则"} ${ruleSummary(rule)}`}
+          aria-label={`启用规则 ${ruleSummary(rule)}`}
           isSelected={rule.enabled}
           onChange={(next) => onToggle(next)}
           className="shrink-0 px-1"

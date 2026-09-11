@@ -9,13 +9,12 @@ import { toastError, toastSuccess } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
 import { RuleSetSection } from "./RuleSetSection";
-import { TemplateSection } from "./TemplateSection";
 import { buildSaveInput, ruleSummary, viewToInput } from "./types";
 
 export default function Rules() {
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
-  // 本地规则 / 模板 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
+  // 本地规则 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
 
   const {
@@ -124,7 +123,7 @@ export default function Rules() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">规则</h1>
-        <p className="text-sm text-muted">本地规则卡片、场景模板与规则集管理</p>
+        <p className="text-sm text-muted">本地规则卡片与规则集管理</p>
       </div>
 
       {error && (
@@ -162,9 +161,6 @@ export default function Rules() {
               </Switch>
             </Card.Content>
           </Card>
-
-          {/* 场景模板（自定义） */}
-          <TemplateSection overrideData={overrideData} coreRunning={coreRunning} onChanged={invalidate} />
 
           {/* 规则卡片 */}
           <div className="flex flex-col gap-3">

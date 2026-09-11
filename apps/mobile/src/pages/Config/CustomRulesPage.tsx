@@ -39,9 +39,6 @@ import { RuleListSection } from "./RuleListSection";
  * 承接原规则主页的规则列表 CRUD：启停 / 上移下移 / 添加 / 编辑 / 删除，数据流不变
  * （`persist = buildSaveInput + localOverrideSave` 全量落盘，成功按动作差异化 toast）。
  *
- * 自「场景模板改为规则引用 + 应用激活」起注入条件 = `enabled && 被已应用模板引用`：
- * 未被任何模板引用的规则卡出「未分配模板」warning chip（不会注入启动配置）。
- *
  * `rule_set` 匹配目标为规则集选择器：选项 = **全部**自定义规则集（tag）——规则集
  * 是纯资源无启停概念；编辑已有规则时原 target 不在候选则追加「原值保留」项。
  */
@@ -121,12 +118,6 @@ export default function CustomRulesPage() {
     }
     return options;
   }, [proxyList, slices]);
-
-  /** 被任意场景模板引用的规则 id 集合（未引用的规则不注入启动配置，见 RuleCard）。 */
-  const referencedTemplateRuleIds = useMemo<ReadonlySet<string>>(() => {
-    if (!overrideData) return new Set<string>();
-    return new Set(overrideData.custom_templates.flatMap((t) => t.rules));
-  }, [overrideData]);
 
   const toastRuleSaved = (base: string) => {
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
@@ -257,7 +248,6 @@ export default function CustomRulesPage() {
         {overrideData && currentCore && (
           <RuleListSection
             rules={currentCore.rules}
-            referencedRuleIds={referencedTemplateRuleIds}
             onToggle={(rule, next) => void handleToggleRule(rule, next)}
             onMove={(index, dir) => void handleMoveRule(index, dir)}
             onEdit={(rule) => openEdit(rule)}

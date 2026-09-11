@@ -1,8 +1,8 @@
 /**
  * 规则管理纯函数（Desktop / Mobile 双端共享，ADR-0003 M5.4）。
  *
- * 自 desktop Rules 页上移：标签映射、场景模板定义、摘要/详情行格式化与
- * View → Input 转换。不含任何 UI / 平台依赖，双端页面只消费本模块。
+ * 自 desktop Rules 页上移：标签映射、摘要/详情行格式化与 View → Input
+ * 转换。不含任何 UI / 平台依赖，双端页面只消费本模块。
  */
 
 import type {
@@ -120,11 +120,6 @@ export function viewToInput(view: CoreLocalOverrideView): CoreLocalOverrideInput
 export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOverrideInput) {
   return {
     singbox: patchCore ?? viewToInput(view.singbox),
-    applied_templates: view.applied_templates.map((t) => ({
-      template_id: t.template_id,
-      applied_at: t.applied_at,
-      generated_rule_ids: t.generated_rule_ids,
-    })),
     // 自定义规则集整段透传（View/Input 同构，去掉只读的 cached 字段；无 enabled）。
     custom_rule_sets: view.custom_rule_sets.map((rs) => ({
       id: rs.id,
@@ -134,14 +129,6 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       last_updated: rs.last_updated,
       // 后端对已存在 id 会按磁盘现值回填；新条目（市场一键添加）据此携带远端时间。
       remote_updated_at: rs.remote_updated_at,
-    })),
-    // 自定义场景模板整段透传（rules = 规则 ID 引用列表）。
-    custom_templates: view.custom_templates.map((t) => ({
-      id: t.id,
-      name: t.name,
-      desc: t.desc,
-      rules: t.rules,
-      created_at: t.created_at,
     })),
   };
 }

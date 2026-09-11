@@ -3,9 +3,6 @@
  *
  * 本文件保留为 re-export 垫片：保持 Rules 页各组件 `from "./types"` 的导入路径
  * 不变（最小 diff），实现统一收敛到 @pp/client-core 的 rules 模块。
- *
- * 自「废弃内置规则集订阅与内置场景模板」起不再 re-export `TEMPLATE_DEFS`；
- * 规则页的场景模板区改为消费 `custom_templates`（用户自定义，见 TemplateSection）。
  */
 export {
   MATCH_TYPE_LABELS,
