@@ -9,6 +9,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod config;
+pub mod config_slices;
 pub mod connections;
 pub mod core_config;
 pub mod core_engine;
