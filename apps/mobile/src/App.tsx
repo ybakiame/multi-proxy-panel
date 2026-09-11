@@ -8,17 +8,17 @@ import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Proxies from "./pages/Proxies";
 import Config from "./pages/Config";
+import ClashApiPage from "./pages/Config/ClashApiPage";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
 import DnsPage from "./pages/Config/Dns";
+import NetworkPage from "./pages/Config/NetworkPage";
 import OutboundsPage from "./pages/Config/Outbounds";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
 import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
 import AboutPage from "./pages/Settings/AboutPage";
-import ClashApiPage from "./pages/Settings/ClashApiPage";
 import DevToolsPage from "./pages/Settings/DevToolsPage";
 import GithubPage from "./pages/Settings/GithubPage";
-import NetworkPage from "./pages/Settings/NetworkPage";
 import VpnNotifyPage from "./pages/Settings/VpnNotifyPage";
 import Subscriptions from "./pages/Subscriptions";
 
@@ -93,9 +93,10 @@ function TauriRequired() {
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
  *   `/connections` 连接页、`/logs` 日志页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
- *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`
- *   为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
- * - 旧 `/rules/*` 路径保留 `<Navigate>` 重定向（HashRouter 存量书签兼容）。
+ *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`、
+ *   `/config/network`、`/config/clash-api` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
+ * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向
+ *   （HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
  * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
  *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
@@ -123,6 +124,8 @@ function AppContent() {
           <Route path="/config" element={<Config />} />
           <Route path="/config/dns" element={<DnsPage />} />
           <Route path="/config/outbounds" element={<OutboundsPage />} />
+          <Route path="/config/network" element={<NetworkPage />} />
+          <Route path="/config/clash-api" element={<ClashApiPage />} />
           <Route path="/config/rules" element={<CustomRulesPage />} />
           <Route path="/config/rulesets" element={<RuleSetsPage />} />
           <Route path="/config/rulesets/market" element={<RuleSetMarket />} />
@@ -131,10 +134,11 @@ function AppContent() {
           <Route path="/rules/custom" element={<Navigate to="/config/rules" replace />} />
           <Route path="/rules/rulesets" element={<Navigate to="/config/rulesets" replace />} />
           <Route path="/rules/rulesets/market" element={<Navigate to="/config/rulesets/market" replace />} />
+          {/* 网络 / Clash API 迁移为配置页必选切片：旧设置页路径重定向兼容。 */}
+          <Route path="/settings/network" element={<Navigate to="/config/network" replace />} />
+          <Route path="/settings/clash-api" element={<Navigate to="/config/clash-api" replace />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/vpn-notify" element={<VpnNotifyPage />} />
-          <Route path="/settings/clash-api" element={<ClashApiPage />} />
-          <Route path="/settings/network" element={<NetworkPage />} />
           <Route path="/settings/github" element={<GithubPage />} />
           <Route path="/settings/dev-tools" element={<DevToolsPage />} />
           <Route path="/settings/about" element={<AboutPage />} />

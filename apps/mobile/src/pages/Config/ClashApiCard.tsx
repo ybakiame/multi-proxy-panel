@@ -1,6 +1,6 @@
 import { Card } from "@heroui/react";
-import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { SettingsInput, SwitchRow } from "./fields";
+import type { UseSettingsConfigReturn } from "../Settings/useSettingsConfig";
+import { SettingsInput, SwitchRow } from "../Settings/fields";
 
 interface ClashApiCardProps {
   settings: UseSettingsConfigReturn;

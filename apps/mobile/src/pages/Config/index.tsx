@@ -1,5 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowsRightLeftIcon, GlobeAltIcon, ListBulletIcon, SwatchIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowsRightLeftIcon,
+  BoltIcon,
+  GlobeAltIcon,
+  ListBulletIcon,
+  SwatchIcon,
+  WifiIcon,
+} from "@heroicons/react/24/outline";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
@@ -24,8 +31,12 @@ import { MasterSwitchCard } from "./MasterSwitchCard";
  *
  * 自上而下：
  * 1. 总开关卡：`singbox.enabled`（关闭后本地规则与规则集不注入运行配置）；
- * 2. 配置切片入口：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）；
+ * 2. 配置切片入口：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）、
+ *    网络（TUN，`/config/network`）、Clash API（`/config/clash-api`）；
  * 3. 规则入口：自定义规则（`/config/rules`）、规则集管理（`/config/rulesets`）。
+ *
+ * 网络（TUN）与 Clash API 为必选切片（ADR-0005 后续决策）：始终启用、无切片级关闭开关，
+ * 入口仅提供参数调整（混合端口 / API 端口与密钥）。
  *
  * 规则列表 CRUD 与规则集管理已迁至对应子页；本页只消费 `singbox` 桶与
  * `custom_rule_sets` 段（经 `buildSaveInput` 整段透传）。
@@ -114,7 +125,7 @@ export default function Config() {
           {/* 1. 总开关 */}
           <MasterSwitchCard enabled={currentCore.enabled} onToggle={(next) => void handleToggleEnabled(next)} />
 
-          {/* 2. 配置切片入口：DNS → 自定义出站 */}
+          {/* 2. 配置切片入口：DNS → 自定义出站 → 网络（TUN） */}
           <EntryLinkCard
             icon={<GlobeAltIcon className="size-6" aria-hidden="true" />}
             title="DNS"
@@ -127,8 +138,14 @@ export default function Config() {
             description="可视化添加与管理自定义出站"
             onPress={() => navigate("/config/outbounds")}
           />
+          <EntryLinkCard
+            icon={<WifiIcon className="size-6" aria-hidden="true" />}
+            title="网络（TUN）"
+            description="TUN 始终启用 · 调整本地混合端口"
+            onPress={() => navigate("/config/network")}
+          />
 
-          {/* 3. 规则入口：自定义规则 → 规则集管理 */}
+          {/* 3. 规则入口：自定义规则 → 规则集管理 → Clash API */}
           <EntryLinkCard
             icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
             title="自定义规则"
@@ -140,6 +157,12 @@ export default function Config() {
             title="规则集管理"
             description="社区与自定义规则集的增删与更新"
             onPress={() => navigate("/config/rulesets")}
+          />
+          <EntryLinkCard
+            icon={<BoltIcon className="size-6" aria-hidden="true" />}
+            title="Clash API"
+            description="仪表盘与节点页数据源 · 调整端口与密钥"
+            onPress={() => navigate("/config/clash-api")}
           />
         </div>
       )}

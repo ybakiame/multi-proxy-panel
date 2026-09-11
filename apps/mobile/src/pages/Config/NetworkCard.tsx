@@ -1,6 +1,6 @@
 import { Card } from "@heroui/react";
-import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { SettingsInput } from "./fields";
+import type { UseSettingsConfigReturn } from "../Settings/useSettingsConfig";
+import { SettingsInput } from "../Settings/fields";
 
 interface NetworkCardProps {
   settings: UseSettingsConfigReturn;
