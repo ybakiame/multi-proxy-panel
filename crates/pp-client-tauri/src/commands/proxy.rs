@@ -8,7 +8,7 @@ use crate::commands::TauriNotifier;
 use crate::state::AppState;
 
 /// External view of client runtime status.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ClientStatusView {
     pub core_running: bool,
     pub mitm_addr: Option<String>,
@@ -62,7 +62,7 @@ pub async fn start_proxy(
 pub async fn stop_proxy(state: State<'_, AppState>) -> Result<ClientStatusView, String> {
     let mut lock = state.client.lock().await;
     let Some(client) = lock.as_mut() else {
-        return Ok(ClientStatusView::default());
+        return Ok(idle_status_view(&state.data_dir));
     };
     client.stop().await;
     let status = client.status().await;
@@ -74,7 +74,7 @@ pub async fn stop_proxy(state: State<'_, AppState>) -> Result<ClientStatusView, 
 pub async fn proxy_status(state: State<'_, AppState>) -> Result<ClientStatusView, String> {
     let lock = state.client.lock().await;
     let Some(client) = lock.as_ref() else {
-        return Ok(ClientStatusView::default());
+        return Ok(idle_status_view(&state.data_dir));
     };
     let status = client.status().await;
     Ok(ClientStatusView::from_status(&status))
@@ -216,5 +216,35 @@ mod tests {
         pp_client::set_rule_mode_persist(dir.path(), "direct").unwrap();
         let view = idle_status_view(dir.path());
         assert_eq!(view.rule_mode, "direct");
+    }
+
+    /// Regression: `proxy_status` / `stop_proxy` return this view when no client
+    /// instance exists (e.g. first launch before any `start_proxy`). It must
+    /// report a normalized, non-empty rule mode so the home chip is not blank.
+    #[test]
+    fn idle_status_view_defaults_to_rule_without_saved_config() {
+        let dir = TestDir::new();
+        let view = idle_status_view(dir.path());
+        assert_eq!(view.rule_mode, "rule");
+        assert!(!view.rule_mode.is_empty());
+    }
+
+    /// The persisted `rule_mode` may be empty/legacy; the idle path must
+    /// normalize it instead of surfacing the raw value.
+    #[test]
+    fn idle_status_view_normalizes_empty_persisted_rule_mode() {
+        let dir = TestDir::new();
+        let mut cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            PathBuf::new(),
+        );
+        cfg.rule_mode = String::new();
+        cfg.save().unwrap();
+
+        let view = idle_status_view(dir.path());
+        assert_eq!(view.rule_mode, "rule");
+        assert!(!view.rule_mode.is_empty());
     }
 }
