@@ -1,11 +1,10 @@
 //! Local Override Tauri commands.
 //!
-//! Provides frontend-facing commands for rule card management, template
-//! application, and rule set subscription control.
+//! Provides frontend-facing commands for rule card management and rule set
+//! control.
 
 use pp_client::local_override::{
-    AppliedTemplate, CoreLocalOverride, CustomRuleSetSource, LocalOverride, LocalRule,
-    RuleSetManager,
+    CoreLocalOverride, CustomRuleSetSource, LocalOverride, LocalRule, RuleSetManager,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,12 +17,15 @@ use serde::{Deserialize, Serialize};
 /// 自「废弃内置规则集订阅」起不再输出 `rule_set_subscriptions` 段；自定义规则集
 /// 状态（含 `cached` / `last_updated`）由 `custom_rule_sets` 段承载，前端统一走本
 /// 命令消费。
+///
+/// 自「移除场景模板」起 `applied_templates` / `custom_templates` 恒为空数组
+/// （serde 兼容字段，前端清理在下一阶段）。
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalOverrideView {
     pub singbox: CoreLocalOverrideView,
-    pub applied_templates: Vec<AppliedTemplateView>,
+    pub applied_templates: Vec<serde_json::Value>,
     pub custom_rule_sets: Vec<CustomRuleSetView>,
-    pub custom_templates: Vec<CustomTemplateView>,
+    pub custom_templates: Vec<serde_json::Value>,
 }
 
 /// Per-core local override view.
@@ -61,14 +63,6 @@ pub struct LocalRuleSetRefView {
     pub enabled: bool,
     pub auto_update_interval_minutes: u32,
     pub last_updated: u64,
-}
-
-/// Applied template view.
-#[derive(Debug, Clone, Serialize)]
-pub struct AppliedTemplateView {
-    pub template_id: String,
-    pub applied_at: u64,
-    pub generated_rule_ids: Vec<String>,
 }
 
 /// User-defined custom rule set view.
@@ -114,21 +108,6 @@ impl From<pp_client::local_override::RuleSetUpdateOutcome> for RuleSetUpdateOutc
     }
 }
 
-/// User-defined scenario template view.
-///
-/// `rules` 是**规则 ID 引用列表**（非快照）；`invalid_count` 由服务端按
-/// 「引用 ID 不存在 或 对应规则 disabled」计算（模板卡据此显示失效数）。
-#[derive(Debug, Clone, Serialize)]
-pub struct CustomTemplateView {
-    pub id: String,
-    pub name: String,
-    pub desc: String,
-    pub rules: Vec<String>,
-    /// Number of currently invalid (missing / disabled) rule references.
-    pub invalid_count: usize,
-    pub created_at: u64,
-}
-
 // ---------------------------------------------------------------------------
 // Conversions (pp-client types → View types)
 // ---------------------------------------------------------------------------
@@ -137,21 +116,14 @@ impl LocalOverrideView {
     pub(crate) fn from_model(model: &LocalOverride, manager: &RuleSetManager) -> Self {
         Self {
             singbox: CoreLocalOverrideView::from_model(&model.singbox),
-            applied_templates: model
-                .applied_templates
-                .iter()
-                .map(AppliedTemplateView::from_model)
-                .collect(),
+            // 场景模板已移除：恒输出空数组（serde 兼容字段）。
+            applied_templates: Vec::new(),
             custom_rule_sets: model
                 .custom_rule_sets
                 .iter()
                 .map(|rs| CustomRuleSetView::from_model(rs, manager))
                 .collect(),
-            custom_templates: model
-                .custom_templates
-                .iter()
-                .map(|tpl| CustomTemplateView::from_model(tpl, model))
-                .collect(),
+            custom_templates: Vec::new(),
         }
     }
 }
@@ -207,16 +179,6 @@ impl LocalRuleSetRefView {
     }
 }
 
-impl AppliedTemplateView {
-    pub(crate) fn from_model(model: &AppliedTemplate) -> Self {
-        Self {
-            template_id: model.template_id.clone(),
-            applied_at: model.applied_at,
-            generated_rule_ids: model.generated_rule_ids.clone(),
-        }
-    }
-}
-
 impl CustomRuleSetView {
     pub(crate) fn from_model(
         model: &pp_client::local_override::CustomRuleSet,
@@ -230,23 +192,6 @@ impl CustomRuleSetView {
             last_updated: model.last_updated,
             remote_updated_at: model.remote_updated_at,
             cached: manager.has_custom_rule_set_file(model),
-        }
-    }
-}
-
-impl CustomTemplateView {
-    pub(crate) fn from_model(
-        model: &pp_client::local_override::CustomTemplate,
-        ovr: &LocalOverride,
-    ) -> Self {
-        let invalid_count = pp_client::local_override::template_invalid_refs(ovr, model).len();
-        Self {
-            id: model.id.clone(),
-            name: model.name.clone(),
-            desc: model.desc.clone(),
-            rules: model.rules.clone(),
-            invalid_count,
-            created_at: model.created_at,
         }
     }
 }
@@ -307,32 +252,17 @@ fn rule_set_kind_str(k: &pp_client::local_override::RuleSetKind) -> String {
 // ---------------------------------------------------------------------------
 
 /// Input for saving local override (full replacement).
+///
+/// 场景模板已移除：`applied_templates` / `custom_templates` 不再是输入契约，
+/// 前端若仍附带同名字段会被 serde 忽略。
 #[derive(Debug, Deserialize)]
 pub struct SaveLocalOverrideInput {
     pub singbox: CoreLocalOverrideInput,
-    pub applied_templates: Vec<AppliedTemplateInput>,
     /// Full replacement of the custom rule set segment (semantics identical
     /// to `rules`). Uses the shared model type so the manual content / remote
     /// url+format round-trips unchanged.
     #[serde(default)]
     pub custom_rule_sets: Vec<pp_client::local_override::CustomRuleSet>,
-    /// Full replacement of the custom template segment (semantics identical to
-    /// `rules`). Templates carry rule **ID references** (`rules: Vec<String>`).
-    #[serde(default)]
-    pub custom_templates: Vec<CustomTemplateInput>,
-}
-
-/// Input for one custom scenario template (rule ID reference list).
-#[derive(Debug, Deserialize)]
-pub struct CustomTemplateInput {
-    pub id: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub desc: String,
-    #[serde(default)]
-    pub rules: Vec<String>,
-    pub created_at: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -376,13 +306,6 @@ pub struct LocalRuleSetRefInput {
     pub auto_update_interval_minutes: u32,
     #[serde(default)]
     pub last_updated: u64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AppliedTemplateInput {
-    pub template_id: String,
-    pub applied_at: u64,
-    pub generated_rule_ids: Vec<String>,
 }
 
 #[inline]

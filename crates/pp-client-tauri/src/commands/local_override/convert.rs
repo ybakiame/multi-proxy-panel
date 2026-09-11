@@ -1,8 +1,6 @@
 //! Conversion and validation helpers for local override commands.
 
-use pp_client::local_override::{
-    AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalRule,
-};
+use pp_client::local_override::{CoreLocalOverride, LocalOverride, LocalRule};
 
 use super::views::*;
 
@@ -57,8 +55,6 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
 
     validate_custom_rule_sets(ovr)?;
 
-    validate_custom_templates(ovr)?;
-
     Ok(())
 }
 
@@ -97,34 +93,6 @@ pub(super) fn validate_custom_rule_sets(ovr: &LocalOverride) -> Result<(), Strin
     Ok(())
 }
 
-/// Custom template segment validation:
-/// - IDs unique, non-empty and must not carry the reserved `custom:` prefix
-///   (apply addresses custom templates as `"custom:<id>"`, see template.rs).
-///
-/// 引用语义下模板 `rules` 是规则 ID 引用列表：引用 ID **不强制存在**
-/// （规则可被禁用/删除，失效引用由应用时自动跳过 + View invalid_count 展示，
-/// 方案 b 联动），因此不做引用存在性校验。
-pub(super) fn validate_custom_templates(ovr: &LocalOverride) -> Result<(), String> {
-    let prefix = pp_client::local_override::CUSTOM_TEMPLATE_PREFIX;
-    let mut seen_ids = std::collections::HashSet::new();
-    for tpl in &ovr.custom_templates {
-        if tpl.id.trim().is_empty() {
-            return Err("custom template has an empty id".to_string());
-        }
-        if tpl.id.starts_with(prefix) {
-            return Err(format!(
-                "custom template id '{}' must not start with reserved prefix '{prefix}'",
-                tpl.id
-            ));
-        }
-        if !seen_ids.insert(tpl.id.clone()) {
-            return Err(format!("duplicate custom template id '{}'", tpl.id));
-        }
-    }
-
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -136,27 +104,10 @@ pub(super) fn convert_input_to_model(
         singbox: convert_core_input(input.singbox)?,
         // 内置订阅段已废弃：save 恒写空数组（serde 兼容旧字段，空数组无害）。
         rule_set_subscriptions: Vec::new(),
-        applied_templates: input
-            .applied_templates
-            .into_iter()
-            .map(convert_applied_template_input)
-            .collect(),
+        // 场景模板已移除：save 恒写空数组（serde 兼容旧字段，空数组无害）。
+        applied_templates: Vec::new(),
         custom_rule_sets: input.custom_rule_sets,
-        custom_templates: input
-            .custom_templates
-            .into_iter()
-            .map(convert_custom_template_input)
-            .collect::<Result<Vec<_>, _>>()?,
-    })
-}
-
-fn convert_custom_template_input(input: CustomTemplateInput) -> Result<CustomTemplate, String> {
-    Ok(CustomTemplate {
-        id: input.id,
-        name: input.name,
-        desc: input.desc,
-        rules: input.rules,
-        created_at: input.created_at,
+        custom_templates: Vec::new(),
     })
 }
 
@@ -256,14 +207,6 @@ fn parse_rule_set_kind(s: &str) -> Result<pp_client::local_override::RuleSetKind
         "singbox_remote" => Ok(pp_client::local_override::RuleSetKind::SingBoxRemote),
         "singbox_local" => Ok(pp_client::local_override::RuleSetKind::SingBoxLocal),
         _ => Err(format!("unknown rule_set kind: {s}")),
-    }
-}
-
-fn convert_applied_template_input(input: AppliedTemplateInput) -> AppliedTemplate {
-    AppliedTemplate {
-        template_id: input.template_id,
-        applied_at: input.applied_at,
-        generated_rule_ids: input.generated_rule_ids,
     }
 }
 

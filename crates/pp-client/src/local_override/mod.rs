@@ -2,14 +2,13 @@
 //!
 //! ADR-0002: Client rule management redesign (local override layer + rule cards).
 //!
-//! 自「废弃内置规则集订阅与内置场景模板」起只保留用户自控模型：规则卡片 +
-//! [`CustomRuleSet`] + [`CustomTemplate`]；`rule_set_subscriptions` 段仅作旧文件
-//! serde 兼容（load 内迁移清空）。
+//! 自「移除场景模板」起只保留用户自控模型：规则卡片 + [`CustomRuleSet`]；
+//! `rule_set_subscriptions` / `applied_templates` / `custom_templates` 段仅作旧文件
+//! serde 兼容（load 内迁移/清空）。
 //!
 //! Module structure:
 //! - `schema` — type definitions (`LocalOverride`, `LocalRule`, `RuleMatchType`, etc.)
 //! - `store` — `LocalOverrideStore` for `local_override.json` read/write + 存量迁移
-//! - `template` — user-defined custom templates (apply / revert)
 //! - `ruleset` — custom rule set download, cache, and file sync
 //! - `singbox` — sing-box config injection (`apply_singbox_local_override`)
 
@@ -17,13 +16,11 @@ pub mod ruleset;
 pub mod schema;
 pub mod singbox;
 pub mod store;
-pub mod template;
 
 pub use ruleset::*;
 pub use schema::*;
 pub use singbox::*;
 pub use store::*;
-pub use template::*;
 
 use serde_json::Value;
 
@@ -47,11 +44,10 @@ pub fn apply_local_override(config: &mut Value, ovr: &CoreLocalOverride) {
 /// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
 /// - Injection failure → warning log, does not block startup.
 ///
-/// 自「场景模板改为规则引用 + 应用激活」起，`singbox.rules` 的注入条件为
-/// **`enabled && id ∈ 激活集合`**：激活集合 = ∪（已应用模板各自引用列表，
-/// 见 [`active_rule_ids`]）。未被任何已应用模板引用的规则不注入启动配置
-/// （模板的应用/撤销=场景开关，不复制规则）。规则集注入（[`apply_custom_rule_sets`]）
-/// 随之只看到被注入的规则，规则集条目也仅由这些规则引用。
+/// 自「移除场景模板」起，`singbox.rules` 的注入条件为 **`enabled`**：所有启用的
+/// 规则卡片全部注入（不再按模板引用过滤）。规则集注入
+/// （[`apply_custom_rule_sets`]）随之只看到被注入的规则，规则集条目也仅由这些
+/// 规则引用。
 pub fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut Value) {
     let store = LocalOverrideStore::new(data_dir.to_path_buf());
     let ovr = match store.load() {
@@ -67,10 +63,9 @@ pub fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut 
 
     let manager = RuleSetManager::new(data_dir.to_path_buf());
 
-    // 激活规则 ID 集合 → 只注入已应用模板引用的启用规则。
-    let active = active_rule_ids(&ovr);
+    // 注入全部启用的本地规则（场景模板移除后不再有引用过滤）。
     let mut core = ovr.singbox.clone();
-    core.rules.retain(|r| r.enabled && active.contains(&r.id));
+    core.rules.retain(|r| r.enabled);
 
     // 本地规则卡片前插（rule_set 引用由用户规则卡片定义并校验到 custom tag）。
     apply_local_override(config, &core);

@@ -107,8 +107,6 @@ pub fn run() {
             pp_client_tauri::commands::run_task,
             pp_client_tauri::commands::local_override_get,
             pp_client_tauri::commands::local_override_save,
-            pp_client_tauri::commands::local_override_apply_template,
-            pp_client_tauri::commands::local_override_revert_template,
             pp_client_tauri::commands::local_override_update_rulesets_now,
             pp_client_tauri::commands::local_override_update_rule_set,
             pp_client_tauri::commands::config_slices_get,

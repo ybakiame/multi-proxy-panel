@@ -1,7 +1,7 @@
 //! Local Override Tauri commands.
 //!
-//! Provides frontend-facing commands for rule card management, template
-//! application, and rule set subscription control.
+//! Provides frontend-facing commands for rule card management and rule set
+//! control.
 
 use pp_client::local_override::{LocalOverrideStore, RuleSetManager};
 use tauri::State;
@@ -84,8 +84,7 @@ pub fn local_override_save(
 mod tests {
     use super::*;
     use pp_client::local_override::{
-        CustomRuleSet, CustomRuleSetSource, CustomTemplate, LocalOverride, LocalRule, RuleAction,
-        RuleMatchType,
+        CustomRuleSet, CustomRuleSetSource, LocalOverride, LocalRule, RuleAction, RuleMatchType,
     };
 
     fn sample_rule(id: &str, sort_order: i32) -> LocalRule {
@@ -104,7 +103,7 @@ mod tests {
     }
 
     /// An override carrying every user-editable segment (custom rule set +
-    /// custom template + rules), shaped like a post-edit save.
+    /// rules), shaped like a post-edit save.
     fn sample_override() -> LocalOverride {
         let mut ovr = LocalOverride {
             singbox: Default::default(),
@@ -124,13 +123,6 @@ mod tests {
             custom_templates: Vec::new(),
         };
         ovr.singbox.rules.push(sample_rule("r1", 0));
-        ovr.custom_templates.push(CustomTemplate {
-            id: "tpl-1".to_string(),
-            name: "模板".to_string(),
-            desc: "描述".to_string(),
-            rules: vec![sample_rule("t1", 0).id],
-            created_at: 1,
-        });
         ovr
     }
 
@@ -154,7 +146,7 @@ mod tests {
     #[test]
     fn save_then_get_roundtrip_preserves_custom_segments() {
         // 模拟保存（sync manual 落盘 + store.save）后 get 往返自洽：
-        // custom 段（含 cached 状态判定）与模板快照原样回读。
+        // custom 段（含 cached 状态判定）与规则卡片原样回读；模板段恒空。
         let dir = tempfile::tempdir().unwrap();
         let ovr = sample_override();
         let manager = pp_client::local_override::RuleSetManager::new(dir.path().to_path_buf());
@@ -169,9 +161,8 @@ mod tests {
         let custom = &view.custom_rule_sets[0];
         assert_eq!(custom.tag, "my-block");
         assert!(custom.cached, "manual 内容同步落盘后 cached 应为 true");
-        assert_eq!(view.custom_templates.len(), 1);
-        assert_eq!(view.custom_templates[0].rules.len(), 1);
-        assert_eq!(view.custom_templates[0].rules[0], "t1");
+        assert!(view.custom_templates.is_empty());
+        assert!(view.applied_templates.is_empty());
         assert_eq!(view.singbox.rules.len(), 1);
         assert!(view.singbox.enabled);
         // 写回文件里订阅段恒为空数组（序列化契约：字段保留 serde 兼容）。

@@ -162,8 +162,8 @@ pub(crate) async fn preview_core_config_impl(
 mod tests {
     use super::*;
     use pp_client::local_override::{
-        AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalOverrideStore,
-        LocalRule, RuleAction, RuleAdvancedOptions, RuleMatchType,
+        CoreLocalOverride, LocalOverride, LocalOverrideStore, LocalRule, RuleAction,
+        RuleAdvancedOptions, RuleMatchType,
     };
     use pp_client::{CachedSubscriptionContent, SubFormat};
     use std::io::{Read, Write};
@@ -373,13 +373,13 @@ mod tests {
             )
             .unwrap();
 
-        // One enabled rule referenced by an applied custom template → active and
-        // therefore injected by `inject_local_override_warn_only`.
+        // One enabled local rule → injected by `inject_local_override_warn_only`
+        // (scenario templates removed: all enabled rules are injected).
         let rule_id = "r-local".to_string();
         let ovr = LocalOverride {
             singbox: CoreLocalOverride {
                 rules: vec![LocalRule {
-                    id: rule_id.clone(),
+                    id: rule_id,
                     name: "local reject".to_string(),
                     enabled: true,
                     match_type: RuleMatchType::DomainSuffix,
@@ -393,18 +393,6 @@ mod tests {
                 rule_sets: Vec::new(),
                 enabled: true,
             },
-            custom_templates: vec![CustomTemplate {
-                id: "tpl".to_string(),
-                name: "tpl".to_string(),
-                desc: String::new(),
-                rules: vec![rule_id],
-                created_at: 0,
-            }],
-            applied_templates: vec![AppliedTemplate {
-                template_id: "custom:tpl".to_string(),
-                applied_at: 0,
-                generated_rule_ids: Vec::new(),
-            }],
             ..Default::default()
         };
         LocalOverrideStore::new(dir.path().to_path_buf())

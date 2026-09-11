@@ -48,11 +48,7 @@ fn local_override_serde_roundtrip() {
                     .to_string(),
             default_interval_minutes: 1440,
         }],
-        applied_templates: vec![AppliedTemplate {
-            template_id: "return-china".to_string(),
-            applied_at: 1234567890,
-            generated_rule_ids: vec!["r1".to_string()],
-        }],
+        applied_templates: Vec::new(),
         custom_rule_sets: vec![
             CustomRuleSet {
                 id: "c1".to_string(),
@@ -76,13 +72,7 @@ fn local_override_serde_roundtrip() {
                 remote_updated_at: 0,
             },
         ],
-        custom_templates: vec![CustomTemplate {
-            id: "tpl1".to_string(),
-            name: "我的场景".to_string(),
-            desc: "规则引用组合".to_string(),
-            rules: vec!["r1".to_string(), "r2".to_string()],
-            created_at: 1234567890,
-        }],
+        custom_templates: Vec::new(),
     };
 
     let json = serde_json::to_string(&orig).unwrap();
@@ -170,24 +160,7 @@ fn custom_templates_default_empty_for_legacy_file() {
         }"#;
     let parsed: LocalOverride = serde_json::from_str(json).unwrap();
     assert!(parsed.custom_templates.is_empty());
-
-    // 显式写入后 roundtrip 完整（规则 ID 引用列表）。
-    let mut ovr = parsed;
-    ovr.custom_templates.push(CustomTemplate {
-        id: "tpl1".to_string(),
-        name: "我的场景".to_string(),
-        desc: String::new(),
-        rules: vec!["r1".to_string(), "r2".to_string()],
-        created_at: 100,
-    });
-    let saved = serde_json::to_string(&ovr).unwrap();
-    let back: LocalOverride = serde_json::from_str(&saved).unwrap();
-    assert_eq!(back.custom_templates.len(), 1);
-    assert_eq!(back.custom_templates[0].id, "tpl1");
-    assert_eq!(
-        back.custom_templates[0].rules,
-        vec!["r1".to_string(), "r2".to_string()]
-    );
+    assert!(parsed.applied_templates.is_empty());
 }
 
 /// 旧版文件（无 `custom_rule_sets` 段）反序列化为空 Vec。
@@ -243,22 +216,45 @@ fn custom_rule_set_legacy_enabled_field_is_ignored() {
     assert!(!entry.contains("\"enabled\""));
 }
 
-/// 纯资源语义：模板是纯规则 ID 引用列表，反序列化只接受字符串数组。
+/// 场景模板已移除：`custom_templates` 仅作 serde 兼容字段，旧文件中的
+/// 字符串引用数组与更早的快照对象数组都必须能无损解析（不因形态而失败）。
 #[test]
-fn custom_template_rules_are_string_references() {
-    let json = r#"{
+fn legacy_custom_template_shapes_parse_as_opaque_compat_values() {
+    for rules in [
+        serde_json::json!(["r1", "r2"]),
+        serde_json::json!([{ "id": "r1", "name": "a" }, { "id": "r2" }]),
+    ] {
+        let json = serde_json::json!({
             "singbox": { "rules": [], "rule_sets": [], "enabled": true },
             "rule_set_subscriptions": [],
             "applied_templates": [],
             "custom_rule_sets": [],
             "custom_templates": [{
                 "id": "tpl1", "name": "t", "desc": "",
-                "rules": ["r1", "r2"],
+                "rules": rules,
                 "created_at": 1
             }]
-        }"#;
-    let parsed: LocalOverride = serde_json::from_str(json).unwrap();
-    assert_eq!(parsed.custom_templates[0].rules, vec!["r1", "r2"]);
+        });
+        let parsed: LocalOverride = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.custom_templates.len(), 1);
+    }
+}
+
+/// `applied_templates` 同为 serde 兼容字段：任意历史形态都能解析。
+#[test]
+fn legacy_applied_template_records_parse_as_opaque_compat_values() {
+    let json = serde_json::json!({
+        "singbox": { "rules": [], "rule_sets": [], "enabled": true },
+        "rule_set_subscriptions": [],
+        "applied_templates": [
+            { "template_id": "return-china", "applied_at": 1, "generated_rule_ids": ["r1"] },
+            { "template_id": "custom:tpl", "applied_at": 2 }
+        ],
+        "custom_rule_sets": [],
+        "custom_templates": []
+    });
+    let parsed: LocalOverride = serde_json::from_value(json).unwrap();
+    assert_eq!(parsed.applied_templates.len(), 2);
 }
 
 #[test]

@@ -1,9 +1,9 @@
 //! Store tests (split out of `store.rs` to stay within the
 //! business-file size gate; see `.agents/rules/code-organization.md`).
 //!
-//! Covers `LocalOverrideStore` read/write resilience plus the two idempotent
-//! legacy migrations run inside `load`: built-in subscription → custom rule
-//! sets, and template rule snapshots → rule-ID references.
+//! Covers `LocalOverrideStore` read/write resilience plus the idempotent
+//! legacy migration run inside `load`: built-in subscription → custom rule
+//! sets, and cleanup of the removed scenario-template fields.
 //!
 
 use super::*;
@@ -134,9 +134,9 @@ fn migration_converts_subscribed_builtin_to_custom_remote() {
         other => panic!("unexpected source {other:?}"),
     }
 
-    // 仅内置 applied 记录被删除，custom: 记录保留。
-    assert_eq!(ovr.applied_templates.len(), 1);
-    assert_eq!(ovr.applied_templates[0].template_id, "custom:tpl-1");
+    // 场景模板字段随功能移除一次性清空（写回空数组）。
+    assert!(ovr.applied_templates.is_empty());
+    assert!(ovr.custom_templates.is_empty());
 
     // 迁移结果已写回磁盘：再次 load 幂等，不重复追加。
     let ovr2 = store.load().unwrap();
@@ -180,7 +180,7 @@ fn migration_ignores_unsubscribed_and_keeps_rules() {
     // 内置模板生成的规则保留在 singbox.rules，用户可手动管理。
     assert_eq!(ovr.singbox.rules.len(), 1);
     assert_eq!(ovr.singbox.rules[0].target, "geoip-cn");
-    // 内置 applied 记录删除。
+    // 场景模板字段清空。
     assert!(ovr.applied_templates.is_empty());
 }
 
@@ -213,13 +213,16 @@ fn migration_is_idempotent_across_reloads() {
 }
 
 // -----------------------------------------------------------------------
-// Snapshot → reference migration (reference-semantics refactor)
+// Scenario-template removal cleanup
 // -----------------------------------------------------------------------
 
-/// 构造一份旧版文件：custom_templates 携带快照规则对象数组。
-fn legacy_snapshot_template_file(dir: &tempfile::TempDir) {
+/// 旧版文件携带模板字段（字符串引用与快照对象两种历史形态）→ load 清空并写回
+/// 空数组；规则卡片（`singbox.rules`）不受影响。
+#[test]
+fn migration_clears_removed_scenario_template_fields() {
+    let dir = tempfile::tempdir().unwrap();
     write_legacy_file(
-        dir,
+        &dir,
         serde_json::json!({
             "singbox": {
                 "enabled": true, "rule_sets": [],
@@ -230,92 +233,30 @@ fn legacy_snapshot_template_file(dir: &tempfile::TempDir) {
                 }]
             },
             "rule_set_subscriptions": [],
-            "applied_templates": [],
+            "applied_templates": [
+                { "template_id": "custom:tpl-1", "applied_at": 2, "generated_rule_ids": [] }
+            ],
             "custom_rule_sets": [],
             "custom_templates": [{
                 "id": "tpl-1", "name": "旧模板", "desc": "",
-                "rules": [
-                    { "id": "r1", "name": "a", "enabled": true,
-                      "match_type": "domain_suffix", "target": "a.com",
-                      "action": "proxy", "note": "", "created_at": 1, "sort_order": 0 },
-                    { "id": "r2", "name": "b", "enabled": true,
-                      "match_type": "domain_suffix", "target": "b.com",
-                      "action": "direct", "note": "", "created_at": 1, "sort_order": 1 }
-                ],
+                // 快照对象数组（更早的历史形态）也必须能解析后清空。
+                "rules": [ { "id": "r1", "name": "a" } ],
                 "created_at": 1
             }]
         }),
     );
-}
-
-#[test]
-fn migration_converts_template_snapshot_to_id_refs() {
-    let dir = tempfile::tempdir().unwrap();
-    legacy_snapshot_template_file(&dir);
 
     let store = LocalOverrideStore::new(dir.path().to_path_buf());
     let ovr = store.load().unwrap();
 
-    assert_eq!(ovr.custom_templates.len(), 1);
-    let tpl = &ovr.custom_templates[0];
-    assert_eq!(tpl.id, "tpl-1");
-    // 快照规则数组 → 规则 ID 引用列表（保留原 id 顺序）。
-    assert_eq!(tpl.rules, vec!["r1", "r2"]);
-    // 规则列表（用户卡片）不被迁移触碰。
+    assert!(ovr.applied_templates.is_empty());
+    assert!(ovr.custom_templates.is_empty());
+    // 规则卡片不被清理触碰。
     assert_eq!(ovr.singbox.rules.len(), 1);
     assert_eq!(ovr.singbox.rules[0].id, "r1");
 
-    // 迁移结果已写回磁盘：再次 load 幂等（rules 保持字符串引用）。
+    // 清理结果已写回磁盘：文件里模板段为空数组，再次 load 幂等。
     let reloaded = store.load().unwrap();
-    assert_eq!(reloaded.custom_templates[0].rules, vec!["r1", "r2"]);
-}
-
-#[test]
-fn migration_template_snapshot_refs_drop_objects_without_id() {
-    let dir = tempfile::tempdir().unwrap();
-    write_legacy_file(
-        &dir,
-        serde_json::json!({
-            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
-            "rule_set_subscriptions": [],
-            "applied_templates": [],
-            "custom_rule_sets": [],
-            "custom_templates": [{
-                "id": "tpl-1", "name": "t", "desc": "",
-                "rules": [ { "id": "r1", "name": "a" }, { "name": "no-id" } ],
-                "created_at": 1
-            }]
-        }),
-    );
-
-    let store = LocalOverrideStore::new(dir.path().to_path_buf());
-    let ovr = store.load().unwrap();
-    // 无 id 的对象被跳过，可解析对象转引用。
-    assert_eq!(ovr.custom_templates[0].rules, vec!["r1"]);
-}
-
-#[test]
-fn migration_template_refs_already_strings_unchanged() {
-    // 已是新格式（字符串引用）的文件无需迁移：load 不触发写盘改动。
-    let dir = tempfile::tempdir().unwrap();
-    write_legacy_file(
-        &dir,
-        serde_json::json!({
-            "singbox": { "rules": [], "rule_sets": [], "enabled": true },
-            "rule_set_subscriptions": [],
-            "applied_templates": [],
-            "custom_rule_sets": [],
-            "custom_templates": [{
-                "id": "tpl-1", "name": "t", "desc": "",
-                "rules": ["r1", "r2"], "created_at": 1
-            }]
-        }),
-    );
-
-    let store = LocalOverrideStore::new(dir.path().to_path_buf());
-    let ovr = store.load().unwrap();
-    assert_eq!(ovr.custom_templates[0].rules, vec!["r1", "r2"]);
-    // 二次读取一致（幂等）。
-    let ovr2 = store.load().unwrap();
-    assert_eq!(ovr2.custom_templates[0].rules, vec!["r1", "r2"]);
+    assert!(reloaded.applied_templates.is_empty());
+    assert!(reloaded.custom_templates.is_empty());
 }
