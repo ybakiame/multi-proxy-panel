@@ -4,7 +4,7 @@
 //! so it can be unit tested without a pipeline. [`apply_config_slices`] only
 //! mutates the passed-in JSON value.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use pp_common::{PanelError, PanelResult};
 use serde_json::{Map, Value};
@@ -12,7 +12,8 @@ use serde_json::{Map, Value};
 use super::dns::{DnsRule, DnsServer};
 use super::outbound::{
     CustomOutbound, Hysteria2Outbound, OutboundProtocol, OutboundTls, OutboundTransport,
-    ShadowsocksOutbound, TrojanOutbound, VlessOutbound, VmessOutbound,
+    SelectorOutbound, ShadowsocksOutbound, TrojanOutbound, UrlTestOutbound, VlessOutbound,
+    VmessOutbound,
 };
 use super::{ConfigSlices, DnsSlice, outbound_tag};
 
@@ -61,7 +62,39 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
     if slices.outbounds.enabled {
         let mut used = collect_outbound_tags(obj);
         let mut rendered = Vec::new();
-        for item in slices.outbounds.items.iter().filter(|item| item.enabled) {
+        // Base tag -> final (possibly renamed) tag, used to remap group members
+        // that reference a slice node outbound whose tag was renamed.
+        let mut node_tag_map: HashMap<String, String> = HashMap::new();
+
+        // Render concrete node outbounds first so group outbounds (rendered
+        // below) come after the members they reference.
+        for item in slices
+            .outbounds
+            .items
+            .iter()
+            .filter(|item| item.enabled && !item.protocol.is_group())
+        {
+            let base = outbound_tag(&item.name);
+            let (tag, renamed) = unique_tag(&base, &used);
+            used.insert(tag.clone());
+            if renamed {
+                report.renamed_outbounds.push(OutboundTagRename {
+                    from: base.clone(),
+                    to: tag.clone(),
+                });
+            }
+            node_tag_map.insert(base, tag.clone());
+            report.outbound_tags.push(tag.clone());
+            rendered.push(render_outbound(item, &tag));
+        }
+
+        // Then render selector / urltest groups.
+        for item in slices
+            .outbounds
+            .items
+            .iter()
+            .filter(|item| item.enabled && item.protocol.is_group())
+        {
             let base = outbound_tag(&item.name);
             let (tag, renamed) = unique_tag(&base, &used);
             used.insert(tag.clone());
@@ -72,7 +105,7 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
                 });
             }
             report.outbound_tags.push(tag.clone());
-            rendered.push(render_outbound(item, &tag));
+            rendered.push(render_outbound_with(item, &tag, &node_tag_map));
         }
         append_outbounds(obj, rendered);
     }
@@ -142,6 +175,16 @@ fn render_dns_rule(rule: &DnsRule) -> Value {
 /// Render a [`CustomOutbound`] as a sing-box outbound object with `tag`.
 #[must_use]
 pub fn render_outbound(item: &CustomOutbound, tag: &str) -> Value {
+    render_outbound_with(item, tag, &HashMap::new())
+}
+
+/// Render a [`CustomOutbound`], remapping group member tags through
+/// `node_tag_map` (base tag -> final tag after collision renames).
+fn render_outbound_with(
+    item: &CustomOutbound,
+    tag: &str,
+    node_tag_map: &HashMap<String, String>,
+) -> Value {
     let mut out = Map::new();
     out.insert("tag".to_string(), str_value(tag));
     match &item.protocol {
@@ -150,8 +193,70 @@ pub fn render_outbound(item: &CustomOutbound, tag: &str) -> Value {
         OutboundProtocol::Shadowsocks(o) => render_shadowsocks(&mut out, o),
         OutboundProtocol::Trojan(o) => render_trojan(&mut out, o),
         OutboundProtocol::Hysteria2(o) => render_hysteria2(&mut out, o),
+        OutboundProtocol::Selector(o) => render_selector(&mut out, o, node_tag_map),
+        OutboundProtocol::UrlTest(o) => render_urltest(&mut out, o, node_tag_map),
     }
     Value::Object(out)
+}
+
+fn render_selector(
+    out: &mut Map<String, Value>,
+    o: &SelectorOutbound,
+    node_tag_map: &HashMap<String, String>,
+) {
+    out.insert("type".to_string(), str_value("selector"));
+    out.insert(
+        "outbounds".to_string(),
+        render_members(&o.outbounds, node_tag_map),
+    );
+    if !o.default.is_empty() {
+        out.insert(
+            "default".to_string(),
+            str_value(remap_tag(&o.default, node_tag_map)),
+        );
+    }
+    if o.interrupt_exist_connections {
+        out.insert("interrupt_exist_connections".to_string(), Value::Bool(true));
+    }
+}
+
+fn render_urltest(
+    out: &mut Map<String, Value>,
+    o: &UrlTestOutbound,
+    node_tag_map: &HashMap<String, String>,
+) {
+    out.insert("type".to_string(), str_value("urltest"));
+    out.insert(
+        "outbounds".to_string(),
+        render_members(&o.outbounds, node_tag_map),
+    );
+    if !o.url.is_empty() {
+        out.insert("url".to_string(), str_value(&o.url));
+    }
+    if !o.interval.is_empty() {
+        out.insert("interval".to_string(), str_value(&o.interval));
+    }
+    if o.tolerance != 0 {
+        out.insert("tolerance".to_string(), Value::from(o.tolerance));
+    }
+    if o.interrupt_exist_connections {
+        out.insert("interrupt_exist_connections".to_string(), Value::Bool(true));
+    }
+}
+
+/// Render a group member list as a JSON array, remapping renamed node tags.
+fn render_members(members: &[String], node_tag_map: &HashMap<String, String>) -> Value {
+    Value::Array(
+        members
+            .iter()
+            .map(|member| str_value(remap_tag(member, node_tag_map)))
+            .collect(),
+    )
+}
+
+/// Resolve a member tag to its final tag, if it was renamed.
+fn remap_tag<'a>(tag: &'a str, node_tag_map: &'a HashMap<String, String>) -> &'a str {
+    node_tag_map.get(tag).map_or(tag, String::as_str)
 }
 
 fn render_vless(out: &mut Map<String, Value>, o: &VlessOutbound) {

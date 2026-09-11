@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 
-use super::outbound::outbound_tag;
+use super::outbound::{OUTBOUND_TAG_PREFIX, OutboundProtocol, outbound_tag};
 use super::{DnsMode, DnsSlice, OutboundsSlice};
 
 /// Current schema version (stored in [`ConfigSlices::version`]).
@@ -119,9 +119,14 @@ impl DnsSlice {
 }
 
 impl OutboundsSlice {
-    /// Validate enabled custom outbounds (unique generated tags, server/port).
+    /// Validate enabled custom outbounds: unique generated tags, server/port for
+    /// concrete nodes, and selector/urltest group membership.
     pub fn validate(&self) -> PanelResult<()> {
         let mut tags: HashSet<String> = HashSet::new();
+        let mut group_tags: HashSet<String> = HashSet::new();
+        let mut node_tags: HashSet<String> = HashSet::new();
+
+        // First pass: reserve every enabled tag and classify groups vs. nodes.
         for item in self.items.iter().filter(|i| i.enabled) {
             if item.name.trim().is_empty() {
                 return Err(validation(format!(
@@ -135,10 +140,87 @@ impl OutboundsSlice {
                     "duplicate custom outbound tag `{tag}` (rename one of the outbounds)"
                 )));
             }
-            validate_outbound_address(item.protocol.server(), item.protocol.server_port(), &tag)?;
+            if item.protocol.is_group() {
+                group_tags.insert(tag);
+            } else {
+                validate_outbound_address(
+                    item.protocol.server(),
+                    item.protocol.server_port(),
+                    &tag,
+                )?;
+                node_tags.insert(tag);
+            }
+        }
+
+        // Second pass: validate group membership now that all tags are known.
+        for item in self.items.iter().filter(|i| i.enabled) {
+            let tag = outbound_tag(&item.name);
+            match &item.protocol {
+                OutboundProtocol::Selector(o) => {
+                    validate_group_members(&o.outbounds, &group_tags, &node_tags, &tag)?;
+                    if !o.default.is_empty() && !o.outbounds.contains(&o.default) {
+                        return Err(validation(format!(
+                            "selector `{tag}` default `{}` is not one of its members",
+                            o.default
+                        )));
+                    }
+                }
+                OutboundProtocol::UrlTest(o) => {
+                    validate_group_members(&o.outbounds, &group_tags, &node_tags, &tag)?;
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
+}
+
+/// Validate a selector/urltest member list.
+///
+/// v1 forbids nested groups: a member may reference an enabled custom node
+/// outbound, the built-in `direct` outbound, or any tag that cannot be resolved
+/// statically (subscription node / template outbound tags) — the latter is left
+/// to sing-box's runtime validation. `slice-`-prefixed tags are slice-managed,
+/// so they must resolve to an enabled custom node outbound.
+fn validate_group_members(
+    members: &[String],
+    group_tags: &HashSet<String>,
+    node_tags: &HashSet<String>,
+    group_tag: &str,
+) -> PanelResult<()> {
+    if members.is_empty() {
+        return Err(validation(format!(
+            "group outbound `{group_tag}` requires at least one member"
+        )));
+    }
+    for member in members {
+        if member.trim().is_empty() {
+            return Err(validation(format!(
+                "group outbound `{group_tag}` has an empty member tag"
+            )));
+        }
+        if member == group_tag {
+            return Err(validation(format!(
+                "group outbound `{group_tag}` must not reference itself"
+            )));
+        }
+        if group_tags.contains(member) {
+            return Err(validation(format!(
+                "group outbound `{group_tag}` must not reference another group `{member}` (nested groups are not supported)"
+            )));
+        }
+        if node_tags.contains(member) || member == "direct" {
+            continue;
+        }
+        if member.starts_with(OUTBOUND_TAG_PREFIX) {
+            return Err(validation(format!(
+                "group outbound `{group_tag}` references unknown custom outbound `{member}`"
+            )));
+        }
+        // Anything else (subscription node / template outbound tag) cannot be
+        // resolved from the slice alone; sing-box validates it at runtime.
+    }
+    Ok(())
 }
 
 /// Validate an outbound server address + port.

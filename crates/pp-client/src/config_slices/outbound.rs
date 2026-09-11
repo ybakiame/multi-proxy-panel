@@ -62,10 +62,15 @@ pub enum OutboundProtocol {
     Shadowsocks(ShadowsocksOutbound),
     Trojan(TrojanOutbound),
     Hysteria2(Hysteria2Outbound),
+    Selector(SelectorOutbound),
+    /// sing-box spells the type discriminator `urltest` (no underscore), which
+    /// `rename_all = "snake_case"` would otherwise render as `url_test`.
+    #[serde(rename = "urltest")]
+    UrlTest(UrlTestOutbound),
 }
 
 impl OutboundProtocol {
-    /// Server address of the protocol payload.
+    /// Server address of the protocol payload (empty for group outbounds).
     #[must_use]
     pub fn server(&self) -> &str {
         match self {
@@ -74,10 +79,11 @@ impl OutboundProtocol {
             Self::Shadowsocks(o) => &o.server,
             Self::Trojan(o) => &o.server,
             Self::Hysteria2(o) => &o.server,
+            Self::Selector(_) | Self::UrlTest(_) => "",
         }
     }
 
-    /// Server port of the protocol payload.
+    /// Server port of the protocol payload (0 for group outbounds).
     #[must_use]
     pub fn server_port(&self) -> u16 {
         match self {
@@ -86,7 +92,15 @@ impl OutboundProtocol {
             Self::Shadowsocks(o) => o.server_port,
             Self::Trojan(o) => o.server_port,
             Self::Hysteria2(o) => o.server_port,
+            Self::Selector(_) | Self::UrlTest(_) => 0,
         }
+    }
+
+    /// Whether this payload is a group outbound (selector / urltest) rather than
+    /// a concrete proxy node.
+    #[must_use]
+    pub fn is_group(&self) -> bool {
+        matches!(self, Self::Selector(_) | Self::UrlTest(_))
     }
 }
 
@@ -186,6 +200,69 @@ pub struct Hysteria2Obfs {
     pub obfs_type: String,
     #[serde(default)]
     pub password: String,
+}
+
+/// Selector outbound: manually picks one member outbound (Clash API controlled).
+///
+/// Fields verified against sing-box 1.14 `outbound/selector`: `outbounds`
+/// (required), `default`, `interrupt_exist_connections`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectorOutbound {
+    /// Member outbound tags to select from.
+    #[serde(default)]
+    pub outbounds: Vec<String>,
+    /// Default member tag; the first member is used when empty.
+    #[serde(default)]
+    pub default: String,
+    /// Interrupt existing connections when the selection changes.
+    #[serde(default)]
+    pub interrupt_exist_connections: bool,
+}
+
+/// URLTest outbound: automatically picks the lowest-latency member.
+///
+/// Fields verified against sing-box 1.14 `outbound/urltest`: `outbounds`
+/// (required), `url`, `interval`, `tolerance`, `interrupt_exist_connections`.
+/// `tolerance == 0` lets sing-box use its own default (50 ms).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UrlTestOutbound {
+    /// Member outbound tags to test.
+    #[serde(default)]
+    pub outbounds: Vec<String>,
+    /// Test URL.
+    #[serde(default = "default_urltest_url")]
+    pub url: String,
+    /// Test interval as a duration string (e.g. `3m`).
+    #[serde(default = "default_urltest_interval")]
+    pub interval: String,
+    /// Test tolerance in milliseconds (`0` = sing-box default).
+    #[serde(default)]
+    pub tolerance: u16,
+    /// Interrupt existing connections when the selected outbound changes.
+    #[serde(default)]
+    pub interrupt_exist_connections: bool,
+}
+
+impl Default for UrlTestOutbound {
+    fn default() -> Self {
+        Self {
+            outbounds: Vec::new(),
+            url: default_urltest_url(),
+            interval: default_urltest_interval(),
+            tolerance: 0,
+            interrupt_exist_connections: false,
+        }
+    }
+}
+
+/// serde default for [`UrlTestOutbound::url`] (sing-box default test URL).
+fn default_urltest_url() -> String {
+    "https://www.gstatic.com/generate_204".to_string()
+}
+
+/// serde default for [`UrlTestOutbound::interval`] (sing-box default `3m`).
+fn default_urltest_interval() -> String {
+    "3m".to_string()
 }
 
 /// Outbound TLS settings (curated fields).

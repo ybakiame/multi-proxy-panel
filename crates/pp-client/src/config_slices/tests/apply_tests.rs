@@ -349,3 +349,153 @@ fn render_outbound_grpc_and_http_transports() {
     assert_eq!(value["transport"]["type"], "http");
     assert_eq!(value["transport"]["host"], json!(["h.example.com"]));
 }
+
+#[test]
+fn render_outbound_selector_fields() {
+    let item = CustomOutbound {
+        id: "g1".to_string(),
+        name: "Auto Select".to_string(),
+        enabled: true,
+        protocol: OutboundProtocol::Selector(SelectorOutbound {
+            outbounds: vec!["slice-a".to_string(), "direct".to_string()],
+            default: "direct".to_string(),
+            interrupt_exist_connections: true,
+        }),
+    };
+
+    let value = render_outbound(&item, "slice-auto-select");
+    assert_eq!(value["type"], "selector");
+    assert_eq!(value["outbounds"], json!(["slice-a", "direct"]));
+    assert_eq!(value["default"], "direct");
+    assert_eq!(value["interrupt_exist_connections"], true);
+}
+
+#[test]
+fn render_outbound_urltest_fields() {
+    let item = CustomOutbound {
+        id: "g1".to_string(),
+        name: "Auto Test".to_string(),
+        enabled: true,
+        protocol: OutboundProtocol::UrlTest(UrlTestOutbound {
+            outbounds: vec!["slice-a".to_string()],
+            url: "https://example.com/ping".to_string(),
+            interval: "5m".to_string(),
+            tolerance: 80,
+            interrupt_exist_connections: false,
+        }),
+    };
+
+    let value = render_outbound(&item, "slice-auto-test");
+    assert_eq!(value["type"], "urltest");
+    assert_eq!(value["outbounds"], json!(["slice-a"]));
+    assert_eq!(value["url"], "https://example.com/ping");
+    assert_eq!(value["interval"], "5m");
+    assert_eq!(value["tolerance"], 80);
+    assert!(value.get("interrupt_exist_connections").is_none());
+}
+
+#[test]
+fn render_urltest_omits_zero_tolerance_and_empty_optionals() {
+    let item = CustomOutbound {
+        id: "g1".to_string(),
+        name: "Auto Test".to_string(),
+        enabled: true,
+        protocol: OutboundProtocol::UrlTest(UrlTestOutbound {
+            outbounds: vec!["direct".to_string()],
+            url: String::new(),
+            interval: String::new(),
+            tolerance: 0,
+            interrupt_exist_connections: false,
+        }),
+    };
+
+    let value = render_outbound(&item, "slice-auto-test");
+    assert!(value.get("url").is_none());
+    assert!(value.get("interval").is_none());
+    assert!(value.get("tolerance").is_none());
+    assert!(value.get("interrupt_exist_connections").is_none());
+}
+
+#[test]
+fn render_selector_omits_empty_default() {
+    let item = CustomOutbound {
+        id: "g1".to_string(),
+        name: "Auto Select".to_string(),
+        enabled: true,
+        protocol: OutboundProtocol::Selector(SelectorOutbound {
+            outbounds: vec!["direct".to_string()],
+            default: String::new(),
+            interrupt_exist_connections: false,
+        }),
+    };
+
+    let value = render_outbound(&item, "slice-auto-select");
+    assert!(value.get("default").is_none());
+    assert!(value.get("interrupt_exist_connections").is_none());
+}
+
+#[test]
+fn apply_renders_groups_after_nodes_and_remaps_members() {
+    let mut config = json!({ "outbounds": [ { "type": "direct", "tag": "slice-node" } ] });
+    let slices = ConfigSlices {
+        outbounds: OutboundsSlice {
+            enabled: true,
+            items: vec![
+                ss_outbound("o1", "Node"),
+                CustomOutbound {
+                    id: "g1".to_string(),
+                    name: "Auto".to_string(),
+                    enabled: true,
+                    protocol: OutboundProtocol::Selector(SelectorOutbound {
+                        outbounds: vec!["slice-node".to_string(), "direct".to_string()],
+                        default: "slice-node".to_string(),
+                        interrupt_exist_connections: false,
+                    }),
+                },
+            ],
+        },
+        ..Default::default()
+    };
+
+    let report = apply_config_slices(&mut config, &slices).unwrap();
+    // Node is renamed (existing `slice-node` tag), group keeps its own tag.
+    assert_eq!(
+        report.outbound_tags,
+        vec!["slice-node-2".to_string(), "slice-auto".to_string()]
+    );
+
+    let outbounds = config["outbounds"].as_array().unwrap();
+    assert_eq!(outbounds.len(), 3);
+    assert_eq!(outbounds[0]["tag"], "slice-node");
+    assert_eq!(outbounds[1]["tag"], "slice-node-2");
+    assert_eq!(outbounds[2]["tag"], "slice-auto");
+    assert_eq!(outbounds[2]["type"], "selector");
+    // The group is rendered after its member and the renamed tag is remapped.
+    assert_eq!(outbounds[2]["outbounds"], json!(["slice-node-2", "direct"]));
+    assert_eq!(outbounds[2]["default"], "slice-node-2");
+}
+
+#[test]
+fn apply_skips_disabled_group_outbounds() {
+    let mut config = json!({ "outbounds": [ { "type": "direct", "tag": "direct" } ] });
+    let group = CustomOutbound {
+        id: "g1".to_string(),
+        name: "Auto".to_string(),
+        enabled: false,
+        protocol: OutboundProtocol::UrlTest(UrlTestOutbound {
+            outbounds: vec!["direct".to_string()],
+            ..Default::default()
+        }),
+    };
+    let slices = ConfigSlices {
+        outbounds: OutboundsSlice {
+            enabled: true,
+            items: vec![group],
+        },
+        ..Default::default()
+    };
+
+    let report = apply_config_slices(&mut config, &slices).unwrap();
+    assert!(report.outbound_tags.is_empty());
+    assert_eq!(config["outbounds"].as_array().unwrap().len(), 1);
+}

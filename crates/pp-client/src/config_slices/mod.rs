@@ -19,7 +19,8 @@
 //! is intentionally not maintained. Fields emitted here are verified against the
 //! 1.14 configuration docs: vmess `alter_id` / `security`, vless `flow`, the
 //! V2Ray transport kinds (`ws` / `grpc` / `http` / `httpupgrade`), hysteria2
-//! `obfs`, and the 1.12+ type-based DNS server format are all still valid.
+//! `obfs`, the selector / urltest group outbounds, and the 1.12+ type-based DNS
+//! server format are all still valid.
 
 pub mod apply;
 pub mod dns;
