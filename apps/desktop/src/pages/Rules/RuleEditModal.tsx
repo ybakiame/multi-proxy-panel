@@ -3,6 +3,15 @@ import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
 
+/**
+ * 桌面端规则动作列表：过滤掉「指定出站」。
+ *
+ * 共享的 `RULE_ACTIONS` 已新增 `outbound`（供移动端规则卡片消费），但桌面表单尚无
+ * 出站 tag 选择器，直接展示会出现可保存却被后端拒绝的无效项。桌面出站选择器随 D3
+ * 后置实现，届时再放开此项。
+ */
+const DESKTOP_RULE_ACTIONS = RULE_ACTIONS.filter((opt) => opt.id !== "outbound");
+
 /** 规则集选择器选项（rule_set 匹配目标）：规则集是纯资源无启停，全部可用。 */
 export interface RuleSetOption {
   /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
@@ -179,7 +188,7 @@ function RuleEditForm({
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                {RULE_ACTIONS.map((opt) => (
+                {DESKTOP_RULE_ACTIONS.map((opt) => (
                   <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
                     {opt.label}
                     <ListBox.ItemIndicator />
