@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
-import { Alert, Button, Card } from "@heroui/react";
+import { Alert, Button } from "@heroui/react";
 import {
   PROXY_STATUS_KEY,
   SUBSCRIPTIONS_KEY,
@@ -22,6 +22,7 @@ import type { ClientStatus, SubscriptionView } from "@pp/client-core";
 import { ConnectionsEntryCard } from "../components/ConnectionsEntryCard";
 import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
+import { StartStopFab } from "../components/StartStopFab";
 import { StatusCard } from "../components/StatusCard";
 import { SubscriptionSheet } from "../components/SubscriptionSheet";
 import { TrafficCard } from "../components/TrafficCard";
@@ -32,16 +33,16 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
 /**
  * 首页（仪表盘，ADR-0003 M5）。区块自上而下：
  *
- * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
+ * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet；无生效订阅时行下提示先选择）；
  * 2. 状态卡（StatusCard）：运行状态大字；运行中内嵌出站模式分段切换（`RuleModeSwitch`），
  *    未运行时仅展示状态并保留已保存模式 chip；
  * 3. 运行依赖区（仅核心运行中渲染，未运行时整组隐藏，相关轮询亦不发起）：
  *    当前节点卡（CurrentNodeCard，订阅名/分组/当前节点，点击进代理选择页）+ 流量统计卡
  *    （TrafficCard，2s 轮询）+ 当前连接入口（ConnectionsEntryCard，点击进连接页）；
- * 4. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
- *    「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
+ * 4. 主操作：右下角悬浮启停按钮（StartStopFab，无生效订阅时禁用并提示选择）；点「启动代理」
+ *    即完成「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
- * 5. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）。
+ * 5. VPN 授权引导与启动失败错误：均为独立 Alert 卡片，不再包裹启停按钮。
  *
  * 配置预览等开发者入口已迁移至设置页「开发者工具」分组。
  */
@@ -194,6 +195,7 @@ export default function Dashboard() {
             <ChevronDownIcon className="size-4 shrink-0 text-muted" aria-hidden="true" />
           </span>
         </Button>
+        {!running && !canStart && <p className="text-xs text-warning">请先选择要使用的订阅</p>}
       </header>
 
       {/* 2. 状态卡（运行中内嵌出站模式分段切换） */}
@@ -213,76 +215,56 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* 5+6. 主操作 + VPN 授权引导 */}
-      <Card>
-        <Card.Content className="flex flex-col gap-4">
-          {/* 授权被拒 / 重试仍遇未授权：显示引导 + 「去授权」兜底按钮；授权链路进行中隐藏避免与系统弹窗重叠 */}
-          {vpnAuthRequired && !startingPending && (
-            <Alert status="warning">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>需要 VPN 授权</Alert.Title>
-                <Alert.Description>
-                  启动代理需要 Android 系统授权创建
-                  VPN。授权被拒绝或取消时无法启动，点击「去授权」重新发起，授权成功后将在同一链路内自动启动代理。
-                </Alert.Description>
-                <div className="mt-3">
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    className="min-h-11"
-                    isPending={vpnAuthMutation.isPending}
-                    onPress={() => void authorizeAndStart()}
-                  >
-                    去授权
-                  </Button>
-                </div>
-              </Alert.Content>
-            </Alert>
-          )}
+      {/* 5. VPN 授权引导 / 启动失败：独立条件卡片，不再包裹启停按钮 */}
+      {/* 授权被拒 / 重试仍遇未授权：显示引导 + 「去授权」兜底按钮；授权链路进行中隐藏避免与系统弹窗重叠 */}
+      {vpnAuthRequired && !startingPending && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>需要 VPN 授权</Alert.Title>
+            <Alert.Description>
+              启动代理需要 Android 系统授权创建
+              VPN。授权被拒绝或取消时无法启动，点击「去授权」重新发起，授权成功后将在同一链路内自动启动代理。
+            </Alert.Description>
+            <div className="mt-3">
+              <Button
+                variant="secondary"
+                size="lg"
+                className="min-h-11"
+                isPending={vpnAuthMutation.isPending}
+                onPress={() => void authorizeAndStart()}
+              >
+                去授权
+              </Button>
+            </div>
+          </Alert.Content>
+        </Alert>
+      )}
 
-          {/* 启动失败：同步错误文本 + vpn_last_error（若有） */}
-          {(showActionError || showVpnError) && !startingPending && (
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>启动失败</Alert.Title>
-                {showActionError && <Alert.Description className="break-all">{actionError}</Alert.Description>}
-                {showVpnError && <Alert.Description className="break-all">{vpnError}</Alert.Description>}
-              </Alert.Content>
-            </Alert>
-          )}
+      {/* 启动失败：同步错误文本 + vpn_last_error（若有） */}
+      {(showActionError || showVpnError) && !startingPending && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>启动失败</Alert.Title>
+            {showActionError && <Alert.Description className="break-all">{actionError}</Alert.Description>}
+            {showVpnError && <Alert.Description className="break-all">{vpnError}</Alert.Description>}
+          </Alert.Content>
+        </Alert>
+      )}
 
-          {running ? (
-            <Button
-              variant="danger"
-              size="lg"
-              className="min-h-14 w-full"
-              isPending={stopMutation.isPending}
-              isDisabled={startingPending}
-              onPress={() => void handleStop()}
-            >
-              停止代理
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="lg"
-              className="min-h-14 w-full"
-              isPending={startingPending}
-              isDisabled={!canStart || stopMutation.isPending || startingPending}
-              onPress={() => void handleStart()}
-            >
-              {vpnAuthMutation.isPending ? "等待授权…" : startMutation.isPending ? "启动中…" : "启动代理"}
-            </Button>
-          )}
+      {/* 底部留白：为悬浮启停按钮（FAB）让出空间，避免遮挡最后一张卡片 */}
+      <div className="h-16 shrink-0" aria-hidden="true" />
 
-          {!running && !canStart && <p className="text-center text-xs text-warning">请先选择要使用的订阅</p>}
-          {!running && canStart && !startingPending && (
-            <p className="text-center text-xs text-muted">启动后将同步订阅并拉起内置核心（sing-box）</p>
-          )}
-        </Card.Content>
-      </Card>
+      {/* 6. 悬浮启停按钮（FAB，右下角悬浮于 TabBar 之上） */}
+      <StartStopFab
+        running={running}
+        starting={startingPending}
+        stopping={stopMutation.isPending}
+        canStart={canStart}
+        onStart={handleStart}
+        onStop={handleStop}
+      />
 
       {/* 订阅切换 Sheet */}
       <SubscriptionSheet
