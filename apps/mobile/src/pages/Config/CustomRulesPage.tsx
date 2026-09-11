@@ -2,10 +2,15 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
+  CONFIG_SLICES_KEY,
   LOCAL_OVERRIDE_KEY,
+  PROXIES_KEY,
   buildSaveInput,
+  configSlicesGet,
   localOverrideGet,
   localOverrideSave,
+  outboundTag,
+  proxiesList,
   ruleSummary,
   toErrorMessage,
   toastError,
@@ -13,12 +18,19 @@ import {
   useProxyStatus,
   viewToInput,
 } from "@pp/client-core";
-import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
+import type {
+  ConfigSlices,
+  CoreLocalOverrideInput,
+  LocalOverrideView,
+  LocalRuleInput,
+  LocalRuleView,
+  ProxyList,
+} from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
-import type { RuleSetOption } from "./RuleEditSheet";
+import type { OutboundOption, RuleSetOption } from "./RuleEditSheet";
 import { RuleListSection } from "./RuleListSection";
 
 /**
@@ -46,6 +58,19 @@ export default function CustomRulesPage() {
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
   });
+  // 指定出站候选数据源（复用各页同 key 缓存，不在 Sheet 内新起重型查询）：
+  // 切片出站读 config_slices；订阅节点 / 模板出站读运行中核心的 proxies_list（PROXIES_KEY，
+  // 与首页 / 代理页共享缓存，核心未运行时不发起）。
+  const { data: slices } = useQuery<ConfigSlices>({
+    queryKey: CONFIG_SLICES_KEY,
+    queryFn: configSlicesGet,
+  });
+  const { data: proxyList } = useQuery<ProxyList>({
+    queryKey: PROXIES_KEY,
+    queryFn: proxiesList,
+    enabled: coreRunning,
+    retry: false,
+  });
 
   // 结构守卫（见 localOverrideGuards.ts）：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
@@ -69,6 +94,33 @@ export default function CustomRulesPage() {
       hint: rs.name.trim() || undefined,
     }));
   }, [overrideData]);
+
+  /**
+   * 指定出站候选 tag 并集（ADR-0005 §3.1）：订阅节点 + 模板出站 + 切片出站（enabled），
+   * 按 tag 去重。
+   *
+   * - 订阅节点 / 模板出站：`proxiesList`（`PROXIES_KEY`，经 Clash API 读取运行中核心），
+   *   核心未运行时无数据，此时仅剩切片出站候选；
+   * - 切片出站：tag 由名称生成（`outboundTag`），仅列启用项（父切片总开关由注入层判定）。
+   */
+  const outboundOptions = useMemo<OutboundOption[]>(() => {
+    const options: OutboundOption[] = [];
+    const seen = new Set<string>();
+    const push = (value: string, label: string, hint?: string) => {
+      const tag = value.trim();
+      if (tag === "" || seen.has(tag)) return;
+      seen.add(tag);
+      options.push({ value: tag, label, hint });
+    };
+    for (const node of proxyList?.nodes ?? []) push(node.name, node.name, "订阅节点");
+    for (const group of proxyList?.groups ?? []) push(group.name, group.name, "模板出站");
+    for (const item of slices?.outbounds.items ?? []) {
+      if (!item.enabled) continue;
+      const tag = outboundTag(item.name);
+      push(tag, item.name, tag);
+    }
+    return options;
+  }, [proxyList, slices]);
 
   /** 被任意场景模板引用的规则 id 集合（未引用的规则不注入启动配置，见 RuleCard）。 */
   const referencedTemplateRuleIds = useMemo<ReadonlySet<string>>(() => {
@@ -222,6 +274,7 @@ export default function CustomRulesPage() {
         onSave={(rule) => handleSaveRule(rule)}
         onDeleteRequest={(rule) => handleDeleteRequest(rule)}
         ruleSetOptions={ruleSetOptions}
+        outboundOptions={outboundOptions}
       />
       <RuleDeleteConfirm
         rule={pendingDelete}

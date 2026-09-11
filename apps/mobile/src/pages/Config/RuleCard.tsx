@@ -1,7 +1,7 @@
 import { ArrowDownIcon, ArrowUpIcon } from "@heroicons/react/24/outline";
 import { Card, Chip, Switch } from "@heroui/react";
 import type { LocalRuleView } from "@pp/client-core";
-import { actionLabel, matchTypeLabel, ruleSummary } from "@pp/client-core";
+import { actionLabel, isOutboundAction, matchTypeLabel, outboundTagFromAction, ruleSummary } from "@pp/client-core";
 
 interface RuleCardProps {
   rule: LocalRuleView;
@@ -57,9 +57,15 @@ function OrderButton({
  * - 底部栏：顺序提示 + 上移/下移（边界禁用，重排由页面层回写 sort_order）。
  */
 export function RuleCard({ rule, index, total, referencedByTemplate, onToggle, onMove, onEdit }: RuleCardProps) {
-  const badgeClass = ACTION_BADGE_CLASS[rule.action] ?? "bg-default-soft text-muted";
+  const isOutbound = isOutboundAction(rule.action);
+  const badgeClass = isOutbound
+    ? "bg-accent/10 text-accent"
+    : (ACTION_BADGE_CLASS[rule.action] ?? "bg-default-soft text-muted");
+  // 指定出站动作在详情行补充目标 tag（actionLabel 仅给「指定出站」短标签）。
+  const outboundTag = isOutbound ? outboundTagFromAction(rule.action) : "";
+  const actionText = outboundTag ? `${actionLabel(rule.action)}: ${outboundTag}` : actionLabel(rule.action);
   const metaDetail =
-    `${matchTypeLabel(rule.match_type)}${rule.target ? `: ${rule.target}` : ""} · ${actionLabel(rule.action)}` +
+    `${matchTypeLabel(rule.match_type)}${rule.target ? `: ${rule.target}` : ""} · ${actionText}` +
     (rule.no_resolve ? " · no-resolve" : "") +
     (rule.invert ? " · invert" : "") +
     (rule.note ? ` · ${rule.note}` : "");

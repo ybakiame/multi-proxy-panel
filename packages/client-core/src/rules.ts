@@ -29,29 +29,60 @@ export const ACTION_LABELS: Record<string, string> = {
   proxy: "代理",
   direct: "直连",
   reject: "拒绝",
+  outbound: "指定出站",
 };
 
 export const RULE_ACTIONS = [
   { id: "proxy", label: "代理" },
   { id: "direct", label: "直连" },
   { id: "reject", label: "拒绝" },
+  { id: "outbound", label: "指定出站" },
 ];
+
+/**
+ * `RuleAction::Outbound { tag }` 的 wire 前缀（对齐 Rust
+ * `pp-client-tauri` 的 `views.rs::rule_action_str` / `convert.rs::parse_action`）。
+ *
+ * 数据变体序列化为 `"outbound:<tag>"`（非枚举 serde JSON 形态）；规则卡片把该字符串
+ * 原样回写 `LocalRuleInput.action`，由后端解析回 `RuleAction::Outbound`。
+ */
+export const OUTBOUND_ACTION_PREFIX = "outbound:";
+
+/** 是否为「指定出站」动作（`outbound:<tag>`）。 */
+export function isOutboundAction(action: string): boolean {
+  return action.startsWith(OUTBOUND_ACTION_PREFIX);
+}
+
+/** 从动作字符串提取出站 tag（非 outbound 动作返回空串）。 */
+export function outboundTagFromAction(action: string): string {
+  return isOutboundAction(action) ? action.slice(OUTBOUND_ACTION_PREFIX.length) : "";
+}
+
+/** 由出站 tag 构造 wire 动作字符串（tag 已 trim；空 tag 仍生成前缀，由表单校验拦截）。 */
+export function buildOutboundAction(tag: string): string {
+  return `${OUTBOUND_ACTION_PREFIX}${tag.trim()}`;
+}
 
 export function matchTypeLabel(type: string): string {
   return MATCH_TYPE_LABELS[type] ?? type;
 }
 
 export function actionLabel(action: string): string {
+  if (isOutboundAction(action)) return ACTION_LABELS.outbound;
   return ACTION_LABELS[action] ?? action;
 }
 
 export function ruleSummary(rule: LocalRuleView): string {
   if (rule.name.trim()) return rule.name;
-  return `${matchTypeLabel(rule.match_type)}: ${rule.target}`;
+  const base = `${matchTypeLabel(rule.match_type)}: ${rule.target}`;
+  const tag = isOutboundAction(rule.action) ? outboundTagFromAction(rule.action) : "";
+  return tag ? `${base} → ${ACTION_LABELS.outbound}: ${tag}` : base;
 }
 
 export function ruleDetailLine(rule: LocalRuleView): string {
   const parts: string[] = [`→ ${actionLabel(rule.action)}`];
+  const tag = isOutboundAction(rule.action) ? outboundTagFromAction(rule.action) : "";
+  if (tag) parts.push(`(${tag})`);
   if (rule.no_resolve) parts.push("[no-resolve]");
   if (rule.invert) parts.push("[invert]");
   return parts.join(" ");

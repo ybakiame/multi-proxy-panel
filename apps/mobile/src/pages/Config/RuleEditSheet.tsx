@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
-import { RULE_ACTIONS } from "@pp/client-core";
+import { RULE_ACTIONS, buildOutboundAction, isOutboundAction, outboundTagFromAction } from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 
 /** 规则集选择器选项（rule_set 匹配目标）：规则集 tag（社区 remote / 自定义 manual；规则集是纯资源无启停）。 */
@@ -12,6 +12,16 @@ export interface RuleSetOption {
   /** 下拉显示名（自定义规则集 tag）。 */
   label: string;
   /** 可选说明行（如不可用原值的提示）。 */
+  hint?: string;
+}
+
+/** 指定出站动作的可选出站 tag（订阅节点 / 模板出站 / 切片出站并集）。 */
+export interface OutboundOption {
+  /** 写入 `outbound:<tag>` 的 tag。 */
+  value: string;
+  /** 下拉显示名（切片出站用名称，订阅节点/模板出站用 tag）。 */
+  label: string;
+  /** 可选说明行（切片 tag / 来源标注）。 */
   hint?: string;
 }
 
@@ -62,6 +72,8 @@ interface RuleEditSheetProps {
   onDeleteRequest: (rule: LocalRuleView) => void;
   /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加。 */
   ruleSetOptions?: RuleSetOption[];
+  /** 指定出站动作的候选 tag（订阅节点 + 模板出站 + 切片出站并集）；空数组时给引导文案。 */
+  outboundOptions?: OutboundOption[];
 }
 
 /** 底部 Sheet 内的高级选项开关行。 */
@@ -104,6 +116,7 @@ export function RuleEditSheet({
   onSave,
   onDeleteRequest,
   ruleSetOptions = [],
+  outboundOptions = [],
 }: RuleEditSheetProps) {
   const [matchType, setMatchType] = useState("domain");
   const [target, setTarget] = useState("");
@@ -133,7 +146,11 @@ export function RuleEditSheet({
   }
 
   const isFinal = matchType === "final";
-  const canSave = isFinal ? true : target.trim().length > 0;
+  const isOutbound = isOutboundAction(action);
+  const selectedOutboundTag = outboundTagFromAction(action);
+  const targetOk = isFinal ? true : target.trim().length > 0;
+  const actionOk = !isOutbound || selectedOutboundTag.trim().length > 0;
+  const canSave = targetOk && actionOk;
 
   /**
    * 规则集选择器候选：父层传入全部规则集 tag（规则集是纯资源，无启停概念）。
@@ -151,6 +168,19 @@ export function RuleEditSheet({
     return [...ruleSetOptions, { value: target, label: target, hint: "当前无此规则集（原值保留）" }];
   }, [matchType, editing, target, ruleSetOptions]);
 
+  /**
+   * 指定出站候选：父层传入订阅节点 / 模板出站 / 切片出站并集。编辑已有 outbound 规则
+   * 时若其原 tag 不在候选中（核心未运行读不到节点 / 出站已删除），追加「原值保留」项，
+   * 避免打开编辑即丢失原引用。
+   */
+  const effectiveOutboundOptions = useMemo<OutboundOption[]>(() => {
+    const tag = selectedOutboundTag.trim();
+    if (!isOutbound || tag === "" || outboundOptions.some((opt) => opt.value === tag)) {
+      return outboundOptions;
+    }
+    return [...outboundOptions, { value: tag, label: tag, hint: "当前无此出站（原值保留）" }];
+  }, [isOutbound, selectedOutboundTag, outboundOptions]);
+
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
@@ -161,7 +191,7 @@ export function RuleEditSheet({
       enabled: editing?.enabled ?? true,
       match_type: matchType,
       target: isFinal ? "" : target.trim(),
-      action,
+      action: isOutbound ? buildOutboundAction(selectedOutboundTag) : action,
       no_resolve: noResolve,
       invert,
       note: note.trim(),
@@ -255,20 +285,54 @@ export function RuleEditSheet({
               <span className="text-sm font-medium text-foreground">路由动作</span>
               <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
                 <legend className="sr-only">路由动作</legend>
-                {RULE_ACTIONS.map((opt) => (
-                  <Button
-                    key={opt.id}
-                    variant={action === opt.id ? "primary" : "secondary"}
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    isDisabled={saving}
-                    onPress={() => setAction(opt.id)}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
+                {RULE_ACTIONS.map((opt) => {
+                  const selected = opt.id === "outbound" ? isOutbound : action === opt.id;
+                  return (
+                    <Button
+                      key={opt.id}
+                      variant={selected ? "primary" : "secondary"}
+                      size="sm"
+                      className="min-h-11 flex-1"
+                      isDisabled={saving}
+                      onPress={() => {
+                        // 切到「指定出站」保留已选 tag（重新切回不丢选择）；其余动作直接写入 id。
+                        if (opt.id === "outbound") {
+                          if (!isOutbound) setAction(buildOutboundAction(""));
+                        } else {
+                          setAction(opt.id);
+                        }
+                      }}
+                    >
+                      {opt.label}
+                    </Button>
+                  );
+                })}
               </fieldset>
             </div>
+
+            {/* 指定出站 tag 选择器（仅 outbound 动作显示） */}
+            {isOutbound && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">出站</span>
+                <MobileSelectSheet
+                  label="出站"
+                  value={selectedOutboundTag}
+                  onChange={(tag) => setAction(buildOutboundAction(tag))}
+                  disabled={saving}
+                  placeholder="请选择出站"
+                  options={effectiveOutboundOptions.map((opt) => ({
+                    value: opt.value,
+                    label: opt.label,
+                    description: opt.hint,
+                  }))}
+                />
+                {effectiveOutboundOptions.length === 0 ? (
+                  <span className="text-xs text-muted">暂无可用出站，可先在 配置→自定义出站 添加</span>
+                ) : (
+                  <span className="text-xs text-muted">命中该规则的流量将转发到所选出站</span>
+                )}
+              </div>
+            )}
 
             {/* 高级折叠段（默认收起） */}
             <div className="flex flex-col gap-3 rounded-xl border border-border/40 p-3">
