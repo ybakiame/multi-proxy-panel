@@ -32,8 +32,8 @@ interface RuleSetSectionSpec {
 }
 
 interface RuleSetSectionProps extends RuleSetSectionSpec {
-  /** 正在单卡更新的规则集 id（null = 无）。 */
-  updatingId: string | null;
+  /** 正在更新的规则集 id 集合（批量更新时含全部 Remote）。 */
+  updatingIds: Set<string>;
   onEdit: (ruleSet: CustomRuleSetView) => void;
   onDelete: (ruleSet: CustomRuleSetView) => void;
   onUpdate: (ruleSet: CustomRuleSetView) => void;
@@ -43,7 +43,7 @@ interface RuleSetSectionProps extends RuleSetSectionSpec {
  * 单来源分区（社区 / 自定义）：区头标题 + 计数，条目为 `CustomRuleSetCard`；
  * 空分区渲染简短引导，引导新用户走顶部「添加」入口。
  */
-function RuleSetSection({ title, emptyCopy, sets, updatingId, onEdit, onDelete, onUpdate }: RuleSetSectionProps) {
+function RuleSetSection({ title, emptyCopy, sets, updatingIds, onEdit, onDelete, onUpdate }: RuleSetSectionProps) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -64,7 +64,7 @@ function RuleSetSection({ title, emptyCopy, sets, updatingId, onEdit, onDelete, 
             <CustomRuleSetCard
               key={ruleSet.id}
               ruleSet={ruleSet}
-              updating={updatingId === ruleSet.id}
+              updating={updatingIds.has(ruleSet.id)}
               onEdit={() => onEdit(ruleSet)}
               onDelete={() => onDelete(ruleSet)}
               onUpdate={() => onUpdate(ruleSet)}
@@ -88,6 +88,8 @@ function RuleSetSection({ title, emptyCopy, sets, updatingId, onEdit, onDelete, 
  * - 顶部「立即更新」智能更新**全部** Remote（`localOverrideUpdateRulesetsNow`：先 HEAD
  *   比对 `Last-Modified` 跳过未变更项），toast 汇总「更新 N，已最新 M，失败 K」；
  * - 每张 Remote 卡片另有单卡更新按钮（`localOverrideUpdateRuleSet`），同样智能跳过；
+ * - 更新进行中由 `updatingIds` 驱动：单卡仅该卡、批量全部 Remote 卡同时显示旋转
+ *   更新图标与 indeterminate 进度条；
  * - invalidate 触发重拉即见 cached / last_updated / remote_updated_at 变化；
  * - 是否注入仍由引用它的规则决定（引用它的规则被注入时才注入该规则集）。
  */
@@ -119,7 +121,8 @@ export default function RuleSetsPage() {
   const [editingSet, setEditingSet] = useState<CustomRuleSetView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomRuleSetView | null>(null);
   const [updating, setUpdating] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // 正在更新的规则集 id 集合：单卡仅含该 id；批量含全部 Remote（供卡片旋转 / 进度条）。
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
 
   const toastRuleSaved = (base: string) => {
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
@@ -141,12 +144,14 @@ export default function RuleSetsPage() {
 
   // ---- 立即更新（全部 Remote，智能跳过）：返回 updated / skipped / failed 汇总 ----
   const handleUpdateNow = async (): Promise<boolean> => {
-    if (updating) return false;
+    if (updating || updatingIds.size > 0) return false;
     if (remoteSets.length === 0) {
       toastWarning("暂无远程规则集可更新");
       return true;
     }
     setUpdating(true);
+    // 批量更新时全部 Remote 卡进入更新态（旋转 + 进度条）。
+    setUpdatingIds(new Set(remoteSets.map((rs) => rs.id)));
     try {
       const { updated, skipped, failed } = await localOverrideUpdateRulesetsNow();
       const suffix = coreRunning ? "，重启代理后生效" : "";
@@ -164,13 +169,14 @@ export default function RuleSetsPage() {
       return false;
     } finally {
       setUpdating(false);
+      setUpdatingIds(new Set());
     }
   };
 
   // ---- 单卡更新（同样智能跳过）：updated=已更新 / skipped=已是最新 / failed=失败 ----
   const handleUpdateOne = async (ruleSet: CustomRuleSetView): Promise<void> => {
-    if (updatingId !== null) return;
-    setUpdatingId(ruleSet.id);
+    if (updating || updatingIds.size > 0) return;
+    setUpdatingIds(new Set([ruleSet.id]));
     const label = ruleSet.name.trim() || ruleSet.tag;
     try {
       const { updated, skipped } = await localOverrideUpdateRuleSet(ruleSet.id);
@@ -186,7 +192,7 @@ export default function RuleSetsPage() {
       toastError(toErrorMessage(err));
       invalidate();
     } finally {
-      setUpdatingId(null);
+      setUpdatingIds(new Set());
     }
   };
 
@@ -289,7 +295,7 @@ export default function RuleSetsPage() {
               <Button
                 variant="secondary"
                 className="h-11 min-w-0 flex-1 px-4"
-                isDisabled={updating}
+                isDisabled={updating || updatingIds.size > 0}
                 isPending={updating}
                 onPress={() => void handleUpdateNow()}
               >
@@ -311,7 +317,7 @@ export default function RuleSetsPage() {
               title="社区规则集"
               emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
               sets={remoteSets}
-              updatingId={updatingId}
+              updatingIds={updatingIds}
               onEdit={openEdit}
               onDelete={setPendingDelete}
               onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
@@ -322,7 +328,7 @@ export default function RuleSetsPage() {
               title="自定义规则集"
               emptyCopy="手动输入 JSON 规则内容"
               sets={manualSets}
-              updatingId={updatingId}
+              updatingIds={updatingIds}
               onEdit={openEdit}
               onDelete={setPendingDelete}
               onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}

@@ -1,10 +1,10 @@
-import { Chip, Card } from "@heroui/react";
+import { Chip, Card, ProgressBar } from "@heroui/react";
 import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import type { CustomRuleSetView } from "@pp/client-core";
 
 interface CustomRuleSetCardProps {
   ruleSet: CustomRuleSetView;
-  /** 单卡更新进行中（按钮旋转禁用）。 */
+  /** 更新进行中（按钮旋转禁用 + 底部 indeterminate 进度条；批量更新时全部 Remote 卡）。 */
   updating: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -35,7 +35,9 @@ function formatRemote(remoteUpdatedAt: number): string {
  * 名称 / tag / 来源类型 chip / 缓存状态 chip / 更新时间，底部「编辑 / 删除」入口。
  * 自「规则集更新增强」起额外展示**远程最新更新时间**（`remote_updated_at`，0 =
  * 未知）并在远端更新于本地缓存时显示「有更新」warning chip；Remote 卡片提供单卡
- * 更新图标按钮（HEAD 智能跳过）。删除经父层 AlertDialog 确认。
+ * 更新图标按钮（HEAD 智能跳过）。更新进行中（`updating`）时更新图标旋转禁用，
+ * 时间行下方显示 indeterminate 线性进度条；批量更新时父层令全部 Remote 卡同时进入
+ * 该状态。删除经父层 AlertDialog 确认。
  */
 export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdate }: CustomRuleSetCardProps) {
   const { name, tag, cached, remote_updated_at: remoteUpdatedAt, last_updated: lastUpdated } = ruleSet;
@@ -75,6 +77,13 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
             <span className="truncate text-xs text-muted">
               远程更新于 <span className="text-foreground/80">{formatRemote(remoteUpdatedAt)}</span>
             </span>
+          )}
+          {updating && (
+            <ProgressBar isIndeterminate size="sm" aria-label={`正在更新规则集 ${name.trim() || tag}`} className="mt-1">
+              <ProgressBar.Track>
+                <ProgressBar.Fill />
+              </ProgressBar.Track>
+            </ProgressBar>
           )}
         </div>
       </div>
