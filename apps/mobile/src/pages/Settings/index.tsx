@@ -1,29 +1,24 @@
-import { Card, Spinner } from "@heroui/react";
+import {
+  BellAlertIcon,
+  BoltIcon,
+  CodeBracketIcon,
+  GlobeAltIcon,
+  InformationCircleIcon,
+  WifiIcon,
+} from "@heroicons/react/24/outline";
+import { useNavigate } from "react-router-dom";
+import { EntryLinkCard } from "../../components/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
-import { AboutCard } from "./AboutCard";
-import { ClashApiCard } from "./ClashApiCard";
-import { DeveloperToolsCard } from "./DeveloperToolsCard";
-import { GithubAccessCard } from "./GithubAccessCard";
-import { NetworkCard } from "./NetworkCard";
-import { VpnNotificationCard } from "./VpnNotificationCard";
-import { useSettingsConfig } from "./useSettingsConfig";
 
 /**
- * 设置页（ADR-0003 M5.3，原占位页重写为完整页）。分组卡片自上而下：
+ * 设置主页（ADR-0003 M5.3，列表化重构）。Tab 页（非二级页），保留 PageShell 标题。
  *
- * 1. VPN 通知（移动端专属）：通知栏显示流量 / 节点选择两个 Switch，保存成功后
- *    追加 notifyPrefsChanged 热更新通知栏；
- * 2. Clash API：启用 Switch + 端口 + 可选密钥；
- * 3. 网络：本地混合端口；
- * 4. GitHub 访问：代理前缀；
- * 5. 开发者工具：日志入口 + 当前配置预览入口（配置预览 Modal 自首页迁入）；
- * 6. 关于：应用名 + 一行说明（无版本数据源，不显示版本）。
- *
- * 全部字段经 @pp/client-core 的 useClientConfig / useSaveConfig（patch 叠加 +
- * toast + 失败回滚），数字输入校验端口 1-65535；配置加载完成前字段禁用。
+ * 各功能分组由原分组卡片改为 `EntryLinkCard` 列表入口，卡片内容抽离到对应二级子页：
+ * VPN 通知 / Clash API / 网络 / GitHub 访问 / 开发者工具 / 关于。表单状态由各子页
+ * 独立实例化 `useSettingsConfig` 消费（保存链路经共享 CONFIG_KEY 缓存）。
  */
 export default function Settings() {
-  const settings = useSettingsConfig();
+  const navigate = useNavigate();
 
   return (
     <PageShell>
@@ -32,23 +27,44 @@ export default function Settings() {
         <p className="text-sm text-muted">客户端全局设置 · 修改即时保存</p>
       </div>
 
-      {!settings.ready ? (
-        <Card>
-          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-            <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载配置…</span>
-          </Card.Content>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <VpnNotificationCard settings={settings} />
-          <ClashApiCard settings={settings} />
-          <NetworkCard settings={settings} />
-          <GithubAccessCard settings={settings} />
-          <DeveloperToolsCard />
-          <AboutCard />
-        </div>
-      )}
+      <div className="flex flex-col gap-4">
+        <EntryLinkCard
+          icon={<BellAlertIcon className="size-6" aria-hidden="true" />}
+          title="VPN 通知"
+          description="通知栏显示流量与节点选择"
+          onPress={() => navigate("/settings/vpn-notify")}
+        />
+        <EntryLinkCard
+          icon={<BoltIcon className="size-6" aria-hidden="true" />}
+          title="Clash API"
+          description="面板 API 开关与端口（流量统计/模式切换依赖）"
+          onPress={() => navigate("/settings/clash-api")}
+        />
+        <EntryLinkCard
+          icon={<WifiIcon className="size-6" aria-hidden="true" />}
+          title="网络"
+          description="本地混合端口配置"
+          onPress={() => navigate("/settings/network")}
+        />
+        <EntryLinkCard
+          icon={<GlobeAltIcon className="size-6" aria-hidden="true" />}
+          title="GitHub 访问"
+          description="代理前缀加速"
+          onPress={() => navigate("/settings/github")}
+        />
+        <EntryLinkCard
+          icon={<CodeBracketIcon className="size-6" aria-hidden="true" />}
+          title="开发者工具"
+          description="日志与当前配置"
+          onPress={() => navigate("/settings/dev-tools")}
+        />
+        <EntryLinkCard
+          icon={<InformationCircleIcon className="size-6" aria-hidden="true" />}
+          title="关于"
+          description="应用与核心信息"
+          onPress={() => navigate("/settings/about")}
+        />
+      </div>
     </PageShell>
   );
 }

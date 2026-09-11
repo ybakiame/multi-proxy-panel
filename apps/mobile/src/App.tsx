@@ -12,6 +12,12 @@ import CustomRulesPage from "./pages/Rules/CustomRulesPage";
 import RuleSetMarket from "./pages/Rules/RuleSetMarket";
 import RuleSetsPage from "./pages/Rules/RuleSetsPage";
 import Settings from "./pages/Settings";
+import AboutPage from "./pages/Settings/AboutPage";
+import ClashApiPage from "./pages/Settings/ClashApiPage";
+import DevToolsPage from "./pages/Settings/DevToolsPage";
+import GithubPage from "./pages/Settings/GithubPage";
+import NetworkPage from "./pages/Settings/NetworkPage";
+import VpnNotifyPage from "./pages/Settings/VpnNotifyPage";
 import Subscriptions from "./pages/Subscriptions";
 
 /**
@@ -116,6 +122,12 @@ function AppContent() {
           <Route path="/rules/rulesets" element={<RuleSetsPage />} />
           <Route path="/rules/rulesets/market" element={<RuleSetMarket />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/vpn-notify" element={<VpnNotifyPage />} />
+          <Route path="/settings/clash-api" element={<ClashApiPage />} />
+          <Route path="/settings/network" element={<NetworkPage />} />
+          <Route path="/settings/github" element={<GithubPage />} />
+          <Route path="/settings/dev-tools" element={<DevToolsPage />} />
+          <Route path="/settings/about" element={<AboutPage />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
