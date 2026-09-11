@@ -156,8 +156,18 @@ export type {
   Hysteria2Obfs,
   OutboundTls,
   OutboundTransport,
+  SelectorOutbound,
+  UrlTestOutbound,
+  GroupOutbound,
 } from "./configSlices";
-export { SLICE_VERSION, configSlicesGet, configSlicesSave, outboundTag, defaultConfigSlices } from "./configSlices";
+export {
+  SLICE_VERSION,
+  configSlicesGet,
+  configSlicesSave,
+  outboundTag,
+  defaultConfigSlices,
+  isGroupOutbound,
+} from "./configSlices";
 
 // ---------------------------------------------------------------------------
 // Logs

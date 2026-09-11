@@ -169,13 +169,69 @@ export interface Hysteria2Outbound {
 }
 
 /**
+ * Selector outbound: manually picks one member outbound (Clash API controlled).
+ *
+ * Fields mirror Rust `SelectorOutbound` (sing-box 1.14 `outbound/selector`).
+ */
+export interface SelectorOutbound {
+  type: "selector";
+  /** Member outbound tags to select from (required, must not be empty). */
+  outbounds: string[];
+  /** Default member tag; the first member is used when empty. */
+  default: string;
+  /** Interrupt existing connections when the selection changes. */
+  interrupt_exist_connections: boolean;
+}
+
+/**
+ * URLTest outbound: automatically picks the lowest-latency member.
+ *
+ * Fields mirror Rust `UrlTestOutbound` (sing-box 1.14 `outbound/urltest`). The
+ * type discriminator is `urltest` (no underscore) to match the Rust explicit
+ * `#[serde(rename = "urltest")]`.
+ */
+export interface UrlTestOutbound {
+  type: "urltest";
+  /** Member outbound tags to test (required, must not be empty). */
+  outbounds: string[];
+  /** Test URL (empty = sing-box default `https://www.gstatic.com/generate_204`). */
+  url: string;
+  /** Test interval as a duration string (e.g. `3m`; empty = sing-box default). */
+  interval: string;
+  /** Test tolerance in milliseconds (`0` = sing-box default). */
+  tolerance: number;
+  /** Interrupt existing connections when the selected outbound changes. */
+  interrupt_exist_connections: boolean;
+}
+
+/**
  * Protocol-specific outbound payload.
  *
  * Mirrors the Rust internally-tagged enum (`tag = "type"`): the discriminant is
  * flattened onto the containing `CustomOutbound`, so it sits next to
  * `id` / `name` / `enabled` and the protocol fields.
  */
-export type OutboundProtocol = VlessOutbound | VmessOutbound | ShadowsocksOutbound | TrojanOutbound | Hysteria2Outbound;
+export type OutboundProtocol =
+  | VlessOutbound
+  | VmessOutbound
+  | ShadowsocksOutbound
+  | TrojanOutbound
+  | Hysteria2Outbound
+  | SelectorOutbound
+  | UrlTestOutbound;
+
+/** Group outbound payloads (selector / urltest) — never concrete proxy nodes. */
+export type GroupOutbound = SelectorOutbound | UrlTestOutbound;
+
+/**
+ * Type predicate for group outbounds (selector / urltest).
+ *
+ * Mirrors Rust `OutboundProtocol::is_group`; used to separate the list into
+ * 「分组」/「节点」 sections and to keep group fields out of node forms.
+ */
+export function isGroupOutbound(protocol: OutboundProtocol): protocol is GroupOutbound {
+  return protocol.type === "selector" || protocol.type === "urltest";
+}
 
 /**
  * A single custom outbound (`{ id, name, enabled, type, …protocol fields }`).
