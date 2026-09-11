@@ -4,6 +4,8 @@ use std::net::SocketAddr;
 
 use serde_json::Value;
 
+use crate::config_slices::{ConfigSlices, DnsMode};
+
 mod clash_api;
 mod compose;
 mod singbox;
@@ -55,6 +57,13 @@ pub struct PanelFeatures {
     /// [`apply_singbox_panel_features`]); runtime switching via Clash API `PATCH /configs`
     /// ([`push_clash_mode`]) is kept as a secondary idempotent path.
     pub rule_mode: String,
+    /// Android DNS mode derived from [`crate::config_slices::ConfigSlices`] (ADR-0005 D1).
+    ///
+    /// `FollowSystem` (default) keeps the forced `inject_android_dns`; `Takeover`
+    /// skips it so the config-slice DNS body (applied at the ⓪ layer) applies.
+    /// Only meaningful on Android; desktop ignores it (the injection is Android-only).
+    /// Derive with [`dns_mode_from_slices`].
+    pub dns_mode: DnsMode,
 }
 
 /// Clash panel UI choice normalization: `yacd` / `zashboard` / `metacubexd` returned as-is,
@@ -88,4 +97,19 @@ pub fn clash_api_ui_download_url(ui: &str) -> &'static str {
 /// to ensure settings have the highest priority.
 pub fn apply_panel_features(composed: &mut Value, features: &PanelFeatures) {
     apply_singbox_panel_features(composed, features)
+}
+
+/// Derive the Android DNS mode from loaded config slices (ADR-0005 D1).
+///
+/// [`DnsMode::Takeover`] only when the DNS slice is enabled **and** explicitly
+/// set to takeover; every other combination (including a disabled slice that
+/// still carries `mode = takeover`) stays [`DnsMode::FollowSystem`], so the
+/// Android forced DNS injection is never skipped by accident.
+#[must_use]
+pub fn dns_mode_from_slices(slices: &ConfigSlices) -> DnsMode {
+    if slices.dns.enabled && slices.dns.mode == DnsMode::Takeover {
+        DnsMode::Takeover
+    } else {
+        DnsMode::FollowSystem
+    }
 }

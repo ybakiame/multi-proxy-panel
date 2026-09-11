@@ -651,9 +651,13 @@ async fn v2_yaml_remote_then_local_overlay() {
         local_yaml: "b: 2\n".to_string(),
         ..EffectiveOverrides::default()
     };
-    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
-        .await
-        .unwrap();
+    let cfg = build_core_config_v2(
+        &sample_singbox_sub(),
+        &effective,
+        &crate::config_slices::ConfigSlices::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(cfg["a"], 1, "remote new key should be kept");
     assert_eq!(cfg["b"], 2, "local should override remote's b");
 }
@@ -667,9 +671,13 @@ async fn v2_js_remote_then_local_chain() {
         local_js: "function main(c) { c.y = c.x + 1; return c; }".to_string(),
         ..EffectiveOverrides::default()
     };
-    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
-        .await
-        .unwrap();
+    let cfg = build_core_config_v2(
+        &sample_singbox_sub(),
+        &effective,
+        &crate::config_slices::ConfigSlices::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(cfg["x"], 1, "remote main should take effect");
     assert_eq!(
         cfg["y"], 2,
@@ -723,9 +731,13 @@ async fn resolve_remote_overrides_fetches_writes_cache_and_falls_back() {
         local_yaml: "route:\n  final: block\n".to_string(),
         ..effective
     };
-    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective)
-        .await
-        .unwrap();
+    let cfg = build_core_config_v2(
+        &sample_singbox_sub(),
+        &effective,
+        &crate::config_slices::ConfigSlices::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         cfg["route"]["final"], "block",
         "local YAML should override remote"
@@ -788,7 +800,13 @@ async fn resolve_remote_overrides_pure_local_regression() {
     )
     .await
     .unwrap();
-    let v2 = build_core_config_v2(&sub, &effective).await.unwrap();
+    let v2 = build_core_config_v2(
+        &sub,
+        &effective,
+        &crate::config_slices::ConfigSlices::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         legacy, v2,
         "v2 pure local should be consistent with old signature"
@@ -803,9 +821,75 @@ fn remote_overrides_futures_are_send() {
     fn assert_send<T: Send>(_: &T) {}
     let sub = sample_singbox_sub();
     let effective = EffectiveOverrides::default();
-    let fut = build_core_config_v2(&sub, &effective);
+    let slices = crate::config_slices::ConfigSlices::default();
+    let fut = build_core_config_v2(&sub, &effective, &slices);
     assert_send(&fut);
     let profile = remote_test_profile(None, None);
     let fut = resolve_remote_overrides(Path::new("/tmp"), &profile);
     assert_send(&fut);
+}
+
+// ---------- ⑪ Config slice layer (⓪, ADR-0005 §3.2) ----------
+
+/// Slice layer is applied after the template and before the YAML/JS overrides:
+/// the slice DNS + custom outbound show up in the template output, but a later
+/// YAML override still wins on conflicting fields (D2: escape hatch wins).
+#[tokio::test(flavor = "current_thread")]
+async fn v2_slice_layer_applies_before_yaml_override() {
+    use crate::config_slices::ConfigSlices;
+
+    let slices: ConfigSlices = serde_json::from_value(json!({
+        "version": 1,
+        "dns": {
+            "enabled": true,
+            "mode": "takeover",
+            "servers": [
+                { "tag": "slice-dns", "type": "udp", "server": "9.9.9.9", "server_port": 53 }
+            ],
+            "final_tag": "slice-dns",
+            "strategy": "prefer_ipv4"
+        },
+        "outbounds": {
+            "enabled": true,
+            "items": [{
+                "id": "o1",
+                "name": "My Slice",
+                "enabled": true,
+                "type": "vless",
+                "server": "slice.example",
+                "server_port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789012"
+            }]
+        }
+    }))
+    .unwrap();
+
+    // YAML override replaces `dns.final` (conflict) but leaves the slice servers alone.
+    let effective = EffectiveOverrides {
+        local_yaml: "dns:\n  final: overridden\n".to_string(),
+        ..EffectiveOverrides::default()
+    };
+    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective, &slices)
+        .await
+        .unwrap();
+
+    // ⓪ slice outbound injected.
+    let outbounds = cfg["outbounds"].as_array().unwrap();
+    assert!(
+        outbounds
+            .iter()
+            .any(|o| o["tag"] == "slice-my-slice" && o["type"] == "vless"),
+        "slice outbound must be injected into the template outbounds"
+    );
+    // ⓪ slice DNS injected (server present).
+    let servers = cfg["dns"]["servers"].as_array().unwrap();
+    assert!(
+        servers.iter().any(|s| s["tag"] == "slice-dns"),
+        "slice DNS server must be injected"
+    );
+    // ① YAML override wins over the slice on the conflicting key (applied later).
+    assert_eq!(
+        cfg["dns"]["final"], "overridden",
+        "YAML override must win over the slice DNS final (ADR-0005 D2)"
+    );
 }

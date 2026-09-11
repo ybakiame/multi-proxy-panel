@@ -2,6 +2,9 @@
 
 use serde_json::{Value, json};
 
+#[cfg(target_os = "android")]
+use crate::config_slices::DnsMode;
+
 use super::PanelFeatures;
 
 /// sing-box panel injection:
@@ -104,8 +107,14 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     // Android: after VpnService (TUN) takes over full traffic, system resolver is unavailable,
     // inject explicit DNS (remote goes through main outbound selector via DoH, local direct);
     // desktop relies on system resolver, not injected.
+    //
+    // ADR-0005 D1: `FollowSystem` (default) keeps the forced injection; `Takeover` skips it
+    // because the config-slice DNS body was already applied at the ⓪ layer and the user takes
+    // full responsibility. Desktop ignores `dns_mode` (injection is Android-only).
     #[cfg(target_os = "android")]
-    inject_android_dns(composed);
+    if features.dns_mode != DnsMode::Takeover {
+        inject_android_dns(composed);
+    }
 
     // TUN DNS 劫持 + 域名嗅探（无条件注入，见 inject_dns_hijack_and_sniff_rules）。
     if let Some(obj) = composed.as_object_mut() {

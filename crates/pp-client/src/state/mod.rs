@@ -251,7 +251,22 @@ impl ClientState {
         for warning in &warnings {
             tracing::warn!(warning, "profile remote override");
         }
-        let profile_cfg = profile::build_core_config_v2(&sub_content, &effective).await?;
+        // ⓪ Config slices (ADR-0005 §3.2): load from `data_dir/config_slices.json` and inject
+        // into the template before profile overrides. A load failure (unreadable/corrupted file
+        // is already handled inside the store) falls back to default so startup never blocks.
+        let slices =
+            match crate::config_slices::ConfigSlicesStore::new(self.config.data_dir.clone()).load()
+            {
+                Ok(slices) => slices,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "failed to load config_slices.json, falling back to default"
+                    );
+                    crate::config_slices::ConfigSlices::default()
+                }
+            };
+        let profile_cfg = profile::build_core_config_v2(&sub_content, &effective, &slices).await?;
 
         // MITM starts before core: need listen address to inject core routing rules.
         let chain = self.start_mitm_chain().await?;
@@ -282,6 +297,9 @@ impl ClientState {
             clash_api_secret: self.config.clash_api_secret.clone(),
             clash_api_ui: self.config.clash_api_ui.clone(),
             rule_mode: self.config.normalized_rule_mode().to_string(),
+            // ADR-0005 D1: Android DNS takeover only when the DNS slice is enabled and set to
+            // takeover; otherwise follow system (keep the forced injection).
+            dns_mode: core_config::dns_mode_from_slices(&slices),
         };
         let mut config_json = match core_config::compose_singbox_config(
             &profile_cfg,
@@ -295,7 +313,10 @@ impl ClientState {
             }
         };
         // [ADR-0002] Inject local override after compose, before panel features.
-        inject_local_override_warn_only(&self.config.data_dir, &mut config_json);
+        crate::local_override::inject_local_override_warn_only(
+            &self.config.data_dir,
+            &mut config_json,
+        );
         core_config::apply_panel_features(&mut config_json, &features);
         self.start_services(&config_json).await?;
 
@@ -362,55 +383,4 @@ impl ClientState {
     }
 
     pub(crate) async fn stop_mitm(&mut self) {}
-}
-
-// ---------------------------------------------------------------------------
-// Local override injection helper (ADR-0002)
-// ---------------------------------------------------------------------------
-
-/// Inject local override into composed config; failure is logged as warning only.
-///
-/// - Missing or corrupted `local_override.json` → treated as empty config (no-op).
-/// - Injection failure → warning log, does not block startup.
-///
-/// 自「场景模板改为规则引用 + 应用激活」起，`singbox.rules` 的注入条件为
-/// **`enabled && id ∈ 激活集合`**：激活集合 = ∪（已应用模板各自引用列表，
-/// 见 [`active_rule_ids`](crate::local_override::active_rule_ids)）。未被任何
-/// 已应用模板引用的规则不注入启动配置（模板的应用/撤销=场景开关，不复制规则）。
-/// 规则集注入（[`apply_custom_rule_sets`](crate::local_override::apply_custom_rule_sets)）
-/// 随之只看到被注入的规则，规则集条目也仅由这些规则引用。
-pub(crate) fn inject_local_override_warn_only(
-    data_dir: &std::path::Path,
-    config: &mut serde_json::Value,
-) {
-    let store = crate::local_override::LocalOverrideStore::new(data_dir.to_path_buf());
-    let ovr = match store.load() {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                "failed to load local_override.json, skipping injection"
-            );
-            return;
-        }
-    };
-
-    let manager = crate::local_override::RuleSetManager::new(data_dir.to_path_buf());
-
-    // 激活规则 ID 集合 → 只注入已应用模板引用的启用规则。
-    let active = crate::local_override::active_rule_ids(&ovr);
-    let mut core = ovr.singbox.clone();
-    core.rules.retain(|r| r.enabled && active.contains(&r.id));
-
-    // 本地规则卡片前插（rule_set 引用由用户规则卡片定义并校验到 custom tag）。
-    crate::local_override::apply_local_override(config, &core);
-
-    // 注入用户自定义 rule sets（remote cache / manual JSON）为 local rule_set 条目；
-    // 仅注入「被注入的 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
-    crate::local_override::apply_custom_rule_sets(
-        config,
-        &manager,
-        &core.rules,
-        &ovr.custom_rule_sets,
-    );
 }

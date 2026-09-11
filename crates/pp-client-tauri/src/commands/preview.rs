@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use pp_client::config_slices::{ConfigSlices, DnsMode};
 use pp_client::{
     ClientConfig, EffectiveOverrides, PanelFeatures, SubscriptionStore, apply_panel_features,
     build_core_config_v2, compose_singbox_config, fetch_subscription_with_ua,
@@ -107,7 +108,9 @@ pub(crate) async fn preview_core_config_impl(
         tracing::warn!(warning, "profile remote override");
     }
 
-    let profile_cfg = build_core_config_v2(&sub_content, &effective)
+    // TODO(ADR-0005 §3.4, next phase): load config slices from disk and inject local override
+    // so preview matches the runtime config. This phase only keeps the signature compiling.
+    let profile_cfg = build_core_config_v2(&sub_content, &effective, &ConfigSlices::default())
         .await
         .map_err(|e| format!("生成配置失败: {e}"))?;
 
@@ -120,6 +123,8 @@ pub(crate) async fn preview_core_config_impl(
         clash_api_secret: cfg.clash_api_secret.clone(),
         clash_api_ui: cfg.clash_api_ui.clone(),
         rule_mode: cfg.normalized_rule_mode().to_string(),
+        // Preview has no slices yet; FollowSystem keeps the Android forced injection behavior.
+        dns_mode: DnsMode::FollowSystem,
     };
     let mut value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
         .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;

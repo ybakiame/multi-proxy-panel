@@ -7,7 +7,7 @@
 
 use crate::local_override::{LocalOverrideStore, RuleSetFormat, RuleSetManager, apply_template};
 
-use crate::state::inject_local_override_warn_only;
+use crate::local_override::inject_local_override_warn_only;
 
 /// 构造一份旧版文件：custom Remote 规则集 + 一条 `rule_set` 规则卡片 + 已应用的
 /// custom 模板（引用该规则）。经 load 后（snapshot→引用迁移幂等）注入只走引用。

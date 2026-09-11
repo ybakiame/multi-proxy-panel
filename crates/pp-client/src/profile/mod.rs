@@ -15,7 +15,7 @@
 //!
 //! Assembly entrypoint [`build_core_config_v2`] (remote + local overlay; old signature
 //! [`build_core_config`] kept for compatibility): extract nodes → local template →
-//! remote YAML → local YAML → remote JS → local JS.
+//! ⓪ config slices → remote YAML → local YAML → remote JS → local JS.
 //! Remote override URLs are fetched via [`resolve_remote_overrides`] and cached for fallback.
 //! inbounds and MITM chain are not handled in this layer, still injected by [`crate::state`]
 //! through [`crate::core_config`]'s `compose_*`.
@@ -32,6 +32,8 @@ use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+use crate::config_slices::{ConfigSlices, apply_config_slices};
 
 /// Profile override config: empty string = disabled.
 ///
@@ -241,10 +243,15 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
 }
 
 /// Assembly (v2, supports remote override overlay): extract nodes → local template →
-/// remote YAML → local YAML → remote JS → local JS → return sing-box-usable config.
+/// ⓪ config slices → remote YAML → local YAML → remote JS → local JS → return
+/// sing-box-usable config.
 ///
 /// `sub` is the sing-box subscription config (nodes extracted from `outbounds`; ClashYaml
 /// subscriptions have already been converted to sing-box nodes at fetch time).
+///
+/// `slices` are the structured local config slices (ADR-0005 §3.2), injected **before**
+/// the YAML/JS overrides so the override escape hatch always wins (D2). The caller owns
+/// loading them (no IO in this function).
 ///
 /// Overlay semantics: remote as base, local overrides — YAML stage applies remote first then
 /// local (two deep merges naturally satisfy local override); JS stage remote `main` executes
@@ -253,8 +260,19 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
 pub async fn build_core_config_v2(
     sub: &Value,
     effective: &EffectiveOverrides,
+    slices: &ConfigSlices,
 ) -> PanelResult<Value> {
-    let config = singbox_template(&extract_nodes_singbox(sub));
+    let mut config = singbox_template(&extract_nodes_singbox(sub));
+    // ⓪ Slice layer: before the profile overrides so YAML/JS wins on field conflicts (ADR-0005 D2).
+    let report = apply_config_slices(&mut config, slices)?;
+    if report.dns_applied || !report.outbound_tags.is_empty() {
+        tracing::info!(
+            dns_applied = report.dns_applied,
+            outbound_tags = ?report.outbound_tags,
+            renamed_outbounds = ?report.renamed_outbounds,
+            "config slices applied"
+        );
+    }
     // YAML stage: remote as base, local overlay (two applications naturally satisfy local override).
     let merged = apply_yaml_override(config, &effective.remote_yaml)?;
     let merged = apply_yaml_override(merged, &effective.local_yaml)?;
@@ -270,9 +288,9 @@ pub async fn build_core_config_v2(
 /// Assembly (old signature compatibility): extract nodes → local template → YAML override →
 /// JS override → return core-usable config.
 ///
-/// Only local overrides (no remote URLs); for remote override overlay scenarios please use
-/// [`build_core_config_v2`]. inbounds and MITM chain are not handled in this layer, injected
-/// by `state` calling `compose_*`.
+/// Only local overrides (no remote URLs) and no config slices ([`ConfigSlices::default`]);
+/// for remote override / slice scenarios please use [`build_core_config_v2`]. inbounds and
+/// MITM chain are not handled in this layer, injected by `state` calling `compose_*`.
 pub async fn build_core_config(sub: &Value, overrides: &ProfileOverrides) -> PanelResult<Value> {
     build_core_config_v2(
         sub,
@@ -282,6 +300,7 @@ pub async fn build_core_config(sub: &Value, overrides: &ProfileOverrides) -> Pan
             remote_js: String::new(),
             local_js: overrides.js_override.clone(),
         },
+        &ConfigSlices::default(),
     )
     .await
 }

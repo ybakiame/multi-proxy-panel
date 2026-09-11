@@ -11,6 +11,7 @@ fn singbox_features() -> PanelFeatures {
         clash_api_secret: "sekret".to_string(),
         clash_api_ui: "zashboard".to_string(),
         rule_mode: "rule".to_string(),
+        dns_mode: crate::config_slices::DnsMode::FollowSystem,
     }
 }
 
@@ -717,4 +718,29 @@ fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
+}
+
+/// Android DNS mode derivation truth table (ADR-0005 D1): takeover only when the
+/// DNS slice is enabled AND mode == takeover; every other combination follows
+/// the system resolver so the forced injection is never skipped by accident.
+#[test]
+fn dns_mode_from_slices_truth_table() {
+    use crate::config_slices::{ConfigSlices, DnsMode};
+
+    let cases = [
+        (false, DnsMode::FollowSystem, DnsMode::FollowSystem),
+        (false, DnsMode::Takeover, DnsMode::FollowSystem),
+        (true, DnsMode::FollowSystem, DnsMode::FollowSystem),
+        (true, DnsMode::Takeover, DnsMode::Takeover),
+    ];
+    for (enabled, mode, expected) in cases {
+        let mut slices = ConfigSlices::default();
+        slices.dns.enabled = enabled;
+        slices.dns.mode = mode;
+        assert_eq!(
+            dns_mode_from_slices(&slices),
+            expected,
+            "enabled={enabled}, mode={mode:?}"
+        );
+    }
 }
