@@ -83,6 +83,7 @@ fn sample_slices() -> ConfigSlices {
         version: SLICE_VERSION,
         dns: dns_slice(),
         outbounds: outbounds_slice(),
+        experimental: ExperimentalSlice::default(),
     }
 }
 
@@ -92,6 +93,7 @@ fn default_has_version_and_disabled_slices() {
     assert_eq!(slices.version, SLICE_VERSION);
     assert!(!slices.dns.enabled);
     assert!(!slices.outbounds.enabled);
+    assert!(!slices.experimental.enabled);
     assert!(slices.dns.servers.is_empty());
 }
 

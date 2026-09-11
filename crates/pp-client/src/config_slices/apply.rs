@@ -10,6 +10,7 @@ use pp_common::{PanelError, PanelResult};
 use serde_json::{Map, Value};
 
 use super::dns::{DnsRule, DnsServer};
+use super::experimental::CacheFileSlice;
 use super::outbound::{
     CustomOutbound, Hysteria2Outbound, OutboundProtocol, OutboundTls, OutboundTransport,
     SelectorOutbound, ShadowsocksOutbound, TrojanOutbound, UrlTestOutbound, VlessOutbound,
@@ -42,6 +43,8 @@ pub struct OutboundTagRename {
 /// - DNS slice: replaces `config.dns` with the rendered DNS object.
 /// - Outbounds slice: appends rendered custom outbounds to `config.outbounds`,
 ///   renaming tags that collide with existing outbounds.
+/// - Experimental slice: deep merges the rendered `cache_file` object into
+///   `config.experimental`, preserving sibling keys (`clash_api`, …).
 ///
 /// A disabled slice leaves the config untouched. Returns an error when `config`
 /// is not a JSON object (callers always pass a config object).
@@ -110,6 +113,20 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
         append_outbounds(obj, rendered);
     }
 
+    if slices.experimental.enabled {
+        // Deep merge: only the `cache_file` key is written, sibling keys such as
+        // `clash_api` (owned by the ④ panel-feature layer) are preserved.
+        let experimental = obj
+            .entry("experimental".to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Some(exp) = experimental.as_object_mut() {
+            exp.insert(
+                "cache_file".to_string(),
+                render_cache_file(&slices.experimental.cache_file),
+            );
+        }
+    }
+
     Ok(report)
 }
 
@@ -169,6 +186,30 @@ fn render_dns_rule(rule: &DnsRule) -> Value {
     );
     out.insert("action".to_string(), str_value("route"));
     out.insert("server".to_string(), str_value(&rule.server_tag));
+    Value::Object(out)
+}
+
+/// Render a [`CacheFileSlice`] as a sing-box `experimental.cache_file` object.
+///
+/// `enabled` is always emitted (explicit `false` disables the cache file).
+/// Optional fields are only emitted when the cache file is enabled and the
+/// value is set: empty `path` / `cache_id` fall back to sing-box defaults, and
+/// `store_fakeip = false` is the sing-box default.
+#[must_use]
+pub fn render_cache_file(cache_file: &CacheFileSlice) -> Value {
+    let mut out = Map::new();
+    out.insert("enabled".to_string(), Value::Bool(cache_file.enabled));
+    if cache_file.enabled {
+        if !cache_file.path.is_empty() {
+            out.insert("path".to_string(), str_value(&cache_file.path));
+        }
+        if !cache_file.cache_id.is_empty() {
+            out.insert("cache_id".to_string(), str_value(&cache_file.cache_id));
+        }
+        if cache_file.store_fakeip {
+            out.insert("store_fakeip".to_string(), Value::Bool(true));
+        }
+    }
     Value::Object(out)
 }
 

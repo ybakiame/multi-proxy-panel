@@ -77,6 +77,7 @@ mod tests {
                     }),
                 }],
             },
+            experimental: ExperimentalSlice::default(),
         }
     }
 

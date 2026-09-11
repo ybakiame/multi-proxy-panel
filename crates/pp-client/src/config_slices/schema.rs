@@ -6,7 +6,7 @@ use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 
 use super::outbound::{OUTBOUND_TAG_PREFIX, OutboundProtocol, outbound_tag};
-use super::{DnsMode, DnsSlice, OutboundsSlice};
+use super::{DnsMode, DnsSlice, ExperimentalSlice, OutboundsSlice};
 
 /// Current schema version (stored in [`ConfigSlices::version`]).
 pub const SLICE_VERSION: u32 = 1;
@@ -30,6 +30,8 @@ pub struct ConfigSlices {
     pub dns: DnsSlice,
     #[serde(default)]
     pub outbounds: OutboundsSlice,
+    #[serde(default)]
+    pub experimental: ExperimentalSlice,
 }
 
 impl Default for ConfigSlices {
@@ -38,6 +40,7 @@ impl Default for ConfigSlices {
             version: SLICE_VERSION,
             dns: DnsSlice::default(),
             outbounds: OutboundsSlice::default(),
+            experimental: ExperimentalSlice::default(),
         }
     }
 }
@@ -50,6 +53,7 @@ impl ConfigSlices {
     pub fn validate(&self) -> PanelResult<()> {
         self.dns.validate()?;
         self.outbounds.validate()?;
+        self.experimental.validate()?;
         Ok(())
     }
 }
@@ -170,6 +174,22 @@ impl OutboundsSlice {
                 }
                 _ => {}
             }
+        }
+        Ok(())
+    }
+}
+
+impl ExperimentalSlice {
+    /// Validate the experimental slice.
+    ///
+    /// A disabled slice skips all sub-validation. When enabled, a non-empty
+    /// `cache_file.path` must not be pure whitespace.
+    pub fn validate(&self) -> PanelResult<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if !self.cache_file.path.is_empty() && self.cache_file.path.trim().is_empty() {
+            return Err(validation("experimental.cache_file.path must not be blank"));
         }
         Ok(())
     }

@@ -1,4 +1,4 @@
-//! Config slices (ADR-0005 P0): structured DNS + custom outbound slices.
+//! Config slices (ADR-0005 P0/P1): structured DNS + custom outbound + experimental slices.
 //!
 //! A config slice is a small, user-editable projection of a sing-box top-level
 //! section, stored at `data_dir/config_slices.json`. Each slice has its own
@@ -7,9 +7,10 @@
 //! Module structure:
 //! - [`dns`] — DNS slice schema (`DnsSlice` / `DnsServer` / `DnsRule`, …)
 //! - [`outbound`] — custom outbound slice schema (`CustomOutbound`, protocols, `outbound_tag`)
+//! - [`experimental`] — experimental slice schema (`ExperimentalSlice` / `CacheFileSlice`)
 //! - [`schema`] — [`ConfigSlices`] container + cross-slice validation
 //! - [`store`] — [`ConfigSlicesStore`] for `config_slices.json` read/write
-//! - [`apply`] — `apply_config_slices` + pure `render_dns` / `render_outbound`
+//! - [`apply`] — `apply_config_slices` + pure `render_dns` / `render_outbound` / `render_cache_file`
 //!
 //! The slice layer is injected as the **first** step of the client config
 //! pipeline (before profile YAML/JS overrides, ADR-0005 §3.2). This module only
@@ -24,12 +25,14 @@
 
 pub mod apply;
 pub mod dns;
+pub mod experimental;
 pub mod outbound;
 pub mod schema;
 pub mod store;
 
 pub use apply::*;
 pub use dns::*;
+pub use experimental::*;
 pub use outbound::*;
 pub use schema::*;
 pub use store::*;

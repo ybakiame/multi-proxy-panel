@@ -23,6 +23,7 @@ fn valid_slices() -> ConfigSlices {
                 }),
             }],
         },
+        experimental: ExperimentalSlice::default(),
     }
 }
 
