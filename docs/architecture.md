@@ -457,9 +457,10 @@ App → 系统代理 → 核心主 mixed inbound (mixed_port)
    │    （log/dns + proxy(select)/auto(url-test)/direct/block 分组 + route.rules=[]）
    ▼
 ⓪ 切片层（本地配置层·构建期注入，ADR-0005）
-   │  apply_config_slices：读取 data_dir/config_slices.json，将 DNS 切片与自定义出站切片
-   │    注入模板（自定义出站 tag 强制 slice- 前缀；出站含协议节点与 selector/urltest
-   │    分组，v1 禁嵌套分组，供规则 Outbound{tag} 引用）
+   │  apply_config_slices：读取 data_dir/config_slices.json，将 DNS 切片、自定义出站切片与
+   │    Experimental 切片注入模板（自定义出站 tag 强制 slice- 前缀；出站含协议节点与
+   │    selector/urltest 分组，v1 禁嵌套分组，供规则 Outbound{tag} 引用；Experimental 深合并
+   │    写入 experimental.cache_file，保留 clash_api 等同级键）
    ▼
 ① Profile 覆写层（高级逃生舱口，优先级高于切片层，D2「覆写赢」）
    │  remote/local YAML 覆写（深合并，remote 为底 local 覆盖）→ remote/local JS 覆写（链式 main）
@@ -471,7 +472,8 @@ Profile 基础配置（含节点与分组）
    ▼
 Composed 配置
    │  apply_local_override（local_override/，ADR-0002）：**全部 enabled** 本地规则（场景模板
-   │    已移除，不再按模板引用过滤）/ 规则集前插到 route.rules 头部、rule_set 引用注册、
+   │    已移除，不再按模板引用过滤）/ 规则集前插到 route.rules 头部、rule_set 引用注册
+   │    （引用采集同时覆盖规则卡与已渲染 DNS 规则的 rule_set，见 ADR-0005 P2 补记）、
    │    final 规则写 route.final
    ▼
    │  apply_panel_features（core_config/singbox.rs，设置页最高优先级）：TUN inbound 按设置整段替换、
@@ -487,10 +489,10 @@ Composed 配置
 | 阶段 | 职责 |
 |------|------|
 | `singbox_template` | 生成 sing-box 基础骨架：DNS、`proxy`（主 selector 组）/`auto`/`direct`/`block` 分组，`route.rules = []`（空路由） |
-| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，把 DNS 切片与自定义出站切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组） |
+| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，把 DNS 切片、自定义出站切片与 Experimental 切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组）；Experimental 深合并写入 `experimental.cache_file`（保留 `clash_api` 等同级键） |
 | Profile 覆写（YAML/JS） | 模板与切片之上叠加用户 Profile（远端为底、本地覆盖），改写节点分组、路由与实验字段，可显式接管模式语义；优先级高于切片层 |
 | `compose_singbox_config` | 注入本地可用的 inbounds（mixed 主入口；桌面 MITM 双入站）与 MITM 白名单规则、DNS 兼容适配 |
-| `apply_local_override` | 前插**全部 enabled** 本地规则/规则集并处理 final（场景模板已移除，不再按模板引用过滤；本地规则优先于订阅规则） |
+| `apply_local_override` | 前插**全部 enabled** 本地规则/规则集并处理 final（场景模板已移除，不再按模板引用过滤；本地规则优先于订阅规则）；规则集注入扫描的引用来源含规则卡与已渲染 DNS 规则的 `rule_set`（ADR-0005 P2 补记） |
 | `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式 / Android DNS），对同名字段整段替换、优先级最高；DNS 切片 FollowSystem 时 `inject_android_dns` 覆盖切片正文，Takeover 时跳过（ADR-0005 D1） |
 
 **规则优先级语义**（最终 `route.rules` 自前向后的匹配顺序）：

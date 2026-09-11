@@ -67,7 +67,7 @@
 | **P0** | **DNS 切片** | `servers` / `rules` / `final` / `strategy` 表单化 | 首版 |
 | **P0** | **自定义出站切片** | 可视化增删 vless / vmess / ss / trojan / hysteria2 等出站，供规则 `Outbound{tag}` 引用 | 首版 |
 | **P0** | **规则页搬迁** | 规则卡片 / 规则集 / 场景模板整体迁入新「配置」Tab（原样搬迁，不重写逻辑） | 首版 |
-| **P1** | **Experimental 切片** | `cache_file` 等；`clash_api` 已改为**必选切片**迁至配置页（恒启用、无切片级开关、仅调参数，见文末 P1 补记） | 后续 |
+| **P1** | **Experimental 切片** | `cache_file` 等；`clash_api` 已改为**必选切片**迁至配置页（恒启用、无切片级开关、仅调参数，见文末 P1 补记） | 已上线（P2） |
 | **P2（或不做）** | **入站切片** | 移动端恒 TUN，仅可能暴露混合端口等少数安全字段 | 视需求 |
 | **P2（或不做）** | **日志 / NTP 等** | 低价值长尾项 | 视需求 |
 
@@ -336,7 +336,7 @@ pub struct OutboundTransport {
 /config/rules              # 规则卡片（原 /rules/custom 搬迁）
 /config/rulesets           # 规则集管理（原 /rules/rulesets 搬迁）
 /config/rulesets/market    # 规则集市场（原 /rules/rulesets/market 搬迁）
-/config/experimental       # P1 预留
+/config/experimental       # Experimental 切片（cache_file）表单
 ```
 
 **入口页**：沿用现有 `EntryLinkCard`（`apps/mobile/src/components/EntryLinkCard.tsx`）列表，自上而下：总开关 / DNS / 自定义出站 / 网络（TUN）/ 规则 / 规则集 / Clash API。现有 `MasterSwitchCard` 原样保留；`TemplateSection`（场景模板）已随 P1 移除（见文末 P1 补记）。
@@ -497,3 +497,38 @@ P1（必选切片 + 分组出站）与「场景模板移除」已落地。以下
   - 成员范围 = 订阅节点 tag + 切片节点出站 tag + 内置 `direct`。
   - Rust 校验：成员非空、禁自引用、selector `default` 必须 ∈ 成员、`slice-` 前缀成员必须指向存在的启用切片出站（其余无法静态解析的 tag 交由 sing-box 运行期校验）。
 - §3.1 的「自定义出站切片」由单纯协议节点扩展为「协议节点 + 分组」。
+
+### P2 补记（2026-09-11）
+
+P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 / 规则页 UX 变更）已落地。以下内容**修订** §2.2 / §3.3，并**解除** P0 / P1 补记中的两项已知限制；本补记不改变 §2.3 的 D1–D6 决策，Status 仍为 Accepted。
+
+#### 静态节点列表命令（解除 P0「核心未运行时仅列切片出站」限制）
+
+- **新 Tauri 命令** `subscription_node_tags(subscription_id)`：由 `pp-client` 的 `cached_node_tags` 从 `data_dir/subscription_cache/<id>.json` 读取节点 tag，**不依赖核心运行、不依赖网络**；缺失 / 损坏缓存返回空列表（与 `proxies_list` 的运行期 Clash API 数据源互补）。
+- **tag 口径一致**：复用配置生成同一路径（`extract_nodes_singbox`）提取节点，故静态 tag 与运行期 Clash API proxy 名一致（含叶子类型过滤与重名 `-2` / `-3` 后缀）。
+- **前端接入**：移动端规则「指定出站」下拉与分组成员候选 = **静态订阅节点 + 运行中模板分组 + 切片出站**的并集去重。
+- **限制解除**：P0 补记「规则『指定出站』下拉的选项来源……核心未运行时下拉仅列出切片出站」的已知限制**已解除**——核心未运行时也能列出订阅节点。
+
+#### DNS 规则 rule_set 匹配闭环（解除 P0「rule_set 待 P1 解锁」限制）
+
+- **注入扫描扩展**：`apply_custom_rule_sets` 的引用采集范围由「route 规则卡」扩展为「route 规则卡 + 已渲染 config 的 `dns.rules[].rule_set` 引用」，两类引用合并去重（DNS 切片在 ⓪ 层先于 local_override 的 ③ 层，故此处读取的是已渲染 DNS 正文）。
+- **双形态兼容**：`rule_set` 匹配字段接受**单字符串**与**字符串数组**两种形态，非法值忽略；同一 tag 被 route 与 DNS 同时引用只产出一条 local rule_set 条目（幂等）。
+- **remote / bundled 天然可引用**：内置与远程规则集本就「enabled 即注入」，无需引用驱动扫描，故 DNS 规则可直接引用。
+- **前端**：DNS 规则表单恢复 `rule_set` 匹配选项；规则集选项抽为共享数据源 `buildRuleSetOptions`，路由规则与 DNS 规则**同源**（口径 = custom 规则集全集 ∪ enabled 的内置引用）。
+- **限制解除**：P0 补记「DNS 规则 `match_type` 首版限定 `domain` / `domain_suffix` / `domain_keyword`；`rule_set` 待规则集引用闭环后（P1）解锁」的已知限制**已解除**。
+
+#### Experimental 切片上线
+
+- **schema**：新增 `ExperimentalSlice { enabled, cache_file: CacheFileSlice }`，`CacheFileSlice { enabled, path, cache_id, store_fakeip }`；全字段 `#[serde(default)]`，`ConfigSlices` 增加 `experimental` 字段。
+- **渲染**：`apply_config_slices` 将 `cache_file` **深合并**写入 `config.experimental.cache_file`，保留 `clash_api` 等同级键（`clash_api` 仍由 ④ panel_features 层拥有）；`cache_file.enabled=false` 显式写出以关闭缓存。
+- **字段精选结论（按 sing-box 1.14 `option.CacheFileOptions`）**：
+  - 仅暴露 `enabled` / `path` / `cache_id` / `store_fakeip`；
+  - `store_timeout` **在 sing-box 1.14 不存在**，不引入；
+  - `store_rdrc` / `rdrc_timeout` **已废弃**，不引入；
+  - `store_dns`（1.14 新增）暂未暴露，留待后续按需纳入。
+- **前端**：移动端 `/config/experimental` 页面（`cache_file` 表单）上线，`configSlices` api 补齐。
+
+#### 规则页 UX 变更
+
+- **无运行实例时出站模式空显修复**：`proxy_status` / `stop_proxy` 走 `idle_status_view` 归一化，核心未运行时返回归一化的出站模式而非空白。
+- **首页启停改为 FAB**：原启停操作卡移除，改为悬浮按钮（`StartStopFab`）；Alert 独立条件渲染，不再依赖操作卡容器。
