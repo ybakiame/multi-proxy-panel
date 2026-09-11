@@ -3,20 +3,26 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   CONFIG_SLICES_KEY,
+  PROXIES_KEY,
   configSlicesGet,
   configSlicesSave,
+  isGroupOutbound,
+  outboundTag,
+  proxiesList,
   toErrorMessage,
   toastError,
   toastSuccess,
   useProxyStatus,
 } from "@pp/client-core";
-import type { ConfigSlices, CustomOutbound, OutboundsSlice } from "@pp/client-core";
+import type { ConfigSlices, CustomOutbound, OutboundsSlice, ProxyList } from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
 import { OutboundListSection } from "./OutboundListSection";
 import { OutboundMasterSwitchCard } from "./OutboundMasterSwitchCard";
+import { buildGroupMemberCandidates, type GroupMemberCandidate } from "./groupForm";
 import { isConfigSlices, isOutboundsSliceValid, validateOutboundsSlice } from "./outboundForm";
+import type { OutboundProtocolType } from "./outboundOptions";
 
 /**
  * 自定义出站切片配置子页（ADR-0005 P0-4c，路由 `/config/outbounds`）。
@@ -46,6 +52,15 @@ export default function OutboundsPage() {
     refetchOnWindowFocus: false,
   });
 
+  // 分组成员候选数据源：订阅节点读运行中核心的 proxies_list（PROXIES_KEY，与首页 /
+  // 代理页 / 规则页共享缓存），核心未运行时不发起，此时候选仅剩切片节点与 direct。
+  const { data: proxyList } = useQuery<ProxyList>({
+    queryKey: PROXIES_KEY,
+    queryFn: proxiesList,
+    enabled: coreRunning,
+    retry: false,
+  });
+
   // 结构守卫：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const slices = isConfigSlices(rawSlices) ? rawSlices : null;
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
@@ -67,6 +82,8 @@ export default function OutboundsPage() {
   const [editing, setEditing] = useState<CustomOutbound | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomOutbound | null>(null);
   const [saving, setSaving] = useState(false);
+  // 新建时预选协议（分组区 → selector，节点区 → vless）。
+  const [newProtocol, setNewProtocol] = useState<OutboundProtocolType>("vless");
 
   const errors = draft ? validateOutboundsSlice(draft) : null;
   const valid = errors !== null && isOutboundsSliceValid(errors);
@@ -75,6 +92,18 @@ export default function OutboundsPage() {
     () => (draft ? draft.items.filter((item) => item.id !== editing?.id).map((item) => item.name) : []),
     [draft, editing],
   );
+
+  // 分组成员候选：订阅节点（运行中核心）+ 切片节点出站（enabled）+ 内置 direct；
+  // 候选不含其它分组（禁嵌套，与 Rust `validate_group_members` 一致）。
+  const memberCandidates = useMemo<GroupMemberCandidate[]>(() => {
+    const sliceNodes = (draft?.items ?? [])
+      .filter((item) => item.enabled && !isGroupOutbound(item))
+      .map((item) => ({ name: item.name, tag: outboundTag(item.name) }));
+    return buildGroupMemberCandidates({
+      proxyNodes: (proxyList?.nodes ?? []).map((node) => node.name),
+      sliceNodes,
+    });
+  }, [draft, proxyList]);
 
   const handleSave = async () => {
     if (!slices || !draft || !valid || !dirty || saving) return;
@@ -94,7 +123,8 @@ export default function OutboundsPage() {
     setDraft((current) => (current ? { ...current, enabled } : current));
 
   // ---- 出站条目 ----
-  const openAdd = () => {
+  const openAdd = (protocol: OutboundProtocolType) => {
+    setNewProtocol(protocol);
     setEditing(null);
     setSheetOpen(true);
   };
@@ -207,7 +237,8 @@ export default function OutboundsPage() {
               itemErrors={errors?.itemErrors ?? []}
               onToggle={handleToggleItem}
               onEdit={openEdit}
-              onAdd={openAdd}
+              onAddGroup={() => openAdd("selector")}
+              onAddNode={() => openAdd("vless")}
             />
           </>
         )}
@@ -218,6 +249,9 @@ export default function OutboundsPage() {
         isOpen={sheetOpen}
         editing={editing}
         otherNames={otherNames}
+        defaultProtocol={newProtocol}
+        memberCandidates={memberCandidates}
+        coreRunning={coreRunning}
         onClose={() => setSheetOpen(false)}
         onSave={handleSaveItem}
         onDeleteRequest={handleDeleteRequest}

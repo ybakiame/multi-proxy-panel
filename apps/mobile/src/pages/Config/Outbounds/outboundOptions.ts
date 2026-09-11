@@ -15,6 +15,8 @@ export const OUTBOUND_PROTOCOL_OPTIONS: { value: OutboundProtocolType; label: st
   { value: "shadowsocks", label: "Shadowsocks" },
   { value: "trojan", label: "Trojan" },
   { value: "hysteria2", label: "Hysteria2" },
+  { value: "selector", label: "Selector（手动选择）" },
+  { value: "urltest", label: "URLTest（自动测速）" },
 ];
 
 const PROTOCOL_LABELS: Record<OutboundProtocolType, string> = {
@@ -23,11 +25,18 @@ const PROTOCOL_LABELS: Record<OutboundProtocolType, string> = {
   shadowsocks: "Shadowsocks",
   trojan: "Trojan",
   hysteria2: "Hysteria2",
+  selector: "Selector",
+  urltest: "URLTest",
 };
 
 /** 协议类型显示名（列表卡片标签）。 */
 export function outboundProtocolLabel(type: OutboundProtocolType): string {
   return PROTOCOL_LABELS[type];
+}
+
+/** 协议是否为分组出站（selector / urltest；镜像 Rust `OutboundProtocol::is_group`）。 */
+export function isGroupProtocol(type: OutboundProtocolType): type is "selector" | "urltest" {
+  return type === "selector" || type === "urltest";
 }
 
 /** V2Ray 传输类型选项（对齐 `OutboundTransport.kind`）。 */

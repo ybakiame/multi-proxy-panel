@@ -4,6 +4,7 @@ import { Button, Modal, Switch } from "@heroui/react";
 import { outboundTag } from "@pp/client-core";
 import type { CustomOutbound } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
+import { GroupFields } from "./GroupFields";
 import { OutboundProtocolFields } from "./OutboundProtocolFields";
 import { OutboundTlsFields } from "./OutboundTlsFields";
 import { OutboundTransportFields } from "./OutboundTransportFields";
@@ -15,7 +16,8 @@ import {
   outboundToForm,
   validateOutboundForm,
 } from "./outboundForm";
-import { OUTBOUND_PROTOCOL_OPTIONS, type OutboundProtocolType } from "./outboundOptions";
+import { isGroupFormValid, validateGroupFields, type GroupMemberCandidate } from "./groupForm";
+import { OUTBOUND_PROTOCOL_OPTIONS, isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
@@ -27,6 +29,12 @@ interface OutboundFormSheetProps {
   editing: CustomOutbound | null;
   /** 除自身外的已有出站名称（编辑时排除自身），用于 tag 冲突校验。 */
   otherNames: readonly string[];
+  /** 新建时预选协议（分组区「添加分组」→ selector，节点区「添加节点」→ vless）。 */
+  defaultProtocol: OutboundProtocolType;
+  /** 分组成员候选（订阅节点 + 切片节点 + direct，不含其它分组）。 */
+  memberCandidates: GroupMemberCandidate[];
+  /** 核心是否运行（决定成员候选提示文案）。 */
+  coreRunning: boolean;
   onClose: () => void;
   /** 保存（仅更新内存草稿，落盘由页面统一执行）。 */
   onSave: (item: CustomOutbound) => void;
@@ -45,6 +53,9 @@ export function OutboundFormSheet({
   isOpen,
   editing,
   otherNames,
+  defaultProtocol,
+  memberCandidates,
+  coreRunning,
   onClose,
   onSave,
   onDeleteRequest,
@@ -53,25 +64,29 @@ export function OutboundFormSheet({
   const [prevKey, setPrevKey] = useState<string | null>(null);
 
   // open 切换（新建默认表单 / 编辑预填）时同步草稿（adjust-state-during-render）。
-  const key = isOpen ? (editing?.id ?? "__new__") : null;
+  // 新建时把预选协议并入 key，保证「添加分组」与「添加节点」各自重置。
+  const key = isOpen ? (editing?.id ?? `__new__:${defaultProtocol}`) : null;
   if (key !== null && key !== prevKey) {
     setPrevKey(key);
-    setFields(editing ? outboundToForm(editing) : defaultOutboundForm());
+    setFields(editing ? outboundToForm(editing) : defaultOutboundForm(defaultProtocol));
   }
 
   const errors = validateOutboundForm(fields, otherNames);
-  const canSave = isOutboundFormValid(errors);
+  const groupErrors = validateGroupFields(fields);
+  const isGroup = isGroupProtocol(fields.protocol);
+  const canSave = isOutboundFormValid(errors) && (!isGroup || isGroupFormValid(groupErrors));
 
   const patch = (next: Partial<OutboundFormFields>) => setFields((current) => ({ ...current, ...next }));
 
-  /** 切换协议：重置协议字段为该协议默认值，保留 name / enabled。 */
+  /** 切换协议：重置协议字段为该协议默认值，保留 name / enabled（分组字段与节点字段互不残留）。 */
   const handleProtocolChange = (value: string) => {
     const type = value as OutboundProtocolType;
     setFields((current) => ({ ...defaultOutboundForm(type), name: current.name, enabled: current.enabled }));
   };
 
-  const showTls = fields.protocol !== "shadowsocks";
-  const showTransport = fields.protocol === "vless" || fields.protocol === "vmess" || fields.protocol === "trojan";
+  const showTls = !isGroup && fields.protocol !== "shadowsocks";
+  const showTransport =
+    !isGroup && (fields.protocol === "vless" || fields.protocol === "vmess" || fields.protocol === "trojan");
 
   const handleSave = () => {
     if (!canSave) return;
@@ -133,8 +148,18 @@ export function OutboundFormSheet({
               <span className="text-xs text-muted">切换协议会重置该出站的协议字段</span>
             </div>
 
-            {/* 协议字段 */}
-            <OutboundProtocolFields fields={fields} errors={errors} onChange={patch} />
+            {/* 协议字段：分组出站渲染成员/分组字段，节点出站渲染协议字段 */}
+            {isGroup ? (
+              <GroupFields
+                fields={fields}
+                errors={groupErrors}
+                candidates={memberCandidates}
+                coreRunning={coreRunning}
+                onChange={patch}
+              />
+            ) : (
+              <OutboundProtocolFields fields={fields} errors={errors} onChange={patch} />
+            )}
 
             {/* TLS（shadowsocks 无 TLS） */}
             {showTls && <OutboundTlsFields fields={fields} onChange={patch} />}

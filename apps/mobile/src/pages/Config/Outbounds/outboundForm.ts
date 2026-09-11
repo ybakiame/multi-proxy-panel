@@ -1,6 +1,14 @@
-import { outboundTag } from "@pp/client-core";
-import type { ConfigSlices, CustomOutbound, OutboundTls, OutboundTransport, OutboundsSlice } from "@pp/client-core";
-import type { OutboundProtocolType } from "./outboundOptions";
+import { isGroupOutbound, outboundTag } from "@pp/client-core";
+import type {
+  ConfigSlices,
+  CustomOutbound,
+  GroupOutbound,
+  OutboundTls,
+  OutboundTransport,
+  OutboundsSlice,
+} from "@pp/client-core";
+import { applyGroupToForm, groupFormToOutbound, validateGroupItem } from "./groupForm";
+import { isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
 
 /**
  * 自定义出站切片（ADR-0005 P0-4c）表单映射与校验。
@@ -56,6 +64,18 @@ export interface OutboundFormFields {
   transportKind: string;
   transportPath: string;
   transportHost: string;
+  /** 分组（selector / urltest）成员 tag 列表。 */
+  members: string[];
+  /** selector 默认成员 tag（空 = 使用第一个成员）。 */
+  groupDefault: string;
+  /** 分组切换成员时是否中断现有连接。 */
+  interruptExistConnections: boolean;
+  /** urltest 测速 URL（空 = 核心默认）。 */
+  groupUrl: string;
+  /** urltest 测速间隔（空 = 核心默认，如 `3m`）。 */
+  groupInterval: string;
+  /** urltest 容差毫秒（`0` = 核心默认）。 */
+  groupTolerance: string;
 }
 
 /** 协议默认端口。 */
@@ -93,6 +113,12 @@ export function defaultOutboundForm(type: OutboundProtocolType = "vless"): Outbo
     transportKind: "tcp",
     transportPath: "",
     transportHost: "",
+    members: [],
+    groupDefault: "",
+    interruptExistConnections: false,
+    groupUrl: "",
+    groupInterval: "",
+    groupTolerance: "0",
   };
 }
 
@@ -101,6 +127,10 @@ export function outboundToForm(item: CustomOutbound): OutboundFormFields {
   const form = defaultOutboundForm(item.type);
   form.name = item.name;
   form.enabled = item.enabled;
+  if (isGroupOutbound(item)) {
+    applyGroupToForm(form, item);
+    return form;
+  }
   form.server = item.server;
   form.port = item.server_port > 0 ? String(item.server_port) : "";
   switch (item.type) {
@@ -154,6 +184,9 @@ function applyTransportToForm(form: OutboundFormFields, transport: OutboundTrans
 /** 表单草稿 → 结构化出站（保存转换）。 */
 export function formToOutbound(fields: OutboundFormFields, id: string): CustomOutbound {
   const base = { id, name: fields.name.trim(), enabled: fields.enabled };
+  if (isGroupProtocol(fields.protocol)) {
+    return groupFormToOutbound(fields, base);
+  }
   const server = fields.server.trim();
   const server_port = parsePortValue(fields.port);
   const tls = buildTls(fields);
@@ -242,8 +275,11 @@ function parsePortValue(raw: string): number {
 // 标签 / 摘要
 // ---------------------------------------------------------------------------
 
-/** 出站摘要（列表卡片副标题）：server:port。 */
-export function outboundSummary(item: CustomOutbound): string {
+/** 节点出站（非分组）类型：`outboundSummary` 仅接受节点。 */
+export type NodeOutbound = Exclude<CustomOutbound, GroupOutbound>;
+
+/** 节点出站摘要（列表卡片副标题）：server:port。 */
+export function outboundSummary(item: NodeOutbound): string {
   return `${item.server}:${item.server_port}`;
 }
 
@@ -300,8 +336,9 @@ export function validateOutboundForm(fields: OutboundFormFields, otherNames: rea
     }
   }
 
-  const serverError = fields.server.trim() === "" ? "请输入服务器地址" : null;
-  const portError = validatePortField(fields.port);
+  const isGroup = isGroupProtocol(fields.protocol);
+  const serverError = isGroup || fields.server.trim() !== "" ? null : "请输入服务器地址";
+  const portError = isGroup ? null : validatePortField(fields.port);
 
   const needsUuid = fields.protocol === "vless" || fields.protocol === "vmess";
   let uuidError: string | null = null;
@@ -349,9 +386,18 @@ export interface OutboundsSliceErrors {
 /**
  * 校验整个自定义出站切片草稿（保存前调用）。
  *
- * 校验所有条目（含 disabled，对齐 Dns 页的宽松策略）；跨条目检测 tag 重复。
+ * 校验所有条目（含 disabled，对齐 Dns 页的宽松策略）；跨条目检测 tag 重复，
+ * 分组条目额外校验成员非空、selector default ∈ 成员，以及成员引用的切片节点
+ * 是否仍存在且启用（悬空引用行内提示，对齐 Rust `validate_group_members`）。
  */
 export function validateOutboundsSlice(slice: OutboundsSlice): OutboundsSliceErrors {
+  const enabledNodeTags = new Set<string>();
+  for (const item of slice.items) {
+    if (item.enabled && !isGroupOutbound(item)) {
+      enabledNodeTags.add(outboundTag(item.name));
+    }
+  }
+
   const tags = new Set<string>();
   const itemErrors = slice.items.map((item) => {
     if (item.name.trim() === "") {
@@ -362,6 +408,9 @@ export function validateOutboundsSlice(slice: OutboundsSlice): OutboundsSliceErr
       return `tag「${tag}」与其它出站重复`;
     }
     tags.add(tag);
+    if (isGroupOutbound(item)) {
+      return validateGroupItem(item, enabledNodeTags);
+    }
     if (item.server.trim() === "") {
       return "服务器地址不能为空";
     }
