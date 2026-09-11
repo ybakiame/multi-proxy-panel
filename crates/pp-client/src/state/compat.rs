@@ -15,6 +15,8 @@ use crate::config::ClientConfig;
 ///   tun inbound to trigger libbox `openTun()` callback to establish VPN interface, so
 ///   [`ClientState::start`] constructs [`core_config::PanelFeatures`] on Android via
 ///   [`panel_features_tun_enabled`] (the false here does not participate in config composition).
+/// - `clash_api_enabled = true`: Clash API is a mandatory slice (ADR-0005 P1), the data source for
+///   the dashboard / node page; always enabled on Android regardless of the persisted value.
 ///
 /// Only called by [`ClientState::start`] on Android builds; compiled on desktop builds for unit test verification.
 ///
@@ -24,8 +26,9 @@ pub(crate) fn apply_android_overrides(config: &mut ClientConfig) {
     config.mitm_enabled = false;
     config.system_proxy_enabled = false;
     config.tun_enabled = false;
+    config.clash_api_enabled = true;
     tracing::info!(
-        "Android forced override: disables MITM / system proxy / TUN (desktop semantics only, tun inbound injected in config composition)"
+        "Android forced override: disables MITM / system proxy / TUN (desktop semantics only, tun inbound injected in config composition); forces Clash API enabled (mandatory slice)"
     );
 }
 

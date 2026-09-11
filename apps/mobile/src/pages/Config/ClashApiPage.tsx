@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "@heroui/react";
-import { useClientConfig, useSaveConfig } from "@pp/client-core";
+import { CONFIG_KEY, useClientConfig, useSaveConfig } from "@pp/client-core";
+import type { ClientConfig } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
 import { useSettingsConfig } from "../Settings/useSettingsConfig";
 import { ClashApiCard } from "./ClashApiCard";
@@ -16,6 +18,7 @@ import { ClashApiCard } from "./ClashApiCard";
  */
 export default function ClashApiPage() {
   const settings = useSettingsConfig();
+  const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
   const { mutateAsync: saveConfigAsync } = useSaveConfig();
 
@@ -25,12 +28,18 @@ export default function ClashApiPage() {
     if (correctedRef.current || !config || config.clash_api_enabled) {
       return;
     }
+    // 读缓存最新基底叠加纠正补丁（对齐 useSettingsConfig.persist），避免展开渲染期
+    // config 快照覆盖期间发生的并发保存（lost update）。
+    const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
+    if (!current) {
+      return;
+    }
     correctedRef.current = true;
-    void saveConfigAsync({ ...config, clash_api_enabled: true }).catch(() => {
+    void saveConfigAsync({ ...current, clash_api_enabled: true }).catch(() => {
       // 静默纠正失败：保留原值不阻塞页面，重置标记以便下次进入重试。
       correctedRef.current = false;
     });
-  }, [config, saveConfigAsync]);
+  }, [config, queryClient, saveConfigAsync]);
 
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">

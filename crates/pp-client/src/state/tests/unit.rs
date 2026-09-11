@@ -115,20 +115,25 @@ async fn start_requires_tun_authorization_when_tun_enabled() {
 }
 
 /// Android semantics: `apply_android_overrides` disables desktop-exclusive features
-/// (MITM / system proxy / TUN desktop semantics).
+/// (MITM / system proxy / TUN desktop semantics) and forces the Clash API mandatory slice on.
 /// Desktop builds cannot execute Android path, so extract pure function and test its semantics on desktop.
 #[test]
-fn apply_android_overrides_disables_desktop_features() {
+fn apply_android_overrides_forces_android_semantics() {
     let mut cfg = ClientConfig {
         mitm_enabled: true,
         system_proxy_enabled: true,
         tun_enabled: true,
+        clash_api_enabled: false,
         ..ClientConfig::default()
     };
     compat::apply_android_overrides(&mut cfg);
     assert!(!cfg.mitm_enabled, "Android disables MITM");
     assert!(!cfg.system_proxy_enabled, "Android disables system proxy");
     assert!(!cfg.tun_enabled, "Android disables TUN (desktop semantics)");
+    assert!(
+        cfg.clash_api_enabled,
+        "Android forces Clash API enabled (mandatory slice)"
+    );
 }
 
 /// Android config composition TUN toggle: sing-box needs tun inbound to callback
