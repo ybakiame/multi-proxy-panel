@@ -74,7 +74,7 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 ### 交互重设计（融合 husi + FlClash 调研）
 
 **分层渐进式规则管理：**
-1. 场景模板（回国/海外/广告过滤，一键生成规则集）
+1. ~~场景模板（回国/海外/广告过滤，一键生成规则集）~~ — 已于 ADR-0005 P1 移除，由规则卡片启用开关 + 分组出站取代
 2. 可视化规则卡片：摘要截断显示、拖拽排序、滑动删除（5s 撤销）、一键开关；编辑走 Sheet 渐进导航（类型→目标→高级折叠）
 3. JSON 兜底：每条规则可自定义 JSON 覆写（husi ConfigEditScreen 式 schema 补全编辑器）
 
@@ -87,7 +87,7 @@ crates/pp-mitm + pp-script（桌面增值：MITM 抓包/重写、QX 脚本生态
 - [x] 移动端隐藏内核切换 UI，默认 sing-box；订阅嗅探到 sing-box 不兼容的 clash 节点时自动切 mihomo（日志记录原因） — 已完成（自动降级 + 持久化 + 6 单测）
 - [x] `check_subscription_core_compat` 的硬限制改为自动降级而非报错 — 已完成（仅 Android；桌面保持报错）
 - [x] 本地 Override 层设计（schema + 合并策略 + UI） — 已完成（ADR-0002 + MVP 实施）
-- [x] 规则卡片列表 + 场景模板（移动端优先，桌面端复用） — 已完成 MVP（/rules 页）
+- [x] 规则卡片列表 + ~~场景模板~~（移动端优先，桌面端复用） — 已完成 MVP（/rules 页；场景模板已于 ADR-0005 P1 移除）
 - [x] mihomo Kotlin 侧补全或冻结：若走 sing-box 主核路线，`MihomoVpnService` 标记为 fallback 维护模式（只修崩溃，不加功能）
 
 ---

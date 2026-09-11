@@ -5,6 +5,8 @@
 - **Deciders:** ProxyPanel Contributors
 - **Scope:** 阶段④ — 客户端规则管理交互重设计（基于 `docs/research/client-audit-2026-08.md` 阶段③决策）
 
+> 注（2026-09）：场景模板功能已在 ADR-0005 P1 中移除，规则注入语义改为全量启用规则。本文档以下关于场景模板的正文为历史设计记录，不再代表现状。
+
 ---
 
 ## 1. Context & Problem Statement

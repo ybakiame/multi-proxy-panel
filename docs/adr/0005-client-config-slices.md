@@ -67,7 +67,7 @@
 | **P0** | **DNS 切片** | `servers` / `rules` / `final` / `strategy` 表单化 | 首版 |
 | **P0** | **自定义出站切片** | 可视化增删 vless / vmess / ss / trojan / hysteria2 等出站，供规则 `Outbound{tag}` 引用 | 首版 |
 | **P0** | **规则页搬迁** | 规则卡片 / 规则集 / 场景模板整体迁入新「配置」Tab（原样搬迁，不重写逻辑） | 首版 |
-| **P1** | **Experimental 切片** | `cache_file` 等；`clash_api` 维持设置页管理，不重复暴露 | 后续 |
+| **P1** | **Experimental 切片** | `cache_file` 等；`clash_api` 已改为**必选切片**迁至配置页（恒启用、无切片级开关、仅调参数，见文末 P1 补记） | 后续 |
 | **P2（或不做）** | **入站切片** | 移动端恒 TUN，仅可能暴露混合端口等少数安全字段 | 视需求 |
 | **P2（或不做）** | **日志 / NTP 等** | 低价值长尾项 | 视需求 |
 
@@ -282,6 +282,8 @@ pub struct OutboundTransport {
 
 **字段精选原则**：只暴露高价值字段；未暴露字段不进入 schema，靠 YAML/JS 覆写兜底（D2）。
 
+**分组出站（P1 落地）**：`OutboundProtocol` 在协议节点之外新增 `Selector` / `UrlTest` 两种分组类型（serde 判别值 `selector` / `urltest`，注意 `urltest` 无下划线）。分组成员范围 = 订阅节点 tag + 其他切片节点出站 tag + 内置 `direct`；**v1 禁止嵌套分组**（成员不得引用另一个分组）。Rust 落盘校验覆盖：成员非空、禁自引用、selector `default` 必须 ∈ 成员、`slice-` 前缀成员必须指向存在的启用切片出站（其余无法静态解析的 tag 交由 sing-box 运行期校验）。
+
 **tag 冲突**：自定义出站 tag 强制前缀 `slice-`（由 `name` 生成 slug），注入时与订阅节点 / 模板出站做冲突检测，必要时追加稳定后缀。规则卡片的 `Outbound{tag}` 下拉只列出「订阅节点 + 模板出站 + 切片出站」的并集。
 
 ### 3.2 合成顺序与 D2 自洽
@@ -301,7 +303,7 @@ pub struct OutboundTransport {
    compose_singbox_config()：inbounds 整体替换（mixed / TUN）、MITM chain 注入
         ↓
 ③ local_override 层（本地配置层·运行期注入）
-   apply_local_override() + apply_custom_rule_sets()：规则卡片 / 规则集 / 场景模板
+   apply_local_override() + apply_custom_rule_sets()：规则卡片（全部 enabled 规则）/ 规则集
         ↓
 ④ panel_features 层（最高优先级）
    apply_panel_features()：TUN / Clash API / 出站模式 / inject_android_dns
@@ -328,14 +330,16 @@ pub struct OutboundTransport {
 ```
 /config                    # 入口页：EntryLinkCard 列表
 /config/dns                # DNS 切片表单
-/config/outbounds          # 自定义出站列表 + 编辑
+/config/outbounds          # 自定义出站（节点 + selector/urltest 分组）列表 + 编辑
+/config/network            # 网络（TUN）必选切片表单（混合端口；旧 /settings/network 重定向）
+/config/clash-api          # Clash API 必选切片表单（API 端口与密钥；旧 /settings/clash-api 重定向）
 /config/rules              # 规则卡片（原 /rules/custom 搬迁）
 /config/rulesets           # 规则集管理（原 /rules/rulesets 搬迁）
 /config/rulesets/market    # 规则集市场（原 /rules/rulesets/market 搬迁）
 /config/experimental       # P1 预留
 ```
 
-**入口页**：沿用现有 `EntryLinkCard`（`apps/mobile/src/components/EntryLinkCard.tsx`）列表，自上而下：总开关 / DNS / 自定义出站 / 规则 / 规则集 / Experimental(P1)。现有 `MasterSwitchCard` 与 `TemplateSection`（场景模板）原样保留。
+**入口页**：沿用现有 `EntryLinkCard`（`apps/mobile/src/components/EntryLinkCard.tsx`）列表，自上而下：总开关 / DNS / 自定义出站 / 网络（TUN）/ 规则 / 规则集 / Clash API。现有 `MasterSwitchCard` 原样保留；`TemplateSection`（场景模板）已随 P1 移除（见文末 P1 补记）。
 
 **子页**：沿用 `BackHeader`（`apps/mobile/src/components/BackHeader.tsx`）+ 底部 Sheet 表单（`Modal.Container placement="bottom"`，见 `RuleEditSheet.tsx` / `MobileSelectSheet.tsx`）+ `MobileSelectSheet`（枚举选择）。交互约定：
 
@@ -466,3 +470,30 @@ P0（DNS 切片 + 自定义出站切片 + 规则页搬迁）已落地。以下�
 ### 交互约定
 
 - **DNS / 出站页采用「内存草稿 + 显式保存」**，区别于规则页的即时保存。
+
+### P1 补记（2026-09-11）
+
+P1（必选切片 + 分组出站）与「场景模板移除」已落地。以下内容**修订** §2.2 / §3.1 / §3.3，其中**推翻** §2.2 原文「`clash_api` 维持设置页管理，不重复暴露」的表述；本补记不改变 §2.3 的 D1–D6 决策，Status 仍为 Accepted。
+
+#### 场景模板移除与规则注入语义变更
+
+- **功能删除**：场景模板（内置模板 + 用户自定义模板）已从 Rust（`local_override/template.rs`、Tauri 命令 `local_override_apply_template` / `revert_template`）与前端（mobile / desktop 的 `TemplateSection` / `FormSheet`、`client-core` 模板 api）整体移除。
+- **兼容字段**：`LocalOverride.applied_templates` / `custom_templates` 保留为 serde 兼容字段（恒空），`load` 时一次性清理，写回恒为空数组。
+- **注入语义变更**：local_override 层的规则注入条件由「`enabled` 且被已应用模板引用的规则」改为 **所有 `enabled` 规则全部注入**。
+- **存量用户影响（行为变化需明示）**：升级前，未被任何已应用模板引用的启用规则**不会**注入运行配置；升级后，这些启用规则会**立即开始注入**，可能改变既有分流行为。用户应检查规则卡片列表，对不希望生效的规则显式关闭 `enabled`。
+- 原「场景开关」需求由**规则卡片启用开关 + 分组出站**组合取代。
+
+#### 必选切片（Mandatory Slice）
+
+- **定义**：必选切片是切片模型的特例——**恒定启用、无切片级 `enabled` 关闭开关**，配置页仅提供参数调整。
+- **网络（TUN）切片**：TUN 入站为代理基础能力（Android 由 `panel_features_tun_enabled` 恒注入），迁入配置页 `/config/network`，仅暴露本地混合端口（`mixed_port`）。旧 `/settings/network` 路径保留 `<Navigate>` 重定向。
+- **Clash API 切片**：Clash API 为仪表盘与节点页数据源，迁入配置页 `/config/clash-api`，仅暴露 API 端口与密钥；原 `clash_api_enabled` 关闭开关移除，存量 `false` 在进入页面时静默纠正为 `true` 并落盘。旧 `/settings/clash-api` 路径保留重定向。
+
+#### 分组出站（selector / urltest）
+
+- **上线路径**：`OutboundProtocol` 新增 `Selector` / `UrlTest`（serde 判别值 `selector` / `urltest`）；Rust schema / 校验 / 渲染（`config_slices/`）→ `client-core` 类型 → 移动端出站页「分组 / 节点」两分区与成员多选 Sheet → 规则「指定出站」下拉自动纳入分组 tag。
+- **v1 限制**：
+  - **禁嵌套分组**：分组成员不得引用另一个分组。
+  - 成员范围 = 订阅节点 tag + 切片节点出站 tag + 内置 `direct`。
+  - Rust 校验：成员非空、禁自引用、selector `default` 必须 ∈ 成员、`slice-` 前缀成员必须指向存在的启用切片出站（其余无法静态解析的 tag 交由 sing-box 运行期校验）。
+- §3.1 的「自定义出站切片」由单纯协议节点扩展为「协议节点 + 分组」。
