@@ -139,6 +139,33 @@ export {
 } from "./localOverride";
 
 // ---------------------------------------------------------------------------
+// Config Slices
+// ---------------------------------------------------------------------------
+
+export type {
+  ConfigSlices,
+  DnsSlice,
+  DnsMode,
+  DnsStrategy,
+  DnsServer,
+  DnsServerType,
+  DnsRule,
+  DnsMatchType,
+  OutboundsSlice,
+  CustomOutbound,
+  OutboundProtocol,
+  VlessOutbound,
+  VmessOutbound,
+  ShadowsocksOutbound,
+  TrojanOutbound,
+  Hysteria2Outbound,
+  Hysteria2Obfs,
+  OutboundTls,
+  OutboundTransport,
+} from "./configSlices";
+export { SLICE_VERSION, configSlicesGet, configSlicesSave, outboundTag, defaultConfigSlices } from "./configSlices";
+
+// ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------
 

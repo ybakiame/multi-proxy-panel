@@ -42,3 +42,5 @@ export const LOGS_KEY = ["logs"] as const;
 export const LOG_FILES_KEY = ["log_files"] as const;
 
 export const CONFIG_PREVIEW_KEY = ["config_preview"] as const;
+
+export const CONFIG_SLICES_KEY = ["config_slices"] as const;
