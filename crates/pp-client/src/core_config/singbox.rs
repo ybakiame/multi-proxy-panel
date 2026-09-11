@@ -288,7 +288,10 @@ pub(crate) fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -
 ///   is "empty direct outbound", omit `detour` field (see [`is_empty_direct_outbound`]);
 /// - `local`: UDP (223.5.5.5), no `detour` field — omit means default direct dial,
 ///   semantically equivalent and always legal;
-/// - `rules` empty array, `final = remote`, `strategy = prefer_ipv4`.
+/// - `rules` empty array, `final = remote`, `reverse_mapping = true`, `strategy = prefer_ipv4`.
+///   `reverse_mapping` lets sing-box map a hijacked-DNS-resolved IP back to its domain so the
+///   Clash API `metadata.host` is populated for TUN connections whose payload cannot be sniffed
+///   (otherwise the connection record domain stays blank).
 ///
 /// Servers use new format (`type` + `server`): libbox (sing-box 1.12) natively parses,
 /// real `sing-box check` (1.13+, legacy `address` format needs
@@ -336,6 +339,7 @@ pub fn inject_android_dns(composed: &mut Value) {
             ],
             "rules": [],
             "final": "remote",
+            "reverse_mapping": true,
             "strategy": "prefer_ipv4"
         }),
     );

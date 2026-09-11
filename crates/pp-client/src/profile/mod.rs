@@ -166,13 +166,30 @@ fn dedup_names(nodes: Vec<Value>, key: &str) -> Vec<Value> {
     out
 }
 
-/// sing-box local template: log + dns (local UDP + remote DoH) + all leaf nodes + `proxy`
-/// (select, default `auto`) / `auto` (url-test) groups + `direct` / `block` + empty routing.
+/// sing-box local template: log + dns (local UDP direct + remote DoH via proxy) + all leaf
+/// nodes + `proxy` (select, default `auto`) / `auto` (url-test) groups + `direct` / `block` +
+/// empty routing.
 ///
 /// `route.rules` is an empty array (compatible with `compose_singbox_config`'s MITM rule
 /// prepending); `route.default_domain_resolver` is directly embedded, ensuring the template
 /// is natively valid in sing-box 1.12+ (required when `dns.servers` exists). When no leaf
 /// nodes exist, the `auto` group falls back to built-in `direct` to keep the config valid.
+///
+/// DNS split (aligned with reference clients husi / GUI.for.SingBox):
+/// - `local` (UDP 223.5.5.5) has no `detour` — new-format DNS servers default to an empty
+///   direct outbound, so it dials direct. It serves `route.default_domain_resolver` (proxy
+///   server domain resolution, avoids resolving the proxy through itself) and any domestic
+///   rule.
+/// - `remote` (DoH 8.8.8.8) has `detour = proxy`, routing foreign resolution through the
+///   proxy to avoid DNS pollution.
+/// - `final = remote`: unlike the old legacy servers, a new-format DNS server does NOT follow
+///   `route.final`; with `final` unset sing-box picks the *first* server (`local`), leaving
+///   `remote` dead weight and resolving every query (including foreign) through domestic DNS.
+///   Pinning `final = remote` makes the proxy path effective.
+/// - `reverse_mapping = true`: after hijacked DNS resolves a domain, sing-box maps the
+///   returned IP back to the domain for routing/records. Without it TUN connections arrive as
+///   bare IPs and Clash API `metadata.host` stays empty whenever payload sniffing cannot
+///   recover the domain (QUIC, non-TLS/HTTP, IP-literal Host).
 pub fn singbox_template(nodes: &[Value]) -> Value {
     let tags: Vec<String> = nodes
         .iter()
@@ -190,8 +207,10 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         "dns": {
             "servers": [
                 { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 },
-                { "tag": "remote", "type": "https", "server": "8.8.8.8", "server_port": 443 }
+                { "tag": "remote", "type": "https", "server": "8.8.8.8", "server_port": 443, "detour": "proxy" }
             ],
+            "final": "remote",
+            "reverse_mapping": true,
             "strategy": "prefer_ipv4"
         },
         "route": {

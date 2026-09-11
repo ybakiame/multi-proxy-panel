@@ -141,7 +141,29 @@ fn singbox_template_builds_groups_and_route() {
         json!({ "server": "local" })
     );
     assert_eq!(cfg["log"]["level"], "info");
-    assert!(cfg["dns"]["servers"].is_array());
+
+    // DNS: local UDP direct (no detour = empty direct outbound), remote DoH through proxy,
+    // final pinned to remote, reverse mapping on (see singbox_template docs).
+    let dns_servers = cfg["dns"]["servers"].as_array().unwrap();
+    let local = dns_servers.iter().find(|s| s["tag"] == "local").unwrap();
+    assert_eq!(local["type"], "udp");
+    assert_eq!(local["server"], "223.5.5.5");
+    assert!(
+        local.get("detour").is_none(),
+        "local must stay detour-less (explicit `direct` targets the empty direct outbound and is a fatal startup error)"
+    );
+    let remote = dns_servers.iter().find(|s| s["tag"] == "remote").unwrap();
+    assert_eq!(remote["type"], "https");
+    assert_eq!(remote["server"], "8.8.8.8");
+    assert_eq!(
+        remote["detour"], "proxy",
+        "remote DNS must be dialed through the proxy to avoid pollution"
+    );
+    assert_eq!(
+        cfg["dns"]["final"], "remote",
+        "final must pin remote; new-format DNS servers do not follow route.final, unset final picks the first (local) server"
+    );
+    assert_eq!(cfg["dns"]["reverse_mapping"], true);
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
 }
 

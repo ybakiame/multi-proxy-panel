@@ -186,6 +186,10 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
     assert!(cfg["dns"]["servers"][1].get("detour").is_none());
     assert_eq!(cfg["dns"]["rules"], json!([]));
     assert_eq!(cfg["dns"]["final"], "remote");
+    assert_eq!(
+        cfg["dns"]["reverse_mapping"], true,
+        "reverse mapping must stay on so hijacked-DNS IPs map back to domains for connection records"
+    );
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
     // sing-box 1.12+ requires explicit default_domain_resolver (pointing to first tagged server).
     assert_eq!(
