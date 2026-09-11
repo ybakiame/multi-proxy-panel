@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
-use pp_client::config_slices::{ConfigSlices, DnsMode};
+use pp_client::config_slices::{ConfigSlices, ConfigSlicesStore};
 use pp_client::{
     ClientConfig, EffectiveOverrides, PanelFeatures, SubscriptionStore, apply_panel_features,
     build_core_config_v2, compose_singbox_config, fetch_subscription_with_ua,
-    resolve_remote_overrides,
+    inject_local_override_warn_only, resolve_remote_overrides,
 };
 use tauri::State;
 
@@ -27,6 +27,15 @@ pub async fn preview_core_config(
 }
 
 /// Implementation of config preview.
+///
+/// Pipeline mirrors `ClientState::start()`: config slices → profile overrides
+/// (remote/local) → `build_core_config_v2` → `compose_singbox_config` →
+/// `inject_local_override_warn_only` → `apply_panel_features`.
+///
+/// Known exception: the MITM chain is not injected here. Preview has no access
+/// to the runtime `MitmChain` (it only exists once MITM is started in `start()`),
+/// so `compose_singbox_config` is called with `None`. This is intentional and
+/// does not change the returned schema.
 pub(crate) async fn preview_core_config_impl(
     data_dir: PathBuf,
     preview_id: Option<uuid::Uuid>,
@@ -87,7 +96,7 @@ pub(crate) async fn preview_core_config_impl(
     };
 
     let sub_name = specified.as_ref().map(|s| s.name.as_str());
-    let store = pp_client::ProfileStoreV2::new(data_dir);
+    let store = pp_client::ProfileStoreV2::new(data_dir.clone());
     let (effective, warnings) = match linked_profile_id {
         Some(pid) => {
             let profiles = store.load().map_err(|e| format!("读取复写模板失败: {e}"))?;
@@ -108,9 +117,21 @@ pub(crate) async fn preview_core_config_impl(
         tracing::warn!(warning, "profile remote override");
     }
 
-    // TODO(ADR-0005 §3.4, next phase): load config slices from disk and inject local override
-    // so preview matches the runtime config. This phase only keeps the signature compiling.
-    let profile_cfg = build_core_config_v2(&sub_content, &effective, &ConfigSlices::default())
+    // ⓪ Config slices (ADR-0005 §3.2/§3.4): load from `data_dir/config_slices.json`
+    // and inject before profile overrides, mirroring `ClientState::start()`. A load
+    // failure (unreadable/corrupted file is already handled inside the store) falls
+    // back to default so preview never blocks.
+    let slices = match ConfigSlicesStore::new(data_dir.clone()).load() {
+        Ok(slices) => slices,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "failed to load config_slices.json, falling back to default"
+            );
+            ConfigSlices::default()
+        }
+    };
+    let profile_cfg = build_core_config_v2(&sub_content, &effective, &slices)
         .await
         .map_err(|e| format!("生成配置失败: {e}"))?;
 
@@ -123,11 +144,15 @@ pub(crate) async fn preview_core_config_impl(
         clash_api_secret: cfg.clash_api_secret.clone(),
         clash_api_ui: cfg.clash_api_ui.clone(),
         rule_mode: cfg.normalized_rule_mode().to_string(),
-        // Preview has no slices yet; FollowSystem keeps the Android forced injection behavior.
-        dns_mode: DnsMode::FollowSystem,
+        // ADR-0005 D1: derive exactly like `ClientState::start()` so the preview
+        // reflects the slices loaded above instead of a hardcoded default.
+        dns_mode: pp_client::core_config::dns_mode_from_slices(&slices),
     };
     let mut value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
         .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;
+    // [ADR-0002] Inject local override after compose, before panel features,
+    // mirroring `ClientState::start()`.
+    inject_local_override_warn_only(&data_dir, &mut value);
     apply_panel_features(&mut value, &features);
 
     serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
@@ -136,6 +161,10 @@ pub(crate) async fn preview_core_config_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pp_client::local_override::{
+        AppliedTemplate, CoreLocalOverride, CustomTemplate, LocalOverride, LocalOverrideStore,
+        LocalRule, RuleAction, RuleAdvancedOptions, RuleMatchType,
+    };
     use pp_client::{CachedSubscriptionContent, SubFormat};
     use std::io::{Read, Write};
 
@@ -309,6 +338,93 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(&text).expect("sing-box preview should be JSON");
         assert!(value.get("outbounds").is_some());
+    }
+
+    #[tokio::test]
+    async fn preview_core_config_injects_active_local_override_rules() {
+        let dir = TestDir::new();
+        let cfg = ClientConfig::new(
+            dir.path().to_path_buf(),
+            String::new(),
+            String::new(),
+            PathBuf::new(),
+        );
+        cfg.save().unwrap();
+
+        // Cache the subscription so preview does not touch the network.
+        let store = SubscriptionStore::new(dir.path().to_path_buf());
+        let sub = store
+            .add("spec", "http://127.0.0.1:1/unreachable", false, None)
+            .unwrap();
+        store
+            .write_cached_content(
+                sub.id,
+                &CachedSubscriptionContent {
+                    format: SubFormat::SingBoxJson,
+                    singbox_nodes: vec![serde_json::json!({
+                        "type": "vless",
+                        "tag": "n1",
+                        "server": "example.com",
+                        "server_port": 443,
+                        "uuid": "12345678-1234-1234-1234-123456789012",
+                        "tls": { "enabled": true, "server_name": "example.com" },
+                    })],
+                },
+            )
+            .unwrap();
+
+        // One enabled rule referenced by an applied custom template → active and
+        // therefore injected by `inject_local_override_warn_only`.
+        let rule_id = "r-local".to_string();
+        let ovr = LocalOverride {
+            singbox: CoreLocalOverride {
+                rules: vec![LocalRule {
+                    id: rule_id.clone(),
+                    name: "local reject".to_string(),
+                    enabled: true,
+                    match_type: RuleMatchType::DomainSuffix,
+                    target: "preview-local.example".to_string(),
+                    action: RuleAction::Reject,
+                    advanced: RuleAdvancedOptions::default(),
+                    note: String::new(),
+                    created_at: 0,
+                    sort_order: 0,
+                }],
+                rule_sets: Vec::new(),
+                enabled: true,
+            },
+            custom_templates: vec![CustomTemplate {
+                id: "tpl".to_string(),
+                name: "tpl".to_string(),
+                desc: String::new(),
+                rules: vec![rule_id],
+                created_at: 0,
+            }],
+            applied_templates: vec![AppliedTemplate {
+                template_id: "custom:tpl".to_string(),
+                applied_at: 0,
+                generated_rule_ids: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        LocalOverrideStore::new(dir.path().to_path_buf())
+            .save(&ovr)
+            .unwrap();
+
+        let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
+            .await
+            .expect("preview with local override should succeed");
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("sing-box preview should be JSON");
+        let rules = value["route"]["rules"]
+            .as_array()
+            .expect("preview should contain route.rules");
+        assert!(
+            rules.iter().any(|r| {
+                r["domain_suffix"] == "preview-local.example" && r["outbound"] == "reject"
+            }),
+            "preview should inject the active local override rule: {rules:?}"
+        );
     }
 
     #[tokio::test]
