@@ -22,7 +22,6 @@ import type { ClientStatus, SubscriptionView } from "@pp/client-core";
 import { ConnectionsEntryCard } from "../components/ConnectionsEntryCard";
 import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
-import { RuleModeSwitch } from "../components/RuleModeSwitch";
 import { StatusCard } from "../components/StatusCard";
 import { SubscriptionSheet } from "../components/SubscriptionSheet";
 import { TrafficCard } from "../components/TrafficCard";
@@ -34,15 +33,15 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 首页（仪表盘，ADR-0003 M5）。区块自上而下：
  *
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet）；
- * 2. 状态卡（StatusCard）；
+ * 2. 状态卡（StatusCard）：运行状态大字；运行中内嵌出站模式分段切换（`RuleModeSwitch`），
+ *    未运行时仅展示状态并保留已保存模式 chip；
  * 3. 运行依赖区（仅核心运行中渲染，未运行时整组隐藏，相关轮询亦不发起）：
- *    当前节点卡（CurrentNodeCard，点击进代理选择页）+ 流量统计卡（TrafficCard，2s 轮询）
- *    + 当前连接入口（ConnectionsEntryCard，点击进连接页）；
+ *    当前节点卡（CurrentNodeCard，订阅名/分组/当前节点，点击进代理选择页）+ 流量统计卡
+ *    （TrafficCard，2s 轮询）+ 当前连接入口（ConnectionsEntryCard，点击进连接页）；
  * 4. 主操作：全宽大号启停按钮（无生效订阅时禁用并引导选择）；点「启动代理」即完成
  *    「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
- * 5. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）；
- * 6. 出站模式分段控件（RuleModeSwitch，仅核心运行中渲染；未运行时由状态卡 chip 展示已保存模式）。
+ * 5. VPN 授权引导（同步 reject + vpnLastError 轮询双来源）。
  *
  * 配置预览等开发者入口已迁移至设置页「开发者工具」分组。
  */
@@ -197,14 +196,14 @@ export default function Dashboard() {
         </Button>
       </header>
 
-      {/* 2. 状态卡 */}
-      <StatusCard running={running} ruleMode={ruleMode} />
+      {/* 2. 状态卡（运行中内嵌出站模式分段切换） */}
+      <StatusCard running={running} ruleMode={ruleMode} clashApiEnabled={config?.clash_api_enabled ?? false} />
 
       {/* 3+4. 运行依赖区（仅核心运行中渲染；未运行时整组隐藏，相关轮询不发起） */}
       {running && (
         <>
-          {/* 当前节点卡（点击进入代理选择页） */}
-          <CurrentNodeCard running={running} />
+          {/* 当前节点卡（订阅名/分组/当前节点，点击进入代理选择页） */}
+          <CurrentNodeCard running={running} subscriptionName={activeSub?.name ?? null} />
 
           {/* 流量统计卡 */}
           <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
@@ -284,11 +283,6 @@ export default function Dashboard() {
           )}
         </Card.Content>
       </Card>
-
-      {/* 6. 出站模式（仅核心运行中渲染；未运行时状态卡仍展示已保存模式，切换仅运行期有意义） */}
-      {running && (
-        <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={config?.clash_api_enabled ?? false} />
-      )}
 
       {/* 订阅切换 Sheet */}
       <SubscriptionSheet
