@@ -40,6 +40,21 @@ export interface SubscriptionView {
   user_agent?: string;
 }
 
+/**
+ * A subscription node tag read from the local content cache (aligned with Rust
+ * `NodeTagView`).
+ *
+ * sing-box nodes carry no separate display name, so `name` always equals `tag`;
+ * both fields are kept so callers can bind a label and a value without a
+ * special case. Tags match the runtime Clash API proxy names.
+ */
+export interface NodeTagView {
+  /** Display name (equals `tag` for sing-box nodes). */
+  name: string;
+  /** sing-box outbound `tag`, identical to the runtime Clash API proxy name. */
+  tag: string;
+}
+
 /** Input for adding a subscription. */
 export interface AddSubscriptionInput {
   name: string;
@@ -73,6 +88,17 @@ export function setActiveSubscription(id: string | null): Promise<void> {
 
 export function refreshSubscription(id: string): Promise<SubscriptionView> {
   return invoke<SubscriptionView>("refresh_subscription", { id });
+}
+
+/**
+ * List a subscription's node tags from the local content cache
+ * (`subscription_node_tags`) — static source, no running core / network needed.
+ *
+ * Missing / corrupted cache yields an empty list; the cache only refreshes on a
+ * successful subscription fetch, so it may lag behind the remote source.
+ */
+export function subscriptionNodeTags(subscriptionId: string): Promise<NodeTagView[]> {
+  return invoke<NodeTagView[]>("subscription_node_tags", { subscriptionId });
 }
 
 /**

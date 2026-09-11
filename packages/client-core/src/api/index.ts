@@ -29,7 +29,13 @@ export type { TrafficRecord, MitmCaView } from "./core";
 // Subscriptions
 // ---------------------------------------------------------------------------
 
-export type { SubscriptionUserInfo, SubscriptionFormat, SubscriptionView, AddSubscriptionInput } from "./subscriptions";
+export type {
+  SubscriptionUserInfo,
+  SubscriptionFormat,
+  SubscriptionView,
+  AddSubscriptionInput,
+  NodeTagView,
+} from "./subscriptions";
 export {
   listSubscriptions,
   addSubscription,
@@ -37,6 +43,7 @@ export {
   setSubscriptionEnabled,
   setActiveSubscription,
   refreshSubscription,
+  subscriptionNodeTags,
   updateSubscription,
 } from "./subscriptions";
 

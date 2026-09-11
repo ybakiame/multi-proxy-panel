@@ -3,18 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   CONFIG_SLICES_KEY,
-  PROXIES_KEY,
   configSlicesGet,
   configSlicesSave,
   isGroupOutbound,
   outboundTag,
-  proxiesList,
+  subscriptionNodeTags,
+  subscriptionNodeTagsKey,
   toErrorMessage,
   toastError,
   toastSuccess,
+  useClientConfig,
   useProxyStatus,
 } from "@pp/client-core";
-import type { ConfigSlices, CustomOutbound, OutboundsSlice, ProxyList } from "@pp/client-core";
+import type { ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
@@ -52,14 +53,18 @@ export default function OutboundsPage() {
     refetchOnWindowFocus: false,
   });
 
-  // 分组成员候选数据源：订阅节点读运行中核心的 proxies_list（PROXIES_KEY，与首页 /
-  // 代理页 / 规则页共享缓存），核心未运行时不发起，此时候选仅剩切片节点与 direct。
-  const { data: proxyList } = useQuery<ProxyList>({
-    queryKey: PROXIES_KEY,
-    queryFn: proxiesList,
-    enabled: coreRunning,
+  // 分组成员候选数据源：静态订阅节点读生效订阅的本地缓存（不依赖核心运行），
+  // 无生效订阅时不发起；核心未运行时仍能拿到订阅节点。
+  const { data: config } = useClientConfig();
+  const activeSubscriptionId = config?.active_subscription_id ?? null;
+  const { data: subscriptionNodes } = useQuery<NodeTagView[]>({
+    queryKey: subscriptionNodeTagsKey(activeSubscriptionId ?? ""),
+    queryFn: () => subscriptionNodeTags(activeSubscriptionId ?? ""),
+    enabled: !!activeSubscriptionId,
     retry: false,
   });
+  // 生效订阅存在但缓存为空（从未同步 / 缓存丢失）：给「先同步订阅」引导文案。
+  const subscriptionCacheAvailable = !!activeSubscriptionId && (subscriptionNodes?.length ?? 0) > 0;
 
   // 结构守卫：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const slices = isConfigSlices(rawSlices) ? rawSlices : null;
@@ -93,17 +98,17 @@ export default function OutboundsPage() {
     [draft, editing],
   );
 
-  // 分组成员候选：订阅节点（运行中核心）+ 切片节点出站（enabled）+ 内置 direct；
+  // 分组成员候选：静态订阅节点（订阅缓存）+ 切片节点出站（enabled）+ 内置 direct；
   // 候选不含其它分组（禁嵌套，与 Rust `validate_group_members` 一致）。
   const memberCandidates = useMemo<GroupMemberCandidate[]>(() => {
     const sliceNodes = (draft?.items ?? [])
       .filter((item) => item.enabled && !isGroupOutbound(item))
       .map((item) => ({ name: item.name, tag: outboundTag(item.name) }));
     return buildGroupMemberCandidates({
-      proxyNodes: (proxyList?.nodes ?? []).map((node) => node.name),
+      subscriptionNodes: (subscriptionNodes ?? []).map((node) => node.tag),
       sliceNodes,
     });
-  }, [draft, proxyList]);
+  }, [draft, subscriptionNodes]);
 
   const handleSave = async () => {
     if (!slices || !draft || !valid || !dirty || saving) return;
@@ -251,7 +256,7 @@ export default function OutboundsPage() {
         otherNames={otherNames}
         defaultProtocol={newProtocol}
         memberCandidates={memberCandidates}
-        coreRunning={coreRunning}
+        subscriptionCacheAvailable={subscriptionCacheAvailable}
         onClose={() => setSheetOpen(false)}
         onSave={handleSaveItem}
         onDeleteRequest={handleDeleteRequest}

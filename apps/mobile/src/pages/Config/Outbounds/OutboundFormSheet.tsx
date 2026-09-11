@@ -31,10 +31,10 @@ interface OutboundFormSheetProps {
   otherNames: readonly string[];
   /** 新建时预选协议（分组区「添加分组」→ selector，节点区「添加节点」→ vless）。 */
   defaultProtocol: OutboundProtocolType;
-  /** 分组成员候选（订阅节点 + 切片节点 + direct，不含其它分组）。 */
+  /** 分组成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组）。 */
   memberCandidates: GroupMemberCandidate[];
-  /** 核心是否运行（决定成员候选提示文案）。 */
-  coreRunning: boolean;
+  /** 生效订阅是否存在节点缓存（决定成员候选提示文案）。 */
+  subscriptionCacheAvailable: boolean;
   onClose: () => void;
   /** 保存（仅更新内存草稿，落盘由页面统一执行）。 */
   onSave: (item: CustomOutbound) => void;
@@ -55,7 +55,7 @@ export function OutboundFormSheet({
   otherNames,
   defaultProtocol,
   memberCandidates,
-  coreRunning,
+  subscriptionCacheAvailable,
   onClose,
   onSave,
   onDeleteRequest,
@@ -154,7 +154,7 @@ export function OutboundFormSheet({
                 fields={fields}
                 errors={groupErrors}
                 candidates={memberCandidates}
-                coreRunning={coreRunning}
+                subscriptionCacheAvailable={subscriptionCacheAvailable}
                 onChange={patch}
               />
             ) : (

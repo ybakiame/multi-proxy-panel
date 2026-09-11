@@ -72,8 +72,10 @@ interface RuleEditSheetProps {
   onDeleteRequest: (rule: LocalRuleView) => void;
   /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先在「规则集管理」中添加。 */
   ruleSetOptions?: RuleSetOption[];
-  /** 指定出站动作的候选 tag（订阅节点 + 模板出站 + 切片出站并集）；空数组时给引导文案。 */
+  /** 指定出站动作的候选 tag（静态订阅节点 + 模板分组 + 切片出站并集）；空数组时给引导文案。 */
   outboundOptions?: OutboundOption[];
+  /** 生效订阅是否存在节点缓存：候选为空时据此区分「先同步订阅」与「先添加切片出站」引导。 */
+  subscriptionCacheAvailable?: boolean;
 }
 
 /** 底部 Sheet 内的高级选项开关行。 */
@@ -117,6 +119,7 @@ export function RuleEditSheet({
   onDeleteRequest,
   ruleSetOptions = [],
   outboundOptions = [],
+  subscriptionCacheAvailable = false,
 }: RuleEditSheetProps) {
   const [matchType, setMatchType] = useState("domain");
   const [target, setTarget] = useState("");
@@ -169,8 +172,8 @@ export function RuleEditSheet({
   }, [matchType, editing, target, ruleSetOptions]);
 
   /**
-   * 指定出站候选：父层传入订阅节点 / 模板出站 / 切片出站并集。编辑已有 outbound 规则
-   * 时若其原 tag 不在候选中（核心未运行读不到节点 / 出站已删除），追加「原值保留」项，
+   * 指定出站候选：父层传入静态订阅节点 / 模板分组 / 切片出站并集。编辑已有 outbound 规则
+   * 时若其原 tag 不在候选中（订阅缓存为空 / 出站已删除），追加「原值保留」项，
    * 避免打开编辑即丢失原引用。
    */
   const effectiveOutboundOptions = useMemo<OutboundOption[]>(() => {
@@ -327,7 +330,11 @@ export function RuleEditSheet({
                   }))}
                 />
                 {effectiveOutboundOptions.length === 0 ? (
-                  <span className="text-xs text-muted">暂无可用出站，可先在 配置→自定义出站 添加</span>
+                  <span className="text-xs text-muted">
+                    {subscriptionCacheAvailable
+                      ? "暂无可用出站，可先在 配置→自定义出站 添加"
+                      : "未找到订阅节点缓存，请先同步订阅"}
+                  </span>
                 ) : (
                   <span className="text-xs text-muted">命中该规则的流量将转发到所选出站</span>
                 )}

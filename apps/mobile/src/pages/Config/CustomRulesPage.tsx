@@ -12,9 +12,12 @@ import {
   outboundTag,
   proxiesList,
   ruleSummary,
+  subscriptionNodeTags,
+  subscriptionNodeTagsKey,
   toErrorMessage,
   toastError,
   toastSuccess,
+  useClientConfig,
   useProxyStatus,
   viewToInput,
 } from "@pp/client-core";
@@ -24,6 +27,7 @@ import type {
   LocalOverrideView,
   LocalRuleInput,
   LocalRuleView,
+  NodeTagView,
   ProxyList,
 } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
@@ -56,11 +60,19 @@ export default function CustomRulesPage() {
     queryFn: localOverrideGet,
   });
   // 指定出站候选数据源（复用各页同 key 缓存，不在 Sheet 内新起重型查询）：
-  // 切片出站读 config_slices；订阅节点 / 模板出站读运行中核心的 proxies_list（PROXIES_KEY，
-  // 与首页 / 代理页共享缓存，核心未运行时不发起）。
+  // 切片出站读 config_slices；订阅节点读生效订阅的本地缓存（静态源，不依赖核心运行）；
+  // 模板分组读运行中核心的 proxies_list（PROXIES_KEY，与首页 / 代理页共享缓存，未运行时不发起）。
   const { data: slices } = useQuery<ConfigSlices>({
     queryKey: CONFIG_SLICES_KEY,
     queryFn: configSlicesGet,
+  });
+  const { data: config } = useClientConfig();
+  const activeSubscriptionId = config?.active_subscription_id ?? null;
+  const { data: subscriptionNodes } = useQuery<NodeTagView[]>({
+    queryKey: subscriptionNodeTagsKey(activeSubscriptionId ?? ""),
+    queryFn: () => subscriptionNodeTags(activeSubscriptionId ?? ""),
+    enabled: !!activeSubscriptionId,
+    retry: false,
   });
   const { data: proxyList } = useQuery<ProxyList>({
     queryKey: PROXIES_KEY,
@@ -68,6 +80,8 @@ export default function CustomRulesPage() {
     enabled: coreRunning,
     retry: false,
   });
+  // 生效订阅存在但缓存为空（从未同步 / 缓存丢失）：给「先同步订阅」引导文案。
+  const subscriptionCacheAvailable = !!activeSubscriptionId && (subscriptionNodes?.length ?? 0) > 0;
 
   // 结构守卫（见 localOverrideGuards.ts）：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
@@ -93,11 +107,12 @@ export default function CustomRulesPage() {
   }, [overrideData]);
 
   /**
-   * 指定出站候选 tag 并集（ADR-0005 §3.1）：订阅节点 + 模板出站 + 切片出站（enabled），
-   * 按 tag 去重。
+   * 指定出站候选 tag 并集（ADR-0005 §3.1）：静态订阅节点 + 运行中模板分组 + 切片出站
+   * （enabled），按 tag 去重。
    *
-   * - 订阅节点 / 模板出站：`proxiesList`（`PROXIES_KEY`，经 Clash API 读取运行中核心），
-   *   核心未运行时无数据，此时仅剩切片出站候选；
+   * - 静态订阅节点：`subscription_node_tags`（生效订阅的本地缓存），不依赖核心运行；
+   * - 模板分组：`proxiesList.groups`（`PROXIES_KEY`，经 Clash API 读取运行中核心），
+   *   核心未运行时无数据；订阅节点不在其中（已由静态源覆盖）；
    * - 切片出站：tag 由名称生成（`outboundTag`），仅列启用项（父切片总开关由注入层判定）。
    */
   const outboundOptions = useMemo<OutboundOption[]>(() => {
@@ -109,15 +124,15 @@ export default function CustomRulesPage() {
       seen.add(tag);
       options.push({ value: tag, label, hint });
     };
-    for (const node of proxyList?.nodes ?? []) push(node.name, node.name, "订阅节点");
-    for (const group of proxyList?.groups ?? []) push(group.name, group.name, "模板出站");
+    for (const node of subscriptionNodes ?? []) push(node.tag, node.name.trim() || node.tag, "订阅节点");
+    for (const group of proxyList?.groups ?? []) push(group.name, group.name, "模板分组");
     for (const item of slices?.outbounds.items ?? []) {
       if (!item.enabled) continue;
       const tag = outboundTag(item.name);
       push(tag, item.name, tag);
     }
     return options;
-  }, [proxyList, slices]);
+  }, [subscriptionNodes, proxyList, slices]);
 
   const toastRuleSaved = (base: string) => {
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
@@ -265,6 +280,7 @@ export default function CustomRulesPage() {
         onDeleteRequest={(rule) => handleDeleteRequest(rule)}
         ruleSetOptions={ruleSetOptions}
         outboundOptions={outboundOptions}
+        subscriptionCacheAvailable={subscriptionCacheAvailable}
       />
       <RuleDeleteConfirm
         rule={pendingDelete}

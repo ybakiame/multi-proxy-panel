@@ -23,6 +23,8 @@ export const PROFILES_KEY = ["profiles"] as const;
 export const profileKey = (id: string | null) => ["profile", id] as const;
 
 export const SUBSCRIPTIONS_KEY = ["subscriptions"] as const;
+/** 单个订阅的静态节点 tag 列表（订阅缓存读取，按订阅 id 参数化）。 */
+export const subscriptionNodeTagsKey = (id: string) => ["subscription_node_tags", id] as const;
 export const CORES_KEY = ["cores"] as const;
 export const CORES_LIST_KEY = ["cores_list"] as const;
 export const REMOTE_VERSIONS_KEY = ["remote_core_versions"] as const;

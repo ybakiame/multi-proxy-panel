@@ -6,10 +6,10 @@ import { DEFAULT_URLTEST_URL, type GroupFormErrors, type GroupMemberCandidate } 
 interface GroupFieldsProps {
   fields: OutboundFormFields;
   errors: GroupFormErrors;
-  /** 成员候选（订阅节点 + 切片节点 + direct，不含其它分组）。 */
+  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组）。 */
   candidates: GroupMemberCandidate[];
-  /** 核心是否运行：false 时候选仅剩切片节点与 direct，顶部给提示。 */
-  coreRunning: boolean;
+  /** 生效订阅是否存在节点缓存：false 时顶部引导先同步订阅。 */
+  subscriptionCacheAvailable: boolean;
   /** 局部字段补丁更新（父层持有完整草稿）。 */
   onChange: (patch: Partial<OutboundFormFields>) => void;
 }
@@ -21,7 +21,7 @@ interface GroupFieldsProps {
  * selector 额外提供默认成员选择器，urltest 额外提供 url / interval / tolerance；
  * 两者共用 interrupt_exist_connections 开关。
  */
-export function GroupFields({ fields, errors, candidates, coreRunning, onChange }: GroupFieldsProps) {
+export function GroupFields({ fields, errors, candidates, subscriptionCacheAvailable, onChange }: GroupFieldsProps) {
   /** 切换成员选中态；取消选中默认成员时同步清空 default（避免悬空）。 */
   const toggleMember = (tag: string) => {
     const selected = fields.members.includes(tag);
@@ -40,11 +40,7 @@ export function GroupFields({ fields, errors, candidates, coreRunning, onChange 
 
   return (
     <>
-      {!coreRunning && (
-        <span className="text-xs text-muted">
-          核心未运行，成员候选仅包含切片节点与内置 direct；启动核心后可选择订阅节点
-        </span>
-      )}
+      {!subscriptionCacheAvailable && <span className="text-xs text-muted">未找到订阅节点缓存，请先同步订阅</span>}
 
       {/* 成员多选 */}
       <div className="flex flex-col gap-1.5">
