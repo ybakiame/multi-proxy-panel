@@ -22,7 +22,7 @@ import type { RuleSetOption } from "./RuleEditSheet";
 import { RuleListSection } from "./RuleListSection";
 
 /**
- * 自定义规则子页（ADR-0003 M5.4 拆分，路由 `/rules/custom`）。
+ * 自定义规则子页（ADR-0003 M5.4 拆分，路由 `/config/rules`）。
  *
  * 承接原规则主页的规则列表 CRUD：启停 / 上移下移 / 添加 / 编辑 / 删除，数据流不变
  * （`persist = buildSaveInput + localOverrideSave` 全量落盘，成功按动作差异化 toast）。

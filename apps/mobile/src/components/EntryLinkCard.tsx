@@ -11,7 +11,7 @@ interface EntryLinkCardProps {
 }
 
 /**
- * 二级页入口卡（自 Rules 目录提取共用）。
+ * 二级页入口卡（自 Config 目录提取共用）。
  *
  * 大触达列表项：图标（浅色圆角底）+ 标题 + 描述 + chevron，整卡可点跳转子页。
  */

@@ -26,7 +26,7 @@ const inputClass =
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 /**
- * 规则集市场页（路由 `/rules/rulesets/market`）。
+ * 规则集市场页（路由 `/config/rulesets/market`）。
  *
  * 市场为 **MetaCubeX/meta-rules-dat 固定源**（sing 分支 `geo/{geoip,geosite}/*.srs`）：
  * - 内置文件名清单静态硬编码于 `@pp/client-core` 的 `metaCubeCatalog`，检索在本地

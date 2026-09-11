@@ -77,7 +77,7 @@ function RuleSetSection({ title, emptyCopy, sets, updatingIds, onEdit, onDelete,
 }
 
 /**
- * 规则集管理子页（ADR-0003 M5.4 拆分，路由 `/rules/rulesets`）。
+ * 规则集管理子页（ADR-0003 M5.4 拆分，路由 `/config/rulesets`）。
  *
  * 自「废弃内置规则集订阅」起页面只管理**用户自控的规则集**，并按**来源类型**分区：
  * - 「社区规则集」区：`source.kind === "remote"`（远程 URL，如 geoip/geosite 社区资源）；
@@ -305,7 +305,7 @@ export default function RuleSetsPage() {
               <Button
                 variant="secondary"
                 className="h-11 shrink-0 px-3"
-                onPress={() => navigate("/rules/rulesets/market")}
+                onPress={() => navigate("/config/rulesets/market")}
               >
                 <SparklesIcon className="size-4" aria-hidden="true" />
                 市场

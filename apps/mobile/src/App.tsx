@@ -7,10 +7,11 @@ import Connections from "./pages/Connections";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Proxies from "./pages/Proxies";
-import Rules from "./pages/Rules";
-import CustomRulesPage from "./pages/Rules/CustomRulesPage";
-import RuleSetMarket from "./pages/Rules/RuleSetMarket";
-import RuleSetsPage from "./pages/Rules/RuleSetsPage";
+import Config from "./pages/Config";
+import ComingSoonPage from "./pages/Config/ComingSoonPage";
+import CustomRulesPage from "./pages/Config/CustomRulesPage";
+import RuleSetMarket from "./pages/Config/RuleSetMarket";
+import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
 import AboutPage from "./pages/Settings/AboutPage";
 import ClashApiPage from "./pages/Settings/ClashApiPage";
@@ -89,10 +90,11 @@ function TauriRequired() {
  *
  * - 布局：顶部内容滚动区（各页面自行处理 `env(safe-area-inset-top)`）+ 底部 TabBar
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
- * - 路由：`/` 首页仪表盘、`/rules` 规则管理（Tab）、`/settings` 设置（Tab）；
+ * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
  *   `/connections` 连接页、`/logs` 日志页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
- *   `/rules/custom` 自定义规则、`/rules/rulesets` 规则集管理为非 Tab 二级页——TabBar
- *   仅在三主 Tab 路径渲染。
+ *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`
+ *   为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
+ * - 旧 `/rules/*` 路径保留 `<Navigate>` 重定向（HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
  * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
  *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
@@ -117,10 +119,17 @@ function AppContent() {
           <Route path="/connections" element={<Connections />} />
           <Route path="/proxies" element={<Proxies />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
-          <Route path="/rules" element={<Rules />} />
-          <Route path="/rules/custom" element={<CustomRulesPage />} />
-          <Route path="/rules/rulesets" element={<RuleSetsPage />} />
-          <Route path="/rules/rulesets/market" element={<RuleSetMarket />} />
+          <Route path="/config" element={<Config />} />
+          <Route path="/config/dns" element={<ComingSoonPage title="DNS" />} />
+          <Route path="/config/outbounds" element={<ComingSoonPage title="自定义出站" />} />
+          <Route path="/config/rules" element={<CustomRulesPage />} />
+          <Route path="/config/rulesets" element={<RuleSetsPage />} />
+          <Route path="/config/rulesets/market" element={<RuleSetMarket />} />
+          {/* 旧 /rules/* 路径重定向：HashRouter 下存量书签 / 导航兼容（ADR-0005 §3.3）。 */}
+          <Route path="/rules" element={<Navigate to="/config" replace />} />
+          <Route path="/rules/custom" element={<Navigate to="/config/rules" replace />} />
+          <Route path="/rules/rulesets" element={<Navigate to="/config/rulesets" replace />} />
+          <Route path="/rules/rulesets/market" element={<Navigate to="/config/rulesets/market" replace />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/vpn-notify" element={<VpnNotifyPage />} />
           <Route path="/settings/clash-api" element={<ClashApiPage />} />

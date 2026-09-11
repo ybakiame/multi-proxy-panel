@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListBulletIcon, SwatchIcon } from "@heroicons/react/24/outline";
+import { ArrowsRightLeftIcon, GlobeAltIcon, ListBulletIcon, SwatchIcon } from "@heroicons/react/24/outline";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
   LOCAL_OVERRIDE_KEY,
@@ -24,19 +24,20 @@ import { MasterSwitchCard } from "./MasterSwitchCard";
 import { TemplateSection } from "./TemplateSection";
 
 /**
- * 规则主页（ADR-0003 M5.4 拆分，路由 `/rules`，Tab 2）。
+ * 配置管理入口页（ADR-0005 §3.3，路由 `/config`，Tab 2）。
  *
  * 自上而下：
  * 1. 总开关卡：`singbox.enabled`（关闭后本地规则与规则集不注入运行配置）；
- * 2. 二级页入口：规则集管理（`/rules/rulesets`）与自定义规则（`/rules/custom`）；
- * 3. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）。
+ * 2. 配置切片入口：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）；
+ * 3. 规则入口：自定义规则（`/config/rules`）、规则集管理（`/config/rulesets`）；
+ * 4. 场景模板：自定义模板应用 / 撤销与新建（内置模板已废弃）。
  *
  * 自「模板改为规则 ID 引用 + 应用激活」起：模板保存的是规则 ID 引用（不复制规则），
  * 应用/撤销只是激活/停用场景，只有被已应用模板引用的启用规则才注入启动配置。
  * 规则列表 CRUD 与规则集管理已迁至对应子页；本页只消费 `singbox` 桶、
  * `applied_templates` 与 `custom_templates`（custom 段由 `buildSaveInput` 整段透传）。
  */
-export default function Rules() {
+export default function Config() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
@@ -209,21 +210,35 @@ export default function Rules() {
           {/* 1. 总开关 */}
           <MasterSwitchCard enabled={currentCore.enabled} onToggle={(next) => void handleToggleEnabled(next)} />
 
-          {/* 2. 二级页入口：规则集管理（社区/自定义分区）→ 自定义规则 */}
+          {/* 2. 配置切片入口：DNS → 自定义出站 */}
           <EntryLinkCard
-            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
-            title="规则集管理"
-            description="社区与自定义规则集的增删与更新"
-            onPress={() => navigate("/rules/rulesets")}
+            icon={<GlobeAltIcon className="size-6" aria-hidden="true" />}
+            title="DNS"
+            description="DNS 服务器与分流规则配置"
+            onPress={() => navigate("/config/dns")}
           />
+          <EntryLinkCard
+            icon={<ArrowsRightLeftIcon className="size-6" aria-hidden="true" />}
+            title="自定义出站"
+            description="可视化添加与管理自定义出站"
+            onPress={() => navigate("/config/outbounds")}
+          />
+
+          {/* 3. 规则入口：自定义规则 → 规则集管理 */}
           <EntryLinkCard
             icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
             title="自定义规则"
             description="添加与管理你的分流规则"
-            onPress={() => navigate("/rules/custom")}
+            onPress={() => navigate("/config/rules")}
+          />
+          <EntryLinkCard
+            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
+            title="规则集管理"
+            description="社区与自定义规则集的增删与更新"
+            onPress={() => navigate("/config/rulesets")}
           />
 
-          {/* 3. 场景模板（自定义） */}
+          {/* 4. 场景模板（自定义） */}
           <TemplateSection
             appliedIds={appliedTemplateIds}
             customTemplates={overrideData.custom_templates}
