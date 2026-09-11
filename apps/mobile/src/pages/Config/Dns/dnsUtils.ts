@@ -136,9 +136,6 @@ export function dnsServerSummary(server: DnsServer): string {
   if (server.detour.trim() !== "") {
     parts.push(`出站 ${server.detour}`);
   }
-  if (server.strategy !== null) {
-    parts.push(dnsStrategyLabel(server.strategy));
-  }
   if (server.domain_resolver.trim() !== "") {
     parts.push(`解析器 ${server.domain_resolver}`);
   }
@@ -255,12 +252,11 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
   });
 
   let finalTag: string | null = null;
-  if (dns.mode === "takeover" && dns.enabled) {
-    if (dns.final_tag.trim() === "") {
-      finalTag = "接管模式下必须选择 final 服务器";
-    } else if (!serverTags.has(dns.final_tag.trim())) {
-      finalTag = "final 服务器不存在";
-    }
+  const trimmedFinalTag = dns.final_tag.trim();
+  if (dns.mode === "takeover" && dns.enabled && trimmedFinalTag === "") {
+    finalTag = "接管模式下必须选择 final 服务器";
+  } else if (trimmedFinalTag !== "" && !serverTags.has(trimmedFinalTag)) {
+    finalTag = "final 服务器不存在";
   }
 
   return { serverErrors, ruleErrors, finalTag };

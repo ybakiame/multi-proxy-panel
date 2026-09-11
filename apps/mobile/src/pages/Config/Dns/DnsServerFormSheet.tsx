@@ -1,16 +1,13 @@
 import { useState } from "react";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal } from "@heroui/react";
-import type { DnsServer, DnsServerType, DnsStrategy } from "@pp/client-core";
+import type { DnsServer, DnsServerType } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
-import { DNS_SERVER_TYPE_OPTIONS, DNS_STRATEGY_OPTIONS, parsePortDraft, validateDnsServerForm } from "./dnsUtils";
+import { DNS_SERVER_TYPE_OPTIONS, parsePortDraft, validateDnsServerForm } from "./dnsUtils";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
-
-/** 策略选择器的「默认」选项：写入 `null`（跟随全局策略）。 */
-const STRATEGY_OPTIONS = [{ value: "", label: "默认（跟随全局）" }, ...DNS_STRATEGY_OPTIONS];
 
 interface DnsServerFormSheetProps {
   isOpen: boolean;
@@ -28,9 +25,12 @@ interface DnsServerFormSheetProps {
 /**
  * DNS 服务器编辑底部 Sheet（ADR-0005 P0-4b）。
  *
- * 字段：tag / type / server / server_port / detour / strategy（可选）/ domain_resolver；
+ * 字段：tag / type / server / server_port / detour / domain_resolver；
  * `local` 类型隐藏 server 与 port。校验（tag 唯一无空白、非 local server 必填、
  * 端口 1-65535）即时进行，非法时禁用保存并给出行内错误。
+ *
+ * 不提供 per-server 解析策略：sing-box 1.12+ 新 DNS 服务器格式已无该字段，
+ * schema 中的 `strategy` 仅作前向兼容保留（保存恒写 `null`）。
  */
 export function DnsServerFormSheet({
   isOpen,
@@ -45,7 +45,6 @@ export function DnsServerFormSheet({
   const [server, setServer] = useState("");
   const [port, setPort] = useState("");
   const [detour, setDetour] = useState("");
-  const [strategy, setStrategy] = useState("");
   const [domainResolver, setDomainResolver] = useState("");
   const [prevKey, setPrevKey] = useState<string | null>(null);
 
@@ -58,7 +57,6 @@ export function DnsServerFormSheet({
     setServer(editing?.server ?? "");
     setPort(editing?.server_port != null ? String(editing.server_port) : "");
     setDetour(editing?.detour ?? "");
-    setStrategy(editing?.strategy ?? "");
     setDomainResolver(editing?.domain_resolver ?? "");
   }
 
@@ -74,7 +72,7 @@ export function DnsServerFormSheet({
       server_type: serverType,
       server_port: parsePortDraft(port).value,
       detour: detour.trim(),
-      strategy: strategy === "" ? null : (strategy as DnsStrategy),
+      strategy: null,
       domain_resolver: domainResolver.trim(),
     });
     onClose();
@@ -189,17 +187,6 @@ export function DnsServerFormSheet({
                 autoCorrect="off"
                 spellCheck={false}
                 className={`${inputClass} font-mono`}
-              />
-            </div>
-
-            {/* strategy（可选） */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">解析策略（可选）</span>
-              <MobileSelectSheet
-                label="解析策略"
-                value={strategy}
-                onChange={setStrategy}
-                options={STRATEGY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               />
             </div>
 

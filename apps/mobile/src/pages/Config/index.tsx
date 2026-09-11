@@ -167,8 +167,8 @@ export default function Config() {
   return (
     <PageShell>
       <div>
-        <h1 className="text-xl font-semibold">规则管理</h1>
-        <p className="text-sm text-muted">本地规则 · 场景模板 · 自定义规则集</p>
+        <h1 className="text-xl font-semibold">配置管理</h1>
+        <p className="text-sm text-muted">DNS · 出站 · 规则 · 规则集 · 场景模板</p>
       </div>
 
       {queryError && (

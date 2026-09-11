@@ -9,6 +9,13 @@ const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
+/**
+ * 首版表单仅暴露域名类匹配；`rule_set` 需规则集引用闭环，P1 解锁。
+ *
+ * client-core / Rust schema 仍保留该枚举值，用于已有数据展示与后续解锁。
+ */
+const FORM_MATCH_TYPE_OPTIONS = DNS_MATCH_TYPE_OPTIONS.filter((option) => option.value !== "rule_set");
+
 /** server_tag 下拉选项（页面从已定义 server tag 生成）。 */
 export interface DnsServerOption {
   value: string;
@@ -120,7 +127,7 @@ export function DnsRuleFormSheet({
                 label="匹配类型"
                 value={matchType}
                 onChange={(value) => setMatchType(value as DnsMatchType)}
-                options={DNS_MATCH_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                options={FORM_MATCH_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               />
             </div>
 

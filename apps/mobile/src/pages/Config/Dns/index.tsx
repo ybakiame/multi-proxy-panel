@@ -263,7 +263,10 @@ export default function DnsPage() {
                 <Alert.Indicator />
                 <Alert.Content>
                   <Alert.Title>DNS 接管风险</Alert.Title>
-                  <Alert.Description>接管 DNS 后配置错误可能导致断网，请确保 final 服务器有效</Alert.Description>
+                  <Alert.Description>
+                    接管 DNS 后配置错误可能导致断网，请确保 final 服务器有效；同时需保留一个 tag 为 local 的服务器，供
+                    route.default_domain_resolver 与出站域名解析兜底，否则核心可能启动失败
+                  </Alert.Description>
                 </Alert.Content>
               </Alert>
             )}
