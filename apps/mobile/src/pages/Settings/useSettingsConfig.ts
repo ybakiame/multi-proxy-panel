@@ -41,8 +41,6 @@ export interface UseSettingsConfigReturn {
   vpnNotifySelection: boolean;
   onToggleVpnTraffic: (next: boolean) => Promise<void>;
   onToggleVpnSelection: (next: boolean) => Promise<void>;
-  clashApiEnabled: boolean;
-  onToggleClashApi: (next: boolean) => Promise<void>;
   clashApiPortDraft: string;
   clashApiPortError: string | null;
   onClashApiPortChange: (raw: string) => void;
@@ -83,7 +81,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   // ---- 表单草稿（config 变化时渲染期同步） ----
   const [vpnNotifyTraffic, setVpnNotifyTraffic] = useState(false);
   const [vpnNotifySelection, setVpnNotifySelection] = useState(false);
-  const [clashApiEnabled, setClashApiEnabled] = useState(false);
   const [mixedPortDraft, setMixedPortDraft] = useState("");
   const [clashApiPortDraft, setClashApiPortDraft] = useState("");
   const [clashApiSecretDraft, setClashApiSecretDraft] = useState("");
@@ -97,7 +94,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (config) {
       setVpnNotifyTraffic(config.vpn_notify_show_traffic);
       setVpnNotifySelection(config.vpn_notify_show_selection);
-      setClashApiEnabled(config.clash_api_enabled);
       setMixedPortDraft(String(config.mixed_port));
       setClashApiPortDraft(String(config.clash_api_port));
       setClashApiSecretDraft(config.clash_api_secret ?? "");
@@ -228,11 +224,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     await notifyVpnPrefs(vpnNotifyTraffic, next);
   };
 
-  const onToggleClashApi = async (next: boolean) => {
-    setClashApiEnabled(next);
-    await persist({ clash_api_enabled: next });
-  };
-
   const onMixedPortChange = (raw: string) => {
     setMixedPortDraft(raw);
     cancelPersist("mixed_port");
@@ -264,14 +255,12 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   };
 
   return {
-    ready: config !== null,
+    ready: config !== undefined,
     saving: saveConfigMutation.isPending,
     vpnNotifyTraffic,
     vpnNotifySelection,
     onToggleVpnTraffic,
     onToggleVpnSelection,
-    clashApiEnabled,
-    onToggleClashApi,
     clashApiPortDraft,
     clashApiPortError: portError(clashApiPortDraft),
     onClashApiPortChange,
