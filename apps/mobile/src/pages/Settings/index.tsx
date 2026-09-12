@@ -10,7 +10,7 @@ import { PageShell } from "../../components/PageShell";
  * VPN 通知 / GitHub 访问 / 开发者工具 / 关于。表单状态由各子页独立实例化
  * `useSettingsConfig` 消费（保存链路经共享 CONFIG_KEY 缓存）。
  *
- * 网络（TUN）与 Clash API 已迁移为配置页必选切片入口（`/config/network`、`/config/clash-api`）。
+ * 入站管理与 Clash API 已迁移为配置页必选切片入口（`/config/inbounds`、`/config/experimental`）。
  */
 export default function Settings() {
   const navigate = useNavigate();

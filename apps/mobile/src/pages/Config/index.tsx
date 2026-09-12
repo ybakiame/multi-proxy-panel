@@ -7,7 +7,7 @@ import { PageShell } from "../../components/PageShell";
  * 配置管理入口页（ADR-0005 §3.3，路由 `/config`，Tab 2）。
  *
  * 入口卡列表：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）、
- * 路由（`/config/route`）、网络（TUN，`/config/network`）、
+ * 路由（`/config/route`）、入站管理（`/config/inbounds`）、
  * Experimental（`/config/experimental`，含 Clash API 设置）。
  *
  * 网络（TUN）与 Clash API 为必选切片（ADR-0005 后续决策）：始终启用、无切片级关闭开关，
@@ -48,9 +48,9 @@ export default function Config() {
         />
         <EntryLinkCard
           icon={<WifiIcon className="size-6" aria-hidden="true" />}
-          title="网络（TUN）"
-          description="TUN 始终启用 · 调整本地混合端口"
-          onPress={() => navigate("/config/network")}
+          title="入站管理"
+          description="混合入站端口 · TUN 协议栈与自动路由"
+          onPress={() => navigate("/config/inbounds")}
         />
         <EntryLinkCard
           icon={<BeakerIcon className="size-6" aria-hidden="true" />}

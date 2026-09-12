@@ -59,6 +59,12 @@ export interface UseSettingsConfigReturn {
   onToggleVpnSelection: (next: boolean) => Promise<void>;
   ipv6Enabled: boolean;
   onToggleIpv6: (next: boolean) => Promise<void>;
+  /** TUN 入站协议栈草稿（`gvisor` / `system` / `mixed`）。 */
+  tunStack: string;
+  onTunStackChange: (value: string) => Promise<void>;
+  /** TUN 入站 auto_route 开关。 */
+  tunAutoRoute: boolean;
+  onToggleTunAutoRoute: (next: boolean) => Promise<void>;
   clashApiPortDraft: string;
   clashApiPortError: string | null;
   onClashApiPortChange: (raw: string) => void;
@@ -104,6 +110,8 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [vpnNotifyTraffic, setVpnNotifyTraffic] = useState(false);
   const [vpnNotifySelection, setVpnNotifySelection] = useState(false);
   const [ipv6Enabled, setIpv6Enabled] = useState(false);
+  const [tunStack, setTunStack] = useState("mixed");
+  const [tunAutoRoute, setTunAutoRoute] = useState(true);
   const [mixedPortDraft, setMixedPortDraft] = useState("");
   const [clashApiPortDraft, setClashApiPortDraft] = useState("");
   const [clashApiSecretDraft, setClashApiSecretDraft] = useState("");
@@ -118,6 +126,8 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
       setVpnNotifyTraffic(config.vpn_notify_show_traffic);
       setVpnNotifySelection(config.vpn_notify_show_selection);
       setIpv6Enabled(config.ipv6_enabled);
+      setTunStack(config.tun_stack || "mixed");
+      setTunAutoRoute(config.tun_auto_route);
       setMixedPortDraft(String(config.mixed_port));
       setClashApiPortDraft(String(config.clash_api_port));
       setClashApiSecretDraft(config.clash_api_secret ?? "");
@@ -253,6 +263,16 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     await persist({ ipv6_enabled: next });
   };
 
+  const onTunStackChange = async (value: string) => {
+    setTunStack(value);
+    await persist({ tun_stack: value });
+  };
+
+  const onToggleTunAutoRoute = async (next: boolean) => {
+    setTunAutoRoute(next);
+    await persist({ tun_auto_route: next });
+  };
+
   const onMixedPortChange = (raw: string) => {
     setMixedPortDraft(raw);
     cancelPersist("mixed_port");
@@ -303,6 +323,10 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     onToggleVpnSelection,
     ipv6Enabled,
     onToggleIpv6,
+    tunStack,
+    onTunStackChange,
+    tunAutoRoute,
+    onToggleTunAutoRoute,
     clashApiPortDraft,
     clashApiPortError: portError(clashApiPortDraft),
     onClashApiPortChange,

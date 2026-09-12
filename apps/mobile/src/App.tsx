@@ -10,7 +10,7 @@ import Config from "./pages/Config";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
 import DnsPage from "./pages/Config/Dns";
 import ExperimentalPage from "./pages/Config/ExperimentalPage";
-import NetworkPage from "./pages/Config/NetworkPage";
+import InboundsPage from "./pages/Config/InboundsPage";
 import OutboundsPage from "./pages/Config/Outbounds";
 import RoutePage from "./pages/Config/Route";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
@@ -95,7 +95,8 @@ function TauriRequired() {
  *   `/panel` Clash 面板页（内嵌 zashboard）、`/logs` 日志页、`/subscriptions` 订阅管理页、
  *   `/config/route` 路由、`/config/route/rules` 规则管理、`/config/route/rulesets` 规则集管理、
  *   `/config/dns`、`/config/outbounds`、
- *   `/config/network`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染；
+ *   `/config/inbounds`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染；
+ *   旧 `/config/network` 重定向到 `/config/inbounds`（「网络」页更名「入站管理」）；
  *   旧 `/config/clash-api` 重定向到 `/config/experimental`（Clash API 设置已并入）。
  * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向；
  *   旧 `/config/{rules,rulesets}` 路径重定向到 `/config/route/*`（规则管理迁入路由菜单）；
@@ -130,7 +131,9 @@ function AppContent() {
           <Route path="/config" element={<Config />} />
           <Route path="/config/dns" element={<DnsPage />} />
           <Route path="/config/outbounds" element={<OutboundsPage />} />
-          <Route path="/config/network" element={<NetworkPage />} />
+          <Route path="/config/inbounds" element={<InboundsPage />} />
+          {/* 「网络」页更名「入站管理」（对齐 sing-box inbounds 语义） */}
+          <Route path="/config/network" element={<Navigate to="/config/inbounds" replace />} />
           <Route path="/config/experimental" element={<ExperimentalPage />} />
           {/* Clash API 设置已并入 Experimental 页 */}
           <Route path="/config/clash-api" element={<Navigate to="/config/experimental" replace />} />
