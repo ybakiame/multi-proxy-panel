@@ -454,13 +454,15 @@ App → 系统代理 → 核心主 mixed inbound (mixed_port)
 ```
 订阅配置（sing-box JSON / Clash 订阅已转节点）
    │  build_core_config_v2（profile/）：提取节点 → singbox_template
-   │    （log/dns + proxy(select)/auto(url-test)/direct/block 分组 + route.rules=[]）
+   │    （CN 分流基线：log + local(DoH 223.5.5.5)/remote(DoT 8.8.8.8) DNS 与 CN 分流 DNS/路由规则
+   │     + 5 个 MetaCubeX 远程规则集；proxy(select)/auto(url-test)/direct/block 分组）
    ▼
 ⓪ 切片层（本地配置层·构建期注入，ADR-0005）
-   │  apply_config_slices：读取 data_dir/config_slices.json，将 DNS 切片、自定义出站切片与
-   │    Experimental 切片注入模板（自定义出站 tag 强制 slice- 前缀；出站含协议节点与
-   │    selector/urltest 分组，v1 禁嵌套分组，供规则 Outbound{tag} 引用；Experimental 深合并
-   │    写入 experimental.cache_file，保留 clash_api 等同级键）
+   │  apply_config_slices：读取 data_dir/config_slices.json，按**内容驱动**注入（无切片级总开关，
+   │    见 ADR-0005 P4 补记）——DNS 切片、自定义出站切片、Experimental 与 Route 切片
+   │    （自定义出站 tag 强制 slice- 前缀；出站含协议节点与 selector/urltest 分组，v1 禁嵌套
+   │    分组，供规则 Outbound{tag} 引用；Experimental 深合并写入 experimental.cache_file，
+   │    保留 clash_api 等同级键）
    ▼
 ① Profile 覆写层（高级逃生舱口，优先级高于切片层，D2「覆写赢」）
    │  remote/local YAML 覆写（深合并，remote 为底 local 覆盖）→ remote/local JS 覆写（链式 main）
@@ -479,10 +481,12 @@ Composed 配置
    │  apply_panel_features（core_config/singbox.rs，设置页最高优先级）：TUN inbound 按设置整段替换、
    │    experimental.clash_api（含 default_mode）、出站模式基础 clash_mode 规则前插、
    │    Android DNS 强制注入 inject_android_dns（DNS 切片 FollowSystem 模式整体覆盖切片正文，
-   │    Takeover 模式跳过强制注入使切片正文生效，见 ADR-0005 D1）、
+   │    Takeover 模式跳过强制注入使切片正文生效，见 ADR-0005 D1；DNS mode 跨平台统一——桌面
+   │    FollowSystem 保留模板 DNS、Takeover 同样注入切片正文，见 ADR-0005 P4 补记）、
    │    IPv6 开关关闭（默认）时把 dns.strategy 覆写为 ipv4_only、
-   │    FakeIP 开关开启（opt-in）时注入 fakeip DNS server 并把全部 A 查询路由到 fakeip
-   │    （IPv6 策略覆写与 FakeIP 注入在 Takeover 下均跳过，见 ADR-0005 P3 补记）
+   │    FakeIP 开关开启（opt-in）时注入 fakeip DNS server 并把非 CN A 查询
+   │    （rule_set = geolocation-!cn）路由到 fakeip
+   │    （IPv6 策略覆写与 FakeIP 注入在 Takeover 下均跳过，见 ADR-0005 P3/P4 补记）
    ▼
 最终 sing-box JSON ──► CoreRunner 启动（config_version = SHA-256 前 16 位）
 ```
@@ -491,20 +495,21 @@ Composed 配置
 
 | 阶段 | 职责 |
 |------|------|
-| `singbox_template` | 生成 sing-box 基础骨架：DNS、`proxy`（主 selector 组）/`auto`/`direct`/`block` 分组，`route.rules = []`（空路由） |
-| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，把 DNS 切片、自定义出站切片与 Experimental 切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组）；Experimental 深合并写入 `experimental.cache_file`（保留 `clash_api` 等同级键） |
+| `singbox_template` | 生成 sing-box 基础骨架（CN 分流基线，ADR-0005 P4 补记）：`local` DoH / `remote` DoT DNS 与 `clash_mode`/`geosite-cn` DNS 规则、private/CN→`direct` 与 `geolocation-!cn`→主 selector 路由规则、5 个 MetaCubeX 远程规则集，`proxy`（主 selector 组）/`auto`/`direct`/`block` 分组 |
+| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，按**内容驱动**注入（无切片级总开关，见 P4 补记）——把 DNS 切片、自定义出站切片、Experimental 与 Route 切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组）；Experimental 深合并写入 `experimental.cache_file`（保留 `clash_api` 等同级键） |
 | Profile 覆写（YAML/JS） | 模板与切片之上叠加用户 Profile（远端为底、本地覆盖），改写节点分组、路由与实验字段，可显式接管模式语义；优先级高于切片层 |
 | `compose_singbox_config` | 注入本地可用的 inbounds（mixed 主入口；桌面 MITM 双入站）与 MITM 白名单规则、DNS 兼容适配 |
 | `apply_local_override` | 前插**全部 enabled** 本地规则/规则集并处理 final（场景模板已移除，不再按模板引用过滤；本地规则优先于订阅规则）；规则集注入扫描的引用来源含规则卡与已渲染 DNS 规则的 `rule_set`（ADR-0005 P2 补记） |
-| `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式 / Android DNS / IPv6 策略 / FakeIP），对同名字段整段替换、优先级最高；DNS 切片 FollowSystem 时 `inject_android_dns` 覆盖切片正文，Takeover 时跳过（ADR-0005 D1）；IPv6 开关关闭（默认）时把 `dns.strategy` 覆写为 `ipv4_only`，FakeIP 开关开启（opt-in）时注入 fakeip server 并把全部 A 查询路由到 fakeip，两者在 Takeover 下均跳过（ADR-0005 P3 补记） |
+| `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式 / Android DNS / IPv6 策略 / FakeIP），对同名字段整段替换、优先级最高；DNS mode 跨平台统一（ADR-0005 P4 补记）——FollowSystem 在桌面保留模板 DNS、Android 由 `inject_android_dns` 覆盖切片正文，Takeover 两端均注入切片正文并跳过强制注入（ADR-0005 D1）；IPv6 开关关闭（默认）时把 `dns.strategy` 覆写为 `ipv4_only`，FakeIP 开关开启（opt-in）时注入 fakeip server 并把非 CN A 查询（`geolocation-!cn`）路由到 fakeip，两者在 Takeover 下均跳过（ADR-0005 P3/P4 补记） |
 
 **规则优先级语义**（最终 `route.rules` 自前向后的匹配顺序）：
 
 ```
-模式开关（clash_mode 基础规则）> 本地规则 > MITM 白名单（桌面）> 订阅/模板规则 > final
+模式开关（clash_mode 基础规则）> 本地规则 > MITM 白名单（桌面）> 订阅/模板规则（含 CN 分流基线）> final
 ```
 
 - 各层在更早阶段把自己的规则前插到头部：compose 前插 MITM 白名单 → local_override 前插本地规则 → panel features 前插模式开关，因此后执行者反而排在更前、优先级更高
+- CN 分流基线由模板直接写入 `route.rules` 末尾（private/CN→`direct`、`geolocation-!cn`→主 selector），各层前插后基线始终排在用户规则之后，作为 `route.final` 之前的兜底分流（ADR-0005 P4 补记）
 - 未命中任何规则时回落 `route.final`（模板默认 `proxy`，可被本地 final 规则覆写）
 
 **出站模式（rule/global/direct）实现说明**：sing-box 的 mode **不是核心内置语义**，仅是路由规则 `clash_mode` 条件的匹配值（大小写敏感，见 sing-box issue #2477）——模板路由为空时切换 direct/global 无效果，核心甚至不会在 mode-list 注册这三档。因此 `apply_panel_features` 在 Clash API 开启时：

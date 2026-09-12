@@ -55,7 +55,7 @@
 引入**配置切片**：将 sing-box 顶层配置项拆为若干独立切片，每个切片 =
 
 - 一个**独立结构化 schema**（只暴露精选字段）；
-- 一个**独立 enabled 开关**（关闭即完全不注入）；
+- 一个**内容驱动的注入规则**（有内容即生效，无切片级 `enabled` 总开关；见文末 P4 补记）；
 - 一个**钻取式移动端子页面**（表单化编辑，全量 patch 保存）。
 
 切片层与 local_override 层在语义上同属「本地配置层」（用户本地结构化配置，区别于订阅与远端模板），panel_features（第 ④ 层）仍是最高优先级。
@@ -87,6 +87,8 @@
 ## 3. Detailed Design
 
 ### 3.1 `config_slices.json` schema 草案
+
+> **已被 P4 补记取代**：下列草案中的切片级 `enabled` 总开关（`ConfigSlices` / `DnsSlice` / `OutboundsSlice` 等）已于 P4 移除，注入改为「有内容即生效」，`config_slices.json` 版本 1→2；下方代码块仅作历史草案保留，以文末 P4 补记为准。
 
 新增 `crates/pp-client/src/config_slices/`，核心类型示意：
 
@@ -339,7 +341,7 @@ pub struct OutboundTransport {
 /config/experimental       # Experimental 切片（cache_file）表单
 ```
 
-**入口页**：沿用现有 `EntryLinkCard`（`apps/mobile/src/components/EntryLinkCard.tsx`）列表，自上而下：总开关 / DNS / 自定义出站 / 网络（TUN）/ 规则 / 规则集 / Clash API。现有 `MasterSwitchCard` 原样保留；`TemplateSection`（场景模板）已随 P1 移除（见文末 P1 补记）。
+**入口页**：沿用现有 `EntryLinkCard`（`apps/mobile/src/components/EntryLinkCard.tsx`）列表，自上而下：总开关 / DNS / 自定义出站 / 网络（TUN）/ 规则 / 规则集 / Clash API。现有 `MasterSwitchCard` 原样保留；`TemplateSection`（场景模板）已随 P1 移除（见文末 P1 补记）。（**P4 修订**：切片级与规则总开关均已移除，「总开关」项与 `MasterSwitchCard` 不再存在，以文末 P4 补记为准。）
 
 **子页**：沿用 `BackHeader`（`apps/mobile/src/components/BackHeader.tsx`）+ 底部 Sheet 表单（`Modal.Container placement="bottom"`，见 `RuleEditSheet.tsx` / `MobileSelectSheet.tsx`）+ `MobileSelectSheet`（枚举选择）。交互约定：
 
@@ -561,3 +563,55 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 - **决策**（163a47c）：移动端新增 `/panel` 页，以 **iframe** 内嵌内核 Clash API `/ui` 路径提供的 zashboard 面板；移除原生 `/proxies` / `/connections` 页面，旧路径以 `<Navigate>` 重定向到 `/panel`（HashRouter 存量书签兼容）。
 - **iframe 路线**：直接复用核心 `external_ui` 内置服务，不维护自有面板 UI；核心未运行 / Clash API 未就绪时展示空态提示。
 - **约束**：受 Tauri Android 单 WebView 约束，无法以独立 WebView 控件承载面板，故采用同页 iframe 复用系统 WebView。
+
+### P4 补记（2026-09-12）：CN 分流基线 / FakeIP 架构修正 / 开关移除 / 基线视图
+
+本补记记录 P4 的客户端配置基线重构。以下内容**修订** §2.1 / §3.1 / §3.3 / §3.6，并**修正** P3 补记中 FakeIP 的部分表述（见下），不改变 §2.3 的 D1–D6 决策，Status 仍为 Accepted。
+
+#### CN 分流基线（默认行为变化）
+
+- **基线来源**：内置 `singbox_template` 对齐 GUI.for.SingBox 默认配置，新增 `core_config/baseline.rs` 作为单一真值源（DNS / 路由规则与远程规则集注册）。
+- **DNS 基线**：
+  - `local` = DoH（`https` `223.5.5.5:443`），无 `detour`（默认直连）；
+  - `remote` = DoT（`tls` `8.8.8.8:853`），`detour` = 主 selector tag（从生成出站读取，不硬编码）；
+  - `dns.rules` = `clash_mode direct → local` / `clash_mode global → remote` / `geosite-cn → local`；`dns.final = remote`；
+  - `inject_android_dns` 同步该 DNS 形态并复用同一 DNS 规则与规则集注册。
+- **路由基线**：`route.rules` 注入 `geosite-private` / `geosite-cn` / `geoip-private` / `geoip-cn` → `direct`，`geolocation-!cn` → 主 selector。基线位于模板**末尾**，compose（MITM 白名单）、local_override（本地规则）、panel_features（`clash_mode` 模式规则）均**前插**，用户规则优先级始终高于基线。
+- **远程规则集**：`route.rule_set` 幂等注册 5 个 MetaCubeX jsDelivr 远程规则集（`geosite-private` / `geoip-private` / `geosite-cn` / `geoip-cn` / `geolocation-!cn`，`format: binary`）。
+- **默认行为变化**：客户端默认链路从「全量代理」改为「CN 直连分流」——CN / 私有目的地直连，非 CN 走主 selector；`route.final` 仍为主 selector。（已获项目所有者确认。）
+- **启动风险（重要）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。首次启动依赖 jsDelivr（`testingcf.jsdelivr.net`）直连可达；`experimental.cache_file.store_dns`（或已废弃的 `store_rdrc`）是唯一离线兜底，基线**未启用**。规则集缓存 / `store_dns` 纳入后续待决项。
+
+#### FakeIP 架构修正定案
+
+- **定案**：FakeIP 仅作用于**非 CN A 查询**——`{rule_set: ["geolocation-!cn"], query_type: ["A"], action: "route", server: "fakeip"}`，取代此前 `{geosite-cn, invert, A}` 形态。非 CN 域名端到端以**域名**交给出站（核心按域名路由，而非本地解析的真实 IP）；CN 域名由基线的 `geosite-cn → local` 走国内解析器连真实 IP。
+- **修正 P3 补记**：P3「FakeIP 覆盖全部 A 查询且不依赖规则集」的表述已被本定案取代——FakeIP 现依赖 `geolocation-!cn` 规则集（基线注册）做非 CN 限定。
+- **规则顺序**：丢弃规则（`HTTPS` / `SVCB`，IPv6 关闭时并入 `AAAA` → `predefined` + `NOERROR`）置 `dns.rules` **头部**；FakeIP 路由规则**追加在基线之后**，使 `clash_mode direct/global` 与 `geosite-cn` 优先，FakeIP 不泄漏进直连 / 全局模式。
+- **无全局 `resolve`**：确认不再注入 `route.rules` 的 `{"action":"resolve"}`——该动作会让出站看到真实 IP、违背 FakeIP 目的，并使所有连接依赖代理 DoH；CN 分流到位后无需 `resolve`。
+- 其余（`cache_file` 合并、`takeover` 豁免、幂等）不变。
+
+#### 冗余开关移除（内容驱动注入）
+
+- **切片级开关移除**：DNS / outbounds / experimental / route 四个切片的 `enabled` 总开关全部删除；注入改为内容驱动——DNS 仅 `mode == takeover` 注入、outbounds 注入 `enabled` 条目、experimental 仅 `cache_file.enabled` 合并、route 仅在 `final_tag` / `resolver` 非空时覆写。
+- **规则总开关移除**：`CoreLocalOverride.enabled`（`singbox.enabled`）删除，规则卡片与规则集引用各带 `enabled`，注入逐项决定；移除 `local_override_enabled` 门控参数与 `apply_config_slices` / `build_core_config_v2` 的门控签名。
+- **DNS mode 跨平台统一**：`dns_mode_from_slices` 只看 `mode`；桌面不再恒按 takeover 处理——`follow_system` 在桌面保留模板 DNS、Android 保留 `inject_android_dns`，`takeover` 两端均注入切片正文。
+- **存储版本**：`config_slices.json` version 1→2（`SLICE_VERSION = 2`）；`load` 幂等折叠旧开关意图并写回。
+- **Tauri 契约兼容**：`CoreLocalOverrideView.enabled` 恒 `true` 兼容输出，`CoreLocalOverrideInput.enabled` 接受但忽略。
+
+**迁移矩阵**：
+
+| 旧字段（v1 / 旧 schema） | 旧值 | 折叠后的 v2 语义 |
+|---|---|---|
+| `config_slices.dns.enabled` | `false` | `dns.mode = follow_system` |
+| `config_slices.outbounds.enabled` | `false` | 所有 `items[*].enabled = false` |
+| `config_slices.route.enabled` | `false` | 清空 `final_tag` + `resolver` |
+| `config_slices.experimental.enabled` | `false` | `cache_file.enabled = false` |
+| `local_override.singbox.enabled` | `false` | 所有 `rules[*].enabled = false` + `rule_sets[*].enabled = false` |
+
+- 迁移仅在旧值**显式为 `false`** 时折叠；字段缺失 / `true` 不改动。写回后旧字段不再序列化，二次 `load` 幂等。
+
+#### 基线视图（只读）
+
+- **命令**：新增只读 Tauri 命令 `baseline_view_get`，返回 `BaselineView`（`core_config/view.rs`）。
+- **单一真值源**：视图不复制真值——规则集 tag / URL 取自 `CN_RULE_SETS`，路由 / DNS 规则由 `cn_baseline_route_rules` / `cn_baseline_dns_rules` 的实际输出派生，出站 tag / kind 引用基线常量，避免与 `singbox_template` 注入逻辑产生双真相源漂移。
+- **静态基线**：视图仅反映静态基线，**不包含**条件性 FakeIP 内容（FakeIP 为 opt-in）。
+- **前端**：移动端规则管理 / 规则集 / 出站三页底部新增「内置」只读分区（`BaselineSections.tsx`），与用户可编辑列表分区展示，不可编辑 / 删除。
