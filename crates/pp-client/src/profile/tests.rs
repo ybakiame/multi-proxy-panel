@@ -134,7 +134,17 @@ fn singbox_template_builds_groups_and_route() {
     );
 
     assert_eq!(cfg["route"]["final"], "proxy");
-    assert_eq!(cfg["route"]["rules"], json!([]));
+    assert_eq!(
+        cfg["route"]["rules"],
+        json!([
+            { "rule_set": ["geosite-private"], "outbound": "direct" },
+            { "rule_set": ["geosite-cn"], "outbound": "direct" },
+            { "rule_set": ["geoip-private"], "outbound": "direct" },
+            { "rule_set": ["geoip-cn"], "outbound": "direct" },
+            { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
+        ]),
+        "CN-split baseline route rules (GUI.for.SingBox default profile)"
+    );
     assert_eq!(cfg["route"]["auto_detect_interface"], true);
     assert_eq!(
         cfg["route"]["default_domain_resolver"],
@@ -142,41 +152,40 @@ fn singbox_template_builds_groups_and_route() {
     );
     assert_eq!(cfg["log"]["level"], "info");
 
-    // DNS: local UDP direct (no detour = empty direct outbound), remote DoH through proxy,
+    // DNS: local DoH direct (IP literal, no detour), remote DoT through proxy,
     // final pinned to remote, reverse mapping on (see singbox_template docs).
     let dns_servers = cfg["dns"]["servers"].as_array().unwrap();
     let local = dns_servers.iter().find(|s| s["tag"] == "local").unwrap();
-    assert_eq!(local["type"], "udp");
+    assert_eq!(local["type"], "https");
     assert_eq!(local["server"], "223.5.5.5");
+    assert_eq!(local["server_port"], 443);
     assert!(
         local.get("detour").is_none(),
-        "local must stay detour-less (explicit `direct` targets the empty direct outbound and is a fatal startup error)"
+        "local must stay detour-less (default direct dial)"
     );
     let remote = dns_servers.iter().find(|s| s["tag"] == "remote").unwrap();
-    assert_eq!(remote["type"], "https");
+    assert_eq!(remote["type"], "tls");
     assert_eq!(remote["server"], "8.8.8.8");
+    assert_eq!(remote["server_port"], 853);
     assert_eq!(
         remote["detour"], "proxy",
-        "remote DNS must be dialed through the proxy to avoid pollution"
+        "remote DNS must be dialed through the main selector to avoid pollution"
+    );
+    assert_eq!(
+        cfg["dns"]["rules"],
+        json!([
+            { "clash_mode": "direct", "action": "route", "server": "local" },
+            { "clash_mode": "global", "action": "route", "server": "remote" },
+            { "rule_set": ["geosite-cn"], "action": "route", "server": "local" }
+        ]),
+        "CN-split baseline DNS rules (GUI.for.SingBox default profile)"
     );
     assert_eq!(
         cfg["dns"]["final"], "remote",
-        "final must pin remote; new-format DNS servers do not follow route.final, unset final picks the first (local) server"
+        "final must pin remote; new-format DNS servers do not follow route.final"
     );
     assert_eq!(cfg["dns"]["reverse_mapping"], true);
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
-}
-
-#[test]
-fn singbox_template_empty_nodes_falls_back_to_direct() {
-    let cfg = singbox_template(&[]);
-    let auto = cfg["outbounds"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|o| o["tag"] == "auto")
-        .unwrap();
-    assert_eq!(auto["outbounds"], json!(["direct"]));
 }
 
 // ---------- ④ YAML deep-merge override ----------
@@ -350,14 +359,23 @@ async fn build_core_config_singbox_end_to_end() {
     assert_eq!(cfg["log"]["level"], "error");
 }
 
-// ---------- ⑧ Regression: compose_* injection (template route.rules empty array prepending OK) ----------
+// ---------- ⑧ Regression: compose_* injection (template baseline rules prepending OK) ----------
 
 #[tokio::test(flavor = "current_thread")]
 async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     let cfg = build_core_config(&sample_singbox_sub(), &ProfileOverrides::default())
         .await
         .unwrap();
-    assert_eq!(cfg["route"]["rules"], json!([]));
+    assert_eq!(
+        cfg["route"]["rules"],
+        json!([
+            { "rule_set": ["geosite-private"], "outbound": "direct" },
+            { "rule_set": ["geosite-cn"], "outbound": "direct" },
+            { "rule_set": ["geoip-private"], "outbound": "direct" },
+            { "rule_set": ["geoip-cn"], "outbound": "direct" },
+            { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
+        ])
+    );
 
     let composed = compose_singbox_config(&cfg, 17890, Some(mitm_chain())).unwrap();
 
@@ -367,11 +385,16 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     assert_eq!(inbounds[0]["tag"], "main-in");
     assert_eq!(inbounds[1]["tag"], "mitm-return");
 
-    // Template empty rules prepending MITM whitelist rule succeeds, final keeps overridden proxy.
+    // MITM whitelist rule prepends ahead of the template CN-split baseline.
     let rules = composed["route"]["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 1);
+    assert_eq!(rules.len(), 6);
     assert_eq!(rules[0]["outbound"], "pp-mitm");
     assert_eq!(rules[0]["domain_suffix"], json!(["example.com"]));
+    assert_eq!(
+        rules[1],
+        json!({ "rule_set": ["geosite-private"], "outbound": "direct" }),
+        "CN-split baseline stays after the MITM whitelist (user rule wins)"
+    );
     assert_eq!(composed["route"]["final"], "proxy");
     // Groups and nodes preserved.
     let outbounds = composed["outbounds"].as_array().unwrap();

@@ -21,6 +21,8 @@
 //! through [`crate::core_config`]'s `compose_*`.
 
 mod overrides;
+#[cfg(test)]
+mod rule_set_tests;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -168,30 +170,36 @@ fn dedup_names(nodes: Vec<Value>, key: &str) -> Vec<Value> {
     out
 }
 
-/// sing-box local template: log + dns (local UDP direct + remote DoH via proxy) + all leaf
-/// nodes + `proxy` (select, default `auto`) / `auto` (url-test) groups + `direct` / `block` +
-/// empty routing.
+/// sing-box local template (CN-split baseline, aligned with the GUI.for.SingBox default
+/// profile): log + CN-split DNS + all leaf nodes + `proxy` (select, default `auto`) /
+/// `auto` (url-test) groups + `direct` / `block` + CN-split routing.
 ///
-/// `route.rules` is an empty array (compatible with `compose_singbox_config`'s MITM rule
-/// prepending); `route.default_domain_resolver` is directly embedded, ensuring the template
-/// is natively valid in sing-box 1.12+ (required when `dns.servers` exists). When no leaf
-/// nodes exist, the `auto` group falls back to built-in `direct` to keep the config valid.
+/// `route.rules` carries the CN-split baseline (private / CN → `direct`, non-CN → main
+/// selector) and `route.rule_set` registers the five remote MetaCubeX jsDelivr rule sets.
+/// `compose_singbox_config`, local-override and panel-feature rules all **prepend**, so user
+/// rules keep priority over the baseline and the baseline acts as the final split before
+/// `route.final`.
 ///
-/// DNS split (aligned with reference clients husi / GUI.for.SingBox):
-/// - `local` (UDP 223.5.5.5) has no `detour` — new-format DNS servers default to an empty
-///   direct outbound, so it dials direct. It serves `route.default_domain_resolver` (proxy
-///   server domain resolution, avoids resolving the proxy through itself) and any domestic
-///   rule.
-/// - `remote` (DoH 8.8.8.8) has `detour = proxy`, routing foreign resolution through the
-///   proxy to avoid DNS pollution.
-/// - `final = remote`: unlike the old legacy servers, a new-format DNS server does NOT follow
-///   `route.final`; with `final` unset sing-box picks the *first* server (`local`), leaving
-///   `remote` dead weight and resolving every query (including foreign) through domestic DNS.
-///   Pinning `final = remote` makes the proxy path effective.
+/// `route.default_domain_resolver` is directly embedded, ensuring the template is natively
+/// valid in sing-box 1.12+ (required when `dns.servers` exists). When no leaf nodes exist, the
+/// `auto` group falls back to built-in `direct` to keep the config valid.
+///
+/// DNS split (aligned with GUI.for.SingBox):
+/// - `local` = DoH (`https` 223.5.5.5:443), IP literal so no `domain_resolver` is needed; it
+///   has no `detour` (default direct dial) and serves `route.default_domain_resolver`.
+/// - `remote` = DoT (`tls` 8.8.8.8:853), IP literal, `detour` = main selector (read from the
+///   generated outbounds, never hardcoded) so foreign resolution goes through the proxy.
+/// - `rules` = [`crate::core_config::cn_baseline_dns_rules`]: `clash_mode` direct/global →
+///   local/remote, `geosite-cn` → local; `final = remote` resolves the rest.
 /// - `reverse_mapping = true`: after hijacked DNS resolves a domain, sing-box maps the
 ///   returned IP back to the domain for routing/records. Without it TUN connections arrive as
 ///   bare IPs and Clash API `metadata.host` stays empty whenever payload sniffing cannot
 ///   recover the domain (QUIC, non-TLS/HTTP, IP-literal Host).
+///
+/// Startup note: sing-box downloads remote rule sets synchronously at startup and **fails to
+/// start** when a URL is unreachable (verified against sing-box 1.14). The jsDelivr mirror is
+/// directly reachable in CN; `experimental.cache_file.store_dns` (or the deprecated
+/// `store_rdrc`) is the only offline fallback and is not enabled by the baseline.
 pub fn singbox_template(nodes: &[Value]) -> Value {
     let tags: Vec<String> = nodes
         .iter()
@@ -204,24 +212,6 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
     let mut proxy_outbounds = vec![Value::String("auto".to_string())];
     proxy_outbounds.extend(tags.iter().cloned().map(Value::String));
 
-    let mut cfg = json!({
-        "log": { "level": "info" },
-        "dns": {
-            "servers": [
-                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 },
-                { "tag": "remote", "type": "https", "server": "8.8.8.8", "server_port": 443, "detour": "proxy" }
-            ],
-            "final": "remote",
-            "reverse_mapping": true,
-            "strategy": "prefer_ipv4"
-        },
-        "route": {
-            "rules": [],
-            "final": "proxy",
-            "auto_detect_interface": true,
-            "default_domain_resolver": { "server": "local" }
-        }
-    });
     let mut outbounds = nodes.to_vec();
     outbounds.push(json!({
         "type": "selector",
@@ -238,7 +228,46 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
     }));
     outbounds.push(json!({ "type": "direct", "tag": "direct" }));
     outbounds.push(json!({ "type": "block", "tag": "block" }));
+
+    // Main selector tag: read from the generated outbounds (never hardcoded) so the CN-split
+    // baseline and the remote DNS detour follow the template's actual group tag.
+    let proxy_tag = outbounds
+        .iter()
+        .find(|o| o.get("type").and_then(Value::as_str) == Some("selector"))
+        .and_then(|o| o.get("tag").and_then(Value::as_str))
+        .unwrap_or("proxy")
+        .to_string();
+
+    let mut cfg = json!({
+        "log": { "level": "info" },
+        "dns": {
+            "servers": [
+                { "tag": "local", "type": "https", "server": "223.5.5.5", "server_port": 443 },
+                {
+                    "tag": "remote",
+                    "type": "tls",
+                    "server": "8.8.8.8",
+                    "server_port": 853,
+                    "detour": proxy_tag.clone()
+                }
+            ],
+            "rules": crate::core_config::cn_baseline_dns_rules(),
+            "final": "remote",
+            "reverse_mapping": true,
+            "strategy": "prefer_ipv4"
+        },
+        "route": {
+            "rules": crate::core_config::cn_baseline_route_rules(&proxy_tag),
+            "final": proxy_tag,
+            "auto_detect_interface": true,
+            "default_domain_resolver": { "server": "local" }
+        }
+    });
     cfg["outbounds"] = Value::Array(outbounds);
+    // Register the five remote CN-split rule sets (idempotent by tag).
+    if let Some(route) = cfg["route"].as_object_mut() {
+        crate::core_config::ensure_cn_rule_sets(route);
+    }
     cfg
 }
 

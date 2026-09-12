@@ -193,12 +193,22 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     inject_android_dns(&mut cfg);
 
-    // remote uses actual selector tag (not hardcoded), local has no detour (direct by default).
-    assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
-    assert_eq!(cfg["dns"]["servers"][0]["detour"], "proxy");
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-    assert!(cfg["dns"]["servers"][1].get("detour").is_none());
-    assert_eq!(cfg["dns"]["rules"], json!([]));
+    // local first (DoH, no detour = direct by default), remote uses actual selector tag.
+    assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
+    assert_eq!(cfg["dns"]["servers"][0]["type"], "https");
+    assert!(cfg["dns"]["servers"][0].get("detour").is_none());
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][1]["type"], "tls");
+    assert_eq!(cfg["dns"]["servers"][1]["detour"], "proxy");
+    assert_eq!(
+        cfg["dns"]["rules"],
+        json!([
+            { "clash_mode": "direct", "action": "route", "server": "local" },
+            { "clash_mode": "global", "action": "route", "server": "remote" },
+            { "rule_set": ["geosite-cn"], "action": "route", "server": "local" }
+        ]),
+        "Android DNS injection reproduces the CN-split baseline rules"
+    );
     assert_eq!(cfg["dns"]["final"], "remote");
     assert_eq!(
         cfg["dns"]["reverse_mapping"], true,
@@ -208,7 +218,7 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
     // sing-box 1.12+ requires explicit default_domain_resolver (pointing to first tagged server).
     assert_eq!(
         cfg["route"]["default_domain_resolver"],
-        json!({ "server": "remote" })
+        json!({ "server": "local" })
     );
     // Outbounds with server field get domain_resolver -> local (proxy server domain direct resolve,
     // avoid remote loopback); selector outbound has no server field -> not injected.
@@ -281,14 +291,15 @@ fn inject_android_dns_falls_back_to_route_final_when_no_selector() {
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     inject_android_dns(&mut cfg);
 
-    assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
     assert!(
-        cfg["dns"]["servers"][0].get("detour").is_none(),
+        cfg["dns"]["servers"][1].get("detour").is_none(),
         "remote should omit detour when route.final points to empty direct outbound"
     );
     assert_eq!(
         cfg["route"]["default_domain_resolver"],
-        json!({ "server": "remote" })
+        json!({ "server": "local" })
     );
 }
 
@@ -307,8 +318,8 @@ fn inject_android_dns_leaves_outbounds_untouched_when_no_direct() {
     inject_android_dns(&mut cfg);
 
     // local DNS server has no detour (direct by default), and no direct outbound created.
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-    assert!(cfg["dns"]["servers"][1].get("detour").is_none());
+    assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
+    assert!(cfg["dns"]["servers"][0].get("detour").is_none());
     let outbounds = cfg["outbounds"].as_array().unwrap();
     assert!(
         outbounds.iter().all(|o| o["type"] != "direct"),
@@ -331,8 +342,8 @@ fn inject_android_dns_leaves_existing_direct_outbound_untouched() {
     inject_android_dns(&mut cfg);
 
     // local has no detour, does not reference/modify existing direct outbound.
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-    assert!(cfg["dns"]["servers"][1].get("detour").is_none());
+    assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
+    assert!(cfg["dns"]["servers"][0].get("detour").is_none());
     let direct_count = cfg["outbounds"]
         .as_array()
         .unwrap()
@@ -358,9 +369,9 @@ fn inject_android_dns_keeps_detour_for_non_empty_direct() {
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     inject_android_dns(&mut cfg);
 
-    assert_eq!(cfg["dns"]["servers"][0]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
     assert_eq!(
-        cfg["dns"]["servers"][0]["detour"], "direct",
+        cfg["dns"]["servers"][1]["detour"], "direct",
         "direct outbound with extra config keys is a valid detour target, detour should be kept"
     );
 }
@@ -401,7 +412,7 @@ fn android_config_with_injected_dns_passes_real_singbox_check() {
     inject_android_dns(&mut cfg);
 
     // Composed config main selector tag is `proxy` (singbox_template fixed group name).
-    assert_eq!(cfg["dns"]["servers"][0]["detour"], "proxy");
+    assert_eq!(cfg["dns"]["servers"][1]["detour"], "proxy");
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");
@@ -441,8 +452,8 @@ fn android_config_without_direct_outbound_passes_real_singbox_check() {
     inject_android_dns(&mut cfg);
 
     // No direct outbound -> local DNS has no detour, and outbounds contains no created direct outbound.
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "local");
-    assert!(cfg["dns"]["servers"][1].get("detour").is_none());
+    assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
+    assert!(cfg["dns"]["servers"][0].get("detour").is_none());
     assert!(
         !cfg["outbounds"]
             .as_array()
@@ -623,6 +634,66 @@ fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
     assert_eq!(
         rules[4],
         json!({ "domain": "sub.com", "outbound": "proxy" })
+    );
+}
+
+/// Full route rule order (the layered injection contract): `sniff` / `hijack-dns` / `clash_mode`
+/// baselines are prepended ahead of the user (local-override / MITM) rules, which in turn precede
+/// the template's CN-split baseline (injected last so user rules always win):
+/// `sniff → hijack-dns → clash_mode direct → clash_mode global → user → CN baseline → final`.
+#[test]
+fn apply_singbox_panel_features_keeps_cn_baseline_after_user_rules() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }],
+        "route": {
+            "final": "proxy",
+            "rules": [
+                // user rule already prepended by the local-override / MITM stages
+                { "domain": "user.example", "outbound": "proxy" },
+                // template CN-split baseline (already appended before panel features)
+                { "rule_set": ["geosite-private"], "outbound": "direct" },
+                { "rule_set": ["geosite-cn"], "outbound": "direct" },
+                { "rule_set": ["geoip-private"], "outbound": "direct" },
+                { "rule_set": ["geoip-cn"], "outbound": "direct" },
+                { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
+            ]
+        }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &singbox_features());
+
+    let rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        rules.len(),
+        10,
+        "2 sniff/hijack + 2 clash_mode + 1 user + 5 CN baseline"
+    );
+    assert_eq!(rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(
+        rules[2],
+        json!({ "clash_mode": "direct", "outbound": "direct" })
+    );
+    assert_eq!(
+        rules[3],
+        json!({ "clash_mode": "global", "outbound": "proxy" })
+    );
+    assert_eq!(
+        rules[4],
+        json!({ "domain": "user.example", "outbound": "proxy" }),
+        "user rule wins over the CN-split baseline"
+    );
+    assert_eq!(
+        rules[5],
+        json!({ "rule_set": ["geosite-private"], "outbound": "direct" })
+    );
+    assert_eq!(
+        rules[9],
+        json!({ "rule_set": ["geolocation-!cn"], "outbound": "proxy" }),
+        "non-CN baseline is last before route.final"
     );
 }
 

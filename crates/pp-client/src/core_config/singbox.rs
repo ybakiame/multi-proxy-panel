@@ -331,14 +331,16 @@ pub(crate) fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -
 ///
 /// Android by VpnService (TUN) takes over full traffic, system resolver is unavailable (DNS queries
 /// will be tun-looped or leaked), must explicitly declare DNS servers and specify detour outbound.
-/// Injected `dns` section:
+/// Injected `dns` section (same CN-split shape as [`crate::profile::singbox_template`]):
 ///
-/// - `remote`: DoH (1.1.1.1), through main outbound selector ( `detour` reads actual selector tag
-///   from composed config, see [`main_outbound_selector_tag`], not hardcoded); when detour target
-///   is "empty direct outbound", omit `detour` field (see [`is_empty_direct_outbound`]);
-/// - `local`: UDP (223.5.5.5), no `detour` field — omit means default direct dial,
+/// - `local`: DoH (`https` 223.5.5.5:443), no `detour` field — omit means default direct dial,
 ///   semantically equivalent and always legal;
-/// - `rules` empty array, `final = remote`, `reverse_mapping = true`, `strategy = prefer_ipv4`.
+/// - `remote`: DoT (`tls` 8.8.8.8:853), through main outbound selector (`detour` reads actual
+///   selector tag from composed config, see [`main_outbound_selector_tag`], not hardcoded); when
+///   detour target is "empty direct outbound", omit `detour` field (see
+///   [`is_empty_direct_outbound`]);
+/// - `rules` = [`super::cn_baseline_dns_rules`] (`clash_mode` direct/global → local/remote,
+///   `geosite-cn` → local), `final = remote`, `reverse_mapping = true`, `strategy = prefer_ipv4`.
 ///   `reverse_mapping` lets sing-box map a hijacked-DNS-resolved IP back to its domain so the
 ///   Clash API `metadata.host` is populated for TUN connections whose payload cannot be sniffed
 ///   (otherwise the connection record domain stays blank).
@@ -347,7 +349,9 @@ pub(crate) fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -
 /// real `sing-box check` (1.13+, legacy `address` format needs
 /// `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS`) passes without environment variable. After injection
 /// supplement `route.default_domain_resolver` (sing-box 1.12+ requires explicit declaration when
-/// `dns.servers` exists, otherwise `check` rejects, see [`ensure_domain_resolver`]).
+/// `dns.servers` exists, otherwise `check` rejects, see [`ensure_domain_resolver`]) and the
+/// CN-split rule-set registry (the injected `geosite-cn` DNS rule must resolve, see
+/// [`super::ensure_cn_rule_sets`]).
 ///
 /// Note: sing-box rejects DNS server detour to "empty direct outbound" at startup phase (error
 /// `detour to an empty direct outbound makes no sense`, empty = DialerOptions all default).
@@ -358,10 +362,10 @@ pub(crate) fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -
 /// After DNS section injection, supplement `domain_resolver = {"server": "local"}` for each
 /// outbound containing `server` field (see [`ensure_outbound_domain_resolvers`]). sing-box 1.12+
 /// outbound dialer resolves `server` domain (e.g., proxy server domain `proxy-panel.ybakiame.net`)
-/// by falling back to `route.default_domain_resolver` — which is the injected remote (DoH through
-/// main proxy outbound), and remote needs to connect to proxy first → "resolve proxy server domain
-/// through proxy" loop. Explicit `domain_resolver = {"server": "local"}` makes proxy server domain
-/// go through local UDP direct resolution, direct dial, avoiding loop (aligns with husi
+/// by falling back to `route.default_domain_resolver` — which is `local` (the first tagged
+/// server), and local needs a direct dial, avoiding the "resolve proxy server domain through
+/// proxy" loop. Explicit `domain_resolver = {"server": "local"}` makes proxy server domain
+/// go through local direct resolution, direct dial, avoiding loop (aligns with husi
 /// `ConfigBuilder.kt` reference approach).
 pub fn inject_android_dns(composed: &mut Value) {
     let Some(obj) = composed.as_object_mut() else {
@@ -374,9 +378,9 @@ pub fn inject_android_dns(composed: &mut Value) {
     // (sing-box rejects at startup phase).
     let mut remote = serde_json::Map::new();
     remote.insert("tag".to_string(), json!("remote"));
-    remote.insert("type".to_string(), json!("https"));
-    remote.insert("server".to_string(), json!("1.1.1.1"));
-    remote.insert("server_port".to_string(), json!(443));
+    remote.insert("type".to_string(), json!("tls"));
+    remote.insert("server".to_string(), json!("8.8.8.8"));
+    remote.insert("server_port".to_string(), json!(853));
     if !is_empty_direct_outbound(obj, &detour) {
         remote.insert("detour".to_string(), json!(detour));
     }
@@ -384,15 +388,23 @@ pub fn inject_android_dns(composed: &mut Value) {
         "dns".to_string(),
         json!({
             "servers": [
-                Value::Object(remote),
-                { "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }
+                { "tag": "local", "type": "https", "server": "223.5.5.5", "server_port": 443 },
+                Value::Object(remote)
             ],
-            "rules": [],
+            "rules": super::cn_baseline_dns_rules(),
             "final": "remote",
             "reverse_mapping": true,
             "strategy": "prefer_ipv4"
         }),
     );
+    // The injected `geosite-cn` DNS rule references a rule set; make sure the CN-split registry
+    // exists even when called on a config that did not come from `singbox_template` (idempotent).
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if let Some(route_obj) = route.as_object_mut() {
+        super::ensure_cn_rule_sets(route_obj);
+    }
     super::ensure_domain_resolver(obj);
     // Proxy outbound server domain resolved via local direct, avoiding remote loop (see function docs).
     ensure_outbound_domain_resolvers(obj);

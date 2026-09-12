@@ -203,7 +203,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     });
 
     // Subscription contains outbounds only; composed config additionally gets the 2 baseline
-    // clash_mode mode rules + 1 MITM whitelist rule at head (rule_count assertion covers the
+    // clash_mode mode rules + 1 MITM whitelist rule at head, plus the 5 CN-split baseline route
+    // rules from the template (rule_count assertion covers the
     // final config; sniff/hijack-dns 无条件注入后总计 5 条)。
     let sub_body = r#"{
             "outbounds": [{ "type": "direct", "tag": "direct" }],
@@ -236,8 +237,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     let status = state.status().await;
     assert_eq!(status.rule_mode, "global");
     assert_eq!(
-        status.rule_count, 5,
-        "2 sniff/dns-hijack + 2 baseline clash_mode mode rules + 1 MITM whitelist rule"
+        status.rule_count, 10,
+        "2 sniff/dns-hijack + 2 baseline clash_mode mode rules + 1 MITM whitelist + 5 CN-split baseline rules"
     );
     assert_eq!(
         status.clash_api_url,
@@ -440,8 +441,8 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     let rules = core_config["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        3,
-        "2 sniff/dns-hijack head rules + 1 MITM whitelist rule"
+        8,
+        "2 sniff/dns-hijack head rules + 1 MITM whitelist rule + 5 CN-split baseline rules"
     );
     assert_eq!(rules[0], serde_json::json!({ "action": "sniff" }));
     assert_eq!(
@@ -456,9 +457,9 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     assert_eq!(rules[2]["domain"], serde_json::json!(["api.example2.com"]));
     assert_eq!(rules[2]["outbound"], "pp-mitm");
 
-    // Running status extension: composed config contains sniff + hijack-dns + 1 MITM whitelist rule.
+    // Running status extension: composed config contains sniff + hijack-dns + 1 MITM whitelist rule + 5 CN-split baseline rules.
     let status = state.status().await;
-    assert_eq!(status.rule_count, 3);
+    assert_eq!(status.rule_count, 8);
 
     state.stop().await;
     let status = state.status().await;

@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::config_slices::{ConfigSlices, DnsMode};
 
+mod baseline;
 mod clash_api;
 mod compose;
 mod fakeip;
@@ -14,6 +15,7 @@ mod singbox;
 #[cfg(test)]
 mod tests;
 
+pub use baseline::*;
 pub use clash_api::*;
 pub use compose::*;
 pub use singbox::*;
