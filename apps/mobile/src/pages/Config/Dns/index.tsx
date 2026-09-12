@@ -39,7 +39,7 @@ import {
  * DNS 切片配置子页（ADR-0005 P0-4b，路由 `/config/dns`；2026-09 补记：内置默认映射 +
  * 编辑即接管）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 接管风险 Alert → 配置来源状态卡（内置默认 /
+ * 结构自上而下：BackHeader（右侧保存动作）→ 配置来源状态卡（内置默认 /
  * 自定义接管，含「恢复内置默认」）→ DNS 服务器列表 → DNS 分流规则列表 →
  * final 服务器 + 全局解析策略 + reverse_mapping。
  *
@@ -311,19 +311,6 @@ export default function DnsPage() {
 
         {draft && (
           <>
-            {willTakeover && (
-              <Alert status="warning">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>DNS 接管风险</Alert.Title>
-                  <Alert.Description>
-                    当前为自定义 DNS（保存后接管生效），配置错误可能导致断网，请确保 final 服务器有效；同时需保留一个
-                    tag 为 local 的服务器，供 route.default_domain_resolver 与出站域名解析兜底，否则核心可能启动失败
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            )}
-
             {/* 配置来源状态卡：内置默认（跟随系统）/ 自定义（接管），接管时可一键恢复内置默认 */}
             <Card>
               <Card.Header>
