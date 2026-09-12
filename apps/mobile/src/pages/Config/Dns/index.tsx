@@ -2,59 +2,62 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
+  BUILTIN_DNS_SLICE_KEY,
   CONFIG_SLICES_KEY,
   LOCAL_OVERRIDE_KEY,
+  builtinDnsSliceGet,
   configSlicesGet,
   configSlicesSave,
+  defaultConfigSlices,
   localOverrideGet,
   toErrorMessage,
   toastError,
   toastSuccess,
-  useCapabilities,
   useProxyStatus,
 } from "@pp/client-core";
-import type {
-  ConfigSlices,
-  DnsMode,
-  DnsRule,
-  DnsServer,
-  DnsSlice,
-  DnsStrategy,
-  LocalOverrideView,
-} from "@pp/client-core";
+import type { ConfigSlices, DnsRule, DnsServer, DnsSlice, DnsStrategy, LocalOverrideView } from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
 import { isLocalOverrideView } from "../localOverrideGuards";
 import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
 import { DnsFakeipCard } from "./DnsFakeipCard";
-import { DnsModeCard } from "./DnsModeCard";
 import { DnsRoutingCard } from "./DnsRoutingCard";
 import { DnsRuleFormSheet } from "./DnsRuleFormSheet";
 import { DnsRuleListSection } from "./DnsRuleListSection";
 import { DnsServerFormSheet } from "./DnsServerFormSheet";
 import { DnsServerListSection } from "./DnsServerListSection";
-import { dnsRuleSummary, dnsServerTagOptions, isConfigSlices, isDnsSliceValid, validateDnsSlice } from "./dnsUtils";
+import {
+  dnsRuleSummary,
+  dnsServerTagOptions,
+  dnsSliceEquals,
+  isConfigSlices,
+  isDnsSliceValid,
+  validateDnsSlice,
+} from "./dnsUtils";
 
 /**
- * DNS 切片配置子页（ADR-0005 P0-4b，路由 `/config/dns`）。
+ * DNS 切片配置子页（ADR-0005 P0-4b，路由 `/config/dns`；2026-09 补记：内置默认映射 +
+ * 编辑即接管）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ takeover 风险 Alert →
- * DNS 模式（跟随系统 / 接管）→ DNS 服务器列表 → DNS 分流规则列表 →
- * final 服务器 + 全局解析策略。
- * 无切片总开关：`takeover` 模式下本切片正文即注入运行配置。
+ * 结构自上而下：BackHeader（右侧保存动作）→ 接管风险 Alert → 配置来源状态卡（内置默认 /
+ * 自定义接管，含「恢复内置默认」）→ DNS 服务器列表 → DNS 分流规则列表 →
+ * final 服务器 + 全局解析策略 + reverse_mapping。
  *
- * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；所有编辑只改内存中的
- * dns 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，成功后
- * invalidate + toast；核心运行中追加「重启代理后生效」。校验（D5）在保存前对整份
- * 草稿执行，失败禁用保存并在字段行内提示。
+ * 内置默认映射：`builtinDnsSliceGet` 返回与运行核心完全同形的内置 DNS（切片 schema），
+ * `follow_system` 模式下编辑器直接以其初始化草稿——内置配置不再黑盒，无需手动切换接管
+ * 模式；保存时内容与内置默认一致则保持 `follow_system`（正文清空回退），有任何改动则
+ * 落为 `takeover` 生效。
+ *
+ * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices` + `useQuery(BUILTIN_DNS_SLICE_KEY)`
+ * 取内置默认；所有编辑只改内存中的 dns 切片草稿（copy-on-write），点击保存才整份
+ * `configSlicesSave` 落盘，成功后 invalidate + toast；核心运行中追加「重启代理后生效」。
+ * 校验（D5）在保存前对整份草稿执行，失败禁用保存并在字段行内提示。
  */
 export default function DnsPage() {
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
-  const { data: capabilities } = useCapabilities();
   // DNS 切片在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
-  const isAndroid = capabilities?.is_android ?? false;
 
   const {
     data: rawSlices,
@@ -79,15 +82,31 @@ export default function DnsPage() {
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const ruleSetOptions = useMemo(() => buildRuleSetOptions(overrideData), [overrideData]);
 
+  // 内置默认 DNS（切片 schema 形态，与运行核心同形）；跟随系统模式的草稿初值来源。
+  const { data: builtin } = useQuery<DnsSlice>({
+    queryKey: BUILTIN_DNS_SLICE_KEY,
+    queryFn: builtinDnsSliceGet,
+    refetchOnWindowFocus: false,
+  });
+
+  // 当前生效内容：跟随系统 = 内置默认（映射进编辑器），接管 = 切片正文。
+  const currentEffective = useMemo<DnsSlice | null>(() => {
+    if (!slices) return null;
+    return slices.dns.mode === "follow_system" && builtin ? { ...builtin, mode: "follow_system" } : slices.dns;
+  }, [slices, builtin]);
+
   // ---- 内存草稿（query 数据变化时渲染期同步，copy-on-write 编辑） ----
+  // 生效内容身份变化时同步草稿；用户已有未保存编辑（草稿偏离旧生效内容）时不覆盖。
   const [draft, setDraft] = useState<DnsSlice | null>(null);
-  const [prevSlices, setPrevSlices] = useState<ConfigSlices | undefined>(undefined);
-  if (slices && prevSlices !== slices) {
-    setPrevSlices(slices);
-    setDraft(slices.dns);
+  const [prevEffective, setPrevEffective] = useState<DnsSlice | null>(null);
+  if (currentEffective && prevEffective !== currentEffective) {
+    setDraft((current) =>
+      current === null || dnsSliceEquals(current, prevEffective ?? current) ? currentEffective : current,
+    );
+    setPrevEffective(currentEffective);
   }
-  if (!slices && draft !== null) {
-    setPrevSlices(undefined);
+  if (!currentEffective && draft !== null) {
+    setPrevEffective(null);
     setDraft(null);
   }
 
@@ -102,7 +121,13 @@ export default function DnsPage() {
 
   const errors = draft ? validateDnsSlice(draft) : null;
   const valid = errors !== null && isDnsSliceValid(errors);
-  const dirty = draft !== null && slices !== null && JSON.stringify(draft) !== JSON.stringify(slices.dns);
+  const dirty = draft !== null && currentEffective !== null && !dnsSliceEquals(draft, currentEffective);
+  // 编辑即接管：草稿内容与内置默认一致 → 保存后仍跟随系统；有改动 → 落 takeover。
+  const contentIsBuiltin =
+    draft !== null &&
+    builtin !== undefined &&
+    dnsSliceEquals({ ...draft, mode: "follow_system" }, { ...builtin, mode: "follow_system" });
+  const willTakeover = draft !== null && !contentIsBuiltin;
   const serverTagOptions = useMemo(() => (draft ? dnsServerTagOptions(draft.servers) : []), [draft]);
   const serverOtherTags = useMemo(
     () => (draft ? draft.servers.filter((server) => server !== editingServer).map((server) => server.tag.trim()) : []),
@@ -113,7 +138,9 @@ export default function DnsPage() {
     if (!slices || !draft || !valid || !dirty || saving) return;
     setSaving(true);
     try {
-      await configSlicesSave({ ...slices, dns: draft });
+      // 编辑即接管：内容与内置默认一致 → 清空正文保持 follow_system；有改动 → takeover 落盘。
+      const nextDns: DnsSlice = contentIsBuiltin ? { ...defaultConfigSlices().dns } : { ...draft, mode: "takeover" };
+      await configSlicesSave({ ...slices, dns: nextDns });
       toastSuccess(coreRunning ? "DNS 配置已保存，重启代理后生效" : "DNS 配置已保存");
       await queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
     } catch (err) {
@@ -123,12 +150,19 @@ export default function DnsPage() {
     }
   };
 
-  // ---- 标量字段（模式 / final / 策略） ----
-  const handleChangeMode = (mode: DnsMode) => setDraft((current) => (current ? { ...current, mode } : current));
+  /** 恢复内置默认：草稿回到内置视图（跟随系统），点保存后生效。 */
+  const handleRestoreBuiltin = () => {
+    if (!builtin) return;
+    setDraft({ ...builtin, mode: "follow_system" });
+  };
+
+  // ---- 标量字段（final / 策略 / reverse_mapping） ----
   const handleChangeStrategy = (strategy: DnsStrategy) =>
     setDraft((current) => (current ? { ...current, strategy } : current));
   const handleChangeFinalTag = (final_tag: string) =>
     setDraft((current) => (current ? { ...current, final_tag } : current));
+  const handleChangeReverseMapping = (reverse_mapping: boolean) =>
+    setDraft((current) => (current ? { ...current, reverse_mapping } : current));
 
   // ---- DNS 服务器 ----
   const openAddServer = () => {
@@ -277,23 +311,45 @@ export default function DnsPage() {
 
         {draft && (
           <>
-            {draft.mode === "takeover" && (
+            {willTakeover && (
               <Alert status="warning">
                 <Alert.Indicator />
                 <Alert.Content>
                   <Alert.Title>DNS 接管风险</Alert.Title>
                   <Alert.Description>
-                    接管 DNS 后配置错误可能导致断网，请确保 final 服务器有效；同时需保留一个 tag 为 local 的服务器，供
-                    route.default_domain_resolver 与出站域名解析兜底，否则核心可能启动失败
+                    当前为自定义 DNS（保存后接管生效），配置错误可能导致断网，请确保 final 服务器有效；同时需保留一个
+                    tag 为 local 的服务器，供 route.default_domain_resolver 与出站域名解析兜底，否则核心可能启动失败
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
             )}
 
-            <DnsModeCard mode={draft.mode} isAndroid={isAndroid} onChangeMode={handleChangeMode} />
+            {/* 配置来源状态卡：内置默认（跟随系统）/ 自定义（接管），接管时可一键恢复内置默认 */}
+            <Card>
+              <Card.Header>
+                <Card.Title>配置来源</Card.Title>
+                <Card.Description>
+                  {willTakeover
+                    ? "自定义 DNS：保存后取代内置默认生效"
+                    : "内置默认 DNS：可直接编辑下方配置，保存后自动接管生效"}
+                </Card.Description>
+              </Card.Header>
+              {willTakeover && (
+                <Card.Content>
+                  <Button
+                    variant="secondary"
+                    className="min-h-11 w-full"
+                    onPress={handleRestoreBuiltin}
+                    isDisabled={builtin === undefined}
+                  >
+                    恢复内置默认
+                  </Button>
+                </Card.Content>
+              )}
+            </Card>
 
-            {/* FakeIP（W2，ClientConfig）仅在非接管模式可见：接管后由切片正文全权接管 */}
-            {draft.mode !== "takeover" && <DnsFakeipCard />}
+            {/* FakeIP（W2，ClientConfig）仅在内置默认（跟随系统）生效时可见：接管后由切片正文全权接管 */}
+            {!willTakeover && <DnsFakeipCard />}
 
             <DnsServerListSection servers={draft.servers} onEdit={openEditServer} onAdd={openAddServer} />
 
@@ -307,10 +363,12 @@ export default function DnsPage() {
             <DnsRoutingCard
               finalTag={draft.final_tag}
               strategy={draft.strategy}
+              reverseMapping={draft.reverse_mapping}
               serverTagOptions={serverTagOptions}
               finalTagError={errors?.finalTag ?? null}
               onChangeFinalTag={handleChangeFinalTag}
               onChangeStrategy={handleChangeStrategy}
+              onChangeReverseMapping={handleChangeReverseMapping}
             />
           </>
         )}

@@ -6,6 +6,7 @@ import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import type { RuleSetOption } from "../ruleSetOptions";
 import {
   DEFAULT_DNS_RCODE,
+  DNS_CLASH_MODE_OPTIONS,
   DNS_MATCH_TYPE_OPTIONS,
   DNS_RCODE_OPTIONS,
   DNS_RULE_ACTION_OPTIONS,
@@ -109,22 +110,28 @@ export function DnsRuleFormSheet({
   }, [matchType, editing, target, ruleSetOptions]);
 
   const targetError =
-    matchType === "rule_set"
+    matchType === "clash_mode"
       ? target.trim() === ""
-        ? "请选择规则集"
-        : effectiveRuleSetOptions.some((option) => option.value === target.trim())
+        ? "请选择出站模式"
+        : DNS_CLASH_MODE_OPTIONS.some((option) => option.value === target.trim())
           ? null
-          : "规则集不存在"
-      : matchType === "query_type"
+          : "出站模式无效"
+      : matchType === "rule_set"
         ? target.trim() === ""
-          ? "请输入查询类型"
-          : (() => {
-              const invalid = firstInvalidQueryType(target);
-              return invalid === null ? null : invalid === "" ? "查询类型项不能为空" : `查询类型「${invalid}」无效`;
-            })()
-        : target.trim() === ""
-          ? "请输入匹配目标"
-          : null;
+          ? "请选择规则集"
+          : effectiveRuleSetOptions.some((option) => option.value === target.trim())
+            ? null
+            : "规则集不存在"
+        : matchType === "query_type"
+          ? target.trim() === ""
+            ? "请输入查询类型"
+            : (() => {
+                const invalid = firstInvalidQueryType(target);
+                return invalid === null ? null : invalid === "" ? "查询类型项不能为空" : `查询类型「${invalid}」无效`;
+              })()
+          : target.trim() === ""
+            ? "请输入匹配目标"
+            : null;
   const serverError =
     action !== "route"
       ? null
@@ -176,12 +183,20 @@ export function DnsRuleFormSheet({
               />
             </div>
 
-            {/* 匹配目标（rule_set 走规则集选择器，其余类型文本框输入） */}
+            {/* 匹配目标（rule_set / clash_mode 走选择器，其余类型文本框输入） */}
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-foreground">
-                {matchType === "rule_set" ? "规则集" : "匹配目标"}
+                {matchType === "rule_set" ? "规则集" : matchType === "clash_mode" ? "出站模式" : "匹配目标"}
               </span>
-              {matchType === "rule_set" ? (
+              {matchType === "clash_mode" ? (
+                <MobileSelectSheet
+                  label="出站模式"
+                  value={target}
+                  onChange={setTarget}
+                  placeholder="请选择出站模式"
+                  options={DNS_CLASH_MODE_OPTIONS}
+                />
+              ) : matchType === "rule_set" ? (
                 <MobileSelectSheet
                   label="规则集"
                   value={target}
@@ -213,6 +228,8 @@ export function DnsRuleFormSheet({
                 <span className="text-xs text-warning">{targetError}</span>
               ) : matchType === "rule_set" ? (
                 <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+              ) : matchType === "clash_mode" ? (
+                <span className="text-xs text-muted">仅在对应出站模式下命中（需启用 Clash API）</span>
               ) : matchType === "query_type" ? (
                 <span className="text-xs text-muted">多个查询类型用英文逗号分隔，如 A,AAAA</span>
               ) : (

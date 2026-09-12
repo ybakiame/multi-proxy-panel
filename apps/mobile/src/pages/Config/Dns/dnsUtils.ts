@@ -1,7 +1,6 @@
 import type {
   ConfigSlices,
   DnsMatchType,
-  DnsMode,
   DnsRule,
   DnsRuleAction,
   DnsServer,
@@ -22,12 +21,6 @@ import type {
 // 枚举选项
 // ---------------------------------------------------------------------------
 
-/** DNS 模式选项（仅 Android 展示；桌面恒 takeover 语义，不渲染该行）。 */
-export const DNS_MODE_OPTIONS: { value: DnsMode; label: string }[] = [
-  { value: "follow_system", label: "跟随系统" },
-  { value: "takeover", label: "接管" },
-];
-
 /** DNS 服务器类型选项（`local` / `fakeip` 无需 server / port）。 */
 export const DNS_SERVER_TYPE_OPTIONS: { value: DnsServerType; label: string }[] = [
   { value: "udp", label: "UDP" },
@@ -46,6 +39,14 @@ export const DNS_MATCH_TYPE_OPTIONS: { value: DnsMatchType; label: string }[] = 
   { value: "domain_keyword", label: "域名关键词" },
   { value: "rule_set", label: "规则集" },
   { value: "query_type", label: "查询类型" },
+  { value: "clash_mode", label: "出站模式" },
+];
+
+/** `clash_mode` 匹配目标选项（渲染为字符串，对齐 sing-box DNS 规则 schema）。 */
+export const DNS_CLASH_MODE_OPTIONS: { value: string; label: string }[] = [
+  { value: "rule", label: "规则 (rule)" },
+  { value: "global", label: "全局 (global)" },
+  { value: "direct", label: "直连 (direct)" },
 ];
 
 /** DNS 规则动作选项。 */
@@ -135,6 +136,7 @@ const DNS_MATCH_TYPE_LABELS: Record<DnsMatchType, string> = {
   domain_keyword: "域名关键词",
   rule_set: "规则集",
   query_type: "查询类型",
+  clash_mode: "出站模式",
 };
 
 const DNS_SERVER_TYPE_LABELS: Record<DnsServerType, string> = {
@@ -176,13 +178,14 @@ export function dnsRuleActionLabel(value: DnsRuleAction): string {
   return DNS_RULE_ACTION_LABELS[value] ?? value;
 }
 
-/** 匹配目标输入占位（按 match_type 语义变化）。 */
+/** 匹配目标输入占位（按 match_type 语义变化；`clash_mode` 走选择器，占位不用）。 */
 export const DNS_TARGET_PLACEHOLDER: Record<DnsMatchType, string> = {
   domain: "例如：example.com",
   domain_suffix: "例如：google.com",
   domain_keyword: "例如：google",
   rule_set: "规则集 tag",
   query_type: "如 A,AAAA",
+  clash_mode: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -388,6 +391,9 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
     if (rule.target.trim() === "") {
       return "匹配目标不能为空";
     }
+    if (rule.match_type === "clash_mode" && !DNS_CLASH_MODE_OPTIONS.some((o) => o.value === rule.target.trim())) {
+      return "出站模式须为 rule / global / direct";
+    }
     if (rule.match_type === "query_type") {
       const invalid = firstInvalidQueryType(rule.target);
       if (invalid !== null) {
@@ -418,15 +424,25 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
     return null;
   });
 
+  // 编辑即接管语义：只要切片有正文（servers 非空），保存即落为 takeover，
+  // final 因此恒必填（对齐 Rust 侧 takeover 校验）。
   let finalTag: string | null = null;
   const trimmedFinalTag = dns.final_tag.trim();
-  if (dns.mode === "takeover" && trimmedFinalTag === "") {
-    finalTag = "接管模式下必须选择 final 服务器";
+  if ((dns.mode === "takeover" || dns.servers.length > 0) && trimmedFinalTag === "") {
+    finalTag = "必须选择 final 服务器（保存后按自定义 DNS 接管生效）";
   } else if (trimmedFinalTag !== "" && !serverTags.has(trimmedFinalTag)) {
     finalTag = "final 服务器不存在";
   }
 
   return { serverErrors, ruleErrors, finalTag };
+}
+
+/**
+ * DNS 切片内容深比较（字段顺序稳定：草稿与内置视图同源构建，JSON 序列化即可靠）。
+ * 用于「编辑即接管」判定：内容与内置默认一致 → 保持跟随系统（不落接管）。
+ */
+export function dnsSliceEquals(a: DnsSlice, b: DnsSlice): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** 校验结果是否全部通过。 */

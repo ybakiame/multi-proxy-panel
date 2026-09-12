@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card, Switch } from "@heroui/react";
 import type { DnsStrategy } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import { DNS_STRATEGY_OPTIONS } from "./dnsUtils";
@@ -6,12 +6,15 @@ import { DNS_STRATEGY_OPTIONS } from "./dnsUtils";
 interface DnsRoutingCardProps {
   finalTag: string;
   strategy: DnsStrategy;
+  /** `dns.reverse_mapping`：解析后把 IP 反查回域名（供路由与连接记录）。 */
+  reverseMapping: boolean;
   /** 已定义 server tag 选项（来自当前草稿的 servers）。 */
   serverTagOptions: { value: string; label: string }[];
   /** takeover 且切片启用时 final 必填/引用校验的行内错误。 */
   finalTagError: string | null;
   onChangeFinalTag: (tag: string) => void;
   onChangeStrategy: (strategy: DnsStrategy) => void;
+  onChangeReverseMapping: (value: boolean) => void;
 }
 
 /**
@@ -22,10 +25,12 @@ interface DnsRoutingCardProps {
 export function DnsRoutingCard({
   finalTag,
   strategy,
+  reverseMapping,
   serverTagOptions,
   finalTagError,
   onChangeFinalTag,
   onChangeStrategy,
+  onChangeReverseMapping,
 }: DnsRoutingCardProps) {
   return (
     <Card>
@@ -58,6 +63,25 @@ export function DnsRoutingCard({
             onChange={(value) => onChangeStrategy(value as DnsStrategy)}
             options={DNS_STRATEGY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
           />
+        </div>
+
+        <div className="flex min-h-11 items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-foreground">反向映射（reverse_mapping）</span>
+            <span className="text-xs text-muted">解析后把 IP 反查回域名，供路由规则与连接记录使用</span>
+          </div>
+          <Switch
+            aria-label="反向映射"
+            isSelected={reverseMapping}
+            onChange={onChangeReverseMapping}
+            className="shrink-0"
+          >
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch.Content>
+          </Switch>
         </div>
       </Card.Content>
     </Card>
