@@ -24,20 +24,33 @@ export type DnsMode = "follow_system" | "takeover";
 export type DnsStrategy = "prefer_ipv4" | "prefer_ipv6" | "ipv4_only" | "ipv6_only";
 
 /** DNS server type (`dns.servers[].type`). */
-export type DnsServerType = "udp" | "tls" | "https" | "quic" | "h3" | "local";
+export type DnsServerType = "udp" | "tls" | "https" | "quic" | "h3" | "local" | "fakeip";
 
 /** DNS rule match type (determines the sing-box match field). */
-export type DnsMatchType = "domain" | "domain_suffix" | "domain_keyword" | "rule_set";
+export type DnsMatchType = "domain" | "domain_suffix" | "domain_keyword" | "rule_set" | "query_type";
+
+/** DNS rule action (`dns.rules[].action`). */
+export type DnsRuleAction = "route" | "predefined" | "reject";
 
 /** A single DNS server (curated fields). */
 export interface DnsServer {
   /** Unique tag within the slice; referenced by `rules` and `final_tag`. */
   tag: string;
-  /** Server address (IP or domain); unused for `local`. */
+  /** Server address (IP or domain); unused for `local` and `fakeip`. */
   server: string;
   server_type: DnsServerType;
   /** Server port (sing-box default per type when `null`). */
   server_port: number | null;
+  /**
+   * FakeIP IPv4 range (`fakeip` type only); empty renders sing-box's default
+   * `198.18.0.0/15`.
+   *
+   * Mirrors the Rust `String` + `#[serde(default)]` field: the wire form is
+   * always a string (possibly empty), never `null`.
+   */
+  inet4_range: string;
+  /** FakeIP IPv6 range (`fakeip` type only); empty omits the field. */
+  inet6_range: string;
   /** Upstream outbound tag (empty = default direct dial). */
   detour: string;
   /**
@@ -57,10 +70,18 @@ export interface DnsRule {
   id: string;
   enabled: boolean;
   match_type: DnsMatchType;
-  /** Match target (semantics depend on `match_type`). */
+  /**
+   * Match target (semantics depend on `match_type`).
+   *
+   * For `query_type` this is a comma-separated list (e.g. `A,AAAA`).
+   */
   target: string;
   /** Target DNS server tag (`action: "route"`). */
   server_tag: string;
+  /** Rule action (`route` default; `predefined` / `reject`). */
+  action: DnsRuleAction;
+  /** Response code for `predefined` (empty = `NOERROR`). */
+  rcode: string;
 }
 
 /** DNS slice: structured form of the sing-box top-level `dns` object. */

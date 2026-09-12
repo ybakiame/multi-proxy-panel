@@ -152,6 +152,7 @@ export type {
   DnsServerType,
   DnsRule,
   DnsMatchType,
+  DnsRuleAction,
   OutboundsSlice,
   CustomOutbound,
   OutboundProtocol,

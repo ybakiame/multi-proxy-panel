@@ -21,6 +21,14 @@ export interface ClientConfig {
    * node lacks IPv6); `true` enables dual-stack with IPv6 traffic routed by rules.
    */
   ipv6_enabled: boolean;
+  /**
+   * Whether the built-in DNS FakeIP mode is enabled (opt-in, default `false`).
+   *
+   * Separate from the DNS slice: when enabled and the DNS mode is not
+   * `takeover`, the generated core config gets a FakeIP DNS server + head DNS
+   * rules. Toggled from the DNS page via `save_config`.
+   */
+  dns_fakeip_enabled: boolean;
   mitm_enabled: boolean;
   mitm_hostnames: string[];
   mitm_script_dialect: string;
