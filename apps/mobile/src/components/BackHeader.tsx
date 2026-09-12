@@ -7,17 +7,26 @@ interface BackHeaderProps {
   title: string;
   /** 右侧动作区（如「添加」按钮），高度与返回键一致（≥48px）；缺省时用等宽占位保持标题居中。 */
   action?: ReactNode;
+  /**
+   * 显式返回目标路径（replace 跳转）；缺省 `navigate(-1)`。
+   *
+   * 内嵌 iframe 的页面（如 `/panel` 的 zashboard）必须显式指定：iframe 内的 hash 路由
+   * 跳转会进入联合会话历史，`navigate(-1)` 只会回退 iframe 内部的 hash 条目、主文档
+   * URL 不变（React Router 无感知），表现为「无法返回 App 界面」。
+   */
+  backTo?: string;
 }
 
 /**
  * 二级页返回头（ADR-0003 M5）。
  *
- * - 左返回箭头（`navigate(-1)`，触达区 ≥48px）+ 居中标题 + 可选右侧动作区；
+ * - 左返回箭头（默认 `navigate(-1)`；含 iframe 的页面经 `backTo` 显式指定目标，触达区
+ *   ≥48px）+ 居中标题 + 可选右侧动作区；
  * - `sticky top-0` 相对 App 的滚动 `<main>` 吸顶；顶部 `env(safe-area-inset-top)` 适配状态栏，
  *   左右 safe-area 内边距；底部留 1px 分隔线。
  * - 订阅管理页复用（右侧「添加」动作）。
  */
-export function BackHeader({ title, action }: BackHeaderProps) {
+export function BackHeader({ title, action, backTo }: BackHeaderProps) {
   const navigate = useNavigate();
   return (
     <header
@@ -30,7 +39,7 @@ export function BackHeader({ title, action }: BackHeaderProps) {
       <div className="relative flex items-center">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => (backTo ? navigate(backTo, { replace: true }) : navigate(-1))}
           aria-label="返回"
           className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-foreground active:opacity-70"
         >

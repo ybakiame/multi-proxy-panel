@@ -41,7 +41,9 @@ export default function Panel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <BackHeader title="面板" />
+      {/* iframe 内 zashboard 的 hash 路由会污染联合会话历史，navigate(-1) 无法离开本页，
+          显式 replace 回首页（见 BackHeader `backTo` 说明） */}
+      <BackHeader title="面板" backTo="/" />
       {available && !missingSecret ? (
         <>
           <iframe
