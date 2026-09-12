@@ -297,6 +297,7 @@ impl ClientState {
             clash_api_secret: self.config.clash_api_secret.clone(),
             clash_api_ui: self.config.clash_api_ui.clone(),
             rule_mode: self.config.normalized_rule_mode().to_string(),
+            ipv6_enabled: self.config.ipv6_enabled,
             // ADR-0005 D1: Android DNS takeover only when the DNS slice is enabled and set to
             // takeover; otherwise follow system (keep the forced injection).
             dns_mode: core_config::dns_mode_from_slices(&slices),

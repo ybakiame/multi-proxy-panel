@@ -11,6 +11,7 @@ fn singbox_features() -> PanelFeatures {
         clash_api_secret: "sekret".to_string(),
         clash_api_ui: "zashboard".to_string(),
         rule_mode: "rule".to_string(),
+        ipv6_enabled: false,
         dns_mode: crate::config_slices::DnsMode::FollowSystem,
     }
 }
@@ -754,4 +755,115 @@ fn dns_mode_from_slices_truth_table() {
             "enabled={enabled}, mode={mode:?}"
         );
     }
+}
+
+// ---------- IPv6 switch: default off rewrites dns.strategy to ipv4_only ----------
+
+/// Default (`ipv6_enabled = false`) desktop template path: the template's `dns.strategy =
+/// prefer_ipv4` is rewritten to `ipv4_only`, suppressing AAAA lookups for nodes without an IPv6
+/// egress; the rest of the `dns` object is preserved.
+#[test]
+fn apply_singbox_panel_features_disables_ipv6_by_rewriting_dns_strategy() {
+    let sub = json!({
+        "dns": {
+            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
+            "final": "local",
+            "reverse_mapping": true,
+            "strategy": "prefer_ipv4"
+        },
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let features = PanelFeatures {
+        ipv6_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+
+    assert_eq!(cfg["dns"]["strategy"], "ipv4_only");
+    assert_eq!(cfg["dns"]["final"], "local");
+    assert_eq!(cfg["dns"]["reverse_mapping"], true);
+}
+
+/// Android injection path ordering: `inject_android_dns` writes `strategy = prefer_ipv4`, the
+/// IPv6 override runs after it and wins, so the final strategy is `ipv4_only`.
+///
+/// The host test cannot exercise the `cfg(target_os = "android")` branch inside
+/// `apply_panel_features`, so the injection is applied first explicitly to reproduce the exact
+/// production order.
+#[test]
+fn apply_singbox_panel_features_ipv6_override_wins_over_android_dns_injection() {
+    let sub = json!({
+        "outbounds": [
+            { "type": "selector", "tag": "proxy", "outbounds": ["direct"], "default": "direct" },
+            { "type": "direct", "tag": "direct" }
+        ],
+        "route": { "final": "proxy" }
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    inject_android_dns(&mut cfg);
+    assert_eq!(
+        cfg["dns"]["strategy"], "prefer_ipv4",
+        "android injection baseline"
+    );
+
+    let features = PanelFeatures {
+        ipv6_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(
+        cfg["dns"]["strategy"], "ipv4_only",
+        "IPv6 override must run after inject_android_dns and win"
+    );
+}
+
+/// `ipv6_enabled = true`: template / injected `prefer_ipv4` is left untouched.
+#[test]
+fn apply_singbox_panel_features_keeps_dns_strategy_when_ipv6_enabled() {
+    let sub = json!({
+        "dns": { "servers": [], "strategy": "prefer_ipv4" },
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let features = PanelFeatures {
+        ipv6_enabled: true,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
+}
+
+/// DNS slice takeover exempts the IPv6 switch: the user's own `dns.strategy` is preserved even
+/// with `ipv6_enabled = false` (user takes over DNS completely, ADR-0005 D1).
+#[test]
+fn apply_singbox_panel_features_ipv6_override_exempt_on_takeover() {
+    let sub = json!({
+        "dns": { "servers": [], "strategy": "prefer_ipv6" },
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let features = PanelFeatures {
+        ipv6_enabled: false,
+        dns_mode: crate::config_slices::DnsMode::Takeover,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(cfg["dns"]["strategy"], "prefer_ipv6");
+}
+
+/// No `dns` object in the composed config -> the IPv6 override does not fabricate one.
+#[test]
+fn apply_singbox_panel_features_ipv6_override_requires_existing_dns() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    assert!(cfg.get("dns").is_none(), "baseline has no dns object");
+    let features = PanelFeatures {
+        ipv6_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert!(cfg.get("dns").is_none());
 }

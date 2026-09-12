@@ -144,6 +144,7 @@ pub(crate) async fn preview_core_config_impl(
         clash_api_secret: cfg.clash_api_secret.clone(),
         clash_api_ui: cfg.clash_api_ui.clone(),
         rule_mode: cfg.normalized_rule_mode().to_string(),
+        ipv6_enabled: cfg.ipv6_enabled,
         // ADR-0005 D1: derive exactly like `ClientState::start()` so the preview
         // reflects the slices loaded above instead of a hardcoded default.
         dns_mode: pp_client::core_config::dns_mode_from_slices(&slices),

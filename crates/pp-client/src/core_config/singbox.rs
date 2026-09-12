@@ -2,8 +2,7 @@
 
 use serde_json::{Value, json};
 
-#[cfg(target_os = "android")]
-use crate::config_slices::DnsMode;
+use crate::config_slices::{DnsMode, DnsStrategy};
 
 use super::PanelFeatures;
 
@@ -114,6 +113,24 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     #[cfg(target_os = "android")]
     if features.dns_mode != DnsMode::Takeover {
         inject_android_dns(composed);
+    }
+
+    // IPv6 switch (default off): rewrite the effective `dns.strategy` to `ipv4_only` so AAAA
+    // records are not returned — a domain resolving to IPv6 through a node without an IPv6 egress
+    // would otherwise fail to connect. Must run **after** `inject_android_dns` (which rewrites the
+    // whole `dns` object with `strategy = prefer_ipv4`) so the override wins on Android too.
+    //
+    // `Takeover` exempt: the user's DNS slice already applied its own `strategy` at the ⓪ layer and
+    // owns DNS completely (ADR-0005 D1), so the switch must not clobber it. `true` leaves the
+    // template / injected `prefer_ipv4` untouched. Only writes when a `dns` object already exists.
+    if !features.ipv6_enabled
+        && features.dns_mode != DnsMode::Takeover
+        && let Some(dns) = composed.get_mut("dns").and_then(Value::as_object_mut)
+    {
+        dns.insert(
+            "strategy".to_string(),
+            Value::String(DnsStrategy::Ipv4Only.as_str().to_string()),
+        );
     }
 
     // TUN DNS 劫持 + 域名嗅探（无条件注入，见 inject_dns_hijack_and_sniff_rules）。

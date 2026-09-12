@@ -57,6 +57,14 @@ pub struct PanelFeatures {
     /// [`apply_singbox_panel_features`]); runtime switching via Clash API `PATCH /configs`
     /// ([`push_clash_mode`]) is kept as a secondary idempotent path.
     pub rule_mode: String,
+    /// Whether to allow IPv6 resolution (DNS strategy switch).
+    ///
+    /// Default `false`: [`apply_singbox_panel_features`] rewrites the effective
+    /// `dns.strategy` to `ipv4_only` so domains resolving to AAAA do not reach
+    /// nodes without an IPv6 egress (connection failure / blackhole). `true`
+    /// leaves the template/injected `prefer_ipv4` untouched. Exempt when
+    /// `dns_mode` is [`DnsMode::Takeover`] (user DNS slice takes over fully).
+    pub ipv6_enabled: bool,
     /// Android DNS mode derived from [`crate::config_slices::ConfigSlices`] (ADR-0005 D1).
     ///
     /// `FollowSystem` (default) keeps the forced `inject_android_dns`; `Takeover`
