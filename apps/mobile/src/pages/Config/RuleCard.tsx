@@ -1,7 +1,14 @@
 import { ArrowDownIcon, ArrowUpIcon } from "@heroicons/react/24/outline";
 import { Card, Switch } from "@heroui/react";
 import type { LocalRuleView } from "@pp/client-core";
-import { actionLabel, isOutboundAction, matchTypeLabel, outboundTagFromAction, ruleSummary } from "@pp/client-core";
+import {
+  actionLabel,
+  formatRuleSetTarget,
+  isOutboundAction,
+  matchTypeLabel,
+  outboundTagFromAction,
+  ruleSummary,
+} from "@pp/client-core";
 
 interface RuleCardProps {
   rule: LocalRuleView;
@@ -59,8 +66,10 @@ export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleC
   // 指定出站动作在详情行补充目标 tag（actionLabel 仅给「指定出站」短标签）。
   const outboundTag = isOutbound ? outboundTagFromAction(rule.action) : "";
   const actionText = outboundTag ? `${actionLabel(rule.action)}: ${outboundTag}` : actionLabel(rule.action);
+  // rule_set 目标为逗号分隔多 tag 时展示为 `a + b`。
+  const targetText = rule.match_type === "rule_set" ? formatRuleSetTarget(rule.target) : rule.target;
   const metaDetail =
-    `${matchTypeLabel(rule.match_type)}${rule.target ? `: ${rule.target}` : ""} · ${actionText}` +
+    `${matchTypeLabel(rule.match_type)}${targetText ? `: ${targetText}` : ""} · ${actionText}` +
     (rule.no_resolve ? " · no-resolve" : "") +
     (rule.invert ? " · invert" : "") +
     (rule.note ? ` · ${rule.note}` : "");

@@ -67,6 +67,29 @@ export function matchTypeLabel(type: string): string {
   return MATCH_TYPE_LABELS[type] ?? type;
 }
 
+/**
+ * 解析 `rule_set` 规则的 `target` 为独立 tag 列表：英文逗号拆分、逐段 trim、
+ * 丢弃空段、按首次出现顺序去重（对齐 Rust `parse_rule_set_tags`）。
+ *
+ * 存量单值 target（如 `geosite-cn`）返回单元素数组，行为与旧逻辑一致。
+ */
+export function parseRuleSetTags(target: string): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const segment of target.split(",")) {
+    const tag = segment.trim();
+    if (tag === "" || seen.has(tag)) continue;
+    seen.add(tag);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/** `rule_set` 目标展示：多 tag 以 ` + ` 连接（如 `a + b`），单 tag 原样返回。 */
+export function formatRuleSetTarget(target: string): string {
+  return parseRuleSetTags(target).join(" + ");
+}
+
 export function actionLabel(action: string): string {
   if (isOutboundAction(action)) return ACTION_LABELS.outbound;
   return ACTION_LABELS[action] ?? action;
@@ -74,7 +97,9 @@ export function actionLabel(action: string): string {
 
 export function ruleSummary(rule: LocalRuleView): string {
   if (rule.name.trim()) return rule.name;
-  const base = `${matchTypeLabel(rule.match_type)}: ${rule.target}`;
+  // rule_set 目标可能为逗号分隔多 tag，展示为 `a + b`；其余类型原样。
+  const target = rule.match_type === "rule_set" ? formatRuleSetTarget(rule.target) : rule.target;
+  const base = `${matchTypeLabel(rule.match_type)}: ${target}`;
   const tag = isOutboundAction(rule.action) ? outboundTagFromAction(rule.action) : "";
   return tag ? `${base} → ${ACTION_LABELS.outbound}: ${tag}` : base;
 }

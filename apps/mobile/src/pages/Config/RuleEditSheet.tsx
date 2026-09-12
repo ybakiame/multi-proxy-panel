@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
-import { ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { CheckIcon, ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
-import { RULE_ACTIONS, buildOutboundAction, isOutboundAction, outboundTagFromAction } from "@pp/client-core";
+import {
+  RULE_ACTIONS,
+  buildOutboundAction,
+  isOutboundAction,
+  outboundTagFromAction,
+  parseRuleSetTags,
+} from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 import type { RuleSetOption } from "./ruleSetOptions";
 
@@ -38,14 +44,12 @@ const TARGET_PLACEHOLDER: Record<string, string> = {
   domain_keyword: "例如：google",
   ip_cidr: "例如：1.2.3.0/24",
   source_ip_cidr: "例如：10.0.0.0/8",
-  rule_set: "规则集 tag",
   app_package: "例如：com.android.chrome",
   port: "例如：443",
 };
 
 /** 目标输入下方辅助说明（仅选中类型有提示时展示）。 */
 const TARGET_HINT: Record<string, string> = {
-  rule_set: "填入规则集 tag",
   app_package: "按 Android 应用包名匹配（仅 Android 生效）",
   port: "匹配目标端口；也支持端口段如 1000:2000",
 };
@@ -116,6 +120,8 @@ export function RuleEditSheet({
 }: RuleEditSheetProps) {
   const [matchType, setMatchType] = useState("domain");
   const [target, setTarget] = useState("");
+  /** `rule_set` 匹配的已选 tag（多选）；其余匹配类型走 `target` 文本框。 */
+  const [ruleSetTags, setRuleSetTags] = useState<string[]>([]);
   const [action, setAction] = useState("proxy");
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
@@ -132,6 +138,8 @@ export function RuleEditSheet({
     setPrevKey(key);
     setMatchType(editing?.match_type ?? "domain");
     setTarget(editing?.target ?? "");
+    // 存量 rule_set target 为逗号分隔多 tag（或单值）：拆分回填勾选。
+    setRuleSetTags(editing?.match_type === "rule_set" ? parseRuleSetTags(editing.target) : []);
     setAction(editing?.action ?? "proxy");
     setName(editing?.name ?? "");
     setNote(editing?.note ?? "");
@@ -144,25 +152,28 @@ export function RuleEditSheet({
   const isFinal = matchType === "final";
   const isOutbound = isOutboundAction(action);
   const selectedOutboundTag = outboundTagFromAction(action);
-  const targetOk = isFinal ? true : target.trim().length > 0;
+  const targetOk = isFinal ? true : matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0;
   const actionOk = !isOutbound || selectedOutboundTag.trim().length > 0;
   const canSave = targetOk && actionOk;
 
+  /** 切换规则集勾选：追加保持点击顺序；取消移除该项。 */
+  const toggleRuleSetTag = (tag: string) => {
+    setRuleSetTags((tags) => (tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags, tag]));
+  };
+
   /**
-   * 规则集选择器候选：父层传入全部规则集 tag（规则集是纯资源，无启停概念）。
-   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（自定义规则集已删除/尚未
-   * 添加），追加为「原值保留」项——选择器显示原值且不强清，由用户决定改选或保留
-   * （保留且规则集不存在时，引用该 tag 的规则集不会注入、配置校验将报错）。
+   * 规则集多选候选：父层传入全部规则集 tag（规则集是纯资源，无启停概念）。
+   * 编辑存量 `rule_set` 规则时若其原 tag 不在候选中（自定义规则集已删除/尚未添加），
+   * 追加为「原值保留」项——保持勾选态并标注，由用户决定取消或保留（保留且规则集
+   * 不存在时，引用该 tag 的规则集不会注入、配置校验将报错）。
    */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
-    const stale =
-      matchType === "rule_set" &&
-      editing?.match_type === "rule_set" &&
-      target.trim() !== "" &&
-      !ruleSetOptions.some((opt) => opt.value === target);
-    if (!stale) return ruleSetOptions;
-    return [...ruleSetOptions, { value: target, label: target, hint: "当前无此规则集（原值保留）" }];
-  }, [matchType, editing, target, ruleSetOptions]);
+    if (matchType !== "rule_set") return ruleSetOptions;
+    const known = new Set(ruleSetOptions.map((opt) => opt.value));
+    const stale = ruleSetTags.filter((tag) => !known.has(tag));
+    if (stale.length === 0) return ruleSetOptions;
+    return [...ruleSetOptions, ...stale.map((tag) => ({ value: tag, label: tag, hint: "当前无此规则集（原值保留）" }))];
+  }, [matchType, ruleSetOptions, ruleSetTags]);
 
   /**
    * 指定出站候选：父层传入静态订阅节点 / 模板分组 / 切片出站并集。编辑已有 outbound 规则
@@ -186,7 +197,8 @@ export function RuleEditSheet({
       name: name.trim(),
       enabled: editing?.enabled ?? true,
       match_type: matchType,
-      target: isFinal ? "" : target.trim(),
+      // rule_set 多选序列化为逗号分隔 target（对齐 Rust parse_rule_set_tags）。
+      target: isFinal ? "" : matchType === "rule_set" ? ruleSetTags.join(",") : target.trim(),
       action: isOutbound ? buildOutboundAction(selectedOutboundTag) : action,
       no_resolve: noResolve,
       invert,
@@ -236,22 +248,39 @@ export function RuleEditSheet({
               (matchType === "rule_set" ? (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-sm font-medium text-foreground">规则集</span>
-                  <MobileSelectSheet
-                    label="规则集"
-                    value={target}
-                    onChange={setTarget}
-                    disabled={saving}
-                    placeholder="请选择规则集"
-                    options={effectiveRuleSetOptions.map((opt) => ({
-                      value: opt.value,
-                      label: opt.label,
-                      description: opt.hint,
-                    }))}
-                  />
                   {effectiveRuleSetOptions.length === 0 ? (
                     <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
                   ) : (
-                    <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+                    <div className="flex flex-col gap-1.5">
+                      {effectiveRuleSetOptions.map((opt) => {
+                        const selected = ruleSetTags.includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            aria-pressed={selected}
+                            disabled={saving}
+                            onClick={() => toggleRuleSetTag(opt.value)}
+                            className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors disabled:opacity-60 ${
+                              selected
+                                ? "border-primary/50 bg-primary/5"
+                                : "border-border/70 active:bg-surface-secondary/60"
+                            }`}
+                          >
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="truncate text-sm font-medium text-foreground">{opt.label}</span>
+                              {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
+                            </span>
+                            {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {effectiveRuleSetOptions.length === 0 ? null : ruleSetTags.length === 0 ? (
+                    <span className="text-xs text-warning">请至少选择一个规则集</span>
+                  ) : (
+                    <span className="text-xs text-muted">可多选；规则集随引用它的规则一同注入</span>
                   )}
                 </div>
               ) : (
