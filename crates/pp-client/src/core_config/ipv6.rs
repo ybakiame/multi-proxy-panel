@@ -29,7 +29,10 @@ use serde_json::{Value, json};
 /// Inserted immediately after `hijack-dns` and therefore before the `clash_mode` baseline and
 /// every subscription / user / CN-split rule. `sniff` precedes it (the rule matches the resolved
 /// destination IP, not a domain); `hijack-dns` precedes it so DNS queries are intercepted by the
-/// DNS module rather than rejected as IPv6 traffic.
+/// DNS module rather than rejected as IPv6 traffic. The realip-mode `resolve` action rule is
+/// injected one stage later (see `super::singbox::inject_resolve_rule`) and lands between
+/// `hijack-dns` and this reject, matching the reference template order
+/// `sniff → hijack-dns → resolve → v6 reject`.
 ///
 /// # No DNS-takeover exemption
 ///

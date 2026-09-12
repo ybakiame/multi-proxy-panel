@@ -39,13 +39,17 @@
 //! startup failure is avoided — which is exactly why FakeIP pins an explicit persistent cache
 //! path below. The whole feature is opt-in and skipped entirely on DNS slice takeover (ADR-0005 D1).
 //!
-//! Note on the removed global `resolve` route rule: earlier revisions injected
-//! `{"action":"resolve"}` into `route.rules` because FakeIP destinations had to be resolved to a
-//! real IP before sing-box would route them to an outbound. That defeated the FakeIP purpose
-//! (the outbound saw a real IP, not the domain) and made every connection depend on a
-//! proxied DoH (`dns.final = remote`). With the CN split above, non-CN A queries resolve to a
-//! FakeIP, the route rule set matches the sniffed domain, and the proxy outbound receives the
-//! domain directly — no `resolve` rule is injected at all.
+//! Note on the global `resolve` route rule: earlier revisions injected `{"action":"resolve"}`
+//! into `route.rules` unconditionally because FakeIP destinations had to be resolved to a real
+//! IP before sing-box would route them to an outbound. That defeated the FakeIP purpose (the
+//! outbound saw a real IP, not the domain) and made every connection depend on a proxied DoH
+//! (`dns.final = remote`). With the CN split above, non-CN A queries resolve to a FakeIP, the
+//! route rule set matches the sniffed domain, and the proxy outbound receives the domain
+//! directly — so **FakeIP mode** never gets a `resolve` rule. **RealIP mode** is the opposite
+//! paradigm: there the resolve rule is required so domain-target connections (mixed inbound)
+//! can match the `geoip-cn` / `geoip-private` IP rule sets, and it is injected by
+//! `apply_singbox_panel_features` (see `super::singbox::inject_resolve_rule`) whenever FakeIP
+//! is off.
 
 use std::path::Path;
 

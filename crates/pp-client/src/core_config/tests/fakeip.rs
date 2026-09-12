@@ -462,8 +462,10 @@ fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
     );
     let route_rules = cfg["route"]["rules"].as_array().unwrap();
     assert!(
-        route_rules.iter().all(|r| r["action"] != "resolve"),
-        "disabled fakeip must not inject the resolve rule: {route_rules:?}"
+        route_rules
+            .iter()
+            .any(|r| r["action"] == "resolve" && r.get("strategy").is_none()),
+        "realip mode (fakeip off) DOES inject the resolve rule (no strategy when IPv6 is on): {route_rules:?}"
     );
 }
 

@@ -520,13 +520,18 @@ fn apply_singbox_panel_features_disabled_only_injects_sniff_and_dns_hijack() {
     );
     assert_eq!(
         rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" }),
+        "realip mode injects the resolve rule right after hijack-dns"
+    );
+    assert_eq!(
+        rules[3],
         json!({ "ip_version": 6, "action": "reject" }),
-        "IPv6 off injects the route reject right after hijack-dns"
+        "IPv6 off injects the route reject after resolve"
     );
     assert_eq!(
         rules.len(),
-        3,
-        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns + IPv6 reject"
+        4,
+        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns + resolve + IPv6 reject"
     );
 }
 
@@ -555,17 +560,21 @@ fn inject_dns_hijack_and_sniff_skips_when_already_present() {
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        4,
-        "missing hijack-dns added next to existing sniff, IPv6 reject added, subscription rule kept"
+        5,
+        "missing hijack-dns added next to existing sniff, resolve + IPv6 reject added, subscription rule kept"
     );
     assert_eq!(rules[0], json!({ "action": "sniff" }));
     assert_eq!(
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules[2], json!({ "ip_version": 6, "action": "reject" }));
     assert_eq!(
-        rules[3],
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    assert_eq!(rules[3], json!({ "ip_version": 6, "action": "reject" }));
+    assert_eq!(
+        rules[4],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 
@@ -586,17 +595,21 @@ fn inject_dns_hijack_and_sniff_skips_when_already_present() {
     let rules2 = cfg2["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules2.len(),
-        4,
-        "existing sniff + hijack-dns -> no head injection, IPv6 reject inserted after hijack"
+        5,
+        "existing sniff + hijack-dns -> no head injection, resolve + IPv6 reject inserted after hijack"
     );
     assert_eq!(rules2[0], json!({ "action": "sniff" }));
     assert_eq!(
         rules2[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules2[2], json!({ "ip_version": 6, "action": "reject" }));
     assert_eq!(
-        rules2[3],
+        rules2[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    assert_eq!(rules2[3], json!({ "ip_version": 6, "action": "reject" }));
+    assert_eq!(
+        rules2[4],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
@@ -626,8 +639,8 @@ fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        6,
-        "2 sniff/dns-hijack + 1 IPv6 reject + 2 baseline mode rules prepended to 1 subscription rule"
+        7,
+        "2 sniff/dns-hijack + 1 resolve + 1 IPv6 reject + 2 baseline mode rules prepended to 1 subscription rule"
     );
     // Head rules: sniff + hijack-dns (TUN DNS hijack, precedes mode rules so DNS goes to DNS module in every mode).
     assert_eq!(rules[0], json!({ "action": "sniff" }));
@@ -635,20 +648,25 @@ fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    // IPv6 reject sits after hijack-dns, before the mode baselines (routing layer, mode-independent).
-    assert_eq!(rules[2], json!({ "ip_version": 6, "action": "reject" }));
+    // Realip resolve sits right after hijack-dns (domain targets can match IP rule sets).
+    assert_eq!(
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    // IPv6 reject sits after resolve, before the mode baselines (routing layer, mode-independent).
+    assert_eq!(rules[3], json!({ "ip_version": 6, "action": "reject" }));
     // Then the two mode switch baselines (small-case, matching push / mode-list values).
     assert_eq!(
-        rules[3],
+        rules[4],
         json!({ "clash_mode": "direct", "outbound": "direct" })
     );
     assert_eq!(
-        rules[4],
+        rules[5],
         json!({ "clash_mode": "global", "outbound": "proxy" })
     );
     // Original subscription rule preserved after them (mode wins over it).
     assert_eq!(
-        rules[5],
+        rules[6],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
@@ -682,34 +700,38 @@ fn apply_singbox_panel_features_keeps_cn_baseline_after_user_rules() {
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        11,
-        "2 sniff/hijack + 1 IPv6 reject + 2 clash_mode + 1 user + 5 CN baseline"
+        12,
+        "2 sniff/hijack + 1 resolve + 1 IPv6 reject + 2 clash_mode + 1 user + 5 CN baseline"
     );
     assert_eq!(rules[0], json!({ "action": "sniff" }));
     assert_eq!(
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules[2], json!({ "ip_version": 6, "action": "reject" }));
     assert_eq!(
-        rules[3],
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    assert_eq!(rules[3], json!({ "ip_version": 6, "action": "reject" }));
+    assert_eq!(
+        rules[4],
         json!({ "clash_mode": "direct", "outbound": "direct" })
     );
     assert_eq!(
-        rules[4],
+        rules[5],
         json!({ "clash_mode": "global", "outbound": "proxy" })
     );
     assert_eq!(
-        rules[5],
+        rules[6],
         json!({ "domain": "user.example", "outbound": "proxy" }),
         "user rule wins over the CN-split baseline"
     );
     assert_eq!(
-        rules[6],
+        rules[7],
         json!({ "rule_set": ["geosite-private"], "outbound": "direct" })
     );
     assert_eq!(
-        rules[10],
+        rules[11],
         json!({ "rule_set": ["geolocation-!cn"], "outbound": "proxy" }),
         "non-CN baseline is last before route.final"
     );
@@ -771,21 +793,25 @@ fn apply_singbox_panel_features_skips_mode_rules_when_clash_mode_already_present
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        5,
-        "user clash_mode rule present -> baseline not injected, sniff/hijack-dns + IPv6 reject still injected"
+        6,
+        "user clash_mode rule present -> baseline not injected, sniff/hijack-dns + resolve + IPv6 reject still injected"
     );
     assert_eq!(rules[0], json!({ "action": "sniff" }));
     assert_eq!(
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules[2], json!({ "ip_version": 6, "action": "reject" }));
     assert_eq!(
-        rules[3],
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    assert_eq!(rules[3], json!({ "ip_version": 6, "action": "reject" }));
+    assert_eq!(
+        rules[4],
         json!({ "clash_mode": "Rule", "outbound": "direct" })
     );
     assert_eq!(
-        rules[4],
+        rules[5],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
@@ -813,15 +839,19 @@ fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api
     let rules = cfg["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        3,
-        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns + IPv6 reject injected"
+        4,
+        "clash_api disabled -> no clash_mode rules, only sniff/hijack-dns + resolve + IPv6 reject injected"
     );
     assert_eq!(rules[0], json!({ "action": "sniff" }));
     assert_eq!(
         rules[1],
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules[2], json!({ "ip_version": 6, "action": "reject" }));
+    assert_eq!(
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" })
+    );
+    assert_eq!(rules[3], json!({ "ip_version": 6, "action": "reject" }));
 }
 
 /// DNS mode derivation (ADR-0005 D1): the slice has no master switch, so the

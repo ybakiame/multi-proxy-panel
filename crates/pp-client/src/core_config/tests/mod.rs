@@ -26,4 +26,6 @@ mod ipv6;
 #[cfg(test)]
 mod real_core;
 #[cfg(test)]
+mod resolve;
+#[cfg(test)]
 mod ui;

@@ -18,16 +18,24 @@ use super::PanelFeatures;
 ///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
 ///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
 ///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
-/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + two FakeIP DNS rules (drop
-///   HTTPS/SVCB/AAAA + non-CN A → `geolocation-!cn`) + `experimental.cache_file` deep merge
-///   (see `apply_fakeip_mode` in `core_config::fakeip`); the CN-split `route.rule_set` registry
-///   is registered idempotently (normally already by the baseline template). Skipped on DNS
-///   takeover. No `route.rules` entry is injected (the global `resolve` action was removed).
+/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + the FakeIP DNS rule (non-CN A →
+///   `geolocation-!cn` → fakeip) + `experimental.cache_file` deep merge (see
+///   `apply_fakeip_mode` in `core_config::fakeip`); the CN-split `route.rule_set` registry is
+///   registered idempotently (normally already by the baseline template). Skipped on DNS
+///   takeover. No `route.rules` entry is injected in FakeIP mode (a `resolve` action would
+///   defeat FakeIP — the outbound must receive the domain end-to-end);
+/// - every non-takeover DNS mode → the `HTTPS`/`SVCB`(+`AAAA`) `predefined NOERROR` drop rule
+///   at the `dns.rules` head (see `core_config::fakeip::inject_dns_drop_rule`);
+/// - realip mode (`dns_fakeip_enabled = false`, non-takeover) → the route `resolve` action
+///   rule right after hijack-dns (see [`inject_resolve_rule`]) and `experimental.cache_file`
+///   when remote rule sets are referenced (offline fallback for the synchronous startup
+///   download, see `core_config::fakeip::ensure_cache_file`);
 /// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]);
 /// - `!ipv6_enabled` → route-level `{"ip_version": 6, "action": "reject"}` fast-fail rule,
-///   injected right after hijack-dns and **not** exempt on DNS takeover (see
-///   [`super::ipv6::inject_ipv6_reject_rule`]; this is the third v6 defense layer after the
-///   dual-stack TUN and the `dns.strategy = ipv4_only` rewrite).
+///   injected right after hijack-dns (after the realip `resolve` rule when present) and
+///   **not** exempt on DNS takeover (see [`super::ipv6::inject_ipv6_reject_rule`]; this is the
+///   third v6 defense layer after the dual-stack TUN and the `dns.strategy = ipv4_only`
+///   rewrite).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
 /// `ui-metacubexd`), unknown falls back to zashboard:
@@ -203,6 +211,70 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     {
         super::ipv6::inject_ipv6_reject_rule(obj);
     }
+
+    // RealIP mode: route `resolve` action rule right after hijack-dns (the IPv6 reject above is
+    // pushed one slot later, matching the reference template order sniff → hijack-dns → resolve
+    // → v6 reject). FakeIP mode exempt (destinations must stay domains end-to-end) and DNS
+    // takeover exempt (the user owns the DNS/route interplay, ADR-0005 D1).
+    if !features.dns_fakeip_enabled
+        && features.dns_mode != DnsMode::Takeover
+        && let Some(obj) = composed.as_object_mut()
+    {
+        inject_resolve_rule(obj, features.ipv6_enabled);
+    }
+}
+
+/// RealIP-mode route `resolve` action rule (idempotent).
+///
+/// A connection arriving via the **mixed inbound** carries a domain target with no destination
+/// IP, so IP rule sets (`geoip-cn` / `geoip-private`) can never match it and unlisted CN
+/// domains wrongly fall to `route.final` (the proxy — slow, and dead when the proxy is down).
+/// The `resolve` action resolves the domain through the DNS module (CN domains via `local`,
+/// the rest via `remote`) so subsequent IP rules match correctly — the realip paradigm shared
+/// with the reference `platforms/android/realip.json` template (`{"action":"resolve"}` right
+/// after hijack-dns). TUN connections already carry a real destination IP and the action is a
+/// no-op for non-Fqdn targets, so no extra DNS latency is added on the TUN path.
+///
+/// FakeIP mode must NOT resolve: non-CN destinations must reach the proxy outbound as a domain
+/// end-to-end (see `core_config::fakeip` module docs), so the caller only injects this rule
+/// when `dns_fakeip_enabled = false`.
+///
+/// `strategy` mirrors the IPv6 switch: `ipv4_only` when off (consistent with the DNS strategy
+/// override), omitted when on. Idempotent: any existing rule with `action = "resolve"` (user /
+/// template supplied) suppresses the injection. Positioned immediately after the hijack-dns
+/// rule (before the IPv6 reject), falling back to the rules head when hijack-dns is absent.
+fn inject_resolve_rule(obj: &mut serde_json::Map<String, Value>, ipv6_enabled: bool) {
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(route_obj) = route.as_object_mut() else {
+        return;
+    };
+    let rules = route_obj
+        .entry("rules")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(rules_arr) = rules.as_array_mut() else {
+        return;
+    };
+    if rules_arr
+        .iter()
+        .any(|r| r.get("action").and_then(|a| a.as_str()) == Some("resolve"))
+    {
+        return;
+    }
+    let mut rule = serde_json::Map::new();
+    rule.insert("action".to_string(), json!("resolve"));
+    if !ipv6_enabled {
+        rule.insert("strategy".to_string(), json!("ipv4_only"));
+    }
+    let at = rules_arr
+        .iter()
+        .position(|r| {
+            r.get("action").and_then(|a| a.as_str()) == Some("hijack-dns")
+                && r.get("protocol").and_then(|p| p.as_str()) == Some("dns")
+        })
+        .map_or(0, |i| i + 1);
+    rules_arr.insert(at, Value::Object(rule));
 }
 
 /// Normalize rule mode for config injection: valid values `rule` / `global` / `direct` returned

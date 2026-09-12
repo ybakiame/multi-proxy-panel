@@ -27,9 +27,9 @@ fn apply_singbox_panel_features_injects_ipv6_reject_after_hijack_dns() {
         "exactly one IPv6 reject rule"
     );
     assert_eq!(
-        rules[2],
+        rules[3],
         json!({ "ip_version": 6, "action": "reject" }),
-        "reject must sit after sniff/hijack-dns and before the clash_mode baselines"
+        "reject must sit after sniff/hijack-dns (+ realip resolve) and before the clash_mode baselines"
     );
     // Full final order contract.
     assert_eq!(rules[0], json!({ "action": "sniff" }));
@@ -38,15 +38,20 @@ fn apply_singbox_panel_features_injects_ipv6_reject_after_hijack_dns() {
         json!({ "protocol": "dns", "action": "hijack-dns" })
     );
     assert_eq!(
-        rules[3],
-        json!({ "clash_mode": "direct", "outbound": "direct" })
+        rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" }),
+        "realip resolve rule sits between hijack-dns and the IPv6 reject"
     );
     assert_eq!(
         rules[4],
-        json!({ "clash_mode": "global", "outbound": "proxy" })
+        json!({ "clash_mode": "direct", "outbound": "direct" })
     );
     assert_eq!(
         rules[5],
+        json!({ "clash_mode": "global", "outbound": "proxy" })
+    );
+    assert_eq!(
+        rules[6],
         json!({ "domain": "sub.com", "outbound": "proxy" })
     );
 }
