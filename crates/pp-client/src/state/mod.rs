@@ -302,6 +302,8 @@ impl ClientState {
             rule_mode: self.config.normalized_rule_mode().to_string(),
             ipv6_enabled: self.config.ipv6_enabled,
             dns_fakeip_enabled: self.config.dns_fakeip_enabled,
+            // FakeIP cache file pinned to the client data dir (explicit persistent path).
+            data_dir: self.config.data_dir.to_string_lossy().into_owned(),
             // ADR-0005 D1: Android DNS takeover only when the DNS slice is enabled and set to
             // takeover; otherwise follow system (keep the forced injection).
             dns_mode: core_config::dns_mode_from_slices(&slices),

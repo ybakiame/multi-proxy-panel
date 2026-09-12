@@ -281,3 +281,52 @@ async fn preview_core_config_specified_fallback_writes_cache() {
     assert_eq!(cached.format, SubFormat::SingBoxJson);
     assert!(!cached.singbox_nodes.is_empty());
 }
+
+/// FakeIP enabled: the preview pipeline must thread the client `data_dir` into
+/// `PanelFeatures` so the generated `cache_file.path` is an explicit persistent
+/// `<data_dir>/cache.db` (not the platform-dependent bare `cache.db` default).
+#[tokio::test]
+async fn preview_core_config_fakeip_pins_cache_path_to_data_dir() {
+    let dir = TestDir::new();
+    let mut cfg = ClientConfig::new(
+        dir.path().to_path_buf(),
+        String::new(),
+        String::new(),
+        PathBuf::new(),
+    );
+    cfg.dns_fakeip_enabled = true;
+    cfg.save().unwrap();
+
+    let store = SubscriptionStore::new(dir.path().to_path_buf());
+    let sub = store
+        .add("spec", "http://127.0.0.1:1/unreachable", false, None)
+        .unwrap();
+    store
+        .write_cached_content(
+            sub.id,
+            &CachedSubscriptionContent {
+                format: SubFormat::SingBoxJson,
+                singbox_nodes: vec![serde_json::json!({
+                    "type": "vless",
+                    "tag": "n1",
+                    "server": "example.com",
+                    "server_port": 443,
+                    "uuid": "12345678-1234-1234-1234-123456789012",
+                    "tls": { "enabled": true, "server_name": "example.com" },
+                })],
+            },
+        )
+        .unwrap();
+
+    let text = preview_core_config_impl(dir.path().to_path_buf(), Some(sub.id))
+        .await
+        .expect("fakeip preview should succeed");
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("sing-box preview should be JSON");
+    let expected = dir.path().join("cache.db");
+    assert_eq!(
+        value["experimental"]["cache_file"]["path"],
+        expected.to_string_lossy().as_ref(),
+        "preview must pin the fakeip cache file under the client data dir"
+    );
+}

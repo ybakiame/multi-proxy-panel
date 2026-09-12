@@ -28,11 +28,14 @@
 //! here too as an idempotent safety net).
 //!
 //! **Startup caveat**: sing-box downloads remote rule sets synchronously at startup and fails to
-//! start when a URL is unreachable (verified against sing-box 1.14). The earlier "download
-//! failure degrades gracefully" note was incorrect — the core never reaches rule evaluation.
-//! The jsDelivr mirror is directly reachable in CN; the deprecated
-//! `experimental.cache_file.store_rdrc` / `store_dns` is the only offline fallback. The whole
-//! feature is opt-in and skipped entirely on DNS slice takeover (ADR-0005 D1).
+//! start when a URL is unreachable and no cached copy exists (verified against sing-box 1.14).
+//! The earlier "download failure degrades gracefully" note was incorrect — the core never reaches
+//! rule evaluation. The jsDelivr mirror is directly reachable in CN. Since 1.14 the deprecated
+//! `store_rdrc` / `store_dns` are replaced by automatic remote rule-set caching into
+//! `experimental.cache_file` (bucket `rule_set`): once a rule set has been downloaded
+//! successfully, its content is restored from the cache on the next start and the unreachable-URL
+//! startup failure is avoided — which is exactly why FakeIP pins an explicit persistent cache
+//! path below. The whole feature is opt-in and skipped entirely on DNS slice takeover (ADR-0005 D1).
 //!
 //! Note on the removed global `resolve` route rule: earlier revisions injected
 //! `{"action":"resolve"}` into `route.rules` because FakeIP destinations had to be resolved to a
@@ -41,6 +44,8 @@
 //! proxied DoH (`dns.final = remote`). With the CN split above, non-CN A queries resolve to a
 //! FakeIP, the route rule set matches the sniffed domain, and the proxy outbound receives the
 //! domain directly — no `resolve` rule is injected at all.
+
+use std::path::Path;
 
 use serde_json::{Value, json};
 
@@ -68,8 +73,14 @@ const NON_CN_RULE_SET_TAG: &str = "geolocation-!cn";
 /// 3. register the CN-split rule sets in `route.rule_set` (idempotent by tag, reuses
 ///    [`super::ensure_cn_rule_sets`]; the baseline already registers `geolocation-!cn` /
 ///    `geosite-cn`, so this is normally a no-op);
-/// 4. deep-merge `experimental.cache_file`: set only `enabled = true` and `store_fakeip = true`,
-///    preserving every other key (and sibling `experimental` keys such as `clash_api`).
+/// 4. deep-merge `experimental.cache_file`: force `enabled = true` and `store_fakeip = true`
+///    (preserving every other key and sibling `experimental` keys such as `clash_api`), and
+///    fill `path` with an explicit absolute `<data_dir>/cache.db` when no non-empty `path` is
+///    already present. A bare `cache.db` default is resolved by libbox against the
+///    platform-dependent working path, so the explicit path keeps the FakeIP mapping (and the
+///    sing-box 1.14 remote rule-set cache) in the client's persistent data directory across
+///    core restarts; a user-supplied `path` (config slice / template) is preserved as-is, as
+///    is `cache_id`.
 ///
 /// Does not touch `dns.final` / `dns.strategy` — the latter stays owned by the IPv6 override in
 /// [`crate::core_config::apply_singbox_panel_features`]. `route.default_domain_resolver` is not
@@ -159,7 +170,10 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
     }
 
     // 4. experimental.cache_file deep merge (create the object when missing; sibling
-    // experimental keys such as clash_api stay untouched).
+    // experimental keys such as clash_api stay untouched). `enabled` / `store_fakeip` are
+    // forced on; `path` is pinned to the client's persistent `<data_dir>/cache.db` only when
+    // absent/empty (a user-supplied path and `cache_id` are preserved), so FakeIP mappings
+    // survive a core restart independent of the platform working directory.
     let experimental = obj
         .entry("experimental")
         .or_insert_with(|| Value::Object(Default::default()));
@@ -170,6 +184,17 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
         if let Some(cf) = cache_file.as_object_mut() {
             cf.insert("enabled".to_string(), Value::Bool(true));
             cf.insert("store_fakeip".to_string(), Value::Bool(true));
+            let has_explicit_path = cf
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|p| !p.is_empty());
+            if !has_explicit_path && !features.data_dir.is_empty() {
+                let path = Path::new(&features.data_dir).join("cache.db");
+                cf.insert(
+                    "path".to_string(),
+                    Value::String(path.to_string_lossy().into_owned()),
+                );
+            }
         }
     }
 }

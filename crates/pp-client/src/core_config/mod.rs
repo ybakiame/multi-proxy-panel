@@ -85,6 +85,16 @@ pub struct PanelFeatures {
     /// Only meaningful on Android; desktop ignores it (the injection is Android-only).
     /// Derive with [`dns_mode_from_slices`].
     pub dns_mode: DnsMode,
+    /// Client data directory (`ClientConfig::data_dir`), used by FakeIP mode to resolve the
+    /// explicit persistent cache file path `<data_dir>/cache.db`.
+    ///
+    /// The sing-box `cache_file` default (bare `cache.db`, no explicit `path`) is resolved by
+    /// libbox against the **working path** (`SetupOptions.workingPath`), which is
+    /// platform-dependent (Android: `getExternalFilesDir`, desktop: process CWD / config dir).
+    /// Passing an explicit absolute path pins the FakeIP mapping store — and the sing-box 1.14
+    /// remote rule-set cache — to the client's own persistent data directory, independent of the
+    /// platform working directory. Empty string leaves the sing-box default untouched.
+    pub data_dir: String,
 }
 
 /// Clash panel UI choice normalization: `yacd` / `zashboard` / `metacubexd` returned as-is,

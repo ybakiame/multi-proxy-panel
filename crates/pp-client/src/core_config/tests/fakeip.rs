@@ -14,6 +14,7 @@ fn singbox_features() -> PanelFeatures {
         ipv6_enabled: false,
         dns_fakeip_enabled: false,
         dns_mode: crate::config_slices::DnsMode::FollowSystem,
+        data_dir: "/tmp/pp-client-test".to_string(),
     }
 }
 
@@ -99,6 +100,10 @@ fn apply_fakeip_mode_injects_fakeip_rules_and_rule_set() {
     // cache_file deep merge + clash_api sibling preserved.
     assert_eq!(cfg["experimental"]["cache_file"]["enabled"], true);
     assert_eq!(cfg["experimental"]["cache_file"]["store_fakeip"], true);
+    assert_eq!(
+        cfg["experimental"]["cache_file"]["path"], "/tmp/pp-client-test/cache.db",
+        "fakeip must pin an explicit persistent cache path under data_dir"
+    );
     assert_eq!(
         cfg["experimental"]["clash_api"]["external_controller"],
         "127.0.0.1:9090"
@@ -270,7 +275,8 @@ fn apply_fakeip_mode_does_not_override_existing_cn_rule_set() {
 }
 
 /// cache_file deep merge: existing keys (`path` / `cache_id`) are preserved, only `enabled` /
-/// `store_fakeip` are forced on; `clash_api` sibling is still written by the settings layer.
+/// `store_fakeip` are forced on; an explicit user `path` wins over the `data_dir` default, and
+/// the `clash_api` sibling is still written by the settings layer.
 #[test]
 fn apply_fakeip_mode_merges_cache_file_without_clobbering() {
     let sub = json!({
@@ -297,6 +303,39 @@ fn apply_fakeip_mode_merges_cache_file_without_clobbering() {
     assert_eq!(
         cfg["experimental"]["clash_api"]["external_controller"],
         "127.0.0.1:9090"
+    );
+}
+
+/// FakeIP path injection follows `PanelFeatures::data_dir`: the explicit persistent path is
+/// `<data_dir>/cache.db` (Android app data dir), independent of the platform working path.
+#[test]
+fn apply_fakeip_mode_cache_path_follows_data_dir() {
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
+    let features = PanelFeatures {
+        data_dir: "/data/user/0/com.proxypanel.client/files".to_string(),
+        ..fakeip_features(false)
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(
+        cfg["experimental"]["cache_file"]["path"],
+        "/data/user/0/com.proxypanel.client/files/cache.db"
+    );
+}
+
+/// Empty `data_dir` leaves `cache_file.path` unset (sing-box default), so callers that do not
+/// know a data dir never emit a bogus relative path.
+#[test]
+fn apply_fakeip_mode_empty_data_dir_keeps_default_path() {
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
+    let features = PanelFeatures {
+        data_dir: String::new(),
+        ..fakeip_features(false)
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert!(
+        cfg["experimental"]["cache_file"].get("path").is_none(),
+        "empty data_dir must not inject a relative path: {}",
+        cfg["experimental"]["cache_file"]
     );
 }
 

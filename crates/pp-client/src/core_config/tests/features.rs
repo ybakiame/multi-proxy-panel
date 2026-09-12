@@ -14,6 +14,7 @@ fn singbox_features() -> PanelFeatures {
         ipv6_enabled: false,
         dns_fakeip_enabled: false,
         dns_mode: crate::config_slices::DnsMode::FollowSystem,
+        data_dir: "/tmp/pp-client-test".to_string(),
     }
 }
 
