@@ -10,7 +10,7 @@ use super::PanelFeatures;
 /// sing-box panel injection:
 ///
 /// - `tun_enabled` → append to `inbounds` `{type: "tun", tag: "tun-in", address:
-///   "172.19.0.1/30", mtu: 9000, auto_route, stack}` (when template/override already has tun
+///   ["172.19.0.1/30", "fdfe:dcba:9876::1/126"], mtu: 9000, auto_route, stack}` (when template/override already has tun
 ///   inbound, replace it wholesale with settings; there can only be one `tun-in`);
 ///   Android build additionally aligns libbox/SFA paradigm by injecting `strict_route`
 ///   (see [`build_singbox_tun_inbound`]);
@@ -237,7 +237,13 @@ fn inject_dns_hijack_and_sniff_rules(obj: &mut serde_json::Map<String, Value>) {
 /// Build sing-box tun inbound JSON (libbox-compatible field set).
 ///
 /// Base fields (both platforms): `type = tun`, `tag = tun-in`, `address =
-/// "172.19.0.1/30"`, `mtu = 9000`, `auto_route`, `stack`.
+/// ["172.19.0.1/30", "fdfe:dcba:9876::1/126"]`, `mtu = 9000`, `auto_route`, `stack`.
+///
+/// The address is dual-stack (IPv4 + IPv6, values matching the official sing-box client example):
+/// DNS strategy `prefer_ipv4` still returns AAAA records for dual-stack domains, so an IPv4-only
+/// TUN would let the app dial IPv6 into a route-less tunnel — packets never enter the TUN and get
+/// blackholed / leak for blocked domains. Carrying an IPv6 address keeps that traffic inside the
+/// TUN (proxied or direct per routing rules) instead of leaking or timing out.
 ///
 /// Android (libbox / VpnService takes over traffic) additionally aligns sing-box for Android
 /// paradigm by injecting `strict_route = true` — libbox only calls back `openTun()` to establish
@@ -253,7 +259,10 @@ pub fn build_singbox_tun_inbound(features: &PanelFeatures, is_android: bool) -> 
     let mut tun = serde_json::Map::new();
     tun.insert("type".to_string(), json!("tun"));
     tun.insert("tag".to_string(), json!("tun-in"));
-    tun.insert("address".to_string(), json!("172.19.0.1/30"));
+    tun.insert(
+        "address".to_string(),
+        json!(["172.19.0.1/30", "fdfe:dcba:9876::1/126"]),
+    );
     tun.insert("mtu".to_string(), json!(9000));
     tun.insert("auto_route".to_string(), json!(features.tun_auto_route));
     tun.insert("stack".to_string(), json!(features.tun_stack));

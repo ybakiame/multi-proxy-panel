@@ -31,7 +31,11 @@ fn apply_singbox_panel_features_injects_tun_and_clash_api() {
         .find(|i| i["type"] == "tun")
         .expect("should inject tun inbound");
     assert_eq!(tun["tag"], "tun-in");
-    assert_eq!(tun["address"], "172.19.0.1/30");
+    assert_eq!(
+        tun["address"],
+        json!(["172.19.0.1/30", "fdfe:dcba:9876::1/126"]),
+        "tun must be dual-stack to avoid IPv6 blackhole/leak"
+    );
     assert_eq!(tun["mtu"], 9000);
     assert_eq!(tun["auto_route"], true);
     assert_eq!(tun["stack"], "mixed");
@@ -73,7 +77,10 @@ fn apply_singbox_panel_features_overrides_template_tun() {
         1,
         "template tun replaced, only one tun inbound kept"
     );
-    assert_eq!(tun[0]["address"], "172.19.0.1/30");
+    assert_eq!(
+        tun[0]["address"],
+        json!(["172.19.0.1/30", "fdfe:dcba:9876::1/126"])
+    );
     assert_eq!(tun[0]["mtu"], 9000);
     assert_eq!(tun[0]["stack"], "mixed");
 
@@ -105,7 +112,11 @@ fn build_singbox_tun_inbound_matches_libbox_field_set_on_android() {
     let android_tun = build_singbox_tun_inbound(&singbox_features(), true);
     assert_eq!(android_tun["type"], "tun");
     assert_eq!(android_tun["tag"], "tun-in");
-    assert_eq!(android_tun["address"], "172.19.0.1/30");
+    assert_eq!(
+        android_tun["address"],
+        json!(["172.19.0.1/30", "fdfe:dcba:9876::1/126"]),
+        "Android (libbox) tun must also be dual-stack"
+    );
     assert_eq!(android_tun["mtu"], 9000);
     assert_eq!(android_tun["auto_route"], true);
     assert_eq!(android_tun["stack"], "mixed");
