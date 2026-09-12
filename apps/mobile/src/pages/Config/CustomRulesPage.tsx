@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
+  BASELINE_VIEW_KEY,
   CONFIG_SLICES_KEY,
   LOCAL_OVERRIDE_KEY,
   PROXIES_KEY,
+  baselineViewGet,
   buildSaveInput,
   configSlicesGet,
   localOverrideGet,
@@ -22,6 +24,7 @@ import {
   viewToInput,
 } from "@pp/client-core";
 import type {
+  BaselineView,
   ConfigSlices,
   CoreLocalOverrideInput,
   LocalOverrideView,
@@ -31,6 +34,7 @@ import type {
   ProxyList,
 } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
+import { BaselineRuleSection } from "./BaselineSections";
 import { isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
@@ -79,6 +83,13 @@ export default function CustomRulesPage() {
     queryKey: PROXIES_KEY,
     queryFn: proxiesList,
     enabled: coreRunning,
+    retry: false,
+  });
+  // 内置 CN 分流基线（纯静态只读，不依赖核心运行）；始终展示，用户规则为空时仍可见。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
     retry: false,
   });
   // 生效订阅存在但缓存为空（从未同步 / 缓存丢失）：给「先同步订阅」引导文案。
@@ -264,6 +275,9 @@ export default function CustomRulesPage() {
             onAdd={openAdd}
           />
         )}
+
+        {/* 内置基线路由规则：置底只读，用户规则先于基线生效 */}
+        {baseline && <BaselineRuleSection rules={baseline.route_rules} />}
       </div>
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / rule 控制显隐） */}

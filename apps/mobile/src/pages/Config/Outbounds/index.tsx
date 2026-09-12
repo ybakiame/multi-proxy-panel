@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
+  BASELINE_VIEW_KEY,
   CONFIG_SLICES_KEY,
+  baselineViewGet,
   configSlicesGet,
   configSlicesSave,
   isGroupOutbound,
@@ -15,8 +17,9 @@ import {
   useClientConfig,
   useProxyStatus,
 } from "@pp/client-core";
-import type { ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
+import type { BaselineView, ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
+import { BaselineOutboundSection } from "../BaselineSections";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
 import { OutboundListSection } from "./OutboundListSection";
@@ -51,6 +54,13 @@ export default function OutboundsPage() {
     queryFn: configSlicesGet,
     // 表单页草稿期间避免窗口聚焦触发的后台重取覆盖未保存编辑；保存后仍显式 invalidate。
     refetchOnWindowFocus: false,
+  });
+  // 内置 CN 分流基线（纯静态只读）；始终展示，自定义出站为空时仍可见。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
+    retry: false,
   });
 
   // 分组成员候选数据源：静态订阅节点读生效订阅的本地缓存（不依赖核心运行），
@@ -240,6 +250,9 @@ export default function OutboundsPage() {
             onAddNode={() => openAdd("vless")}
           />
         )}
+
+        {/* 内置出站：置底只读 */}
+        {baseline && <BaselineOutboundSection outbounds={baseline.outbounds} />}
       </div>
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}

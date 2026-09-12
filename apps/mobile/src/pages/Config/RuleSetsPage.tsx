@@ -3,7 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, PlusIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { Alert, AlertDialog, Button, Card, Chip, Spinner } from "@heroui/react";
 import {
+  BASELINE_VIEW_KEY,
   LOCAL_OVERRIDE_KEY,
+  baselineViewGet,
   buildSaveInput,
   localOverrideGet,
   localOverrideSave,
@@ -15,9 +17,10 @@ import {
   toastWarning,
   useProxyStatus,
 } from "@pp/client-core";
-import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
+import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { BackHeader } from "../../components/BackHeader";
+import { BaselineRuleSetSection } from "./BaselineSections";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
@@ -106,6 +109,13 @@ export default function RuleSetsPage() {
   } = useQuery<LocalOverrideView>({
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
+  });
+  // 内置 CN 分流基线（纯静态只读）；始终展示，用户规则集为空时仍可见。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
+    retry: false,
   });
 
   // 结构守卫：缓存残留异构形态（历史复合查询）时视为未加载，渲染空态而非崩溃。
@@ -335,6 +345,9 @@ export default function RuleSetsPage() {
             />
           </div>
         )}
+
+        {/* 内置规则集：置底只读 */}
+        {baseline && <BaselineRuleSetSection ruleSets={baseline.rule_sets} />}
       </div>
 
       <RuleSetFormSheet

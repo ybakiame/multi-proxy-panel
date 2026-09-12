@@ -46,3 +46,6 @@ export const LOG_FILES_KEY = ["log_files"] as const;
 export const CONFIG_PREVIEW_KEY = ["config_preview"] as const;
 
 export const CONFIG_SLICES_KEY = ["config_slices"] as const;
+
+/** 内置 CN 分流基线只读视图（静态数据，staleTime Infinity）。 */
+export const BASELINE_VIEW_KEY = ["baseline_view"] as const;

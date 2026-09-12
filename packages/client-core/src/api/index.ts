@@ -182,6 +182,19 @@ export {
 } from "./configSlices";
 
 // ---------------------------------------------------------------------------
+// Baseline View
+// ---------------------------------------------------------------------------
+
+export type {
+  BaselineRuleSetView,
+  BaselineRuleView,
+  BaselineDnsRuleView,
+  BaselineOutboundView,
+  BaselineView,
+} from "./baseline";
+export { baselineViewGet } from "./baseline";
+
+// ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------
 
