@@ -2,10 +2,62 @@
 //!
 //! [`crate::config_slices::render_dns`] renders this into the sing-box 1.12+
 //! type-based DNS format (each `dns.servers` entry carries `type`).
+//!
+//! Supported capabilities:
+//! - server types `udp` / `tls` / `https` / `quic` / `h3` / `local` / `fakeip`
+//!   (fakeip carries `inet4_range` / `inet6_range` instead of `server`)
+//! - match types `domain` / `domain_suffix` / `domain_keyword` / `rule_set` /
+//!   `query_type` (comma-separated target, rendered as an array)
+//! - rule actions `route` (default) / `predefined` (`rcode`) / `reject`
 
 use serde::{Deserialize, Serialize};
 
 use super::default_true;
+
+/// Default FakeIP IPv4 range emitted when a fakeip server leaves `inet4_range`
+/// empty (sing-box default, matching the reference `fakeip.json` template).
+pub const DEFAULT_FAKEIP_INET4_RANGE: &str = "198.18.0.0/15";
+
+/// DNS query type names accepted by the `query_type` match field.
+///
+/// Matching is case-insensitive; [`normalize_query_type`] uppercases the value
+/// before rendering (sing-box expects the canonical uppercase form).
+const QUERY_TYPE_NAMES: &[&str] = &[
+    "A", "NS", "CNAME", "SOA", "PTR", "MX", "TXT", "AAAA", "SRV", "NAPTR", "CAA", "TLSA", "DS",
+    "DNSKEY", "RRSIG", "NSEC", "NSEC3", "SVCB", "HTTPS", "ANY", "OPT", "HINFO", "MINFO", "WKS",
+    "AXFR", "IXFR",
+];
+
+/// DNS response codes accepted by the `predefined` action's `rcode` field.
+const DNS_RCODE_NAMES: &[&str] = &[
+    "NOERROR", "FORMERR", "SERVFAIL", "NXDOMAIN", "NOTIMP", "REFUSED",
+];
+
+/// Whether `value` is a known DNS query type name (case-insensitive).
+#[must_use]
+pub fn is_valid_query_type(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_uppercase();
+    QUERY_TYPE_NAMES.contains(&normalized.as_str())
+}
+
+/// Canonical (uppercase, trimmed) form of a query type name.
+#[must_use]
+pub fn normalize_query_type(value: &str) -> String {
+    value.trim().to_ascii_uppercase()
+}
+
+/// Whether `value` is a known DNS response code (case-insensitive).
+#[must_use]
+pub fn is_valid_rcode(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_uppercase();
+    DNS_RCODE_NAMES.contains(&normalized.as_str())
+}
+
+/// Canonical (uppercase, trimmed) form of a response code.
+#[must_use]
+pub fn normalize_rcode(value: &str) -> String {
+    value.trim().to_ascii_uppercase()
+}
 
 /// DNS slice: structured form of the sing-box top-level `dns` object.
 ///
@@ -75,15 +127,23 @@ pub struct DnsServer {
     /// Unique tag within the slice; referenced by `dns.rules` and `dns.final`.
     #[serde(default)]
     pub tag: String,
-    /// Server address (IP or domain); unused for [`DnsServerType::Local`].
+    /// Server address (IP or domain); unused for [`DnsServerType::Local`] and
+    /// [`DnsServerType::Fakeip`].
     #[serde(default)]
     pub server: String,
-    /// Server type (`udp` / `tls` / `https` / `quic` / `h3` / `local`).
+    /// Server type (`udp` / `tls` / `https` / `quic` / `h3` / `local` / `fakeip`).
     #[serde(default)]
     pub server_type: DnsServerType,
     /// Server port (sing-box default per type when omitted).
     #[serde(default)]
     pub server_port: Option<u16>,
+    /// FakeIP IPv4 range (`fakeip` type only); empty renders
+    /// [`DEFAULT_FAKEIP_INET4_RANGE`].
+    #[serde(default)]
+    pub inet4_range: String,
+    /// FakeIP IPv6 range (`fakeip` type only); omitted when empty.
+    #[serde(default)]
+    pub inet6_range: String,
     /// Dial field: upstream outbound tag (empty = default direct dial).
     #[serde(default)]
     pub detour: String,
@@ -112,6 +172,9 @@ pub enum DnsServerType {
     H3,
     /// System resolver; rendered without `server` / `server_port`.
     Local,
+    /// FakeIP resolver; rendered with `inet4_range` / `inet6_range` instead of
+    /// `server` / `server_port` / `detour`.
+    Fakeip,
 }
 
 impl DnsServerType {
@@ -125,13 +188,17 @@ impl DnsServerType {
             Self::Quic => "quic",
             Self::H3 => "h3",
             Self::Local => "local",
+            Self::Fakeip => "fakeip",
         }
     }
 
     /// Whether this type dials a `server` address.
+    ///
+    /// `false` for [`Self::Local`] and [`Self::Fakeip`], which render no
+    /// `server` field and do not require one in validation.
     #[must_use]
     pub const fn uses_server(self) -> bool {
-        !matches!(self, Self::Local)
+        !matches!(self, Self::Local | Self::Fakeip)
     }
 }
 
@@ -148,11 +215,33 @@ pub struct DnsRule {
     #[serde(default)]
     pub match_type: DnsMatchType,
     /// Match target (semantics depend on `match_type`).
+    ///
+    /// For [`DnsMatchType::QueryType`] this is a comma-separated list (e.g.
+    /// `A,AAAA`).
     #[serde(default)]
     pub target: String,
     /// Target DNS server tag (`action: "route"`).
     #[serde(default)]
     pub server_tag: String,
+    /// Rule action; absent in older data deserializes to [`DnsRuleAction::Route`].
+    #[serde(default)]
+    pub action: DnsRuleAction,
+    /// Response code for [`DnsRuleAction::Predefined`] (empty = `NOERROR`).
+    #[serde(default)]
+    pub rcode: String,
+}
+
+/// DNS rule action (`dns.rules[].action`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DnsRuleAction {
+    /// Route the query to [`DnsRule::server_tag`] (sing-box default).
+    #[default]
+    Route,
+    /// Respond with a predefined `rcode` (sing-box 1.12+).
+    Predefined,
+    /// Reject the query.
+    Reject,
 }
 
 /// DNS rule match type.
@@ -164,6 +253,8 @@ pub enum DnsMatchType {
     DomainSuffix,
     DomainKeyword,
     RuleSet,
+    /// DNS query type (`query_type`); target is a comma-separated list.
+    QueryType,
 }
 
 impl DnsMatchType {
@@ -175,6 +266,7 @@ impl DnsMatchType {
             Self::DomainSuffix => "domain_suffix",
             Self::DomainKeyword => "domain_keyword",
             Self::RuleSet => "rule_set",
+            Self::QueryType => "query_type",
         }
     }
 }

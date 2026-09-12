@@ -1,22 +1,21 @@
 //! Apply config slices to a sing-box config object (ADR-0005 §3.2).
 //!
-//! Rendering is split into pure functions ([`render_dns`] / [`render_outbound`])
-//! so it can be unit tested without a pipeline. [`apply_config_slices`] only
-//! mutates the passed-in JSON value.
+//! Rendering is split into pure functions ([`super::render_dns`] /
+//! [`render_outbound`]) so it can be unit tested without a pipeline.
+//! [`apply_config_slices`] only mutates the passed-in JSON value.
 
 use std::collections::{HashMap, HashSet};
 
 use pp_common::{PanelError, PanelResult};
 use serde_json::{Map, Value};
 
-use super::dns::{DnsRule, DnsServer};
 use super::experimental::CacheFileSlice;
 use super::outbound::{
     CustomOutbound, Hysteria2Outbound, OutboundProtocol, OutboundTls, OutboundTransport,
     SelectorOutbound, ShadowsocksOutbound, TrojanOutbound, UrlTestOutbound, VlessOutbound,
     VmessOutbound,
 };
-use super::{ConfigSlices, DnsSlice, outbound_tag};
+use super::{ConfigSlices, outbound_tag, render_dns, str_value};
 
 /// Result of [`apply_config_slices`], suitable for logging.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -128,65 +127,6 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
     }
 
     Ok(report)
-}
-
-/// Render a [`DnsSlice`] as a sing-box 1.12+ type-based DNS object.
-///
-/// Every server entry carries `type`; [`super::DnsServerType::Local`] entries
-/// omit `server` / `server_port`. The top-level `strategy` is always emitted.
-#[must_use]
-pub fn render_dns(dns: &DnsSlice) -> Value {
-    let servers: Vec<Value> = dns.servers.iter().map(render_dns_server).collect();
-    let rules: Vec<Value> = dns
-        .rules
-        .iter()
-        .filter(|rule| rule.enabled)
-        .map(render_dns_rule)
-        .collect();
-
-    let mut out = Map::new();
-    out.insert("servers".to_string(), Value::Array(servers));
-    out.insert("rules".to_string(), Value::Array(rules));
-    if !dns.final_tag.is_empty() {
-        out.insert("final".to_string(), str_value(&dns.final_tag));
-    }
-    out.insert("strategy".to_string(), str_value(dns.strategy.as_str()));
-    Value::Object(out)
-}
-
-/// Render a single DNS server entry (sing-box 1.12+ new format).
-fn render_dns_server(server: &DnsServer) -> Value {
-    let mut out = Map::new();
-    out.insert("tag".to_string(), str_value(&server.tag));
-    out.insert("type".to_string(), str_value(server.server_type.as_str()));
-    if server.server_type.uses_server() {
-        out.insert("server".to_string(), str_value(&server.server));
-        if let Some(port) = server.server_port {
-            out.insert("server_port".to_string(), Value::from(port));
-        }
-    }
-    if !server.detour.is_empty() {
-        out.insert("detour".to_string(), str_value(&server.detour));
-    }
-    if !server.domain_resolver.is_empty() {
-        out.insert(
-            "domain_resolver".to_string(),
-            str_value(&server.domain_resolver),
-        );
-    }
-    Value::Object(out)
-}
-
-/// Render a single DNS rule (`action: "route"` + `server` tag).
-fn render_dns_rule(rule: &DnsRule) -> Value {
-    let mut out = Map::new();
-    out.insert(
-        rule.match_type.field().to_string(),
-        Value::Array(vec![str_value(&rule.target)]),
-    );
-    out.insert("action".to_string(), str_value("route"));
-    out.insert("server".to_string(), str_value(&rule.server_tag));
-    Value::Object(out)
 }
 
 /// Render a [`CacheFileSlice`] as a sing-box `experimental.cache_file` object.
@@ -481,11 +421,6 @@ fn unique_tag(base: &str, used: &HashSet<String>) -> (String, bool) {
         }
         n += 1;
     }
-}
-
-/// Short helper for a JSON string value.
-fn str_value(value: &str) -> Value {
-    Value::String(value.to_string())
 }
 
 #[cfg(test)]

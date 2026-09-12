@@ -5,8 +5,12 @@ use std::collections::HashSet;
 use pp_common::{PanelError, PanelResult};
 use serde::{Deserialize, Serialize};
 
+use super::dns::{is_valid_query_type, is_valid_rcode};
 use super::outbound::{OUTBOUND_TAG_PREFIX, OutboundProtocol, outbound_tag};
-use super::{DnsMode, DnsSlice, ExperimentalSlice, OutboundsSlice};
+use super::{
+    DnsMatchType, DnsMode, DnsRule, DnsRuleAction, DnsServerType, DnsSlice, ExperimentalSlice,
+    OutboundsSlice,
+};
 
 /// Current schema version (stored in [`ConfigSlices::version`]).
 pub const SLICE_VERSION: u32 = 1;
@@ -84,6 +88,10 @@ impl DnsSlice {
                     server.tag
                 )));
             }
+            if server.server_type == DnsServerType::Fakeip {
+                validate_cidr_loose(&server.inet4_range, "inet4_range", &server.tag)?;
+                validate_cidr_loose(&server.inet6_range, "inet6_range", &server.tag)?;
+            }
             if server.server_port == Some(0) {
                 return Err(validation(format!(
                     "DNS server `{}` has invalid port 0",
@@ -105,21 +113,89 @@ impl DnsSlice {
         }
 
         for rule in self.rules.iter().filter(|r| r.enabled) {
-            if rule.server_tag.trim().is_empty() {
-                return Err(validation(format!(
-                    "DNS rule `{}` has an empty server tag",
-                    rule.id
-                )));
+            if rule.match_type == DnsMatchType::QueryType {
+                validate_query_type_target(rule)?;
             }
-            if !tags.contains(rule.server_tag.as_str()) {
-                return Err(validation(format!(
-                    "DNS rule `{}` references unknown DNS server `{}`",
-                    rule.id, rule.server_tag
-                )));
+            match rule.action {
+                DnsRuleAction::Route => {
+                    if rule.server_tag.trim().is_empty() {
+                        return Err(validation(format!(
+                            "DNS rule `{}` has an empty server tag",
+                            rule.id
+                        )));
+                    }
+                    if !tags.contains(rule.server_tag.as_str()) {
+                        return Err(validation(format!(
+                            "DNS rule `{}` references unknown DNS server `{}`",
+                            rule.id, rule.server_tag
+                        )));
+                    }
+                }
+                DnsRuleAction::Predefined => {
+                    if !rule.server_tag.trim().is_empty() {
+                        return Err(validation(format!(
+                            "DNS rule `{}` action `predefined` must not set a server tag",
+                            rule.id
+                        )));
+                    }
+                    if !rule.rcode.trim().is_empty() && !is_valid_rcode(&rule.rcode) {
+                        return Err(validation(format!(
+                            "DNS rule `{}` has invalid rcode `{}`",
+                            rule.id, rule.rcode
+                        )));
+                    }
+                }
+                DnsRuleAction::Reject => {
+                    if !rule.server_tag.trim().is_empty() {
+                        return Err(validation(format!(
+                            "DNS rule `{}` action `reject` must not set a server tag",
+                            rule.id
+                        )));
+                    }
+                }
             }
         }
         Ok(())
     }
+}
+
+/// Loose CIDR check: empty values are allowed (sing-box default applies);
+/// non-empty values must contain a non-empty address and prefix (`/`).
+fn validate_cidr_loose(value: &str, field: &str, tag: &str) -> PanelResult<()> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(());
+    }
+    let valid = value
+        .split_once('/')
+        .is_some_and(|(addr, prefix)| !addr.is_empty() && !prefix.is_empty());
+    if !valid {
+        return Err(validation(format!(
+            "DNS server `{tag}` {field} `{value}` is not a CIDR range"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a `query_type` rule target: a non-empty comma-separated list of
+/// known DNS query type names (case-insensitive).
+fn validate_query_type_target(rule: &DnsRule) -> PanelResult<()> {
+    if rule.target.trim().is_empty() {
+        return Err(validation(format!(
+            "DNS rule `{}` query_type target must not be empty",
+            rule.id
+        )));
+    }
+    for item in rule.target.split(',') {
+        let item = item.trim();
+        if item.is_empty() || !is_valid_query_type(item) {
+            return Err(validation(format!(
+                "DNS rule `{}` has invalid query type `{item}`",
+                rule.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl OutboundsSlice {

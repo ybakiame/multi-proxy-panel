@@ -6,11 +6,12 @@
 //!
 //! Module structure:
 //! - [`dns`] — DNS slice schema (`DnsSlice` / `DnsServer` / `DnsRule`, …)
+//! - [`dns_render`] — pure DNS slice rendering (`render_dns`)
 //! - [`outbound`] — custom outbound slice schema (`CustomOutbound`, protocols, `outbound_tag`)
 //! - [`experimental`] — experimental slice schema (`ExperimentalSlice` / `CacheFileSlice`)
 //! - [`schema`] — [`ConfigSlices`] container + cross-slice validation
 //! - [`store`] — [`ConfigSlicesStore`] for `config_slices.json` read/write
-//! - [`apply`] — `apply_config_slices` + pure `render_dns` / `render_outbound` / `render_cache_file`
+//! - [`apply`] — `apply_config_slices` + pure `render_outbound` / `render_cache_file`
 //!
 //! The slice layer is injected as the **first** step of the client config
 //! pipeline (before profile YAML/JS overrides, ADR-0005 §3.2). This module only
@@ -21,10 +22,15 @@
 //! 1.14 configuration docs: vmess `alter_id` / `security`, vless `flow`, the
 //! V2Ray transport kinds (`ws` / `grpc` / `http` / `httpupgrade`), hysteria2
 //! `obfs`, the selector / urltest group outbounds, and the 1.12+ type-based DNS
-//! server format are all still valid.
+//! server format are all still valid. The DNS slice additionally covers the
+//! `fakeip` server type (`inet4_range` / `inet6_range`), the `query_type` match
+//! field, and the `route` / `predefined` / `reject` rule actions.
+
+use serde_json::Value;
 
 pub mod apply;
 pub mod dns;
+pub mod dns_render;
 pub mod experimental;
 pub mod outbound;
 pub mod schema;
@@ -32,6 +38,7 @@ pub mod store;
 
 pub use apply::*;
 pub use dns::*;
+pub use dns_render::*;
 pub use experimental::*;
 pub use outbound::*;
 pub use schema::*;
@@ -40,4 +47,9 @@ pub use store::*;
 /// serde default for booleans that default to `true`.
 pub(crate) const fn default_true() -> bool {
     true
+}
+
+/// Short helper for a JSON string value, shared by the slice renderers.
+pub(crate) fn str_value(value: &str) -> Value {
+    Value::String(value.to_string())
 }

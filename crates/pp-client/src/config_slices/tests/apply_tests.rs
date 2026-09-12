@@ -32,6 +32,8 @@ fn dns_slice() -> DnsSlice {
             match_type: DnsMatchType::DomainSuffix,
             target: ".cn".to_string(),
             server_tag: "local".to_string(),
+            action: DnsRuleAction::Route,
+            rcode: String::new(),
         }],
         final_tag: "remote".to_string(),
         strategy: DnsStrategy::PreferIpv6,
@@ -498,4 +500,162 @@ fn apply_skips_disabled_group_outbounds() {
     let report = apply_config_slices(&mut config, &slices).unwrap();
     assert!(report.outbound_tags.is_empty());
     assert_eq!(config["outbounds"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn render_fakeip_server_uses_ranges_and_omits_dial_fields() {
+    let dns = DnsSlice {
+        enabled: true,
+        mode: DnsMode::Takeover,
+        servers: vec![
+            DnsServer {
+                tag: "fake".to_string(),
+                server_type: DnsServerType::Fakeip,
+                ..Default::default()
+            },
+            DnsServer {
+                tag: "fake-v6".to_string(),
+                server_type: DnsServerType::Fakeip,
+                inet4_range: "10.0.0.0/8".to_string(),
+                inet6_range: "fc00::/18".to_string(),
+                // Must be ignored for fakeip servers.
+                server: "1.1.1.1".to_string(),
+                server_port: Some(53),
+                detour: "proxy".to_string(),
+                ..Default::default()
+            },
+        ],
+        final_tag: "fake".to_string(),
+        ..Default::default()
+    };
+
+    let value = render_dns(&dns);
+    assert_eq!(value["servers"][0]["type"], "fakeip");
+    assert_eq!(value["servers"][0]["inet4_range"], "198.18.0.0/15");
+    assert!(value["servers"][0].get("inet6_range").is_none());
+    assert!(value["servers"][0].get("server").is_none());
+    assert!(value["servers"][0].get("server_port").is_none());
+    assert!(value["servers"][0].get("detour").is_none());
+
+    assert_eq!(value["servers"][1]["inet4_range"], "10.0.0.0/8");
+    assert_eq!(value["servers"][1]["inet6_range"], "fc00::/18");
+    assert!(value["servers"][1].get("server").is_none());
+    assert!(value["servers"][1].get("server_port").is_none());
+    assert!(value["servers"][1].get("detour").is_none());
+}
+
+#[test]
+fn render_non_fakeip_server_omits_inet_ranges() {
+    let dns = DnsSlice {
+        enabled: true,
+        servers: vec![DnsServer {
+            tag: "udp".to_string(),
+            server: "1.1.1.1".to_string(),
+            server_type: DnsServerType::Udp,
+            server_port: Some(53),
+            inet4_range: "198.18.0.0/15".to_string(),
+            inet6_range: "fc00::/18".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let value = render_dns(&dns);
+    assert_eq!(value["servers"][0]["type"], "udp");
+    assert_eq!(value["servers"][0]["server"], "1.1.1.1");
+    assert!(value["servers"][0].get("inet4_range").is_none());
+    assert!(value["servers"][0].get("inet6_range").is_none());
+}
+
+#[test]
+fn render_query_type_rule_as_uppercased_array() {
+    let mut dns = dns_slice();
+    dns.rules = vec![DnsRule {
+        id: "r-qt".to_string(),
+        enabled: true,
+        match_type: DnsMatchType::QueryType,
+        target: "a, Aaaa ,https".to_string(),
+        server_tag: "local".to_string(),
+        action: DnsRuleAction::Route,
+        rcode: String::new(),
+    }];
+
+    let value = render_dns(&dns);
+    assert_eq!(
+        value["rules"][0]["query_type"],
+        json!(["A", "AAAA", "HTTPS"])
+    );
+    assert_eq!(value["rules"][0]["action"], "route");
+    assert_eq!(value["rules"][0]["server"], "local");
+}
+
+#[test]
+fn render_query_type_single_value_is_still_array() {
+    let mut dns = dns_slice();
+    dns.rules[0].match_type = DnsMatchType::QueryType;
+    dns.rules[0].target = "A".to_string();
+
+    let value = render_dns(&dns);
+    assert_eq!(value["rules"][0]["query_type"], json!(["A"]));
+}
+
+#[test]
+fn render_dns_rule_actions() {
+    let mut dns = dns_slice();
+    dns.rules = vec![
+        DnsRule {
+            id: "route".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::DomainSuffix,
+            target: ".cn".to_string(),
+            server_tag: "local".to_string(),
+            action: DnsRuleAction::Route,
+            rcode: String::new(),
+        },
+        DnsRule {
+            id: "predef".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::Domain,
+            target: "ads.example".to_string(),
+            server_tag: String::new(),
+            action: DnsRuleAction::Predefined,
+            rcode: String::new(),
+        },
+        DnsRule {
+            id: "predef-nx".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::Domain,
+            target: "bad.example".to_string(),
+            server_tag: String::new(),
+            action: DnsRuleAction::Predefined,
+            rcode: "nxdomain".to_string(),
+        },
+        DnsRule {
+            id: "reject".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::DomainKeyword,
+            target: "tracker".to_string(),
+            server_tag: String::new(),
+            action: DnsRuleAction::Reject,
+            rcode: String::new(),
+        },
+    ];
+
+    let value = render_dns(&dns);
+    let rules = value["rules"].as_array().unwrap();
+
+    assert_eq!(rules[0]["action"], "route");
+    assert_eq!(rules[0]["server"], "local");
+    assert!(rules[0].get("rcode").is_none());
+
+    assert_eq!(rules[1]["action"], "predefined");
+    assert_eq!(rules[1]["rcode"], "NOERROR");
+    assert!(rules[1].get("server").is_none());
+
+    assert_eq!(rules[2]["action"], "predefined");
+    assert_eq!(rules[2]["rcode"], "NXDOMAIN");
+
+    assert_eq!(rules[3]["action"], "reject");
+    assert!(rules[3].get("server").is_none());
+    assert!(rules[3].get("rcode").is_none());
 }

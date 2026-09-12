@@ -32,6 +32,8 @@ fn dns_slice() -> DnsSlice {
             match_type: DnsMatchType::DomainSuffix,
             target: ".cn".to_string(),
             server_tag: "local".to_string(),
+            action: DnsRuleAction::Route,
+            rcode: String::new(),
         }],
         final_tag: "remote".to_string(),
         strategy: DnsStrategy::PreferIpv4,
@@ -450,4 +452,146 @@ fn validate_rejects_group_member_when_referenced_node_disabled() {
             .contains("references unknown custom outbound"),
         "{err}"
     );
+}
+
+#[test]
+fn dns_rule_and_server_old_data_default_new_fields() {
+    // Legacy DNS rule without `action` / `rcode` stays a route rule.
+    let rule: DnsRule = serde_json::from_str(
+        r#"{"id":"r1","match_type":"domain_suffix","target":".cn","server_tag":"local"}"#,
+    )
+    .unwrap();
+    assert_eq!(rule.action, DnsRuleAction::Route);
+    assert!(rule.rcode.is_empty());
+
+    // Legacy DNS server without FakeIP ranges defaults them to empty.
+    let server: DnsServer =
+        serde_json::from_str(r#"{"tag":"s","server":"1.1.1.1","server_type":"udp"}"#).unwrap();
+    assert!(server.inet4_range.is_empty());
+    assert!(server.inet6_range.is_empty());
+
+    let fakeip: DnsServer = serde_json::from_str(r#"{"tag":"f","server_type":"fakeip"}"#).unwrap();
+    assert_eq!(fakeip.server_type, DnsServerType::Fakeip);
+}
+
+#[test]
+fn validate_accepts_fakeip_server() {
+    let mut slices = sample_slices();
+    slices.dns.servers.push(DnsServer {
+        tag: "fake".to_string(),
+        server_type: DnsServerType::Fakeip,
+        inet4_range: "198.18.0.0/15".to_string(),
+        inet6_range: "fc00::/18".to_string(),
+        // Server fields are ignored for fakeip.
+        server: "1.1.1.1".to_string(),
+        ..Default::default()
+    });
+    slices.validate().unwrap();
+}
+
+#[test]
+fn validate_rejects_fakeip_bad_cidr() {
+    let mut slices = sample_slices();
+    slices.dns.servers.push(DnsServer {
+        tag: "fake".to_string(),
+        server_type: DnsServerType::Fakeip,
+        inet4_range: "not-a-cidr".to_string(),
+        ..Default::default()
+    });
+    let err = slices.validate().unwrap_err();
+    assert!(err.to_string().contains("is not a CIDR range"), "{err}");
+
+    let mut slices = sample_slices();
+    slices.dns.servers.push(DnsServer {
+        tag: "fake".to_string(),
+        server_type: DnsServerType::Fakeip,
+        inet6_range: "fc00::/".to_string(),
+        ..Default::default()
+    });
+    let err = slices.validate().unwrap_err();
+    assert!(err.to_string().contains("inet6_range"), "{err}");
+}
+
+#[test]
+fn validate_accepts_query_type_rule() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].match_type = DnsMatchType::QueryType;
+    slices.dns.rules[0].target = "a, AAAA".to_string();
+    slices.validate().unwrap();
+}
+
+#[test]
+fn validate_rejects_invalid_query_type() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].match_type = DnsMatchType::QueryType;
+    slices.dns.rules[0].target = "A,NOTATYPE".to_string();
+    let err = slices.validate().unwrap_err();
+    assert!(err.to_string().contains("invalid query type"), "{err}");
+}
+
+#[test]
+fn validate_rejects_empty_query_type_target() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].match_type = DnsMatchType::QueryType;
+    slices.dns.rules[0].target = "  ".to_string();
+    let err = slices.validate().unwrap_err();
+    assert!(err.to_string().contains("must not be empty"), "{err}");
+}
+
+#[test]
+fn validate_accepts_predefined_and_reject_actions() {
+    let mut slices = sample_slices();
+    slices.dns.rules = vec![
+        DnsRule {
+            id: "predef".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::Domain,
+            target: "ads.example".to_string(),
+            server_tag: String::new(),
+            action: DnsRuleAction::Predefined,
+            rcode: "nxdomain".to_string(),
+        },
+        DnsRule {
+            id: "reject".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::DomainKeyword,
+            target: "tracker".to_string(),
+            server_tag: String::new(),
+            action: DnsRuleAction::Reject,
+            rcode: String::new(),
+        },
+    ];
+    slices.validate().unwrap();
+}
+
+#[test]
+fn validate_rejects_predefined_with_server_tag() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].action = DnsRuleAction::Predefined;
+    let err = slices.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("must not set a server tag"),
+        "{err}"
+    );
+}
+
+#[test]
+fn validate_rejects_reject_with_server_tag() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].action = DnsRuleAction::Reject;
+    let err = slices.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("must not set a server tag"),
+        "{err}"
+    );
+}
+
+#[test]
+fn validate_rejects_invalid_predefined_rcode() {
+    let mut slices = sample_slices();
+    slices.dns.rules[0].action = DnsRuleAction::Predefined;
+    slices.dns.rules[0].server_tag = String::new();
+    slices.dns.rules[0].rcode = "BOGUS".to_string();
+    let err = slices.validate().unwrap_err();
+    assert!(err.to_string().contains("invalid rcode"), "{err}");
 }
