@@ -6,6 +6,103 @@
 
 use serde_json::{Value, json};
 
+use crate::config_slices::{
+    DnsMatchType, DnsRule, DnsRuleAction, DnsServer, DnsServerType, DnsSlice, DnsStrategy,
+};
+
+/// The built-in (default) DNS configuration as an editable [`DnsSlice`] — the same shape the
+/// running core actually uses, mapped into the slice schema so the frontend DNS editor can
+/// display and modify it directly instead of treating the built-in DNS as an opaque black box
+/// (the "edit the defaults ⇒ takeover" flow, ADR-0005 2026-09 补记).
+///
+/// Composition mirrors the runtime layering exactly:
+///
+/// - `servers` = template / `inject_android_dns` pair: `local` (DoH 223.5.5.5:443, direct) and
+///   `remote` (DoH 8.8.8.8:443, `detour` = main selector tag `proxy`);
+/// - `rules` = the panel-feature drop rule ([`super::fakeip::drop_query_types`]: HTTPS/SVCB,
+///   plus AAAA when `ipv6_enabled = false`) at the head, then
+///   [`cn_baseline_dns_rules`] (clash_mode direct/global → local/remote, geosite-cn → local);
+/// - `final_tag` = `remote`, `strategy` = `prefer_ipv4` (IPv6 on) / `ipv4_only` (IPv6 off,
+///   mirroring the panel-feature strategy override), `reverse_mapping` = on.
+///
+/// FakeIP is deliberately **not** part of this view: it is an opt-in panel feature with its
+/// own settings switch, layered on top of this baseline.
+///
+/// Rule `id`s are stable `builtin-*` strings (not UUIDs) so the frontend can recognize the
+/// unmodified default rows; materializing the view as a takeover body keeps them harmless.
+#[must_use]
+pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
+    let mut drop_target = "HTTPS,SVCB".to_string();
+    if !ipv6_enabled {
+        drop_target.push_str(",AAAA");
+    }
+    let rule = |id: &str, match_type: DnsMatchType, target: &str, server_tag: &str| DnsRule {
+        id: id.to_string(),
+        enabled: true,
+        match_type,
+        target: target.to_string(),
+        server_tag: server_tag.to_string(),
+        action: DnsRuleAction::Route,
+        rcode: String::new(),
+    };
+    DnsSlice {
+        mode: Default::default(),
+        servers: vec![
+            DnsServer {
+                tag: "local".to_string(),
+                server: "223.5.5.5".to_string(),
+                server_type: DnsServerType::Https,
+                server_port: Some(443),
+                ..Default::default()
+            },
+            DnsServer {
+                tag: "remote".to_string(),
+                server: "8.8.8.8".to_string(),
+                server_type: DnsServerType::Https,
+                server_port: Some(443),
+                detour: OUTBOUND_TAG_PROXY.to_string(),
+                ..Default::default()
+            },
+        ],
+        rules: vec![
+            DnsRule {
+                id: "builtin-drop".to_string(),
+                enabled: true,
+                match_type: DnsMatchType::QueryType,
+                target: drop_target,
+                server_tag: String::new(),
+                action: DnsRuleAction::Predefined,
+                rcode: "NOERROR".to_string(),
+            },
+            rule(
+                "builtin-mode-direct",
+                DnsMatchType::ClashMode,
+                "direct",
+                "local",
+            ),
+            rule(
+                "builtin-mode-global",
+                DnsMatchType::ClashMode,
+                "global",
+                "remote",
+            ),
+            rule(
+                "builtin-geosite-cn",
+                DnsMatchType::RuleSet,
+                "geosite-cn",
+                "local",
+            ),
+        ],
+        final_tag: "remote".to_string(),
+        strategy: if ipv6_enabled {
+            DnsStrategy::PreferIpv4
+        } else {
+            DnsStrategy::Ipv4Only
+        },
+        reverse_mapping: true,
+    }
+}
+///
 /// HTTP client tag used for remote rule-set downloads (direct dial, bootstrap-resolved).
 ///
 /// Registered at the top-level `http_clients` array by [`ensure_rule_set_http_client`] and

@@ -36,6 +36,7 @@ fn dns_slice() -> DnsSlice {
         }],
         final_tag: "remote".to_string(),
         strategy: DnsStrategy::PreferIpv6,
+        reverse_mapping: false,
     }
 }
 

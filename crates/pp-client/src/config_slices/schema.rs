@@ -124,6 +124,14 @@ impl DnsSlice {
             if rule.match_type == DnsMatchType::QueryType {
                 validate_query_type_target(rule)?;
             }
+            if rule.match_type == DnsMatchType::ClashMode
+                && !matches!(rule.target.trim(), "rule" | "global" | "direct")
+            {
+                return Err(validation(format!(
+                    "DNS rule `{}` clash_mode target must be one of rule/global/direct",
+                    rule.id
+                )));
+            }
             match rule.action {
                 DnsRuleAction::Route => {
                     if rule.server_tag.trim().is_empty() {

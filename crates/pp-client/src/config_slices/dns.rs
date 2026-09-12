@@ -82,6 +82,11 @@ pub struct DnsSlice {
     /// Default domain strategy (sing-box `dns.strategy`).
     #[serde(default)]
     pub strategy: DnsStrategy,
+    /// Reverse mapping (sing-box `dns.reverse_mapping`): after a hijacked DNS
+    /// query resolves, sing-box maps the returned IP back to its domain for
+    /// routing / connection records. Rendered only when `true`.
+    #[serde(default)]
+    pub reverse_mapping: bool,
 }
 
 /// Platform DNS mode (ADR-0005 D1), identical on desktop and Android.
@@ -256,6 +261,10 @@ pub enum DnsMatchType {
     RuleSet,
     /// DNS query type (`query_type`); target is a comma-separated list.
     QueryType,
+    /// Outbound mode (`clash_mode`); target is a single mode value
+    /// (`rule` / `global` / `direct`, small-case), rendered as a string
+    /// (not an array) per the sing-box DNS rule schema.
+    ClashMode,
 }
 
 impl DnsMatchType {
@@ -268,6 +277,14 @@ impl DnsMatchType {
             Self::DomainKeyword => "domain_keyword",
             Self::RuleSet => "rule_set",
             Self::QueryType => "query_type",
+            Self::ClashMode => "clash_mode",
         }
+    }
+
+    /// Whether the match target renders as a string instead of an array
+    /// (sing-box expects `clash_mode` as a single string).
+    #[must_use]
+    pub const fn renders_string_target(self) -> bool {
+        matches!(self, Self::ClashMode)
     }
 }

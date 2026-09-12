@@ -36,6 +36,7 @@ fn dns_slice() -> DnsSlice {
         }],
         final_tag: "remote".to_string(),
         strategy: DnsStrategy::PreferIpv4,
+        reverse_mapping: false,
     }
 }
 
@@ -611,4 +612,23 @@ fn validate_rejects_invalid_predefined_rcode() {
     slices.dns.rules[0].rcode = "BOGUS".to_string();
     let err = slices.validate().unwrap_err();
     assert!(err.to_string().contains("invalid rcode"), "{err}");
+}
+
+/// A `clash_mode` DNS rule with a target outside `rule`/`global`/`direct` is rejected.
+#[test]
+fn dns_slice_rejects_invalid_clash_mode_target() {
+    let mut slice = dns_slice();
+    slice.rules = vec![DnsRule {
+        id: "r-mode".to_string(),
+        enabled: true,
+        match_type: DnsMatchType::ClashMode,
+        target: "turbo".to_string(),
+        server_tag: "local".to_string(),
+        action: DnsRuleAction::Route,
+        rcode: String::new(),
+    }];
+    assert!(slice.validate().is_err());
+
+    slice.rules[0].target = "direct".to_string();
+    slice.validate().unwrap();
 }

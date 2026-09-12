@@ -12,6 +12,8 @@ fn sing_box_binary() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+mod builtin_dns;
+#[cfg(test)]
 mod clash_api;
 #[cfg(test)]
 mod compose;

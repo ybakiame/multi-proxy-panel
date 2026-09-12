@@ -34,6 +34,9 @@ pub fn render_dns(dns: &DnsSlice) -> Value {
         out.insert("final".to_string(), str_value(&dns.final_tag));
     }
     out.insert("strategy".to_string(), str_value(dns.strategy.as_str()));
+    if dns.reverse_mapping {
+        out.insert("reverse_mapping".to_string(), Value::Bool(true));
+    }
     Value::Object(out)
 }
 
@@ -82,10 +85,13 @@ fn render_dns_server(server: &DnsServer) -> Value {
 /// Render a single DNS rule match value.
 ///
 /// [`DnsMatchType::QueryType`] targets are comma-separated and rendered as an
-/// array of canonical uppercase names; all other match types render a
-/// single-element array.
+/// array of canonical uppercase names; [`DnsMatchType::ClashMode`] renders the
+/// mode as a bare string (sing-box expects `clash_mode` as a string, not an
+/// array); all other match types render a single-element array.
 fn render_dns_match(rule: &DnsRule) -> Value {
-    if rule.match_type == DnsMatchType::QueryType {
+    if rule.match_type.renders_string_target() {
+        str_value(&rule.target)
+    } else if rule.match_type == DnsMatchType::QueryType {
         Value::Array(
             rule.target
                 .split(',')
