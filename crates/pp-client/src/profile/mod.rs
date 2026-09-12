@@ -230,7 +230,11 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         "tag": OUTBOUND_TAG_AUTO,
         "outbounds": auto_outbounds,
         "url": "https://www.gstatic.com/generate_204",
-        "interval": "5m"
+        "interval": "5m",
+        // Switch only when the new best beats the current pick by >150ms, so jitter on mobile
+        // networks does not flip the selected node every interval (interrupting long-lived
+        // connections such as the proxied DNS channel). Aligned with the reference templates.
+        "tolerance": 150
     }));
     outbounds.push(json!({ "type": OUTBOUND_KIND_DIRECT, "tag": OUTBOUND_TAG_DIRECT }));
     outbounds.push(json!({ "type": OUTBOUND_KIND_BLOCK, "tag": OUTBOUND_TAG_BLOCK }));

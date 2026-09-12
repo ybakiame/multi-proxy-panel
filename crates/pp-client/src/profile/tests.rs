@@ -114,6 +114,10 @@ fn singbox_template_builds_groups_and_route() {
     assert_eq!(auto["type"], "urltest");
     assert_eq!(auto["url"], "https://www.gstatic.com/generate_204");
     assert_eq!(auto["interval"], "5m");
+    assert_eq!(
+        auto["tolerance"], 150,
+        "urltest tolerance avoids node flip-flop on mobile-network jitter"
+    );
     let auto_out: Vec<&str> = auto["outbounds"]
         .as_array()
         .unwrap()
