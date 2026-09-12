@@ -3,10 +3,9 @@ import { ToastProvider } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { isTauriEnv } from "@pp/client-core";
 import { TABS, TabBar } from "./components/TabBar";
-import Connections from "./pages/Connections";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
-import Proxies from "./pages/Proxies";
+import Panel from "./pages/Panel";
 import Config from "./pages/Config";
 import ClashApiPage from "./pages/Config/ClashApiPage";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
@@ -93,11 +92,12 @@ function TauriRequired() {
  * - 布局：顶部内容滚动区（各页面自行处理 `env(safe-area-inset-top)`）+ 底部 TabBar
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
- *   `/connections` 连接页、`/logs` 日志页、`/proxies` 代理选择页、`/subscriptions` 订阅管理页、
+ *   `/panel` Clash 面板页（内嵌 zashboard）、`/logs` 日志页、`/subscriptions` 订阅管理页、
  *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`、
  *   `/config/network`、`/config/clash-api`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
- * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向
- *   （HashRouter 存量书签兼容）。
+ * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向；
+ *   旧 `/proxies`、`/connections` 路径重定向到 `/panel`（原生页面已由内嵌面板取代，
+ *   HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
  * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
  *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
@@ -119,8 +119,10 @@ function AppContent() {
       <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/connections" element={<Connections />} />
-          <Route path="/proxies" element={<Proxies />} />
+          <Route path="/panel" element={<Panel />} />
+          {/* 原生代理/连接页已由内嵌面板取代：旧路径重定向兼容（HashRouter 存量书签）。 */}
+          <Route path="/connections" element={<Navigate to="/panel" replace />} />
+          <Route path="/proxies" element={<Navigate to="/panel" replace />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/config" element={<Config />} />
           <Route path="/config/dns" element={<DnsPage />} />

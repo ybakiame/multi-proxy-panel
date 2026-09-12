@@ -16,7 +16,7 @@ interface ConnectionsEntryCardProps {
 }
 
 /**
- * 首页「当前连接」入口卡（流量卡下方，点击进 `/connections`）。
+ * 首页「当前连接」入口卡（流量卡下方，点击进 `/panel` 面板页）。
  *
  * 与 TrafficCard 共用 `CONNECTIONS_KEY`（同 key 同选项，观察者合并、不重复请求），
  * 描述行按可用性展示活跃连接数 / 空态引导，让用户对「当前是否有连接」一目了然。
@@ -35,19 +35,19 @@ export function ConnectionsEntryCard({ running, clashApiUrl }: ConnectionsEntryC
 
   const count = active?.connections.length ?? 0;
   const description = !running
-    ? "启动代理后可查看连接"
+    ? "启动代理后可使用面板"
     : !available
       ? "在设置中开启 Clash API 后可查看连接"
       : count > 0
-        ? `${count} 个活跃连接 · 每 2 秒刷新`
-        : "暂无活跃连接 · 点击查看已关闭记录";
+        ? `${count} 个活跃连接 · 点击打开面板`
+        : "暂无活跃连接 · 点击打开面板";
 
   return (
     <EntryLinkCard
       icon={<ArrowsRightLeftIcon className="size-6" aria-hidden="true" />}
       title="当前连接"
       description={description}
-      onPress={() => navigate("/connections")}
+      onPress={() => navigate("/panel")}
     />
   );
 }

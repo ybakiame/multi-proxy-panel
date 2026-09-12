@@ -28,8 +28,8 @@ function isAutoGroup(groupType: string): boolean {
  *   出错降频 10s 自动重试）；订阅名由父级从 `SUBSCRIPTIONS_KEY` / `CONFIG_KEY` 复用传入；
  * - 展示：订阅名（小字 muted）+ 主出口分组（第一个 Selector 分组，无则兜底第一个分组）
  *   名称 + 当前 `now` 节点名 + 延迟 badge（分级对齐 desktop NodeItem）；
- *   `URLTest`/`Fallback` 分组标注「自动选择」chip；点击整卡进入 `/proxies` 选择页；
- * - 空态：核心未运行 → "启动代理后可切换节点"（仍可点击进入选择页查看空态）；
+ *   `URLTest`/`Fallback` 分组标注「自动选择」chip；点击整卡进入 `/panel` 面板页；
+ * - 空态：核心未运行 → "启动代理后可使用面板"（仍可点击进入面板页）；
  *   核心运行但无任何分组数据 → 隐藏卡片。
  */
 export function CurrentNodeCard({ running, subscriptionName }: CurrentNodeCardProps) {
@@ -55,8 +55,8 @@ export function CurrentNodeCard({ running, subscriptionName }: CurrentNodeCardPr
     <Card>
       <button
         type="button"
-        onClick={() => navigate("/proxies")}
-        aria-label="管理代理节点"
+        onClick={() => navigate("/panel")}
+        aria-label="打开面板"
         className="flex min-h-12 w-full items-center gap-3 rounded-xl text-left active:opacity-80"
       >
         {group ? (
@@ -83,7 +83,7 @@ export function CurrentNodeCard({ running, subscriptionName }: CurrentNodeCardPr
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">代理节点</span>
               <span className="text-xs text-muted">
-                {!running ? "启动代理后可切换节点" : isLoading ? "正在获取节点…" : "暂无节点数据"}
+                {!running ? "启动代理后可使用面板" : isLoading ? "正在获取节点…" : "暂无节点数据"}
               </span>
             </span>
             <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden="true" />
