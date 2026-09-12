@@ -86,6 +86,7 @@ fn sample_slices() -> ConfigSlices {
         dns: dns_slice(),
         outbounds: outbounds_slice(),
         experimental: ExperimentalSlice::default(),
+        route: RouteSlice::default(),
     }
 }
 

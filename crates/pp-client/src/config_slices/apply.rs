@@ -4,9 +4,9 @@
 //! [`render_outbound`]) so it can be unit tested without a pipeline.
 //! [`apply_config_slices`] only mutates the passed-in JSON value.
 //!
-//! Gate: the custom outbound and experimental slices are additionally gated by
-//! the local-override master switch (`local_override.json` `singbox.enabled`).
-//! The DNS slice is a required config and is **not** gated.
+//! Gate: the custom outbound, experimental and route slices are additionally
+//! gated by the local-override master switch (`local_override.json`
+//! `singbox.enabled`). The DNS slice is a required config and is **not** gated.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,7 +19,7 @@ use super::outbound::{
     SelectorOutbound, ShadowsocksOutbound, TrojanOutbound, UrlTestOutbound, VlessOutbound,
     VmessOutbound,
 };
-use super::{ConfigSlices, outbound_tag, render_dns, str_value};
+use super::{ConfigSlices, outbound_tag, render_dns, render_domain_resolver, str_value};
 
 /// Result of [`apply_config_slices`], suitable for logging.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -52,11 +52,15 @@ pub struct OutboundTagRename {
 /// - Experimental slice: deep merges the rendered `cache_file` object into
 ///   `config.experimental`, preserving sibling keys (`clash_api`, …). Gated by
 ///   `local_override_enabled`.
+/// - Route slice: deep merges `final` / `default_domain_resolver` into
+///   `config.route`, preserving sibling keys (`rules`, `auto_detect_interface`,
+///   …). Gated by `local_override_enabled`.
 ///
 /// `local_override_enabled` mirrors [`CoreLocalOverride::enabled`] — the master
-/// switch of `local_override.json`. When `false`, the custom outbound and
-/// experimental slices are skipped while the DNS slice is still injected: the
-/// switch turns off local override *management*, not the required DNS setup.
+/// switch of `local_override.json`. When `false`, the custom outbound,
+/// experimental and route slices are skipped while the DNS slice is still
+/// injected: the switch turns off local override *management*, not the required
+/// DNS setup.
 ///
 /// A disabled slice leaves the config untouched. Returns an error when `config`
 /// is not a JSON object (callers always pass a config object).
@@ -145,6 +149,28 @@ pub fn apply_config_slices(
                 "cache_file".to_string(),
                 render_cache_file(&slices.experimental.cache_file),
             );
+        }
+    }
+
+    if local_override_enabled && slices.route.enabled {
+        // Deep merge: only `final` / `default_domain_resolver` are written, so
+        // sibling keys (`rules`, `auto_detect_interface`, …) are preserved.
+        // `default_domain_resolver` is written as the 1.12+ object form; the ④
+        // `compose_singbox_config` layer only fills it when absent, so a value
+        // set here survives composition.
+        let route = obj
+            .entry("route".to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Some(route) = route.as_object_mut() {
+            if !slices.route.final_tag.is_empty() {
+                route.insert("final".to_string(), str_value(&slices.route.final_tag));
+            }
+            if !slices.route.resolver.server.is_empty() {
+                route.insert(
+                    "default_domain_resolver".to_string(),
+                    render_domain_resolver(&slices.route.resolver),
+                );
+            }
         }
     }
 

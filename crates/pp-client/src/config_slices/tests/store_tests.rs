@@ -24,6 +24,7 @@ fn valid_slices() -> ConfigSlices {
             }],
         },
         experimental: ExperimentalSlice::default(),
+        route: RouteSlice::default(),
     }
 }
 

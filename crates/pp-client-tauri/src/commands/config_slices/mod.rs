@@ -78,6 +78,7 @@ mod tests {
                 }],
             },
             experimental: ExperimentalSlice::default(),
+            route: RouteSlice::default(),
         }
     }
 

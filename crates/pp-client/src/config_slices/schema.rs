@@ -9,7 +9,7 @@ use super::dns::{is_valid_query_type, is_valid_rcode};
 use super::outbound::{OUTBOUND_TAG_PREFIX, OutboundProtocol, outbound_tag};
 use super::{
     DnsMatchType, DnsMode, DnsRule, DnsRuleAction, DnsServerType, DnsSlice, ExperimentalSlice,
-    OutboundsSlice,
+    OutboundsSlice, RouteSlice,
 };
 
 /// Current schema version (stored in [`ConfigSlices::version`]).
@@ -36,6 +36,8 @@ pub struct ConfigSlices {
     pub outbounds: OutboundsSlice,
     #[serde(default)]
     pub experimental: ExperimentalSlice,
+    #[serde(default)]
+    pub route: RouteSlice,
 }
 
 impl Default for ConfigSlices {
@@ -45,6 +47,7 @@ impl Default for ConfigSlices {
             dns: DnsSlice::default(),
             outbounds: OutboundsSlice::default(),
             experimental: ExperimentalSlice::default(),
+            route: RouteSlice::default(),
         }
     }
 }
@@ -58,6 +61,7 @@ impl ConfigSlices {
         self.dns.validate()?;
         self.outbounds.validate()?;
         self.experimental.validate()?;
+        self.route.validate()?;
         Ok(())
     }
 }
@@ -266,6 +270,33 @@ impl ExperimentalSlice {
         }
         if !self.cache_file.path.is_empty() && self.cache_file.path.trim().is_empty() {
             return Err(validation("experimental.cache_file.path must not be blank"));
+        }
+        Ok(())
+    }
+}
+
+impl RouteSlice {
+    /// Validate the route slice.
+    ///
+    /// A disabled slice skips all sub-validation. When enabled, a non-empty
+    /// `final_tag` or `resolver.server` must not contain whitespace.
+    ///
+    /// Reference integrity is deliberately **not** checked statically: the
+    /// resolver tag may point at a subscription node or a built-in DNS server
+    /// tag (`local` / `remote` / `fakeip`) that is invisible to the slice layer,
+    /// so sing-box validates it at runtime.
+    pub fn validate(&self) -> PanelResult<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if !self.final_tag.is_empty() && self.final_tag.chars().any(char::is_whitespace) {
+            return Err(validation("route.final must not contain whitespace"));
+        }
+        if !self.resolver.server.is_empty() && self.resolver.server.chars().any(char::is_whitespace)
+        {
+            return Err(validation(
+                "route.default_domain_resolver.server must not contain whitespace",
+            ));
         }
         Ok(())
     }
