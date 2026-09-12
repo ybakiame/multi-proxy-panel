@@ -573,20 +573,20 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 - **基线来源**：内置 `singbox_template` 对齐 GUI.for.SingBox 默认配置，新增 `core_config/baseline.rs` 作为单一真值源（DNS / 路由规则与远程规则集注册）。
 - **DNS 基线**：
   - `local` = DoH（`https` `223.5.5.5:443`），无 `detour`（默认直连）；
-  - `remote` = DoT（`tls` `8.8.8.8:853`），`detour` = 主 selector tag（从生成出站读取，不硬编码）；
+  - `remote` = DoH（`https` `8.8.8.8:443`），`detour` = 主 selector tag（从生成出站读取，不硬编码；2026-09 由 DoT 853 改为 DoH 443，与代理上的 HTTPS 流量同路径，对齐参考模板）；
   - `dns.rules` = `clash_mode direct → local` / `clash_mode global → remote` / `geosite-cn → local`；`dns.final = remote`；
   - `inject_android_dns` 同步该 DNS 形态并复用同一 DNS 规则与规则集注册。
 - **路由基线**：`route.rules` 注入 `geosite-private` / `geosite-cn` / `geoip-private` / `geoip-cn` → `direct`，`geolocation-!cn` → 主 selector。基线位于模板**末尾**，compose（MITM 白名单）、local_override（本地规则）、panel_features（`clash_mode` 模式规则）均**前插**，用户规则优先级始终高于基线。
-- **远程规则集**：`route.rule_set` 幂等注册 5 个 MetaCubeX jsDelivr 远程规则集（`geosite-private` / `geoip-private` / `geosite-cn` / `geoip-cn` / `geolocation-!cn`，`format: binary`）。
+- **远程规则集**：`route.rule_set` 幂等注册 5 个 MetaCubeX jsDelivr 远程规则集（`geosite-private` / `geoip-private` / `geosite-cn` / `geoip-cn` / `geolocation-!cn`，`format: binary`）；2026-09 起统一引用顶层 `http_clients.rule-set-direct`（无 detour = 绕过路由直连拨号，`domain_resolver` 走直连 `local` DNS）下载，冷启动不再依赖代理可用。
 - **默认行为变化**：客户端默认链路从「全量代理」改为「CN 直连分流」——CN / 私有目的地直连，非 CN 走主 selector；`route.final` 仍为主 selector。（已获项目所有者确认。）
-- **启动风险（重要）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。首次启动依赖 jsDelivr（`testingcf.jsdelivr.net`）直连可达；`experimental.cache_file.store_dns`（或已废弃的 `store_rdrc`）是唯一离线兜底，基线**未启用**。规则集缓存 / `store_dns` 纳入后续待决项。
+- **启动风险（重要，已缓解）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。2026-09 补记后有两层兜底：①规则集经 `rule-set-direct` HTTP client **直连**下载（不再走 `route.final` 代理），只需 jsDelivr（`testingcf.jsdelivr.net`）直连可达；②`apply_panel_features` 在配置引用远程规则集时注入 `experimental.cache_file`（realip 模式同样注入，不再仅限 FakeIP），sing-box 1.14 起成功下载过的规则集下次启动直接从缓存恢复。
 
 #### FakeIP 架构修正定案
 
 - **定案**：FakeIP 仅作用于**非 CN A 查询**——`{rule_set: ["geolocation-!cn"], query_type: ["A"], action: "route", server: "fakeip"}`，取代此前 `{geosite-cn, invert, A}` 形态。非 CN 域名端到端以**域名**交给出站（核心按域名路由，而非本地解析的真实 IP）；CN 域名由基线的 `geosite-cn → local` 走国内解析器连真实 IP。
 - **修正 P3 补记**：P3「FakeIP 覆盖全部 A 查询且不依赖规则集」的表述已被本定案取代——FakeIP 现依赖 `geolocation-!cn` 规则集（基线注册）做非 CN 限定。
 - **规则顺序**：丢弃规则（`HTTPS` / `SVCB`，IPv6 关闭时并入 `AAAA` → `predefined` + `NOERROR`）置 `dns.rules` **头部**；FakeIP 路由规则**追加在基线之后**，使 `clash_mode direct/global` 与 `geosite-cn` 优先，FakeIP 不泄漏进直连 / 全局模式。
-- **无全局 `resolve`**：确认不再注入 `route.rules` 的 `{"action":"resolve"}`——该动作会让出站看到真实 IP、违背 FakeIP 目的，并使所有连接依赖代理 DoH；CN 分流到位后无需 `resolve`。
+- **FakeIP 模式无 `resolve`，realip 模式恢复 `resolve`（2026-09 补记）**：FakeIP 模式确认不注入 `route.rules` 的 `{"action":"resolve"}`——该动作会让出站看到真实 IP、违背 FakeIP 目的，并使所有连接依赖代理 DoH。但此前的移除同时误伤了默认 realip 模式：mixed 入站的域名连接没有目的 IP，`geoip-cn` / `geoip-private` 等 IP 规则集无法匹配，未收录国内域名错走代理。realip 模式（FakeIP 关闭且非 Takeover）恢复在 `hijack-dns` 之后注入 `{"action":"resolve"}`（IPv6 关闭时带 `strategy: ipv4_only`），对齐参考模板 realip.json；TUN 连接自带真实目的 IP，resolve 对非 Fqdn 目标为 no-op，不增加 TUN 路径延迟。
 - 其余（`cache_file` 合并、`takeover` 豁免、幂等）不变。
 
 #### 冗余开关移除（内容驱动注入）
