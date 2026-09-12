@@ -152,7 +152,7 @@ fn singbox_template_builds_groups_and_route() {
     );
     assert_eq!(cfg["log"]["level"], "info");
 
-    // DNS: local DoH direct (IP literal, no detour), remote DoT through proxy,
+    // DNS: local DoH direct (IP literal, no detour), remote DoH through proxy,
     // final pinned to remote, reverse mapping on (see singbox_template docs).
     let dns_servers = cfg["dns"]["servers"].as_array().unwrap();
     let local = dns_servers.iter().find(|s| s["tag"] == "local").unwrap();
@@ -164,9 +164,12 @@ fn singbox_template_builds_groups_and_route() {
         "local must stay detour-less (default direct dial)"
     );
     let remote = dns_servers.iter().find(|s| s["tag"] == "remote").unwrap();
-    assert_eq!(remote["type"], "tls");
+    assert_eq!(
+        remote["type"], "https",
+        "remote resolver is DoH on 443 (not DoT on 853), sharing the HTTPS path through the proxy"
+    );
     assert_eq!(remote["server"], "8.8.8.8");
-    assert_eq!(remote["server_port"], 853);
+    assert_eq!(remote["server_port"], 443);
     assert_eq!(
         remote["detour"], "proxy",
         "remote DNS must be dialed through the main selector to avoid pollution"

@@ -36,9 +36,12 @@ pub(crate) fn main_outbound_selector_tag(obj: &serde_json::Map<String, Value>) -
 ///
 /// - `local`: DoH (`https` 223.5.5.5:443), no `detour` field — omit means default direct dial,
 ///   semantically equivalent and always legal;
-/// - `remote`: DoT (`tls` 8.8.8.8:853), through main outbound selector (`detour` reads actual
-///   selector tag from composed config, see [`main_outbound_selector_tag`], not hardcoded); when
-///   detour target is "empty direct outbound", omit `detour` field (see
+/// - `remote`: DoH (`https` 8.8.8.8:443), through main outbound selector (`detour` reads actual
+///   selector tag from composed config, see [`main_outbound_selector_tag`], not hardcoded); DoH
+///   on 443 is used instead of DoT on 853 because it shares the well-worn HTTPS path through the
+///   proxy (some node egress networks interfere with bare 853), aligning with the reference
+///   templates (`platforms/android/realip.json` / `fakeip.json` both use `type: https` for the
+///   proxied resolver); when detour target is "empty direct outbound", omit `detour` field (see
 ///   [`is_empty_direct_outbound`]);
 /// - `rules` = [`super::cn_baseline_dns_rules`] (`clash_mode` direct/global → local/remote,
 ///   `geosite-cn` → local), `final = remote`, `reverse_mapping = true`, `strategy = prefer_ipv4`.
@@ -79,9 +82,9 @@ pub fn inject_android_dns(composed: &mut Value) {
     // (sing-box rejects at startup phase).
     let mut remote = serde_json::Map::new();
     remote.insert("tag".to_string(), json!("remote"));
-    remote.insert("type".to_string(), json!("tls"));
+    remote.insert("type".to_string(), json!("https"));
     remote.insert("server".to_string(), json!("8.8.8.8"));
-    remote.insert("server_port".to_string(), json!(853));
+    remote.insert("server_port".to_string(), json!(443));
     if !is_empty_direct_outbound(obj, &detour) {
         remote.insert("detour".to_string(), json!(detour));
     }

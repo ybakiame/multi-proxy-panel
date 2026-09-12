@@ -199,7 +199,11 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
     assert_eq!(cfg["dns"]["servers"][0]["type"], "https");
     assert!(cfg["dns"]["servers"][0].get("detour").is_none());
     assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
-    assert_eq!(cfg["dns"]["servers"][1]["type"], "tls");
+    assert_eq!(
+        cfg["dns"]["servers"][1]["type"], "https",
+        "remote resolver is DoH on 443 (not DoT on 853), sharing the HTTPS path through the proxy"
+    );
+    assert_eq!(cfg["dns"]["servers"][1]["server_port"], 443);
     assert_eq!(cfg["dns"]["servers"][1]["detour"], "proxy");
     assert_eq!(
         cfg["dns"]["rules"],

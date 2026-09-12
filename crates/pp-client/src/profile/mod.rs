@@ -191,8 +191,10 @@ fn dedup_names(nodes: Vec<Value>, key: &str) -> Vec<Value> {
 /// DNS split (aligned with GUI.for.SingBox):
 /// - `local` = DoH (`https` 223.5.5.5:443), IP literal so no `domain_resolver` is needed; it
 ///   has no `detour` (default direct dial) and serves `route.default_domain_resolver`.
-/// - `remote` = DoT (`tls` 8.8.8.8:853), IP literal, `detour` = main selector (read from the
-///   generated outbounds, never hardcoded) so foreign resolution goes through the proxy.
+/// - `remote` = DoH (`https` 8.8.8.8:443), IP literal, `detour` = main selector (read from the
+///   generated outbounds, never hardcoded) so foreign resolution goes through the proxy. DoH on
+///   443 shares the well-worn HTTPS path through the proxy (bare 853 is interfered with on some
+///   node egress networks), aligning with the reference templates.
 /// - `rules` = [`crate::core_config::cn_baseline_dns_rules`]: `clash_mode` direct/global →
 ///   local/remote, `geosite-cn` → local; `final = remote` resolves the rest.
 /// - `reverse_mapping = true`: after hijacked DNS resolves a domain, sing-box maps the
@@ -249,9 +251,9 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
                 { "tag": "local", "type": "https", "server": "223.5.5.5", "server_port": 443 },
                 {
                     "tag": "remote",
-                    "type": "tls",
+                    "type": "https",
                     "server": "8.8.8.8",
-                    "server_port": 853,
+                    "server_port": 443,
                     "detour": proxy_tag.clone()
                 }
             ],
