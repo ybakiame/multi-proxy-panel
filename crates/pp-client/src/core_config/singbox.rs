@@ -18,10 +18,11 @@ use super::PanelFeatures;
 ///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
 ///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
 ///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
-/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + head DNS rules (CN split on
-///   `geosite-cn`) + remote `route.rule_set` registration + `experimental.cache_file` deep merge
-///   (see `apply_fakeip_mode` in `core_config::fakeip`); skipped on DNS takeover. No
-///   `route.rules` entry is injected (the global `resolve` action was removed).
+/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + two FakeIP DNS rules (drop
+///   HTTPS/SVCB/AAAA + non-CN A → `geolocation-!cn`) + `experimental.cache_file` deep merge
+///   (see `apply_fakeip_mode` in `core_config::fakeip`); the CN-split `route.rule_set` registry
+///   is registered idempotently (normally already by the baseline template). Skipped on DNS
+///   takeover. No `route.rules` entry is injected (the global `resolve` action was removed).
 /// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /

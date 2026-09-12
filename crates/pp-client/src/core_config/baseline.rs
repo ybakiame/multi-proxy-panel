@@ -1,7 +1,8 @@
 //! CN-split baseline: the remote rule-set registry plus the DNS / route rules that make up the
 //! GUI.for.SingBox-aligned default chain.
 //!
-//! The baseline is injected by [`crate::profile::singbox_template`].
+//! The baseline is injected by [`crate::profile::singbox_template`]; the FakeIP injection
+//! ([`super::fakeip::apply_fakeip_mode`]) reuses [`ensure_cn_rule_sets`] idempotently.
 
 use serde_json::{Value, json};
 
@@ -65,9 +66,10 @@ pub fn cn_baseline_route_rules(proxy_tag: &str) -> Vec<Value> {
 
 /// Register the CN-split remote rule sets under `route.rule_set` (idempotent by tag).
 ///
-/// Used by [`crate::profile::singbox_template`] so the baseline `geosite-cn` /
-/// `geolocation-!cn` rule references always resolve. Existing entries with the same tag
-/// (user / override supplied) are respected and left untouched.
+/// Used by [`crate::profile::singbox_template`] (baseline) and by the FakeIP injection
+/// ([`super::fakeip::apply_fakeip_mode`]) so a rule referencing `geosite-cn` /
+/// `geolocation-!cn` always resolves. Existing entries with the same tag (user / override
+/// supplied) are respected and left untouched.
 ///
 /// Note: sing-box downloads remote rule sets synchronously at startup and **fails to start**
 /// when a URL is unreachable (verified against sing-box 1.14). The jsDelivr mirror is directly

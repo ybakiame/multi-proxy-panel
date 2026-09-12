@@ -38,12 +38,13 @@ fn base_sub() -> serde_json::Value {
     })
 }
 
-/// FakeIP on (ipv6 off): fakeip server appended, head rules `[drop, cn-local, fakeip]`,
-/// `geosite-cn` remote rule set registered, `experimental.cache_file` deep-merged on,
-/// `dns.final` / `dns.strategy` untouched by fakeip (strategy still `ipv4_only` from the IPv6
-/// switch), sibling `clash_api` preserved, and **no** `resolve` route rule injected.
+/// FakeIP on (ipv6 off): fakeip server appended, DNS rules `[drop, fakeip]` (the CN split —
+/// `clash_mode` + `geosite-cn → local` — is owned by the baseline and is absent from this
+/// baseline-less subscription), the CN-split remote rule sets registered, `experimental.cache_file`
+/// deep-merged on, `dns.final` / `dns.strategy` untouched by fakeip (strategy still `ipv4_only`
+/// from the IPv6 switch), sibling `clash_api` preserved, and **no** `resolve` route rule injected.
 #[test]
-fn apply_fakeip_mode_injects_cn_split_rules_and_rule_set() {
+fn apply_fakeip_mode_injects_fakeip_rules_and_rule_set() {
     let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(false));
 
@@ -57,7 +58,7 @@ fn apply_fakeip_mode_injects_cn_split_rules_and_rule_set() {
     assert_eq!(fakeip["inet4_range"], "198.18.0.0/15");
     assert_eq!(servers.len(), 2, "existing local server preserved");
 
-    // Head rules: drop first, then CN → local, then non-CN A → fakeip.
+    // DNS rules: drop first (head), then non-CN A → fakeip (tail).
     let rules = cfg["dns"]["rules"].as_array().unwrap();
     assert_eq!(
         rules[0],
@@ -65,33 +66,34 @@ fn apply_fakeip_mode_injects_cn_split_rules_and_rule_set() {
     );
     assert_eq!(
         rules[1],
-        json!({ "rule_set": ["geosite-cn"], "action": "route", "server": "local" }),
-        "CN domains must resolve for real through local"
-    );
-    assert_eq!(
-        rules[2],
         json!({
-            "rule_set": ["geosite-cn"],
-            "invert": true,
+            "rule_set": ["geolocation-!cn"],
             "query_type": ["A"],
             "action": "route",
             "server": "fakeip"
         }),
-        "only non-CN A queries enter fakeip"
+        "only non-CN A queries enter fakeip (geolocation-!cn, GUI.for.SingBox semantics)"
     );
-    assert_eq!(rules.len(), 3, "no other DNS rules in baseline");
-
-    // Remote CN rule set registered for the core to download.
-    let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 1);
     assert_eq!(
-        rule_sets[0],
-        json!({
-            "type": "remote",
-            "tag": "geosite-cn",
-            "format": "binary",
-            "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs"
-        })
+        rules.len(),
+        2,
+        "no other DNS rules in this baseline-less subscription"
+    );
+
+    // CN-split remote rule sets registered for the core to download (idempotent registry).
+    let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
+    assert_eq!(rule_sets.len(), 5);
+    let geolocation = rule_sets
+        .iter()
+        .find(|rs| rs["tag"] == "geolocation-!cn")
+        .expect("geolocation-!cn rule set must be registered");
+    assert_eq!(
+        geolocation["url"],
+        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs"
+    );
+    assert!(
+        rule_sets.iter().any(|rs| rs["tag"] == "geosite-cn"),
+        "geosite-cn registered by the shared baseline registry"
     );
 
     // cache_file deep merge + clash_api sibling preserved.
@@ -143,13 +145,8 @@ fn apply_fakeip_mode_keeps_aaaa_when_ipv6_enabled() {
     );
     assert_eq!(
         rules[1],
-        json!({ "rule_set": ["geosite-cn"], "action": "route", "server": "local" })
-    );
-    assert_eq!(
-        rules[2],
         json!({
-            "rule_set": ["geosite-cn"],
-            "invert": true,
+            "rule_set": ["geolocation-!cn"],
             "query_type": ["A"],
             "action": "route",
             "server": "fakeip"
@@ -243,7 +240,7 @@ fn apply_fakeip_mode_preserves_existing_resolve_rule() {
 }
 
 /// An existing `route.rule_set` entry carrying the same `geosite-cn` tag (user/override supplied)
-/// is respected: no duplicate and no overwrite.
+/// is respected: no duplicate and no overwrite (the other CN-split tags are still registered).
 #[test]
 fn apply_fakeip_mode_does_not_override_existing_cn_rule_set() {
     let mut sub = base_sub();
@@ -259,7 +256,7 @@ fn apply_fakeip_mode_does_not_override_existing_cn_rule_set() {
     apply_panel_features(&mut cfg, &fakeip_features(false));
 
     let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 1, "existing tag must not be duplicated");
+    assert_eq!(rule_sets.len(), 5, "existing tag must not be duplicated");
     assert_eq!(
         rule_sets[0],
         json!({
