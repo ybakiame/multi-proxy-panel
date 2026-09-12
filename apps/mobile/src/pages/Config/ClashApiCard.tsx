@@ -1,5 +1,7 @@
-import { ArrowPathIcon } from "@heroicons/react/24/outline";
+import { useState } from "react";
+import { ArrowPathIcon, Square2StackIcon } from "@heroicons/react/24/outline";
 import { Button, Card } from "@heroui/react";
+import { toastError, toastSuccess, toErrorMessage } from "@pp/client-core";
 import { SettingsInput, settingsInputClass, settingsLabelClass } from "../Settings/fields";
 import type { UseSettingsConfigReturn } from "../Settings/useSettingsConfig";
 
@@ -13,10 +15,28 @@ interface ClashApiCardProps {
  * 功能恒启用（`clash_api_enabled` 由页面层强制为 true），不提供关闭开关：
  * - `clash_api_port` 数字输入（仅 1-65535 合法才落库，非法规格展示行内错误）；
  * - `clash_api_secret` **必填**密钥（面板跳转携带密钥，不允许为空）：空值只提示不落库，
- *   右侧按钮随机生成并立即落库；
+ *   右侧按钮复制当前密钥（password 遮罩下仍可取值）/ 随机生成并立即落库；
  * - 两字段均即时保存（防抖/立即），核心重启后生效。
  */
 export function ClashApiCard({ settings }: ClashApiCardProps) {
+  // 复制成功短暂置态（图标反馈），1.5s 后复位。
+  const [copied, setCopied] = useState(false);
+  const handleCopySecret = async () => {
+    const secret = settings.clashApiSecretDraft;
+    if (secret.trim() === "") {
+      toastError("密钥为空，请先填写或随机生成");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      toastSuccess("密钥已复制");
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      toastError(`复制失败：${toErrorMessage(err)}`);
+    }
+  };
+
   return (
     <Card>
       <Card.Header>
@@ -53,6 +73,16 @@ export function ClashApiCard({ settings }: ClashApiCardProps) {
               onChange={(event) => settings.onClashApiSecretChange(event.target.value)}
               className={`${settingsInputClass} min-w-0 flex-1`}
             />
+            <Button
+              variant="secondary"
+              className="size-12 shrink-0"
+              isIconOnly
+              isDisabled={!settings.ready}
+              aria-label="复制密钥"
+              onPress={() => void handleCopySecret()}
+            >
+              <Square2StackIcon className={copied ? "size-5 text-success" : "size-5"} aria-hidden="true" />
+            </Button>
             <Button
               variant="secondary"
               className="h-12 shrink-0 gap-1.5 px-3"

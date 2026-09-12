@@ -55,7 +55,7 @@ export default function Config() {
         />
         <EntryLinkCard
           icon={<BeakerIcon className="size-6" aria-hidden="true" />}
-          title="Experimental"
+          title="实验性配置"
           description="experimental 顶级字段 · Clash API（端口 / 密钥）与缓存"
           onPress={() => navigate("/config/experimental")}
         />

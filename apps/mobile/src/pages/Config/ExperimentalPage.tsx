@@ -25,12 +25,12 @@ const INPUT_CLASS =
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 /**
- * Experimental 配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`；2026-09 起并入
- * Clash API 设置，取代独立 `/config/clash-api` 页）。
+ * 实验性配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`；2026-09 起并入
+ * Clash API 设置，取代独立 `/config/clash-api` 页；原名 Experimental 页）。
  *
  * 结构自上而下：BackHeader（右侧保存动作，仅作用于 Cache File 切片草稿）→
- * Clash API 卡（端口 / 必填密钥，即时保存，ClientConfig 存储，不经页面保存按钮）→
- * 实验性能力提示 → Cache File 分区（enabled / path / cache_id / store_fakeip）。
+ * 实验性能力提示（置顶）→ Clash API 卡（端口 / 必填密钥，即时保存，ClientConfig 存储，
+ * 不经页面保存按钮）→ Cache File 分区（enabled / path / cache_id / store_fakeip）。
  * 无切片总开关：`cache_file.enabled` 即注入开关。
  *
  * 存量纠正（进入本页一次性静默落盘）：`clash_api_enabled: false`（历史关闭开关）纠正为
@@ -134,7 +134,7 @@ export default function ExperimentalPage() {
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <BackHeader
-        title="Experimental"
+        title="实验性配置"
         action={
           <Button
             variant="primary"
@@ -188,18 +188,18 @@ export default function ExperimentalPage() {
           </Card>
         )}
 
+        <Alert status="accent">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Description>实验性功能，可能会存在不稳定现象。</Alert.Description>
+          </Alert.Content>
+        </Alert>
+
         {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
         <ClashApiCard settings={settings} />
 
         {draft && (
           <>
-            <Alert status="accent">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Description>实验性能力由 sing-box 提供，字段以官方文档为准。</Alert.Description>
-              </Alert.Content>
-            </Alert>
-
             <Card>
               <Card.Header>
                 <Card.Title>Cache File</Card.Title>
