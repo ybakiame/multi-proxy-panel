@@ -10,6 +10,7 @@ mod baseline;
 mod clash_api;
 mod compose;
 mod fakeip;
+mod ipv6;
 mod singbox;
 mod view;
 
@@ -66,9 +67,14 @@ pub struct PanelFeatures {
     ///
     /// Default `false`: [`apply_singbox_panel_features`] rewrites the effective
     /// `dns.strategy` to `ipv4_only` so domains resolving to AAAA do not reach
-    /// nodes without an IPv6 egress (connection failure / blackhole). `true`
-    /// leaves the template/injected `prefer_ipv4` untouched. Exempt when
-    /// `dns_mode` is [`DnsMode::Takeover`] (user DNS slice takes over fully).
+    /// nodes without an IPv6 egress (connection failure / blackhole). It also
+    /// injects a route-layer `{"ip_version": 6, "action": "reject"}` rule so
+    /// IPv6 connections that bypass the hijacked resolver (app HTTPDNS / DoH)
+    /// fail fast inside the dual-stack TUN instead of hanging. `true` leaves the
+    /// template/injected `prefer_ipv4` untouched and injects no reject rule.
+    /// The DNS strategy override is exempt when `dns_mode` is [`DnsMode::Takeover`]
+    /// (user DNS slice takes over fully); the route reject rule is **not** exempt
+    /// (routing layer, independent of DNS ownership).
     pub ipv6_enabled: bool,
     /// Whether to enable the built-in DNS FakeIP mode (opt-in, default `false`).
     ///

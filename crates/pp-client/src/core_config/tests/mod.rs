@@ -20,6 +20,8 @@ mod fakeip;
 #[cfg(test)]
 mod features;
 #[cfg(test)]
+mod ipv6;
+#[cfg(test)]
 mod real_core;
 #[cfg(test)]
 mod ui;

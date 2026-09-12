@@ -203,9 +203,9 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     });
 
     // Subscription contains outbounds only; composed config additionally gets the 2 baseline
-    // clash_mode mode rules + 1 MITM whitelist rule at head, plus the 5 CN-split baseline route
-    // rules from the template (rule_count assertion covers the
-    // final config; sniff/hijack-dns 无条件注入后总计 5 条)。
+    // clash_mode mode rules + 1 IPv6 reject rule + 1 MITM whitelist rule at head, plus the 5
+    // CN-split baseline route rules from the template (rule_count assertion covers the
+    // final config; sniff/hijack-dns/IPv6-reject 无条件注入后总计 11 条)。
     let sub_body = r#"{
             "outbounds": [{ "type": "direct", "tag": "direct" }],
             "route": { "final": "direct", "rules": [{"action": "sniff"}] }
@@ -237,8 +237,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     let status = state.status().await;
     assert_eq!(status.rule_mode, "global");
     assert_eq!(
-        status.rule_count, 10,
-        "2 sniff/dns-hijack + 2 baseline clash_mode mode rules + 1 MITM whitelist + 5 CN-split baseline rules"
+        status.rule_count, 11,
+        "2 sniff/dns-hijack + 1 IPv6 reject + 2 baseline clash_mode mode rules + 1 MITM whitelist + 5 CN-split baseline rules"
     );
     assert_eq!(
         status.clash_api_url,
@@ -437,29 +437,33 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     assert_eq!(pp_mitm["server_port"], mitm_addr.port());
 
     // Whitelist routing rule: inbound matches main entry, domains are correctly split by wildcard/exact.
-    // 前面两条是 sniff + hijack-dns 头部规则（无条件注入），MITM whitelist 被推到 index 2。
+    // 前面三条是 sniff + hijack-dns + IPv6 reject 头部规则（无条件注入），MITM whitelist 被推到 index 3。
     let rules = core_config["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        8,
-        "2 sniff/dns-hijack head rules + 1 MITM whitelist rule + 5 CN-split baseline rules"
+        9,
+        "2 sniff/dns-hijack + 1 IPv6 reject head rules + 1 MITM whitelist rule + 5 CN-split baseline rules"
     );
     assert_eq!(rules[0], serde_json::json!({ "action": "sniff" }));
     assert_eq!(
         rules[1],
         serde_json::json!({ "protocol": "dns", "action": "hijack-dns" })
     );
-    assert_eq!(rules[2]["inbound"], serde_json::json!(["main-in"]));
     assert_eq!(
-        rules[2]["domain_suffix"],
+        rules[2],
+        serde_json::json!({ "ip_version": 6, "action": "reject" })
+    );
+    assert_eq!(rules[3]["inbound"], serde_json::json!(["main-in"]));
+    assert_eq!(
+        rules[3]["domain_suffix"],
         serde_json::json!(["example.com"])
     );
-    assert_eq!(rules[2]["domain"], serde_json::json!(["api.example2.com"]));
-    assert_eq!(rules[2]["outbound"], "pp-mitm");
+    assert_eq!(rules[3]["domain"], serde_json::json!(["api.example2.com"]));
+    assert_eq!(rules[3]["outbound"], "pp-mitm");
 
-    // Running status extension: composed config contains sniff + hijack-dns + 1 MITM whitelist rule + 5 CN-split baseline rules.
+    // Running status extension: composed config contains sniff + hijack-dns + IPv6 reject + 1 MITM whitelist rule + 5 CN-split baseline rules.
     let status = state.status().await;
-    assert_eq!(status.rule_count, 8);
+    assert_eq!(status.rule_count, 9);
 
     state.stop().await;
     let status = state.status().await;

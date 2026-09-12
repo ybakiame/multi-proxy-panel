@@ -23,7 +23,11 @@ use super::PanelFeatures;
 ///   (see `apply_fakeip_mode` in `core_config::fakeip`); the CN-split `route.rule_set` registry
 ///   is registered idempotently (normally already by the baseline template). Skipped on DNS
 ///   takeover. No `route.rules` entry is injected (the global `resolve` action was removed).
-/// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]).
+/// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]);
+/// - `!ipv6_enabled` → route-level `{"ip_version": 6, "action": "reject"}` fast-fail rule,
+///   injected right after hijack-dns and **not** exempt on DNS takeover (see
+///   [`super::ipv6::inject_ipv6_reject_rule`]; this is the third v6 defense layer after the
+///   dual-stack TUN and the `dns.strategy = ipv4_only` rewrite).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
 /// `ui-metacubexd`), unknown falls back to zashboard:
@@ -152,6 +156,16 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     // left untouched.
     if features.dns_fakeip_enabled && features.dns_mode != DnsMode::Takeover {
         super::fakeip::apply_fakeip_mode(composed, features);
+    }
+
+    // IPv6 switch off: reject IPv6 connections inside the tunnel at the route layer. This runs
+    // last (after sniff/hijack-dns and fakeip) so the rule lands right after hijack-dns and
+    // before the clash_mode / baseline rules. No DNS-takeover exemption: this is a routing-layer
+    // guard, independent of who owns DNS (see [`inject_ipv6_reject_rule`]).
+    if !features.ipv6_enabled
+        && let Some(obj) = composed.as_object_mut()
+    {
+        super::ipv6::inject_ipv6_reject_rule(obj);
     }
 }
 
