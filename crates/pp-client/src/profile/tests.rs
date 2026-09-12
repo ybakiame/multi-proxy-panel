@@ -189,6 +189,23 @@ fn singbox_template_builds_groups_and_route() {
     );
     assert_eq!(cfg["dns"]["reverse_mapping"], true);
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
+
+    // Remote rule sets download through the direct-dial HTTP client (never via the proxy),
+    // resolved by the direct `local` DNS (see ensure_cn_rule_sets / ensure_rule_set_http_client).
+    let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
+    assert_eq!(rule_sets.len(), 5, "five CN-split remote rule sets");
+    for rs in rule_sets {
+        assert_eq!(
+            rs["http_client"], "rule-set-direct",
+            "remote rule set {} must download via the direct HTTP client",
+            rs["tag"]
+        );
+    }
+    assert_eq!(
+        cfg["http_clients"],
+        json!([{ "tag": "rule-set-direct", "domain_resolver": { "server": "local" } }]),
+        "top-level http_clients registers the direct-dial rule-set client"
+    );
 }
 
 // ---------- ④ YAML deep-merge override ----------

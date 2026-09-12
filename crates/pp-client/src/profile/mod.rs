@@ -270,9 +270,13 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         }
     });
     cfg["outbounds"] = Value::Array(outbounds);
-    // Register the five remote CN-split rule sets (idempotent by tag).
+    // Register the five remote CN-split rule sets (idempotent by tag) plus the direct-dial
+    // HTTP client they download through (never via the proxy, see ensure_cn_rule_sets docs).
     if let Some(route) = cfg["route"].as_object_mut() {
         crate::core_config::ensure_cn_rule_sets(route);
+    }
+    if let Some(obj) = cfg.as_object_mut() {
+        crate::core_config::ensure_rule_set_http_client(obj);
     }
     cfg
 }

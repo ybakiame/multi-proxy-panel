@@ -147,13 +147,15 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
         }
     }
 
-    // 3. Register the CN-split rule sets (idempotent by tag; baseline normally already did).
+    // 3. Register the CN-split rule sets (idempotent by tag; baseline normally already did)
+    //    plus the direct-dial HTTP client they download through.
     let route = obj
         .entry("route")
         .or_insert_with(|| Value::Object(Default::default()));
     if let Some(route_obj) = route.as_object_mut() {
         super::ensure_cn_rule_sets(route_obj);
     }
+    super::ensure_rule_set_http_client(obj);
 
     // 4. experimental.cache_file deep merge (create the object when missing; sibling
     // experimental keys such as clash_api stay untouched). `enabled` / `store_fakeip` are

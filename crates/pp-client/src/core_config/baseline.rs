@@ -6,6 +6,12 @@
 
 use serde_json::{Value, json};
 
+/// HTTP client tag used for remote rule-set downloads (direct dial, bootstrap-resolved).
+///
+/// Registered at the top-level `http_clients` array by [`ensure_rule_set_http_client`] and
+/// referenced by every CN-split rule set registered in [`ensure_cn_rule_sets`].
+pub const RULE_SET_HTTP_CLIENT_TAG: &str = "rule-set-direct";
+
 /// CN-split remote rule-set registry (`tag`, jsDelivr URL), aligned with the GUI.for.SingBox
 /// default profile and the MetaCubeX `meta-rules-dat@sing` source family already used by the
 /// FakeIP split.
@@ -92,9 +98,12 @@ pub fn cn_baseline_route_rules(proxy_tag: &str) -> Vec<Value> {
 /// supplied) are respected and left untouched.
 ///
 /// Note: sing-box downloads remote rule sets synchronously at startup and **fails to start**
-/// when a URL is unreachable (verified against sing-box 1.14). The jsDelivr mirror is directly
-/// reachable in CN; `experimental.cache_file.store_dns` (or the deprecated `store_rdrc`) is the
-/// only offline fallback and is not enabled by the baseline.
+/// when a URL is unreachable (verified against sing-box 1.14). Registered entries reference the
+/// [`RULE_SET_HTTP_CLIENT_TAG`] HTTP client so downloads dial **directly** (resolved via the
+/// direct `local` DNS) instead of being routed through `route.final` (the proxy) — otherwise a
+/// cold start would depend on the proxy being up before any rule can even be evaluated (and the
+/// proxy itself is what those rules route). `experimental.cache_file` (injected by the panel
+/// features stage, see `super::fakeip::ensure_cache_file`) is the offline fallback on top.
 pub fn ensure_cn_rule_sets(route: &mut serde_json::Map<String, Value>) {
     let rule_set = route
         .entry("rule_set")
@@ -113,7 +122,48 @@ pub fn ensure_cn_rule_sets(route: &mut serde_json::Map<String, Value>) {
             "type": "remote",
             "tag": tag,
             "format": "binary",
-            "url": url
+            "url": url,
+            "http_client": RULE_SET_HTTP_CLIENT_TAG
         }));
     }
+}
+
+/// Ensure the top-level `http_clients` array carries the [`RULE_SET_HTTP_CLIENT_TAG`] client:
+/// direct dial (no `detour` — HTTP clients bypass the routing system unless one is given) with
+/// the download URL's domain resolved by the direct `local` DNS server, so remote rule-set
+/// downloads never depend on the proxy path (see [`ensure_cn_rule_sets`]).
+///
+/// No-op when the config has no `local` DNS server (a fully user-owned DNS body, where
+/// hardcoding a resolver reference would risk an invalid config); existing entries with the
+/// same tag (user-supplied) are respected.
+pub fn ensure_rule_set_http_client(obj: &mut serde_json::Map<String, Value>) {
+    let has_local_dns = obj
+        .get("dns")
+        .and_then(|d| d.get("servers"))
+        .and_then(Value::as_array)
+        .is_some_and(|servers| {
+            servers
+                .iter()
+                .any(|s| s.get("tag").and_then(Value::as_str) == Some("local"))
+        });
+    if !has_local_dns {
+        tracing::debug!("无 local DNS server，跳过规则集直连 http_client 注入");
+        return;
+    }
+    let clients = obj
+        .entry("http_clients")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(arr) = clients.as_array_mut() else {
+        return;
+    };
+    if arr
+        .iter()
+        .any(|c| c.get("tag").and_then(Value::as_str) == Some(RULE_SET_HTTP_CLIENT_TAG))
+    {
+        return;
+    }
+    arr.push(json!({
+        "tag": RULE_SET_HTTP_CLIENT_TAG,
+        "domain_resolver": { "server": "local" }
+    }));
 }

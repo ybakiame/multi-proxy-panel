@@ -109,6 +109,8 @@ pub fn inject_android_dns(composed: &mut Value) {
     if let Some(route_obj) = route.as_object_mut() {
         super::ensure_cn_rule_sets(route_obj);
     }
+    // Direct-dial HTTP client for the rule sets registered just above (never via the proxy).
+    super::ensure_rule_set_http_client(obj);
     super::ensure_domain_resolver(obj);
     // Proxy outbound server domain resolved via local direct, avoiding remote loop (see function docs).
     ensure_outbound_domain_resolvers(obj);

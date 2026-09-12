@@ -40,7 +40,48 @@ fn singbox_template_registers_cn_rule_sets() {
         assert_eq!(entry["type"], "remote");
         assert_eq!(entry["format"], "binary");
         assert_eq!(entry["url"], url);
+        assert_eq!(
+            entry["http_client"], "rule-set-direct",
+            "rule set {tag} must download via the direct-dial HTTP client"
+        );
     }
+}
+
+/// The direct-dial HTTP client is registered at top level and resolves download URLs through
+/// the direct `local` DNS — downloads never route through `route.final` (the proxy), so a cold
+/// start does not depend on the proxy being up before any rule can be evaluated.
+#[test]
+fn singbox_template_registers_rule_set_http_client() {
+    let cfg = singbox_template(&[]);
+    assert_eq!(
+        cfg["http_clients"],
+        json!([{ "tag": "rule-set-direct", "domain_resolver": { "server": "local" } }])
+    );
+}
+
+/// Without a `local` DNS server (fully user-owned DNS body), the HTTP client injection is
+/// skipped rather than risking a dangling resolver reference.
+#[test]
+fn rule_set_http_client_skipped_without_local_dns() {
+    let mut cfg =
+        json!({ "dns": { "servers": [{ "tag": "other", "type": "udp", "server": "1.1.1.1" }] } });
+    crate::core_config::ensure_rule_set_http_client(cfg.as_object_mut().unwrap());
+    assert!(
+        cfg.get("http_clients").is_none(),
+        "no local DNS server -> no http_client injected"
+    );
+
+    // Idempotency: an existing same-tag client (user-supplied) is respected.
+    let mut cfg = json!({
+        "dns": { "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5" }] },
+        "http_clients": [{ "tag": "rule-set-direct", "detour": "proxy" }]
+    });
+    crate::core_config::ensure_rule_set_http_client(cfg.as_object_mut().unwrap());
+    assert_eq!(
+        cfg["http_clients"],
+        json!([{ "tag": "rule-set-direct", "detour": "proxy" }]),
+        "existing same-tag client must not be overwritten"
+    );
 }
 
 #[test]
