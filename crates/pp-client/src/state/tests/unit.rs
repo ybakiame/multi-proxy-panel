@@ -160,6 +160,30 @@ fn panel_features_tun_enabled_android_and_desktop_semantics() {
     );
 }
 
+/// Android config composition `tun_auto_route`: without it the VpnService tun installs no routes
+/// and the tunnel is completely unusable, so it is always forced on; desktop passes through.
+#[test]
+fn panel_features_tun_auto_route_android_and_desktop_semantics() {
+    // Android → always true (no routes without it = tunnel unusable).
+    assert!(
+        compat::panel_features_tun_auto_route(true, false),
+        "Android always enables auto_route"
+    );
+    assert!(
+        compat::panel_features_tun_auto_route(true, true),
+        "Android always enables auto_route"
+    );
+    // Desktop passes through user settings as-is.
+    assert!(
+        !compat::panel_features_tun_auto_route(false, false),
+        "desktop keeps auto_route off when off"
+    );
+    assert!(
+        compat::panel_features_tun_auto_route(false, true),
+        "desktop keeps auto_route on when on"
+    );
+}
+
 /// Redaction: uuid/password/server in nested outbounds are replaced with "***",
 /// non-matching keys (type / tag / server_name) are preserved as-is.
 #[test]

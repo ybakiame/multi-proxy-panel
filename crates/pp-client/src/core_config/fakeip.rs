@@ -17,7 +17,12 @@ use super::PanelFeatures;
 ///    - `{"query_type":["A"],"action":"route","server":"fakeip"}` — all A queries resolve to fake
 ///      IPs. The two rules match disjoint query types, so their relative order is irrelevant; both
 ///      are inserted at the head so they win over template/slice DNS rules;
-/// 3. deep-merge `experimental.cache_file`: set only `enabled = true` and `store_fakeip = true`,
+/// 3. inject a `{"action":"resolve"}` route rule (idempotent) right after the `hijack-dns` rule,
+///    carrying `"strategy":"ipv4_only"` when `ipv6_enabled = false` (omitted otherwise) — FakeIP
+///    destinations must be resolved to a real IP before sing-box will route them to
+///    `direct`/outbound (otherwise: `a resolve action is required before routing to
+///    outbound/direct[direct]`). See [`inject_resolve_route_rule`];
+/// 4. deep-merge `experimental.cache_file`: set only `enabled = true` and `store_fakeip = true`,
 ///    preserving every other key (and sibling `experimental` keys such as `clash_api`).
 ///
 /// Does not touch `dns.final` / `dns.strategy` — the latter stays owned by the IPv6 override in
@@ -96,7 +101,13 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
         }
     }
 
-    // 3. experimental.cache_file deep merge (create the object when missing; sibling
+    // 3. FakeIP destinations require an explicit `resolve` route action before sing-box routes them
+    // to `direct`/outbound; inserted after `hijack-dns` (see [`inject_resolve_route_rule`]). Only
+    // reached when a `dns` object exists (i.e. fakeip was actually applied) — the DNS block above
+    // early-returns otherwise, so a fakeip toggle without DNS never injects a dangling resolve rule.
+    inject_resolve_route_rule(obj, features.ipv6_enabled);
+
+    // 4. experimental.cache_file deep merge (create the object when missing; sibling
     // experimental keys such as clash_api stay untouched).
     let experimental = obj
         .entry("experimental")
@@ -110,6 +121,52 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
             cf.insert("store_fakeip".to_string(), Value::Bool(true));
         }
     }
+}
+
+/// Inject the `resolve` route action required by FakeIP destinations (idempotent).
+///
+/// FakeIP connections carry a fake destination address; sing-box refuses to route them to
+/// `direct`/outbound until the domain is resolved into a real IP (`a resolve action is required
+/// before routing to outbound/direct[direct]`). The reference template
+/// (`sing-box-config-templates .../fakeip.json`) places `{"action":"resolve"}` right after the
+/// sniff + hijack-dns rules, so it is inserted immediately after the `hijack-dns` rule (head when
+/// none exists). `"strategy":"ipv4_only"` is added when IPv6 is disabled to mirror the DNS
+/// strategy override; with IPv6 enabled the field is omitted (core default).
+///
+/// Idempotency: when `route.rules` already contains any `action = resolve` rule (second call, or a
+/// user/template rule explicitly taking over resolution) the injection is skipped.
+fn inject_resolve_route_rule(obj: &mut serde_json::Map<String, Value>, ipv6_enabled: bool) {
+    let route = obj
+        .entry("route")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(route_obj) = route.as_object_mut() else {
+        return;
+    };
+    let rules = route_obj
+        .entry("rules")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(rules_arr) = rules.as_array_mut() else {
+        return;
+    };
+    if rules_arr
+        .iter()
+        .any(|r| r.get("action").and_then(Value::as_str) == Some("resolve"))
+    {
+        return;
+    }
+    let mut resolve = serde_json::Map::new();
+    resolve.insert("action".to_string(), Value::String("resolve".to_string()));
+    if !ipv6_enabled {
+        resolve.insert(
+            "strategy".to_string(),
+            Value::String("ipv4_only".to_string()),
+        );
+    }
+    let at = rules_arr
+        .iter()
+        .position(|r| r.get("action").and_then(Value::as_str) == Some("hijack-dns"))
+        .map_or(0, |i| i + 1);
+    rules_arr.insert(at, Value::Object(resolve));
 }
 
 /// Whether `rule` carries a `query_type` array whose element set equals the corresponding field

@@ -291,7 +291,10 @@ impl ClientState {
                 self.config.tun_enabled,
             ),
             tun_stack: self.config.tun_stack.clone(),
-            tun_auto_route: self.config.tun_auto_route,
+            tun_auto_route: compat::panel_features_tun_auto_route(
+                cfg!(target_os = "android"),
+                self.config.tun_auto_route,
+            ),
             clash_api_enabled: self.config.clash_api_enabled,
             clash_api_port: self.config.clash_api_port,
             clash_api_secret: self.config.clash_api_secret.clone(),

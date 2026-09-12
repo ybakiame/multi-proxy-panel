@@ -75,6 +75,20 @@ fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
     // fakeip does not touch final / strategy (strategy owned by the IPv6 switch).
     assert_eq!(cfg["dns"]["final"], "local");
     assert_eq!(cfg["dns"]["strategy"], "ipv4_only");
+
+    // route.rules: resolve injected right after sniff → hijack-dns (before clash_mode baseline
+    // rules); ipv6 off → strategy ipv4_only.
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(route_rules[0], json!({ "action": "sniff" }));
+    assert_eq!(
+        route_rules[1],
+        json!({ "protocol": "dns", "action": "hijack-dns" })
+    );
+    assert_eq!(
+        route_rules[2],
+        json!({ "action": "resolve", "strategy": "ipv4_only" }),
+        "resolve must follow hijack-dns (sniff → hijack-dns → resolve)"
+    );
 }
 
 /// FakeIP idempotency: a second `apply_panel_features` call must not duplicate the fakeip server,
@@ -127,6 +141,14 @@ fn apply_fakeip_mode_keeps_aaaa_when_ipv6_enabled() {
         json!({ "query_type": ["A"], "action": "route", "server": "fakeip" })
     );
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
+
+    // ipv6 enabled → resolve rule omits `strategy` (core default).
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    assert_eq!(
+        route_rules[2],
+        json!({ "action": "resolve" }),
+        "ipv6 enabled must omit the resolve strategy"
+    );
 }
 
 /// DNS slice takeover exempts the whole fakeip injection: no fakeip server, no injected DNS
@@ -166,6 +188,45 @@ fn apply_fakeip_mode_skipped_on_takeover() {
             .get("cache_file")
             .is_none_or(|v| v.is_null()),
         "takeover must not inject cache_file"
+    );
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    assert!(
+        route_rules.iter().all(|r| r["action"] != "resolve"),
+        "takeover must skip the fakeip resolve rule: {route_rules:?}"
+    );
+}
+
+/// A pre-existing user/template `action = resolve` rule (explicit takeover of resolution)
+/// suppresses the injection on the first fakeip call as well (no duplicate).
+#[test]
+fn apply_fakeip_mode_does_not_duplicate_existing_resolve_rule() {
+    let sub = json!({
+        "dns": {
+            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
+            "rules": [],
+            "final": "local",
+            "strategy": "prefer_ipv4"
+        },
+        "route": { "rules": [{ "action": "resolve", "strategy": "prefer_ipv6" }] },
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &fakeip_features(false));
+
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    let resolve_count = route_rules
+        .iter()
+        .filter(|r| r["action"] == "resolve")
+        .count();
+    assert_eq!(
+        resolve_count, 1,
+        "existing user resolve rule must not be duplicated: {route_rules:?}"
+    );
+    assert!(
+        route_rules
+            .iter()
+            .any(|r| r == &json!({ "action": "resolve", "strategy": "prefer_ipv6" })),
+        "user resolve rule must be left untouched: {route_rules:?}"
     );
 }
 
@@ -232,6 +293,11 @@ fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
             .is_none_or(|v| v.is_null()),
         "disabled fakeip must not inject cache_file"
     );
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    assert!(
+        route_rules.iter().all(|r| r["action"] != "resolve"),
+        "disabled fakeip must not inject the resolve rule: {route_rules:?}"
+    );
 }
 
 /// No `dns` object -> fakeip does not fabricate one (nor the cache_file), aligning with the
@@ -253,5 +319,10 @@ fn apply_fakeip_mode_requires_existing_dns() {
             .get("cache_file")
             .is_none_or(|v| v.is_null()),
         "no dns -> fakeip injection skipped entirely, no cache_file"
+    );
+    let route_rules = cfg["route"]["rules"].as_array().unwrap();
+    assert!(
+        route_rules.iter().all(|r| r["action"] != "resolve"),
+        "no dns -> fakeip injection skipped entirely, no resolve rule: {route_rules:?}"
     );
 }

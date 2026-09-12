@@ -63,6 +63,14 @@ pub(crate) fn panel_features_tun_enabled(is_android: bool, tun_enabled: bool) ->
     if is_android { true } else { tun_enabled }
 }
 
+/// PanelFeatures TUN `auto_route` toggle: Android's VpnService has no fallback system routing —
+/// without `auto_route` the tun interface installs no routes and the tunnel is completely unusable,
+/// so it is always forced on (same "always on" semantics as [`panel_features_tun_enabled`]).
+/// Desktop passes through user settings as-is.
+pub(crate) fn panel_features_tun_auto_route(is_android: bool, tun_auto_route: bool) -> bool {
+    if is_android { true } else { tun_auto_route }
+}
+
 /// Calculate number of rules in composed config (sing-box `route.rules` array length,
 /// missing array treated as 0).
 pub(crate) fn config_json_rule_count(config_json: &serde_json::Value) -> u64 {
