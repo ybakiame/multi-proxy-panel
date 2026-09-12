@@ -19,7 +19,6 @@ import {
   vpnLastError,
 } from "@pp/client-core";
 import type { ClientStatus, SubscriptionView } from "@pp/client-core";
-import { ConnectionsEntryCard } from "../components/ConnectionsEntryCard";
 import { CurrentNodeCard } from "../components/CurrentNodeCard";
 import { PageShell } from "../components/PageShell";
 import { StartStopFab } from "../components/StartStopFab";
@@ -37,8 +36,7 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 2. 状态卡（StatusCard）：运行状态大字；运行中内嵌出站模式分段切换（`RuleModeSwitch`），
  *    未运行时仅展示状态并保留已保存模式 chip；
  * 3. 运行依赖区（仅核心运行中渲染，未运行时整组隐藏，相关轮询亦不发起）：
- *    当前节点卡（CurrentNodeCard，订阅名/分组/当前节点，点击进面板页）+ 流量统计卡
- *    （TrafficCard，2s 轮询）+ 当前连接入口（ConnectionsEntryCard，点击进面板页）；
+ *    当前节点卡（CurrentNodeCard，订阅名/分组/当前节点，点击进面板页）；
  * 4. 主操作：右下角悬浮启停按钮（StartStopFab，无生效订阅时禁用并提示选择）；点「启动代理」
  *    即完成「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
@@ -209,9 +207,6 @@ export default function Dashboard() {
 
           {/* 流量统计卡 */}
           <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
-
-          {/* 当前连接入口（点击进面板页） */}
-          <ConnectionsEntryCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
         </>
       )}
 
