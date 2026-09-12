@@ -499,7 +499,7 @@ Composed 配置
 | 阶段 | 职责 |
 |------|------|
 | `singbox_template` | 生成 sing-box 基础骨架（CN 分流基线，ADR-0005 P4 补记）：`local` DoH / `remote` DoH DNS 与 `clash_mode`/`geosite-cn` DNS 规则、private/CN→`direct` 与 `geolocation-!cn`→主 selector 路由规则、5 个 MetaCubeX 远程规则集（统一经顶层 `http_clients.rule-set-direct` 直连下载，解析走直连 `local` DNS，不经代理），`proxy`（主 selector 组）/`auto`（urltest，含 `tolerance=150`）/`direct`/`block` 分组 |
-| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，按**内容驱动**注入（无切片级总开关，见 P4 补记）——把 DNS 切片、自定义出站切片、Experimental 与 Route 切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组）；Experimental 深合并写入 `experimental.cache_file`（保留 `clash_api` 等同级键） |
+| `apply_config_slices` | ⓪ 切片层（ADR-0005）：读取 `config_slices.json`，按**内容驱动**注入（无切片级总开关，见 P4 补记）——把 DNS 切片、自定义出站切片、Experimental 与 Route 切片注入模板，自定义出站 tag 强制 `slice-` 前缀；出站含协议节点与 selector/urltest 分组（v1 禁嵌套分组）；Experimental 深合并写入 `experimental.cache_file`（保留 `clash_api` 等同级键）。DNS 切片 schema 支持 `clash_mode` 匹配类型与 `reverse_mapping` 字段，内置默认 DNS 经 `builtin_dns_slice_get`（真值源 `core_config::baseline::builtin_dns_slice`）映射进前端可视化编辑器，编辑即接管（2026-09 补记） |
 | Profile 覆写（YAML/JS） | 模板与切片之上叠加用户 Profile（远端为底、本地覆盖），改写节点分组、路由与实验字段，可显式接管模式语义；优先级高于切片层 |
 | `compose_singbox_config` | 注入本地可用的 inbounds（mixed 主入口；桌面 MITM 双入站）与 MITM 白名单规则、DNS 兼容适配 |
 | `apply_local_override` | 前插**全部 enabled** 本地规则/规则集并处理 final（场景模板已移除，不再按模板引用过滤；本地规则优先于订阅规则）；规则集注入扫描的引用来源含规则卡与已渲染 DNS 规则的 `rule_set`（ADR-0005 P2 补记） |

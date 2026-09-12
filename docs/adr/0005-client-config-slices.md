@@ -587,6 +587,15 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 - **修正 P3 补记**：P3「FakeIP 覆盖全部 A 查询且不依赖规则集」的表述已被本定案取代——FakeIP 现依赖 `geolocation-!cn` 规则集（基线注册）做非 CN 限定。
 - **规则顺序**：丢弃规则（`HTTPS` / `SVCB`，IPv6 关闭时并入 `AAAA` → `predefined` + `NOERROR`）置 `dns.rules` **头部**；FakeIP 路由规则**追加在基线之后**，使 `clash_mode direct/global` 与 `geosite-cn` 优先，FakeIP 不泄漏进直连 / 全局模式。
 - **FakeIP 模式无 `resolve`，realip 模式恢复 `resolve`（2026-09 补记）**：FakeIP 模式确认不注入 `route.rules` 的 `{"action":"resolve"}`——该动作会让出站看到真实 IP、违背 FakeIP 目的，并使所有连接依赖代理 DoH。但此前的移除同时误伤了默认 realip 模式：mixed 入站的域名连接没有目的 IP，`geoip-cn` / `geoip-private` 等 IP 规则集无法匹配，未收录国内域名错走代理。realip 模式（FakeIP 关闭且非 Takeover）恢复在 `hijack-dns` 之后注入 `{"action":"resolve"}`（IPv6 关闭时带 `strategy: ipv4_only`），对齐参考模板 realip.json；TUN 连接自带真实目的 IP，resolve 对非 Fqdn 目标为 no-op，不增加 TUN 路径延迟。
+
+- **DNS 可视化映射内置默认，编辑即接管（2026-09 补记）**：内置默认 DNS 以切片 schema 形态经
+  `builtin_dns_slice_get` 暴露给前端（`core_config::baseline::builtin_dns_slice` 为真值源，与运行时
+  注入逐项对齐：local/remote 服务器、头部 HTTPS/SVCB(+AAAA) 丢弃规则、clash_mode×2、geosite-cn、
+  final/strategy/reverse_mapping）；`follow_system` 模式下编辑器直接以内置默认初始化草稿，保存时内容
+  与内置一致则保持跟随系统（正文清空）、有改动则自动落 `takeover`——用户无需理解/手动切换 D1 的
+  模式开关（模式字段保留于数据模型，仅 UX 自动化）。为支撑内置规则的无损映射，切片 schema 新增
+  `clash_mode` 匹配类型（渲染为字符串，目标限 rule/global/direct）与 `reverse_mapping` 字段。FakeIP
+  开关仍是设置页独立层，不属于该视图。
 - 其余（`cache_file` 合并、`takeover` 豁免、幂等）不变。
 
 #### 冗余开关移除（内容驱动注入）
