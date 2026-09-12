@@ -11,7 +11,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Current slice schema version (mirrors Rust `SLICE_VERSION`). */
-export const SLICE_VERSION = 1;
+export const SLICE_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // DNS slice
@@ -86,9 +86,7 @@ export interface DnsRule {
 
 /** DNS slice: structured form of the sing-box top-level `dns` object. */
 export interface DnsSlice {
-  /** Slice master switch; `false` never injects the DNS slice. */
-  enabled: boolean;
-  /** Platform DNS mode (only Android diverges; desktop always behaves as takeover). */
+  /** Platform DNS mode: `follow_system` never injects the slice body. */
   mode: DnsMode;
   servers: DnsServer[];
   rules: DnsRule[];
@@ -268,10 +266,8 @@ export type CustomOutbound = {
   enabled: boolean;
 } & OutboundProtocol;
 
-/** Custom outbound slice. */
+/** Custom outbound slice; enabled items are injected, an empty list is a no-op. */
 export interface OutboundsSlice {
-  /** Slice master switch; `false` never injects custom outbounds. */
-  enabled: boolean;
   items: CustomOutbound[];
 }
 
@@ -304,8 +300,6 @@ export interface CacheFileSlice {
  * mandatory-slice page and `v2ray_api` / `debug` are out of scope.
  */
 export interface ExperimentalSlice {
-  /** Slice master switch; `false` never injects the experimental slice. */
-  enabled: boolean;
   cache_file: CacheFileSlice;
 }
 
@@ -334,8 +328,6 @@ export interface DomainResolverSlice {
  * `auto_detect_interface` stay owned by the template / panel-feature layer.
  */
 export interface RouteSlice {
-  /** Slice master switch; `false` never injects the route slice. */
-  enabled: boolean;
   /** `route.final` override (default outbound tag). Empty = keep `proxy`. */
   final_tag: string;
   /** `route.default_domain_resolver` override. */
@@ -350,7 +342,7 @@ export interface RouteSlice {
  * Config slice container, stored at `data_dir/config_slices.json`.
  *
  * All fields default: an old client without this file loads the default
- * document (every slice disabled).
+ * document (empty / no-op slices).
  */
 export interface ConfigSlices {
   /** Schema version for future migrations (currently [`SLICE_VERSION`]). */
@@ -404,12 +396,11 @@ export function outboundTag(name: string): string {
   return slug.length === 0 ? "slice-outbound" : `slice-${slug}`;
 }
 
-/** Default (all slices disabled) config slices, mirroring Rust `ConfigSlices::default`. */
+/** Default (empty / no-op slices) config slices, mirroring Rust `ConfigSlices::default`. */
 export function defaultConfigSlices(): ConfigSlices {
   return {
     version: SLICE_VERSION,
     dns: {
-      enabled: false,
       mode: "follow_system",
       servers: [],
       rules: [],
@@ -417,11 +408,9 @@ export function defaultConfigSlices(): ConfigSlices {
       strategy: "prefer_ipv4",
     },
     outbounds: {
-      enabled: false,
       items: [],
     },
     experimental: {
-      enabled: false,
       cache_file: {
         enabled: false,
         path: "",
@@ -430,7 +419,6 @@ export function defaultConfigSlices(): ConfigSlices {
       },
     },
     route: {
-      enabled: false,
       final_tag: "",
       resolver: {
         server: "",

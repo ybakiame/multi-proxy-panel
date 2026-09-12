@@ -14,7 +14,7 @@ import type {
  * DNS 切片（ADR-0005 P0-4b）纯逻辑：枚举选项 / 标签 / 结构守卫 / 表单校验。
  *
  * 与页面组件分离，便于单测与复用；校验规则对齐 ADR §3.5（D5 前端表单即时校验）：
- * tag 必填唯一无空白、非 local 类型 server 必填、端口 1-65535、takeover 且切片启用时
+ * tag 必填唯一无空白、非 local 类型 server 必填、端口 1-65535、takeover 时
  * final_tag 必填且指向已定义 server、DNS 规则的 server_tag 必须指向已定义 server。
  */
 
@@ -420,7 +420,7 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
 
   let finalTag: string | null = null;
   const trimmedFinalTag = dns.final_tag.trim();
-  if (dns.mode === "takeover" && dns.enabled && trimmedFinalTag === "") {
+  if (dns.mode === "takeover" && trimmedFinalTag === "") {
     finalTag = "接管模式下必须选择 final 服务器";
   } else if (trimmedFinalTag !== "" && !serverTags.has(trimmedFinalTag)) {
     finalTag = "final 服务器不存在";

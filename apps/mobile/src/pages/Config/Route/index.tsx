@@ -20,20 +20,20 @@ import { useNavigate } from "react-router-dom";
 import { BackHeader } from "../../../components/BackHeader";
 import { EntryLinkCard } from "../../../components/EntryLinkCard";
 import { isConfigSlices } from "../Dns/dnsUtils";
-import { RouteMasterSwitchCard } from "./RouteMasterSwitchCard";
 import { RouteSettingsCard } from "./RouteSettingsCard";
 import { buildFinalTagOptions, buildResolverServerOptions, isRouteSliceValid, validateRouteSlice } from "./routeUtils";
 
 /**
  * 路由切片配置子页（ADR-0005，路由 `/config/route`）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 切片总开关 → 路由设置区
+ * 结构自上而下：BackHeader（右侧保存动作）→ 路由设置区
  * （`route.final` + `route.default_domain_resolver`）→ 入口区（规则管理 / 规则集管理）。
+ * 无切片总开关：非空字段即覆写运行配置。
  *
  * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；所有编辑只改内存中的
  * route 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，成功后
  * invalidate + toast；核心运行中追加「重启代理后生效」。校验对齐 Rust
- * `RouteSlice::validate`：切片启用时非空的 `final_tag` / `resolver.server` 不得含空白。
+ * `RouteSlice::validate`：非空的 `final_tag` / `resolver.server` 不得含空白。
  */
 export default function RoutePage() {
   const navigate = useNavigate();
@@ -109,9 +109,7 @@ export default function RoutePage() {
     }
   };
 
-  // ---- 标量字段（总开关 / final / resolver） ----
-  const handleToggleEnabled = (enabled: boolean) =>
-    setDraft((current) => (current ? { ...current, enabled } : current));
+  // ---- 标量字段（final / resolver） ----
   const handleChangeFinalTag = (final_tag: string) =>
     setDraft((current) => (current ? { ...current, final_tag } : current));
   const handleChangeResolverServer = (server: string) =>
@@ -178,8 +176,6 @@ export default function RoutePage() {
 
         {draft && errors && (
           <>
-            <RouteMasterSwitchCard enabled={draft.enabled} onToggle={handleToggleEnabled} />
-
             <RouteSettingsCard
               finalTag={draft.final_tag}
               resolverServer={draft.resolver.server}

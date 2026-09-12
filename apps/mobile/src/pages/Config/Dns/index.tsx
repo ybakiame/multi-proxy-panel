@@ -27,7 +27,6 @@ import { isLocalOverrideView } from "../localOverrideGuards";
 import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
 import { DnsFakeipCard } from "./DnsFakeipCard";
-import { DnsMasterSwitchCard } from "./DnsMasterSwitchCard";
 import { DnsModeCard } from "./DnsModeCard";
 import { DnsRoutingCard } from "./DnsRoutingCard";
 import { DnsRuleFormSheet } from "./DnsRuleFormSheet";
@@ -39,9 +38,10 @@ import { dnsRuleSummary, dnsServerTagOptions, isConfigSlices, isDnsSliceValid, v
 /**
  * DNS 切片配置子页（ADR-0005 P0-4b，路由 `/config/dns`）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ takeover 风险 Alert → 切片总开关 →
- * Android DNS 模式（跟随系统 / 接管）→ DNS 服务器列表 → DNS 分流规则列表 →
+ * 结构自上而下：BackHeader（右侧保存动作）→ takeover 风险 Alert →
+ * DNS 模式（跟随系统 / 接管）→ DNS 服务器列表 → DNS 分流规则列表 →
  * final 服务器 + 全局解析策略。
+ * 无切片总开关：`takeover` 模式下本切片正文即注入运行配置。
  *
  * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；所有编辑只改内存中的
  * dns 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，成功后
@@ -123,9 +123,7 @@ export default function DnsPage() {
     }
   };
 
-  // ---- 标量字段（总开关 / 模式 / final / 策略） ----
-  const handleToggleEnabled = (enabled: boolean) =>
-    setDraft((current) => (current ? { ...current, enabled } : current));
+  // ---- 标量字段（模式 / final / 策略） ----
   const handleChangeMode = (mode: DnsMode) => setDraft((current) => (current ? { ...current, mode } : current));
   const handleChangeStrategy = (strategy: DnsStrategy) =>
     setDraft((current) => (current ? { ...current, strategy } : current));
@@ -291,8 +289,6 @@ export default function DnsPage() {
                 </Alert.Content>
               </Alert>
             )}
-
-            <DnsMasterSwitchCard enabled={draft.enabled} onToggle={handleToggleEnabled} />
 
             <DnsModeCard mode={draft.mode} isAndroid={isAndroid} onChangeMode={handleChangeMode} />
 

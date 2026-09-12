@@ -138,7 +138,6 @@ export function viewToInput(view: CoreLocalOverrideView): CoreLocalOverrideInput
       auto_update_interval_minutes: rs.auto_update_interval_minutes,
       last_updated: rs.last_updated,
     })),
-    enabled: view.enabled,
   };
 }
 

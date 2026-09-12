@@ -7,7 +7,7 @@ import type { MobileSelectOption } from "../../../components/MobileSelectSheet";
  *
  * 与页面组件分离，便于单测与复用；候选并集对齐 CustomRulesPage 的「指定出站」
  * 模式（内置 + 切片 + 静态订阅节点，按 tag 去重），校验对齐 Rust
- * `RouteSlice::validate`：切片启用时非空的 `final_tag` / `resolver.server`
+ * `RouteSlice::validate`：非空的 `final_tag` / `resolver.server`
  * 不得包含空白字符（引用完整性交给核心运行时校验）。
  */
 
@@ -73,7 +73,7 @@ export function buildFinalTagOptions(
  * 构建 `default_domain_resolver.server` 候选并集：内置 DNS server ∪ DNS 切片 server。
  *
  * - 内置：`local` / `remote`；`dns_fakeip_enabled` 时追加 `fakeip`；
- * - DNS 切片：仅当切片 `enabled` 时其 server tag 才会被注入，故仅此时列出。
+ * - DNS 切片：仅当切片 mode 为 `takeover` 时其 server tag 才会被注入，故仅此时列出。
  */
 export function buildResolverServerOptions(slices: ConfigSlices | null, fakeipEnabled: boolean): MobileSelectOption[] {
   const options: MobileSelectOption[] = [DEFAULT_RESOLVER_SERVER_OPTION];
@@ -89,7 +89,7 @@ export function buildResolverServerOptions(slices: ConfigSlices | null, fakeipEn
   if (fakeipEnabled) push("fakeip", "fakeip", BUILTIN_DNS_SERVER_HINT);
 
   const dns = slices?.dns;
-  if (dns?.enabled) {
+  if (dns?.mode === "takeover") {
     for (const server of dns.servers) push(server.tag, server.tag, "DNS 切片服务器");
   }
 
@@ -102,11 +102,8 @@ export interface RouteSliceErrors {
   resolverServer: string | null;
 }
 
-/** 校验 route 切片草稿（保存前调用；禁用切片跳过子校验）。 */
+/** 校验 route 切片草稿（保存前调用）。 */
 export function validateRouteSlice(route: RouteSlice): RouteSliceErrors {
-  if (!route.enabled) {
-    return { finalTag: null, resolverServer: null };
-  }
   return {
     finalTag: route.final_tag !== "" && /\s/.test(route.final_tag) ? "不能包含空白字符" : null,
     resolverServer: route.resolver.server !== "" && /\s/.test(route.resolver.server) ? "不能包含空白字符" : null,

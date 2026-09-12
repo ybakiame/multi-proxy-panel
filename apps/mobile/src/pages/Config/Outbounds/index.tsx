@@ -20,7 +20,6 @@ import { BackHeader } from "../../../components/BackHeader";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
 import { OutboundListSection } from "./OutboundListSection";
-import { OutboundMasterSwitchCard } from "./OutboundMasterSwitchCard";
 import { buildGroupMemberCandidates, type GroupMemberCandidate } from "./groupForm";
 import { isConfigSlices, isOutboundsSliceValid, validateOutboundsSlice } from "./outboundForm";
 import type { OutboundProtocolType } from "./outboundOptions";
@@ -28,8 +27,9 @@ import type { OutboundProtocolType } from "./outboundOptions";
 /**
  * 自定义出站切片配置子页（ADR-0005 P0-4c，路由 `/config/outbounds`）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 切片总开关 → 出站列表（增删改）。
+ * 结构自上而下：BackHeader（右侧保存动作）→ 出站列表（增删改）。
  * 出站可被「规则管理」的 `Outbound{tag}` 动作引用（tag 由名称生成，强制 `slice-` 前缀）。
+ * 无切片总开关：启用中的条目即注入运行配置。
  *
  * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；所有编辑只改内存中的
  * outbounds 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，成功后
@@ -123,9 +123,6 @@ export default function OutboundsPage() {
       setSaving(false);
     }
   };
-
-  const handleToggleEnabled = (enabled: boolean) =>
-    setDraft((current) => (current ? { ...current, enabled } : current));
 
   // ---- 出站条目 ----
   const openAdd = (protocol: OutboundProtocolType) => {
@@ -234,18 +231,14 @@ export default function OutboundsPage() {
         )}
 
         {draft && (
-          <>
-            <OutboundMasterSwitchCard enabled={draft.enabled} onToggle={handleToggleEnabled} />
-
-            <OutboundListSection
-              items={draft.items}
-              itemErrors={errors?.itemErrors ?? []}
-              onToggle={handleToggleItem}
-              onEdit={openEdit}
-              onAddGroup={() => openAdd("selector")}
-              onAddNode={() => openAdd("vless")}
-            />
-          </>
+          <OutboundListSection
+            items={draft.items}
+            itemErrors={errors?.itemErrors ?? []}
+            onToggle={handleToggleItem}
+            onEdit={openEdit}
+            onAddGroup={() => openAdd("selector")}
+            onAddNode={() => openAdd("vless")}
+          />
         )}
       </div>
 

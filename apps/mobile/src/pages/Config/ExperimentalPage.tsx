@@ -22,13 +22,14 @@ const INPUT_CLASS =
 /**
  * Experimental 切片配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 实验性能力提示 → 切片总开关 →
+ * 结构自上而下：BackHeader（右侧保存动作）→ 实验性能力提示 →
  * Cache File 分区（enabled / path / cache_id / store_fakeip）。
+ * 无切片总开关：`cache_file.enabled` 即注入开关。
  *
  * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；编辑只改内存中的
  * experimental 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，
  * 成功后 invalidate + toast；核心运行中追加「重启代理后生效」。校验对齐 Rust
- * `ExperimentalSlice::validate`：切片启用且 `path` 非空时不得为纯空白。
+ * `ExperimentalSlice::validate`：`path` 非空时不得为纯空白。
  */
 export default function ExperimentalPage() {
   const queryClient = useQueryClient();
@@ -65,11 +66,9 @@ export default function ExperimentalPage() {
 
   const [saving, setSaving] = useState(false);
 
-  // 校验对齐 Rust：仅切片启用时才检查；非空 path 不得为纯空白。
+  // 校验对齐 Rust：非空 path 不得为纯空白。
   const pathError =
-    draft && draft.enabled && draft.cache_file.path !== "" && draft.cache_file.path.trim() === ""
-      ? "路径不能为空白字符"
-      : null;
+    draft && draft.cache_file.path !== "" && draft.cache_file.path.trim() === "" ? "路径不能为空白字符" : null;
   const valid = draft !== null && pathError === null;
   const dirty = draft !== null && slices !== null && JSON.stringify(draft) !== JSON.stringify(slices.experimental);
 
@@ -87,8 +86,6 @@ export default function ExperimentalPage() {
     }
   };
 
-  const handleToggleEnabled = (enabled: boolean) =>
-    setDraft((current) => (current ? { ...current, enabled } : current));
   const updateCacheFile = (patch: Partial<CacheFileSlice>) =>
     setDraft((current) => (current ? { ...current, cache_file: { ...current.cache_file, ...patch } } : current));
 
@@ -157,29 +154,6 @@ export default function ExperimentalPage() {
                 <Alert.Description>实验性能力由 sing-box 提供，字段以官方文档为准。</Alert.Description>
               </Alert.Content>
             </Alert>
-
-            <Card>
-              <Card.Header>
-                <Card.Title>Experimental 切片总开关</Card.Title>
-                <Card.Description>
-                  <div className="flex w-full items-center justify-between gap-3">
-                    <span>关闭后 Experimental 切片不会注入运行配置</span>
-                    <Switch
-                      aria-label="启用 Experimental 切片"
-                      isSelected={draft.enabled}
-                      onChange={(next) => handleToggleEnabled(next)}
-                      className="shrink-0"
-                    >
-                      <Switch.Content>
-                        <Switch.Control>
-                          <Switch.Thumb />
-                        </Switch.Control>
-                      </Switch.Content>
-                    </Switch>
-                  </div>
-                </Card.Description>
-              </Card.Header>
-            </Card>
 
             <Card>
               <Card.Header>

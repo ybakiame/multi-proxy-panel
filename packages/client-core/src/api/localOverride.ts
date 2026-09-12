@@ -34,7 +34,6 @@ export interface LocalRuleSetRefView {
 export interface CoreLocalOverrideView {
   rules: LocalRuleView[];
   rule_sets: LocalRuleSetRefView[];
-  enabled: boolean;
 }
 
 /**
@@ -102,7 +101,6 @@ export interface CustomRuleSetInput {
 export interface CoreLocalOverrideInput {
   rules: LocalRuleInput[];
   rule_sets: LocalRuleSetRefInput[];
-  enabled: boolean;
 }
 
 export interface LocalRuleInput {
