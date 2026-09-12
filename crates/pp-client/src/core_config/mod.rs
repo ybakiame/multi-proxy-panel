@@ -8,6 +8,7 @@ use crate::config_slices::{ConfigSlices, DnsMode};
 
 mod clash_api;
 mod compose;
+mod fakeip;
 mod singbox;
 
 #[cfg(test)]
@@ -65,6 +66,14 @@ pub struct PanelFeatures {
     /// leaves the template/injected `prefer_ipv4` untouched. Exempt when
     /// `dns_mode` is [`DnsMode::Takeover`] (user DNS slice takes over fully).
     pub ipv6_enabled: bool,
+    /// Whether to enable the built-in DNS FakeIP mode (opt-in, default `false`).
+    ///
+    /// When enabled, [`apply_singbox_panel_features`] appends a `fakeip` DNS server,
+    /// routes all A queries to it, drops HTTPS/SVCB (and AAAA when `ipv6_enabled`
+    /// is `false`) with `NOERROR`, and deep-merges `experimental.cache_file` to
+    /// persist fakeip mappings. Exempt when `dns_mode` is [`DnsMode::Takeover`]
+    /// (user DNS slice takes over fully).
+    pub dns_fakeip_enabled: bool,
     /// Android DNS mode derived from [`crate::config_slices::ConfigSlices`] (ADR-0005 D1).
     ///
     /// `FollowSystem` (default) keeps the forced `inject_android_dns`; `Takeover`

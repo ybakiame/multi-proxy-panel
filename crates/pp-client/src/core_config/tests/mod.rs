@@ -16,6 +16,8 @@ mod clash_api;
 #[cfg(test)]
 mod compose;
 #[cfg(test)]
+mod fakeip;
+#[cfg(test)]
 mod features;
 #[cfg(test)]
 mod real_core;

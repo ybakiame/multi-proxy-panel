@@ -12,6 +12,7 @@ fn singbox_features() -> PanelFeatures {
         clash_api_ui: "zashboard".to_string(),
         rule_mode: "rule".to_string(),
         ipv6_enabled: false,
+        dns_fakeip_enabled: false,
         dns_mode: crate::config_slices::DnsMode::FollowSystem,
     }
 }

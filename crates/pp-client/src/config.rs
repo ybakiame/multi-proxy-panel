@@ -75,6 +75,15 @@ pub struct ClientConfig {
     /// `#[serde(default)]` 保证旧版 `client.json`（无此字段）解析为 false。
     #[serde(default)]
     pub ipv6_enabled: bool,
+    /// 是否启用内置 DNS FakeIP 模式（默认关闭，opt-in）。
+    ///
+    /// 开启时配置合成阶段（`core_config::apply_singbox_panel_features`）注入 fakeip DNS server
+    /// 并把全部 A 查询路由到 fakeip；HTTPS/SVCB 记录丢弃，AAAA 仅在 `ipv6_enabled=false` 时一并
+    /// 丢弃。`experimental.cache_file` 被深合并开启以在重启后保留映射。DNS 切片 takeover 模式下
+    /// 由用户全权接管，不受该开关影响。
+    /// `#[serde(default)]` 保证旧版 `client.json`（无此字段）解析为 false。
+    #[serde(default)]
+    pub dns_fakeip_enabled: bool,
     /// 是否启用 Clash 面板 API（RESTful 控制接口）。
     ///
     /// 默认开启：流量统计与出站模式即时切换依赖该本地接口。存量 `client.json` 中
@@ -141,6 +150,8 @@ impl Default for ClientConfig {
             tun_auto_route: true,
             // IPv6 默认关闭：DNS 策略 ipv4_only，规避无 v6 出栈节点的 AAAA 连接失败。
             ipv6_enabled: false,
+            // FakeIP 默认关闭（opt-in）：仅显式开启时才注入 fakeip DNS。
+            dns_fakeip_enabled: false,
             // Clash API 默认开启：流量统计与出站模式即时切换依赖该本地控制接口。
             // 该默认仅影响新配置（首装无 client.json 时）；存量 client.json 中已持久化的
             // 值不受影响（显式字段优先于默认值，desktop 用户显式关闭的尊重选择，
@@ -255,6 +266,8 @@ mod tests {
         assert!(cfg.tun_auto_route);
         // IPv6 默认关闭：DNS 策略 ipv4_only。
         assert!(!cfg.ipv6_enabled);
+        // FakeIP 默认关闭（opt-in）。
+        assert!(!cfg.dns_fakeip_enabled);
         assert!(cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());
@@ -293,6 +306,7 @@ mod tests {
         cfg.tun_stack = "system".to_string();
         cfg.tun_auto_route = false;
         cfg.ipv6_enabled = true;
+        cfg.dns_fakeip_enabled = true;
         cfg.clash_api_enabled = true;
         cfg.clash_api_port = 9091;
         cfg.clash_api_secret = "sekret".to_string();
@@ -327,6 +341,8 @@ mod tests {
         assert!(cfg.tun_auto_route);
         // Old client.json missing ipv6_enabled should parse with default false.
         assert!(!cfg.ipv6_enabled);
+        // Old client.json missing dns_fakeip_enabled should parse with default false.
+        assert!(!cfg.dns_fakeip_enabled);
         assert!(cfg.clash_api_enabled);
         assert_eq!(cfg.clash_api_port, 9090);
         assert!(cfg.clash_api_secret.is_empty());

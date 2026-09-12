@@ -18,6 +18,8 @@ use super::PanelFeatures;
 ///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
 ///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
 ///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
+/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + head DNS rules + `experimental.cache_file`
+///   deep merge (see `apply_fakeip_mode` in `core_config::fakeip`); skipped on DNS takeover.
 /// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
@@ -131,6 +133,14 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             "strategy".to_string(),
             Value::String(DnsStrategy::Ipv4Only.as_str().to_string()),
         );
+    }
+
+    // FakeIP mode (opt-in, default off): injected last so it finalizes the DNS shape after
+    // `inject_android_dns` and the IPv6 strategy override above. `Takeover` exempt: the user's
+    // DNS slice already owns DNS completely at the ⓪ layer (ADR-0005 D1), so the whole fakeip
+    // injection is skipped and the user's slice is left untouched.
+    if features.dns_fakeip_enabled && features.dns_mode != DnsMode::Takeover {
+        super::fakeip::apply_fakeip_mode(composed, features);
     }
 
     // TUN DNS 劫持 + 域名嗅探（无条件注入，见 inject_dns_hijack_and_sniff_rules）。

@@ -38,6 +38,8 @@ pub struct ClientConfigView {
     pub tun_auto_route: bool,
     /// Whether IPv6 resolution is enabled (default `false`; DNS strategy `ipv4_only`).
     pub ipv6_enabled: bool,
+    /// Whether the built-in DNS FakeIP mode is enabled (opt-in, default `false`).
+    pub dns_fakeip_enabled: bool,
     /// Whether Clash dashboard API is enabled.
     pub clash_api_enabled: bool,
     /// Clash dashboard API listen port.
@@ -78,6 +80,7 @@ impl Default for ClientConfigView {
             tun_stack: "mixed".to_string(),
             tun_auto_route: true,
             ipv6_enabled: false,
+            dns_fakeip_enabled: false,
             clash_api_enabled: false,
             clash_api_port: 9090,
             clash_api_secret: String::new(),
@@ -112,6 +115,7 @@ impl ClientConfigView {
             tun_stack: cfg.tun_stack.clone(),
             tun_auto_route: cfg.tun_auto_route,
             ipv6_enabled: cfg.ipv6_enabled,
+            dns_fakeip_enabled: cfg.dns_fakeip_enabled,
             clash_api_enabled: cfg.clash_api_enabled,
             clash_api_port: cfg.clash_api_port,
             clash_api_secret: cfg.clash_api_secret.clone(),
@@ -144,6 +148,7 @@ impl ClientConfigView {
             "tun_stack": self.tun_stack,
             "tun_auto_route": self.tun_auto_route,
             "ipv6_enabled": self.ipv6_enabled,
+            "dns_fakeip_enabled": self.dns_fakeip_enabled,
             "clash_api_enabled": self.clash_api_enabled,
             "clash_api_port": self.clash_api_port,
             "clash_api_secret": self.clash_api_secret,
@@ -257,6 +262,7 @@ mod tests {
         view.tun_stack = "system".to_string();
         view.tun_auto_route = false;
         view.ipv6_enabled = true;
+        view.dns_fakeip_enabled = true;
         view.clash_api_enabled = true;
         view.clash_api_port = 9091;
         view.clash_api_secret = "sekret".to_string();
@@ -280,6 +286,7 @@ mod tests {
         assert_eq!(saved.tun_stack, "system");
         assert!(!saved.tun_auto_route);
         assert!(saved.ipv6_enabled);
+        assert!(saved.dns_fakeip_enabled);
         assert!(saved.clash_api_enabled);
         assert_eq!(saved.clash_api_port, 9091);
         assert_eq!(saved.clash_api_secret, "sekret");
@@ -295,6 +302,7 @@ mod tests {
         assert!(view2.tun_enabled);
         assert_eq!(view2.tun_stack, "system");
         assert!(view2.ipv6_enabled);
+        assert!(view2.dns_fakeip_enabled);
         assert!(view2.clash_api_enabled);
         assert_eq!(view2.clash_api_secret, "sekret");
         assert_eq!(view2.clash_api_ui, "yacd");
@@ -337,6 +345,10 @@ mod tests {
         assert!(
             !saved.ipv6_enabled,
             "old frontend missing ipv6_enabled should default false"
+        );
+        assert!(
+            !saved.dns_fakeip_enabled,
+            "old frontend missing dns_fakeip_enabled should default false"
         );
         assert_eq!(saved.clash_api_ui, "zashboard");
 
