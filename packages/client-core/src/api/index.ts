@@ -176,6 +176,7 @@ export {
   SLICE_VERSION,
   configSlicesGet,
   configSlicesSave,
+  builtinDnsSliceGet,
   outboundTag,
   defaultConfigSlices,
   isGroupOutbound,

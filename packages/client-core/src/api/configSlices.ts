@@ -27,7 +27,14 @@ export type DnsStrategy = "prefer_ipv4" | "prefer_ipv6" | "ipv4_only" | "ipv6_on
 export type DnsServerType = "udp" | "tls" | "https" | "quic" | "h3" | "local" | "fakeip";
 
 /** DNS rule match type (determines the sing-box match field). */
-export type DnsMatchType = "domain" | "domain_suffix" | "domain_keyword" | "rule_set" | "query_type";
+export type DnsMatchType =
+  | "domain"
+  | "domain_suffix"
+  | "domain_keyword"
+  | "rule_set"
+  | "query_type"
+  /** Outbound mode; target is a single `rule` / `global` / `direct` value (rendered as a string). */
+  | "clash_mode";
 
 /** DNS rule action (`dns.rules[].action`). */
 export type DnsRuleAction = "route" | "predefined" | "reject";
@@ -94,6 +101,8 @@ export interface DnsSlice {
   final_tag: string;
   /** Default domain strategy (sing-box `dns.strategy`). */
   strategy: DnsStrategy;
+  /** Reverse mapping (sing-box `dns.reverse_mapping`); rendered only when `true`. */
+  reverse_mapping: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +376,16 @@ export function configSlicesSave(input: ConfigSlices): Promise<void> {
   return invoke<void>("config_slices_save", { input });
 }
 
+/**
+ * Built-in default DNS config as an editable `DnsSlice` (the exact shape the running core
+ * uses, computed with the current IPv6 switch). The DNS editor initializes the
+ * `follow_system` draft from it, so the built-in defaults are viewable/editable directly and
+ * saving a modified body materializes as `takeover` — no manual mode switch needed.
+ */
+export function builtinDnsSliceGet(): Promise<DnsSlice> {
+  return invoke<DnsSlice>("builtin_dns_slice_get");
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -406,6 +425,7 @@ export function defaultConfigSlices(): ConfigSlices {
       rules: [],
       final_tag: "",
       strategy: "prefer_ipv4",
+      reverse_mapping: false,
     },
     outbounds: {
       items: [],

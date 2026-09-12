@@ -18,6 +18,8 @@ export const TASKS_KEY = ["tasks"] as const;
 
 export const LOCAL_OVERRIDE_KEY = ["localOverride"] as const;
 
+export const BUILTIN_DNS_SLICE_KEY = ["builtinDnsSlice"] as const;
+
 export const PROFILES_KEY = ["profiles"] as const;
 /** 单个覆写模板详情（Override 页，按选中 id 参数化）。 */
 export const profileKey = (id: string | null) => ["profile", id] as const;
