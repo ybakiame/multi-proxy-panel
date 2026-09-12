@@ -16,6 +16,8 @@ mod clash_api;
 #[cfg(test)]
 mod compose;
 #[cfg(test)]
+mod dns_drop;
+#[cfg(test)]
 mod fakeip;
 #[cfg(test)]
 mod features;

@@ -142,6 +142,20 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         );
     }
 
+    // HTTPS/SVCB (and AAAA when IPv6 is off) drop rule at the head of `dns.rules`: these query
+    // types must be answered empty locally instead of falling through to `dns.final` (remote,
+    // dialed through the proxy) — otherwise Android's frequent HTTPS-type queries each pay a
+    // proxied round trip and stall entirely when the proxy path is down. Injected for every
+    // DNS mode (not just FakeIP, aligning with the reference realip/fakeip templates) but
+    // exempt on `Takeover` (user owns the DNS slice, ADR-0005 D1). Requires an existing `dns`
+    // object (template / Android injection provide it); never fabricates one. Runs after
+    // `inject_android_dns` so the Android-injected rules get the drop rule too.
+    if features.dns_mode != DnsMode::Takeover
+        && let Some(dns) = composed.get_mut("dns").and_then(Value::as_object_mut)
+    {
+        super::fakeip::inject_dns_drop_rule(dns, features.ipv6_enabled);
+    }
+
     // TUN DNS 劫持 + 域名嗅探（无条件注入，见 inject_dns_hijack_and_sniff_rules）。
     if let Some(obj) = composed.as_object_mut() {
         inject_dns_hijack_and_sniff_rules(obj);

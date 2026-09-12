@@ -339,8 +339,10 @@ fn apply_fakeip_mode_empty_data_dir_keeps_default_path() {
     );
 }
 
-/// FakeIP off: no fakeip server, no injected DNS rules, no cache_file, no `geosite-cn` rule set
+/// FakeIP off: no fakeip server, no fakeip DNS rule, no cache_file, no `geosite-cn` rule set
 /// (isolated with `ipv6_enabled = true` so the IPv6 strategy override does not confound).
+/// The HTTPS/SVCB drop rule IS injected: it is a every-DNS-mode baseline (see
+/// `apply_singbox_panel_features`), not a FakeIP-owned rule.
 #[test]
 fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
     let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
@@ -354,7 +356,15 @@ fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
     let servers = cfg["dns"]["servers"].as_array().unwrap();
     assert_eq!(servers.len(), 1, "no fakeip server injected");
     assert!(servers.iter().all(|s| s["tag"] != "fakeip"));
-    assert_eq!(cfg["dns"]["rules"], json!([]));
+    assert_eq!(
+        cfg["dns"]["rules"],
+        json!([{
+            "query_type": ["HTTPS", "SVCB"],
+            "action": "predefined",
+            "rcode": "NOERROR"
+        }]),
+        "only the unconditional drop rule, no fakeip route rule"
+    );
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
     assert!(
         cfg["experimental"]

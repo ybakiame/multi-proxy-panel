@@ -12,7 +12,9 @@
 //! `clash_mode` rules already pin direct/global mode. FakeIP only adds two rules on top:
 //!
 //! 1. `HTTPS` / `SVCB` (and `AAAA` when IPv6 is off) queries are answered `NOERROR` with no
-//!    records — they must never leak to a resolver (head rule);
+//!    records — they must never leak to a resolver (head rule). Since the drop rule is now
+//!    injected unconditionally for every DNS mode (see [`inject_dns_drop_rule`], called from
+//!    `apply_singbox_panel_features`), this is normally a no-op safety net here;
 //! 2. **non-CN A queries** (`rule_set = geolocation-!cn`, `query_type = A`) are routed to the
 //!    `fakeip` server, so the proxy outbound receives the **domain** (end-to-end) instead of a
 //!    fake/real IP (tail rule, after the baseline so `clash_mode` direct/global wins and FakeIP
@@ -92,18 +94,6 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
         return;
     };
 
-    let mut drop_query_types = vec![
-        Value::String("HTTPS".to_string()),
-        Value::String("SVCB".to_string()),
-    ];
-    if !features.ipv6_enabled {
-        drop_query_types.push(Value::String("AAAA".to_string()));
-    }
-    let drop_rule = json!({
-        "query_type": drop_query_types,
-        "action": "predefined",
-        "rcode": "NOERROR"
-    });
     let fakeip_rule = json!({
         "rule_set": [NON_CN_RULE_SET_TAG],
         "query_type": ["A"],
@@ -134,27 +124,23 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
             }
         }
 
-        // 2. FakeIP DNS rules (idempotent, exact match per rule).
+        // 2. FakeIP DNS rules (idempotent, exact match per rule). The drop rule normally
+        //    already exists (injected unconditionally by `apply_singbox_panel_features`,
+        //    see [`inject_dns_drop_rule`]); the call here is the safety net for callers
+        //    that bypass the panel-features stage.
+        inject_dns_drop_rule(dns, features.ipv6_enabled);
         let rules = dns
             .entry("rules")
             .or_insert_with(|| Value::Array(Vec::new()));
         if let Some(arr) = rules.as_array_mut() {
-            let has_drop = arr.iter().any(|r| {
-                r.get("action").and_then(Value::as_str) == Some("predefined")
-                    && r.get("rcode").and_then(Value::as_str) == Some("NOERROR")
-                    && query_type_set_matches(r, &drop_rule)
-            });
             let has_fakeip = arr.iter().any(|r| {
                 r.get("action").and_then(Value::as_str) == Some("route")
                     && r.get("server").and_then(Value::as_str) == Some("fakeip")
                     && rule_set_references(r, NON_CN_RULE_SET_TAG)
                     && query_type_set_matches(r, &fakeip_rule)
             });
-            // Drop goes to the head (must precede every routing rule); FakeIP is appended after
-            // the baseline so `clash_mode` direct/global and `geosite-cn` win.
-            if !has_drop {
-                arr.insert(0, drop_rule);
-            }
+            // FakeIP is appended after the baseline so `clash_mode` direct/global and
+            // `geosite-cn` win.
             if !has_fakeip {
                 arr.push(fakeip_rule);
             }
@@ -196,6 +182,52 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
                 );
             }
         }
+    }
+}
+
+/// Drop-rule query types: `HTTPS` / `SVCB` always; `AAAA` too when IPv6 is off (the third
+/// v6 defense layer suppresses AAAA, see [`super::ipv6`]).
+pub(super) fn drop_query_types(ipv6_enabled: bool) -> Vec<Value> {
+    let mut types = vec![
+        Value::String("HTTPS".to_string()),
+        Value::String("SVCB".to_string()),
+    ];
+    if !ipv6_enabled {
+        types.push(Value::String("AAAA".to_string()));
+    }
+    types
+}
+
+/// Inject the `predefined NOERROR` drop rule at the head of `dns.rules` (idempotent).
+///
+/// `HTTPS` / `SVCB` (and `AAAA` when IPv6 is off) queries are answered `NOERROR` with no
+/// records instead of being forwarded to a resolver: they carry endpoint/ECH hints sing-box
+/// never consumes, and letting them fall through to `dns.final` (`remote`, dialed through the
+/// proxy) would add a proxied round trip to Android's frequent HTTPS-type queries — or stall
+/// name resolution entirely when the proxy path is down. Both reference templates
+/// (`platforms/android/realip.json` / `fakeip.json`) carry this as the first DNS rule.
+///
+/// Head position: the drop must precede every routing rule (including the `clash_mode`
+/// baseline and the FakeIP route rule) so dropped types never leak into any mode.
+pub(super) fn inject_dns_drop_rule(dns: &mut serde_json::Map<String, Value>, ipv6_enabled: bool) {
+    let drop_rule = json!({
+        "query_type": drop_query_types(ipv6_enabled),
+        "action": "predefined",
+        "rcode": "NOERROR"
+    });
+    let rules = dns
+        .entry("rules")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(arr) = rules.as_array_mut() else {
+        return;
+    };
+    let has_drop = arr.iter().any(|r| {
+        r.get("action").and_then(Value::as_str) == Some("predefined")
+            && r.get("rcode").and_then(Value::as_str) == Some("NOERROR")
+            && query_type_set_matches(r, &drop_rule)
+    });
+    if !has_drop {
+        arr.insert(0, drop_rule);
     }
 }
 
