@@ -8,7 +8,6 @@ use serde_json::json;
 
 fn dns_slice() -> DnsSlice {
     DnsSlice {
-        enabled: true,
         mode: DnsMode::Takeover,
         servers: vec![
             DnsServer {
@@ -94,7 +93,7 @@ fn apply_replaces_dns_object() {
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert!(report.dns_applied);
     assert_eq!(config["dns"]["servers"][0]["tag"], "local");
     assert!(
@@ -112,13 +111,12 @@ fn apply_appends_outbounds() {
     let mut config = json!({ "outbounds": [ { "type": "direct", "tag": "direct" } ] });
     let slices = ConfigSlices {
         outbounds: OutboundsSlice {
-            enabled: true,
             items: vec![ss_outbound("o1", "Node One")],
         },
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert_eq!(report.outbound_tags, vec!["slice-node-one".to_string()]);
     assert!(report.renamed_outbounds.is_empty());
 
@@ -140,13 +138,12 @@ fn apply_renames_conflicting_tag_with_stable_suffix() {
     });
     let slices = ConfigSlices {
         outbounds: OutboundsSlice {
-            enabled: true,
             items: vec![ss_outbound("o1", "Node One")],
         },
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert_eq!(report.outbound_tags, vec!["slice-node-one-3".to_string()]);
     assert_eq!(
         report.renamed_outbounds,
@@ -164,14 +161,11 @@ fn apply_skips_disabled_outbound_items() {
     let mut item = ss_outbound("o1", "Node One");
     item.enabled = false;
     let slices = ConfigSlices {
-        outbounds: OutboundsSlice {
-            enabled: true,
-            items: vec![item],
-        },
+        outbounds: OutboundsSlice { items: vec![item] },
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert!(report.outbound_tags.is_empty());
     assert!(config["outbounds"].as_array().unwrap().is_empty());
 }
@@ -184,7 +178,7 @@ fn apply_disabled_slices_leaves_config_unchanged() {
     });
     let original = config.clone();
 
-    let report = apply_config_slices(&mut config, &ConfigSlices::default(), true).unwrap();
+    let report = apply_config_slices(&mut config, &ConfigSlices::default()).unwrap();
     assert_eq!(config, original);
     assert_eq!(report, ApplyReport::default());
 }
@@ -192,57 +186,14 @@ fn apply_disabled_slices_leaves_config_unchanged() {
 #[test]
 fn apply_errors_on_non_object_config() {
     let mut config = json!([1, 2, 3]);
-    let err = apply_config_slices(&mut config, &ConfigSlices::default(), true).unwrap_err();
+    let err = apply_config_slices(&mut config, &ConfigSlices::default()).unwrap_err();
     assert!(err.to_string().contains("not a JSON object"), "{err}");
 }
 
-/// Gate off (`local_override_enabled = false`): the custom outbound and
-/// experimental slices are skipped, but the DNS slice (required config) is
-/// still injected.
+/// Content-driven injection: DNS (takeover) + outbounds + experimental are all
+/// applied without any master switch.
 #[test]
-fn apply_gate_off_skips_outbounds_and_experimental_but_keeps_dns() {
-    let mut config = json!({
-        "dns": { "servers": [] },
-        "outbounds": [ { "type": "direct", "tag": "direct" } ],
-        "experimental": { "clash_api": { "external_controller": "127.0.0.1:9090" } }
-    });
-    let slices = ConfigSlices {
-        dns: dns_slice(),
-        outbounds: OutboundsSlice {
-            enabled: true,
-            items: vec![ss_outbound("o1", "Node One")],
-        },
-        experimental: ExperimentalSlice {
-            enabled: true,
-            cache_file: CacheFileSlice {
-                enabled: true,
-                path: "/data/cache.db".to_string(),
-                ..Default::default()
-            },
-        },
-        ..Default::default()
-    };
-
-    let report = apply_config_slices(&mut config, &slices, false).unwrap();
-
-    // DNS slice is a required config: still injected when the gate is off.
-    assert!(report.dns_applied);
-    assert_eq!(config["dns"]["servers"][0]["tag"], "local");
-
-    // Custom outbound / experimental slices are gated off.
-    assert!(report.outbound_tags.is_empty());
-    assert_eq!(config["outbounds"].as_array().unwrap().len(), 1);
-    assert!(config["experimental"].get("cache_file").is_none());
-    // Sibling keys owned by other layers survive untouched.
-    assert_eq!(
-        config["experimental"]["clash_api"]["external_controller"],
-        "127.0.0.1:9090"
-    );
-}
-
-/// Gate on (`local_override_enabled = true`): all enabled slices are injected.
-#[test]
-fn apply_gate_on_injects_all_enabled_slices() {
+fn apply_injects_content_driven_slices() {
     let mut config = json!({
         "dns": { "servers": [] },
         "outbounds": [ { "type": "direct", "tag": "direct" } ]
@@ -250,11 +201,9 @@ fn apply_gate_on_injects_all_enabled_slices() {
     let slices = ConfigSlices {
         dns: dns_slice(),
         outbounds: OutboundsSlice {
-            enabled: true,
             items: vec![ss_outbound("o1", "Node One")],
         },
         experimental: ExperimentalSlice {
-            enabled: true,
             cache_file: CacheFileSlice {
                 enabled: true,
                 path: "/data/cache.db".to_string(),
@@ -264,7 +213,7 @@ fn apply_gate_on_injects_all_enabled_slices() {
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert!(report.dns_applied);
     assert_eq!(report.outbound_tags, vec!["slice-node-one".to_string()]);
     assert_eq!(config["outbounds"].as_array().unwrap().len(), 2);
@@ -273,6 +222,58 @@ fn apply_gate_on_injects_all_enabled_slices() {
         config["experimental"]["cache_file"]["path"],
         "/data/cache.db"
     );
+}
+
+/// `FollowSystem` DNS mode does not inject the slice body (desktop and Android
+/// share this semantics); the built-in/template DNS is preserved.
+#[test]
+fn apply_follow_system_dns_does_not_inject() {
+    let mut config = json!({
+        "dns": { "servers": [{ "tag": "builtin", "type": "udp", "server": "1.1.1.1" }] }
+    });
+    let original = config.clone();
+    let slices = ConfigSlices {
+        dns: DnsSlice {
+            mode: DnsMode::FollowSystem,
+            servers: vec![DnsServer {
+                tag: "slice".to_string(),
+                server: "9.9.9.9".to_string(),
+                server_type: DnsServerType::Udp,
+                ..Default::default()
+            }],
+            final_tag: "slice".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let report = apply_config_slices(&mut config, &slices).unwrap();
+    assert!(!report.dns_applied);
+    assert_eq!(config, original);
+}
+
+/// Experimental cache_file disabled: no `experimental.cache_file` is written,
+/// sibling keys survive untouched.
+#[test]
+fn apply_disabled_cache_file_leaves_experimental_untouched() {
+    let mut config = json!({
+        "experimental": { "clash_api": { "external_controller": "127.0.0.1:9090" } }
+    });
+    let original = config.clone();
+    let slices = ConfigSlices {
+        experimental: ExperimentalSlice {
+            cache_file: CacheFileSlice {
+                enabled: false,
+                path: "/data/cache.db".to_string(),
+                ..Default::default()
+            },
+        },
+        ..Default::default()
+    };
+
+    let report = apply_config_slices(&mut config, &slices).unwrap();
+    assert_eq!(config, original);
+    assert!(report.outbound_tags.is_empty());
 }
 
 #[test]
@@ -520,7 +521,6 @@ fn apply_renders_groups_after_nodes_and_remaps_members() {
     let mut config = json!({ "outbounds": [ { "type": "direct", "tag": "slice-node" } ] });
     let slices = ConfigSlices {
         outbounds: OutboundsSlice {
-            enabled: true,
             items: vec![
                 ss_outbound("o1", "Node"),
                 CustomOutbound {
@@ -538,7 +538,7 @@ fn apply_renders_groups_after_nodes_and_remaps_members() {
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     // Node is renamed (existing `slice-node` tag), group keeps its own tag.
     assert_eq!(
         report.outbound_tags,
@@ -569,14 +569,11 @@ fn apply_skips_disabled_group_outbounds() {
         }),
     };
     let slices = ConfigSlices {
-        outbounds: OutboundsSlice {
-            enabled: true,
-            items: vec![group],
-        },
+        outbounds: OutboundsSlice { items: vec![group] },
         ..Default::default()
     };
 
-    let report = apply_config_slices(&mut config, &slices, true).unwrap();
+    let report = apply_config_slices(&mut config, &slices).unwrap();
     assert!(report.outbound_tags.is_empty());
     assert_eq!(config["outbounds"].as_array().unwrap().len(), 1);
 }
@@ -584,7 +581,6 @@ fn apply_skips_disabled_group_outbounds() {
 #[test]
 fn render_fakeip_server_uses_ranges_and_omits_dial_fields() {
     let dns = DnsSlice {
-        enabled: true,
         mode: DnsMode::Takeover,
         servers: vec![
             DnsServer {
@@ -626,7 +622,6 @@ fn render_fakeip_server_uses_ranges_and_omits_dial_fields() {
 #[test]
 fn render_non_fakeip_server_omits_inet_ranges() {
     let dns = DnsSlice {
-        enabled: true,
         servers: vec![DnsServer {
             tag: "udp".to_string(),
             server: "1.1.1.1".to_string(),

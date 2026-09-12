@@ -4,9 +4,11 @@
 //! [`render_outbound`]) so it can be unit tested without a pipeline.
 //! [`apply_config_slices`] only mutates the passed-in JSON value.
 //!
-//! Gate: the custom outbound, experimental and route slices are additionally
-//! gated by the local-override master switch (`local_override.json`
-//! `singbox.enabled`). The DNS slice is a required config and is **not** gated.
+//! Injection is content-driven (no slice master switches):
+//! - DNS: injected when `dns.mode == takeover` (cross-platform unified).
+//! - Outbounds: enabled items are appended (empty list = no-op).
+//! - Experimental: merged when `cache_file.enabled`.
+//! - Route: `final` / `default_domain_resolver` written when non-empty.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,7 +21,7 @@ use super::outbound::{
     SelectorOutbound, ShadowsocksOutbound, TrojanOutbound, UrlTestOutbound, VlessOutbound,
     VmessOutbound,
 };
-use super::{ConfigSlices, outbound_tag, render_dns, render_domain_resolver, str_value};
+use super::{ConfigSlices, DnsMode, outbound_tag, render_dns, render_domain_resolver, str_value};
 
 /// Result of [`apply_config_slices`], suitable for logging.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -43,34 +45,23 @@ pub struct OutboundTagRename {
 
 /// Apply the enabled slices to `config`.
 ///
-/// - DNS slice: replaces `config.dns` with the rendered DNS object. Applied
-///   whenever the slice itself is enabled; it is a **required config** and is
-///   deliberately not gated by the local-override master switch.
+/// Injection is content-driven, with no slice master switches:
+/// - DNS slice: replaces `config.dns` with the rendered DNS object when
+///   `dns.mode == takeover`. [`DnsMode::FollowSystem`] (the default) keeps the
+///   built-in / template DNS untouched. Same semantics on desktop and Android.
 /// - Outbounds slice: appends rendered custom outbounds to `config.outbounds`,
-///   renaming tags that collide with existing outbounds. Gated by
-///   `local_override_enabled`.
+///   renaming tags that collide with existing outbounds. Disabled items are
+///   skipped; an empty item list is a no-op.
 /// - Experimental slice: deep merges the rendered `cache_file` object into
-///   `config.experimental`, preserving sibling keys (`clash_api`, …). Gated by
-///   `local_override_enabled`.
+///   `config.experimental`, preserving sibling keys (`clash_api`, …), when
+///   `cache_file.enabled`.
 /// - Route slice: deep merges `final` / `default_domain_resolver` into
 ///   `config.route`, preserving sibling keys (`rules`, `auto_detect_interface`,
-///   …). Gated by `local_override_enabled`.
+///   …), for non-empty fields only.
 ///
-/// `local_override_enabled` mirrors [`CoreLocalOverride::enabled`] — the master
-/// switch of `local_override.json`. When `false`, the custom outbound,
-/// experimental and route slices are skipped while the DNS slice is still
-/// injected: the switch turns off local override *management*, not the required
-/// DNS setup.
-///
-/// A disabled slice leaves the config untouched. Returns an error when `config`
-/// is not a JSON object (callers always pass a config object).
-///
-/// [`CoreLocalOverride::enabled`]: crate::local_override::CoreLocalOverride::enabled
-pub fn apply_config_slices(
-    config: &mut Value,
-    slices: &ConfigSlices,
-    local_override_enabled: bool,
-) -> PanelResult<ApplyReport> {
+/// Returns an error when `config` is not a JSON object (callers always pass a
+/// config object).
+pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelResult<ApplyReport> {
     let Some(obj) = config.as_object_mut() else {
         return Err(PanelError::Client(
             "apply_config_slices: config is not a JSON object".to_string(),
@@ -79,15 +70,14 @@ pub fn apply_config_slices(
 
     let mut report = ApplyReport::default();
 
-    // DNS is a required config: always applied when its own slice is enabled,
-    // regardless of the local-override master switch (takeover semantics stay
-    // untouched, see `core_config::dns_mode_from_slices`).
-    if slices.dns.enabled {
+    // DNS: content-driven. `FollowSystem` (default) keeps the built-in/template
+    // DNS; only `Takeover` injects the slice body. Cross-platform unified.
+    if slices.dns.mode == DnsMode::Takeover {
         obj.insert("dns".to_string(), render_dns(&slices.dns));
         report.dns_applied = true;
     }
 
-    if local_override_enabled && slices.outbounds.enabled {
+    if !slices.outbounds.items.is_empty() {
         let mut used = collect_outbound_tags(obj);
         let mut rendered = Vec::new();
         // Base tag -> final (possibly renamed) tag, used to remap group members
@@ -138,7 +128,7 @@ pub fn apply_config_slices(
         append_outbounds(obj, rendered);
     }
 
-    if local_override_enabled && slices.experimental.enabled {
+    if slices.experimental.cache_file.enabled {
         // Deep merge: only the `cache_file` key is written, sibling keys such as
         // `clash_api` (owned by the ④ panel-feature layer) are preserved.
         let experimental = obj
@@ -152,7 +142,7 @@ pub fn apply_config_slices(
         }
     }
 
-    if local_override_enabled && slices.route.enabled {
+    if !slices.route.final_tag.is_empty() || !slices.route.resolver.server.is_empty() {
         // Deep merge: only `final` / `default_domain_resolver` are written, so
         // sibling keys (`rules`, `auto_detect_interface`, …) are preserved.
         // `default_domain_resolver` is written as the 1.12+ object form; the ④

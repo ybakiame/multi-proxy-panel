@@ -17,12 +17,10 @@ use super::dns::DnsStrategy;
 /// Route slice: structured form of the sing-box `route` section.
 ///
 /// All fields are `#[serde(default)]`; a missing or partial object deserializes
-/// to sensible defaults (slice disabled, no overrides).
+/// to sensible defaults (no overrides). No master switch: a non-empty
+/// `final_tag` / `resolver.server` is written, empty fields are left untouched.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouteSlice {
-    /// Slice master switch; `false` never injects the route slice.
-    #[serde(default)]
-    pub enabled: bool,
     /// `route.final` override (default outbound tag). Empty = keep the template
     /// `"proxy"` value.
     #[serde(default)]

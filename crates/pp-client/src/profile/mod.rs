@@ -282,10 +282,6 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
 /// the YAML/JS overrides so the override escape hatch always wins (D2). The caller owns
 /// loading them (no IO in this function).
 ///
-/// `local_override_enabled` mirrors `local_override.json` `singbox.enabled`. When
-/// `false` the ⓪ slice layer skips the custom outbound / experimental slices while
-/// still injecting the DNS slice (see [`apply_config_slices`]).
-///
 /// Overlay semantics: remote as base, local overrides — YAML stage applies remote first then
 /// local (two deep merges naturally satisfy local override); JS stage remote `main` executes
 /// first, local `main` executes second (chained, local sees remote result). inbounds and MITM
@@ -294,11 +290,10 @@ pub async fn build_core_config_v2(
     sub: &Value,
     effective: &EffectiveOverrides,
     slices: &ConfigSlices,
-    local_override_enabled: bool,
 ) -> PanelResult<Value> {
     let mut config = singbox_template(&extract_nodes_singbox(sub));
     // ⓪ Slice layer: before the profile overrides so YAML/JS wins on field conflicts (ADR-0005 D2).
-    let report = apply_config_slices(&mut config, slices, local_override_enabled)?;
+    let report = apply_config_slices(&mut config, slices)?;
     if report.dns_applied || !report.outbound_tags.is_empty() {
         tracing::info!(
             dns_applied = report.dns_applied,
@@ -335,9 +330,6 @@ pub async fn build_core_config(sub: &Value, overrides: &ProfileOverrides) -> Pan
             local_js: overrides.js_override.clone(),
         },
         &ConfigSlices::default(),
-        // Compat wrapper has no slices, so the gate is irrelevant; keep the
-        // master-switch default (enabled).
-        true,
     )
     .await
 }

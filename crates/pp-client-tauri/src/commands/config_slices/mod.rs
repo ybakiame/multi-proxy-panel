@@ -63,7 +63,6 @@ mod tests {
             version: SLICE_VERSION,
             dns: DnsSlice::default(),
             outbounds: OutboundsSlice {
-                enabled: true,
                 items: vec![CustomOutbound {
                     id: "o1".to_string(),
                     name: "Node One".to_string(),
@@ -106,7 +105,6 @@ mod tests {
     fn save_invalid_does_not_write_and_forwards_error() {
         let dir = tempfile::tempdir().unwrap();
         let mut slices = sample_slices();
-        slices.dns.enabled = true;
         slices.dns.mode = DnsMode::Takeover;
         slices.dns.final_tag = "dangling".to_string();
 

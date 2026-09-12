@@ -62,13 +62,12 @@ pub fn normalize_rcode(value: &str) -> String {
 /// DNS slice: structured form of the sing-box top-level `dns` object.
 ///
 /// All fields are `#[serde(default)]` for forward compatibility; a missing or
-/// partial object deserializes to sensible defaults (slice disabled).
+/// partial object deserializes to sensible defaults.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnsSlice {
-    /// Slice master switch; `false` never injects the DNS slice.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Platform DNS mode (only Android diverges; desktop always behaves as takeover).
+    /// Platform DNS mode: [`DnsMode::FollowSystem`] uses the built-in DNS and
+    /// does not inject the slice body; [`DnsMode::Takeover`] injects it. The
+    /// semantics are identical on desktop and Android.
     #[serde(default)]
     pub mode: DnsMode,
     /// DNS servers (curated fields).
@@ -85,15 +84,17 @@ pub struct DnsSlice {
     pub strategy: DnsStrategy,
 }
 
-/// Platform DNS mode (ADR-0005 D1).
+/// Platform DNS mode (ADR-0005 D1), identical on desktop and Android.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsMode {
-    /// Follow the system resolver: Android keeps `inject_android_dns`, so the
-    /// slice DNS body does not take effect.
+    /// Follow the built-in / system resolver: the slice DNS body is **not**
+    /// injected. On Android `inject_android_dns` still runs; on desktop the
+    /// template DNS is kept as-is.
     #[default]
     FollowSystem,
-    /// Take over DNS: `inject_android_dns` is skipped and the slice body applies.
+    /// Take over DNS: the slice DNS body is injected (on Android
+    /// `inject_android_dns` is skipped).
     Takeover,
 }
 

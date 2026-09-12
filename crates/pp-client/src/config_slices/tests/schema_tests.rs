@@ -7,7 +7,6 @@ use crate::config_slices::*;
 
 fn dns_slice() -> DnsSlice {
     DnsSlice {
-        enabled: true,
         mode: DnsMode::Takeover,
         servers: vec![
             DnsServer {
@@ -42,7 +41,6 @@ fn dns_slice() -> DnsSlice {
 
 fn outbounds_slice() -> OutboundsSlice {
     OutboundsSlice {
-        enabled: true,
         items: vec![
             CustomOutbound {
                 id: "o1".to_string(),
@@ -91,13 +89,13 @@ fn sample_slices() -> ConfigSlices {
 }
 
 #[test]
-fn default_has_version_and_disabled_slices() {
+fn default_has_version_and_empty_slices() {
     let slices = ConfigSlices::default();
     assert_eq!(slices.version, SLICE_VERSION);
-    assert!(!slices.dns.enabled);
-    assert!(!slices.outbounds.enabled);
-    assert!(!slices.experimental.enabled);
+    assert_eq!(slices.dns.mode, DnsMode::FollowSystem);
     assert!(slices.dns.servers.is_empty());
+    assert!(slices.outbounds.items.is_empty());
+    assert!(!slices.experimental.cache_file.enabled);
 }
 
 #[test]
@@ -106,10 +104,28 @@ fn missing_fields_fall_back_to_defaults() {
     assert_eq!(slices, ConfigSlices::default());
 
     let dns: DnsSlice = serde_json::from_str("{}").unwrap();
-    assert!(!dns.enabled);
     assert_eq!(dns.mode, DnsMode::FollowSystem);
     assert_eq!(dns.strategy, DnsStrategy::PreferIpv4);
     assert!(dns.final_tag.is_empty());
+}
+
+/// v1 documents still parse: the removed per-slice `enabled` keys are ignored.
+#[test]
+fn legacy_enabled_fields_are_ignored_by_serde() {
+    let slices: ConfigSlices = serde_json::from_str(
+        r#"{
+            "version": 1,
+            "dns": { "enabled": true, "mode": "takeover", "final_tag": "remote" },
+            "outbounds": { "enabled": true, "items": [] },
+            "experimental": { "enabled": true, "cache_file": { "enabled": true } },
+            "route": { "enabled": true, "final_tag": "direct" }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(slices.version, 1);
+    assert_eq!(slices.dns.mode, DnsMode::Takeover);
+    assert_eq!(slices.route.final_tag, "direct");
+    assert!(slices.experimental.cache_file.enabled);
 }
 
 #[test]

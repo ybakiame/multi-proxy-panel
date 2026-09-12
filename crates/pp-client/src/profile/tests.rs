@@ -678,7 +678,6 @@ async fn v2_yaml_remote_then_local_overlay() {
         &sample_singbox_sub(),
         &effective,
         &crate::config_slices::ConfigSlices::default(),
-        true,
     )
     .await
     .unwrap();
@@ -699,7 +698,6 @@ async fn v2_js_remote_then_local_chain() {
         &sample_singbox_sub(),
         &effective,
         &crate::config_slices::ConfigSlices::default(),
-        true,
     )
     .await
     .unwrap();
@@ -760,7 +758,6 @@ async fn resolve_remote_overrides_fetches_writes_cache_and_falls_back() {
         &sample_singbox_sub(),
         &effective,
         &crate::config_slices::ConfigSlices::default(),
-        true,
     )
     .await
     .unwrap();
@@ -830,7 +827,6 @@ async fn resolve_remote_overrides_pure_local_regression() {
         &sub,
         &effective,
         &crate::config_slices::ConfigSlices::default(),
-        true,
     )
     .await
     .unwrap();
@@ -849,7 +845,7 @@ fn remote_overrides_futures_are_send() {
     let sub = sample_singbox_sub();
     let effective = EffectiveOverrides::default();
     let slices = crate::config_slices::ConfigSlices::default();
-    let fut = build_core_config_v2(&sub, &effective, &slices, true);
+    let fut = build_core_config_v2(&sub, &effective, &slices);
     assert_send(&fut);
     let profile = remote_test_profile(None, None);
     let fut = resolve_remote_overrides(Path::new("/tmp"), &profile);
@@ -866,9 +862,8 @@ async fn v2_slice_layer_applies_before_yaml_override() {
     use crate::config_slices::ConfigSlices;
 
     let slices: ConfigSlices = serde_json::from_value(json!({
-        "version": 1,
+        "version": 2,
         "dns": {
-            "enabled": true,
             "mode": "takeover",
             "servers": [
                 { "tag": "slice-dns", "type": "udp", "server": "9.9.9.9", "server_port": 53 }
@@ -877,7 +872,6 @@ async fn v2_slice_layer_applies_before_yaml_override() {
             "strategy": "prefer_ipv4"
         },
         "outbounds": {
-            "enabled": true,
             "items": [{
                 "id": "o1",
                 "name": "My Slice",
@@ -896,7 +890,7 @@ async fn v2_slice_layer_applies_before_yaml_override() {
         local_yaml: "dns:\n  final: overridden\n".to_string(),
         ..EffectiveOverrides::default()
     };
-    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective, &slices, true)
+    let cfg = build_core_config_v2(&sample_singbox_sub(), &effective, &slices)
         .await
         .unwrap();
 
@@ -918,72 +912,5 @@ async fn v2_slice_layer_applies_before_yaml_override() {
     assert_eq!(
         cfg["dns"]["final"], "overridden",
         "YAML override must win over the slice DNS final (ADR-0005 D2)"
-    );
-}
-
-/// Gate: when the local-override master switch is off (`singbox.enabled == false`),
-/// the ⓪ slice layer skips the custom outbound / experimental slices while the DNS
-/// slice (required config) is still injected.
-#[tokio::test(flavor = "current_thread")]
-async fn v2_slice_layer_gated_by_local_override_master_switch() {
-    use crate::config_slices::ConfigSlices;
-
-    let slices: ConfigSlices = serde_json::from_value(json!({
-        "version": 1,
-        "dns": {
-            "enabled": true,
-            "mode": "takeover",
-            "servers": [
-                { "tag": "slice-dns", "type": "udp", "server": "9.9.9.9", "server_port": 53 }
-            ],
-            "final_tag": "slice-dns"
-        },
-        "outbounds": {
-            "enabled": true,
-            "items": [{
-                "id": "o1",
-                "name": "My Slice",
-                "enabled": true,
-                "type": "vless",
-                "server": "slice.example",
-                "server_port": 443,
-                "uuid": "12345678-1234-1234-1234-123456789012"
-            }]
-        },
-        "experimental": {
-            "enabled": true,
-            "cache_file": { "enabled": true, "path": "/data/cache.db" }
-        }
-    }))
-    .unwrap();
-
-    let cfg = build_core_config_v2(
-        &sample_singbox_sub(),
-        &EffectiveOverrides::default(),
-        &slices,
-        false,
-    )
-    .await
-    .unwrap();
-
-    // DNS slice stays injected (required config, not gated).
-    let servers = cfg["dns"]["servers"].as_array().unwrap();
-    assert!(
-        servers.iter().any(|s| s["tag"] == "slice-dns"),
-        "DNS slice must stay injected when the master switch is off"
-    );
-    // Custom outbound slice skipped.
-    assert!(
-        cfg["outbounds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|o| o["tag"] != "slice-my-slice"),
-        "custom outbound slice must be skipped when the master switch is off"
-    );
-    // Experimental slice skipped.
-    assert!(
-        cfg["experimental"].get("cache_file").is_none(),
-        "experimental slice must be skipped when the master switch is off"
     );
 }

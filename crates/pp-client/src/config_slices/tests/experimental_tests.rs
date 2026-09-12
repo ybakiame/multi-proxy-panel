@@ -23,7 +23,6 @@ fn cache_file(enabled: bool) -> CacheFileSlice {
 #[test]
 fn experimental_default_is_disabled() {
     let exp = ExperimentalSlice::default();
-    assert!(!exp.enabled);
     assert!(!exp.cache_file.enabled);
     assert!(exp.cache_file.path.is_empty());
     assert!(exp.cache_file.cache_id.is_empty());
@@ -33,8 +32,7 @@ fn experimental_default_is_disabled() {
 #[test]
 fn experimental_missing_fields_fall_back_to_defaults() {
     let exp: ExperimentalSlice =
-        serde_json::from_str(r#"{"enabled":true,"cache_file":{"path":"/data/cache.db"}}"#).unwrap();
-    assert!(exp.enabled);
+        serde_json::from_str(r#"{"cache_file":{"path":"/data/cache.db"}}"#).unwrap();
     assert!(!exp.cache_file.enabled);
     assert_eq!(exp.cache_file.path, "/data/cache.db");
     assert!(exp.cache_file.cache_id.is_empty());
@@ -47,7 +45,6 @@ fn experimental_missing_fields_fall_back_to_defaults() {
 #[test]
 fn config_slices_roundtrip_includes_experimental() {
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: CacheFileSlice {
             enabled: true,
             path: "/data/cache.db".to_string(),
@@ -63,7 +60,6 @@ fn config_slices_roundtrip_includes_experimental() {
 #[test]
 fn validate_accepts_enabled_slice_with_path() {
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: CacheFileSlice {
             enabled: true,
             path: "/data/cache.db".to_string(),
@@ -76,7 +72,6 @@ fn validate_accepts_enabled_slice_with_path() {
 #[test]
 fn validate_accepts_empty_path() {
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: cache_file(true),
     });
     slices.validate().unwrap();
@@ -85,7 +80,6 @@ fn validate_accepts_empty_path() {
 #[test]
 fn validate_rejects_blank_path() {
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: CacheFileSlice {
             enabled: true,
             path: "   ".to_string(),
@@ -94,19 +88,6 @@ fn validate_rejects_blank_path() {
     });
     let err = slices.validate().unwrap_err();
     assert!(err.to_string().contains("must not be blank"), "{err}");
-}
-
-#[test]
-fn validate_skips_disabled_slice() {
-    let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: false,
-        cache_file: CacheFileSlice {
-            enabled: true,
-            path: "   ".to_string(),
-            ..Default::default()
-        },
-    });
-    slices.validate().unwrap();
 }
 
 #[test]
@@ -150,7 +131,6 @@ fn apply_merges_cache_file_preserving_clash_api() {
         }
     });
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: CacheFileSlice {
             enabled: true,
             path: "/data/cache.db".to_string(),
@@ -158,7 +138,7 @@ fn apply_merges_cache_file_preserving_clash_api() {
         },
     });
 
-    apply_config_slices(&mut config, &slices, true).unwrap();
+    apply_config_slices(&mut config, &slices).unwrap();
     assert_eq!(
         config["experimental"]["clash_api"]["external_controller"],
         "127.0.0.1:9090"
@@ -174,11 +154,10 @@ fn apply_merges_cache_file_preserving_clash_api() {
 fn apply_creates_experimental_object_when_absent() {
     let mut config = json!({ "outbounds": [] });
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: true,
         cache_file: cache_file(true),
     });
 
-    apply_config_slices(&mut config, &slices, true).unwrap();
+    apply_config_slices(&mut config, &slices).unwrap();
     assert_eq!(
         config["experimental"]["cache_file"],
         json!({ "enabled": true })
@@ -186,20 +165,19 @@ fn apply_creates_experimental_object_when_absent() {
 }
 
 #[test]
-fn apply_disabled_slice_leaves_config_unchanged() {
+fn apply_disabled_cache_file_leaves_config_unchanged() {
     let mut config = json!({
         "experimental": { "clash_api": { "external_controller": "127.0.0.1:9090" } }
     });
     let original = config.clone();
 
     let slices = slices_with_experimental(ExperimentalSlice {
-        enabled: false,
         cache_file: CacheFileSlice {
-            enabled: true,
+            enabled: false,
             path: "/data/cache.db".to_string(),
             ..Default::default()
         },
     });
-    apply_config_slices(&mut config, &slices, true).unwrap();
+    apply_config_slices(&mut config, &slices).unwrap();
     assert_eq!(config, original);
 }

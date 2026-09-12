@@ -12,11 +12,11 @@ use super::default_true;
 pub const OUTBOUND_TAG_PREFIX: &str = "slice-";
 
 /// Custom outbound slice.
+///
+/// No master switch: enabled items are injected, an empty `items` list is a
+/// no-op.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboundsSlice {
-    /// Slice master switch; `false` never injects custom outbounds.
-    #[serde(default)]
-    pub enabled: bool,
     /// User-defined outbounds.
     #[serde(default)]
     pub items: Vec<CustomOutbound>,

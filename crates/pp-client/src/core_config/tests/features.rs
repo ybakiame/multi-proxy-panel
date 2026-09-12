@@ -804,28 +804,21 @@ fn apply_singbox_panel_features_no_mode_rules_nor_default_mode_without_clash_api
     );
 }
 
-/// Android DNS mode derivation truth table (ADR-0005 D1): takeover only when the
-/// DNS slice is enabled AND mode == takeover; every other combination follows
-/// the system resolver so the forced injection is never skipped by accident.
+/// DNS mode derivation (ADR-0005 D1): the slice has no master switch, so the
+/// derived mode is simply the configured `dns.mode`, shared by desktop and
+/// Android.
 #[test]
 fn dns_mode_from_slices_truth_table() {
     use crate::config_slices::{ConfigSlices, DnsMode};
 
     let cases = [
-        (false, DnsMode::FollowSystem, DnsMode::FollowSystem),
-        (false, DnsMode::Takeover, DnsMode::FollowSystem),
-        (true, DnsMode::FollowSystem, DnsMode::FollowSystem),
-        (true, DnsMode::Takeover, DnsMode::Takeover),
+        (DnsMode::FollowSystem, DnsMode::FollowSystem),
+        (DnsMode::Takeover, DnsMode::Takeover),
     ];
-    for (enabled, mode, expected) in cases {
+    for (mode, expected) in cases {
         let mut slices = ConfigSlices::default();
-        slices.dns.enabled = enabled;
         slices.dns.mode = mode;
-        assert_eq!(
-            dns_mode_from_slices(&slices),
-            expected,
-            "enabled={enabled}, mode={mode:?}"
-        );
+        assert_eq!(dns_mode_from_slices(&slices), expected, "mode={mode:?}");
     }
 }
 

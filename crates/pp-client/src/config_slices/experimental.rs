@@ -14,12 +14,10 @@ use serde::{Deserialize, Serialize};
 /// Experimental slice: structured form of the sing-box `experimental` section.
 ///
 /// All fields are `#[serde(default)]`; a missing or partial object deserializes
-/// to sensible defaults (slice disabled).
+/// to sensible defaults. No master switch: injection is driven by
+/// [`CacheFileSlice::enabled`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExperimentalSlice {
-    /// Slice master switch; `false` never injects the experimental slice.
-    #[serde(default)]
-    pub enabled: bool,
     /// Persistent cache file (sing-box `experimental.cache_file`).
     #[serde(default)]
     pub cache_file: CacheFileSlice,

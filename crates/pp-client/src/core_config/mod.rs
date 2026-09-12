@@ -118,21 +118,13 @@ pub fn apply_panel_features(composed: &mut Value, features: &PanelFeatures) {
     apply_singbox_panel_features(composed, features)
 }
 
-/// Derive the Android DNS mode from loaded config slices (ADR-0005 D1).
+/// Derive the DNS mode from loaded config slices (ADR-0005 D1).
 ///
-/// [`DnsMode::Takeover`] only when the DNS slice is enabled **and** explicitly
-/// set to takeover; every other combination (including a disabled slice that
-/// still carries `mode = takeover`) stays [`DnsMode::FollowSystem`], so the
-/// Android forced DNS injection is never skipped by accident.
-///
-/// This derives from the DNS slice alone and deliberately ignores the
-/// local-override master switch (`singbox.enabled`): the DNS slice is a required
-/// config and stays ungated, so takeover semantics are unaffected by that switch.
+/// The DNS slice has no master switch: [`DnsMode::Takeover`] when the slice is
+/// set to takeover, otherwise [`DnsMode::FollowSystem`]. This applies to both
+/// Android and desktop; on Android `FollowSystem` keeps the forced
+/// `inject_android_dns`, while on desktop the template DNS stays untouched.
 #[must_use]
 pub fn dns_mode_from_slices(slices: &ConfigSlices) -> DnsMode {
-    if slices.dns.enabled && slices.dns.mode == DnsMode::Takeover {
-        DnsMode::Takeover
-    } else {
-        DnsMode::FollowSystem
-    }
+    slices.dns.mode
 }

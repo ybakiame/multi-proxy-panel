@@ -121,9 +121,6 @@ pub(crate) async fn preview_core_config_impl(
     // and inject before profile overrides, mirroring `ClientState::start()`. A load
     // failure (unreadable/corrupted file is already handled inside the store) falls
     // back to default so preview never blocks.
-    //
-    // Gate: mirror `start()` — custom outbound / experimental slices follow the
-    // local-override master switch; DNS stays ungated.
     let slices = match ConfigSlicesStore::new(data_dir.clone()).load() {
         Ok(slices) => slices,
         Err(e) => {
@@ -134,11 +131,9 @@ pub(crate) async fn preview_core_config_impl(
             ConfigSlices::default()
         }
     };
-    let local_override_enabled = pp_client::local_override::local_override_enabled(&data_dir);
-    let profile_cfg =
-        build_core_config_v2(&sub_content, &effective, &slices, local_override_enabled)
-            .await
-            .map_err(|e| format!("生成配置失败: {e}"))?;
+    let profile_cfg = build_core_config_v2(&sub_content, &effective, &slices)
+        .await
+        .map_err(|e| format!("生成配置失败: {e}"))?;
 
     let features = PanelFeatures {
         tun_enabled: cfg.tun_enabled,
