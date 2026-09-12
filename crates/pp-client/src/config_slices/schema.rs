@@ -342,7 +342,10 @@ fn validate_group_members(
                 "group outbound `{group_tag}` must not reference another group `{member}` (nested groups are not supported)"
             )));
         }
-        if node_tags.contains(member) || member == "direct" {
+        if node_tags.contains(member) || matches!(member.as_str(), "direct" | "block") {
+            // 切片节点 / 内置 direct / block 均可作分组成员（内置 proxy / auto 是分组，
+            // 已在上面的嵌套分组检查之外——它们不在 group_tags 里，但 v1 禁嵌套语义由前端
+            // 候选与运行时 sing-box 共同保证）。
             continue;
         }
         if member.starts_with(OUTBOUND_TAG_PREFIX) {

@@ -6,7 +6,8 @@ import type { OutboundFormFields } from "./outboundForm";
  *
  * 成员候选来源与 Rust `validate_group_members` 保持一致：静态订阅节点
  * （`subscription_node_tags`，订阅缓存，不依赖核心运行）+ 切片节点出站（enabled）+
- * 内置 `direct`；**不含其它分组**（v1 禁嵌套）。
+ * 内置 `direct` / `block`；**不含其它分组**（v1 禁嵌套，故内置 proxy / auto 分组不作
+ * 候选）。
  * 校验对齐 Rust：成员非空、selector default ∈ 成员；urltest 的 url / interval /
  * tolerance 为宽松格式校验（Rust 侧不校验，前端只拦截明显非法值）。
  */
@@ -21,7 +22,7 @@ const DURATION_PATTERN = /^\d+(\.\d+)?(ns|us|ms|s|m|h|d)$/;
 export interface GroupMemberCandidate {
   /** 写入 `outbounds` / `default` 的 tag。 */
   value: string;
-  /** 列表行显示名（订阅节点名 / 切片出站名 / direct）。 */
+  /** 列表行显示名（订阅节点名 / 切片出站名 / direct / block）。 */
   label: string;
   /** 可选来源说明。 */
   hint?: string;
@@ -36,9 +37,9 @@ export interface GroupMemberSources {
 }
 
 /**
- * 构建分组成员候选：静态订阅节点 + 切片节点 + 内置 direct，按 tag 去重。
+ * 构建分组成员候选：静态订阅节点 + 切片节点 + 内置 direct / block，按 tag 去重。
  *
- * 不接受分组（含模板出站分组）作为候选，与 Rust「v1 禁嵌套分组」校验一致。
+ * 不接受分组（含模板出站分组 proxy / auto）作为候选，与 Rust「v1 禁嵌套分组」校验一致。
  */
 export function buildGroupMemberCandidates(sources: GroupMemberSources): GroupMemberCandidate[] {
   const options: GroupMemberCandidate[] = [];
@@ -52,6 +53,7 @@ export function buildGroupMemberCandidates(sources: GroupMemberSources): GroupMe
   for (const name of sources.subscriptionNodes) push(name, name, "订阅节点");
   for (const node of sources.sliceNodes) push(node.tag, node.name.trim() || node.tag, node.tag);
   push("direct", "direct", "内置直连");
+  push("block", "block", "内置拦截");
   return options;
 }
 

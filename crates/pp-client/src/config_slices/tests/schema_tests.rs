@@ -384,6 +384,17 @@ fn validate_accepts_group_referencing_nodes_direct_and_passthrough() {
     slices.validate().unwrap();
 }
 
+/// 内置 `block` 与 `direct` 一样可显式作分组成员（创建分组时可选内置出站）。
+#[test]
+fn validate_accepts_group_referencing_builtin_block() {
+    let slices = slices_with_group(group_item(
+        "g1",
+        "Auto",
+        selector(&["slice-my-vless", "direct", "block"], "slice-my-vless"),
+    ));
+    slices.validate().unwrap();
+}
+
 #[test]
 fn validate_accepts_urltest_group() {
     let slices = slices_with_group(group_item("g1", "Auto", urltest(&["slice-ss-node"])));
