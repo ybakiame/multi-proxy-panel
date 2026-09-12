@@ -186,7 +186,7 @@ export default function OutboundsPage() {
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <BackHeader
-        title="自定义出站"
+        title="出站管理"
         action={
           <Button
             variant="primary"

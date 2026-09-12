@@ -6,9 +6,10 @@ import { PageShell } from "../../components/PageShell";
 /**
  * 配置管理入口页（ADR-0005 §3.3，路由 `/config`，Tab 2）。
  *
- * 入口卡列表：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）、
- * 路由（`/config/route`）、入站管理（`/config/inbounds`）、
- * Experimental（`/config/experimental`，含 Clash API 设置）。
+ * 入口卡列表（名称对齐 sing-box 顶级字段语义）：DNS 管理（`dns`，`/config/dns`）、
+ * 出站管理（`outbounds`，`/config/outbounds`）、路由管理（`route`，`/config/route`）、
+ * 入站管理（`inbounds`，`/config/inbounds`）、Experimental（`experimental`，
+ * `/config/experimental`，含 Clash API 设置）。
  *
  * 网络（TUN）与 Clash API 为必选切片（ADR-0005 后续决策）：始终启用、无切片级关闭开关，
  * 入口仅提供参数调整（混合端口 / API 端口与密钥）。其余切片无总开关，有内容即生效。
@@ -22,7 +23,7 @@ export default function Config() {
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">配置管理</h1>
-        <p className="text-sm text-muted">DNS · 出站 · 规则 · 规则集</p>
+        <p className="text-sm text-muted">dns · inbounds · outbounds · route · experimental</p>
       </div>
 
       <p className="text-xs text-muted">内置 CN 分流基线始终生效，自定义配置逐项启用。</p>
@@ -30,32 +31,32 @@ export default function Config() {
       <div className="flex flex-col gap-4">
         <EntryLinkCard
           icon={<GlobeAltIcon className="size-6" aria-hidden="true" />}
-          title="DNS"
-          description="DNS 服务器与分流规则配置"
+          title="DNS 管理"
+          description="dns 顶级字段 · DNS 服务器与分流规则"
           onPress={() => navigate("/config/dns")}
         />
         <EntryLinkCard
           icon={<ArrowsRightLeftIcon className="size-6" aria-hidden="true" />}
-          title="自定义出站"
-          description="可视化添加与管理自定义出站"
+          title="出站管理"
+          description="outbounds 顶级字段 · 自定义代理节点与分组"
           onPress={() => navigate("/config/outbounds")}
         />
         <EntryLinkCard
           icon={<MapIcon className="size-6" aria-hidden="true" />}
-          title="路由"
-          description="默认出站、域名解析器与规则管理"
+          title="路由管理"
+          description="route 顶级字段 · 默认出站、域名解析器与规则"
           onPress={() => navigate("/config/route")}
         />
         <EntryLinkCard
           icon={<WifiIcon className="size-6" aria-hidden="true" />}
           title="入站管理"
-          description="混合入站端口 · TUN 协议栈与自动路由"
+          description="inbounds 顶级字段 · 混合入站端口与 TUN 参数"
           onPress={() => navigate("/config/inbounds")}
         />
         <EntryLinkCard
           icon={<BeakerIcon className="size-6" aria-hidden="true" />}
           title="Experimental"
-          description="Clash API（端口 / 密钥）与缓存等实验性配置"
+          description="experimental 顶级字段 · Clash API（端口 / 密钥）与缓存"
           onPress={() => navigate("/config/experimental")}
         />
       </div>

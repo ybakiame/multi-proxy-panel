@@ -255,7 +255,7 @@ export default function DnsPage() {
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <BackHeader
-        title="DNS"
+        title="DNS 管理"
         action={
           <Button
             variant="primary"
