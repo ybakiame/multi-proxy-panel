@@ -129,7 +129,7 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
     // full responsibility. Desktop ignores `dns_mode` (injection is Android-only).
     #[cfg(target_os = "android")]
     if features.dns_mode != DnsMode::Takeover {
-        inject_android_dns(composed);
+        super::inject_android_dns(composed);
     }
 
     // IPv6 switch (default off): rewrite the effective `dns.strategy` to `ipv4_only` so AAAA
