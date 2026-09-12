@@ -18,9 +18,10 @@ use super::PanelFeatures;
 ///   <by choice>, default_mode: <rule_mode>}`, append `secret` when non-empty (when template
 ///   already has `experimental.clash_api`, replace it wholesale); also injects baseline
 ///   `clash_mode` rules at the head of `route.rules` (see [`inject_mode_baseline_rules`]).
-/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + head DNS rules + `route.rules` `resolve`
-///   action + `experimental.cache_file` deep merge (see `apply_fakeip_mode` in
-///   `core_config::fakeip`); skipped on DNS takeover.
+/// - `dns_fakeip_enabled` (opt-in) → fakeip DNS server + head DNS rules (CN split on
+///   `geosite-cn`) + remote `route.rule_set` registration + `experimental.cache_file` deep merge
+///   (see `apply_fakeip_mode` in `core_config::fakeip`); skipped on DNS takeover. No
+///   `route.rules` entry is injected (the global `resolve` action was removed).
 /// - always → TUN DNS hijack + domain sniff head rules (see [`inject_dns_hijack_and_sniff_rules`]).
 ///
 /// `external_ui` directory name is distinguished by choice (`ui-yacd` / `ui-zashboard` /
@@ -141,13 +142,13 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         inject_dns_hijack_and_sniff_rules(obj);
     }
 
-    // FakeIP mode (opt-in, default off): injected after `inject_dns_hijack_and_sniff_rules` so the
-    // `resolve` route rule can sit right after `hijack-dns` (final order sniff → hijack-dns →
-    // resolve, matching the reference template); it still finalizes the DNS shape after
-    // `inject_android_dns` and the IPv6 strategy override above (fakeip only touches `dns` /
-    // `experimental.cache_file`, which have no ordering dependency on sniff/hijack). `Takeover`
-    // exempt: the user's DNS slice already owns DNS completely at the ⓪ layer (ADR-0005 D1), so the
-    // whole fakeip injection is skipped and the user's slice is left untouched.
+    // FakeIP mode (opt-in, default off): injected last so it finalizes the DNS shape after
+    // `inject_android_dns` and the IPv6 strategy override above. It only touches `dns`,
+    // `route.rule_set` and `experimental.cache_file` (no `route.rules` entry — the global
+    // `resolve` action was removed), so it has no ordering dependency on the sniff/hijack rules
+    // injected just above. `Takeover` exempt: the user's DNS slice already owns DNS completely at
+    // the ⓪ layer (ADR-0005 D1), so the whole fakeip injection is skipped and the user's slice is
+    // left untouched.
     if features.dns_fakeip_enabled && features.dns_mode != DnsMode::Takeover {
         super::fakeip::apply_fakeip_mode(composed, features);
     }

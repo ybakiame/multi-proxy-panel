@@ -25,12 +25,9 @@ fn fakeip_features(ipv6_enabled: bool) -> PanelFeatures {
     }
 }
 
-/// FakeIP on (ipv6 off): fakeip server appended, head rules drop HTTPS/SVCB/AAAA + route A,
-/// `experimental.cache_file` deep-merged on, `dns.final` / `dns.strategy` untouched by fakeip
-/// (strategy still `ipv4_only` from the IPv6 switch), sibling `clash_api` preserved.
-#[test]
-fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
-    let sub = json!({
+/// Baseline subscription with an existing `local` DNS server (no route.rule_set).
+fn base_sub() -> serde_json::Value {
+    json!({
         "dns": {
             "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
             "rules": [],
@@ -38,8 +35,16 @@ fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
             "strategy": "prefer_ipv4"
         },
         "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
-    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    })
+}
+
+/// FakeIP on (ipv6 off): fakeip server appended, head rules `[drop, cn-local, fakeip]`,
+/// `geosite-cn` remote rule set registered, `experimental.cache_file` deep-merged on,
+/// `dns.final` / `dns.strategy` untouched by fakeip (strategy still `ipv4_only` from the IPv6
+/// switch), sibling `clash_api` preserved, and **no** `resolve` route rule injected.
+#[test]
+fn apply_fakeip_mode_injects_cn_split_rules_and_rule_set() {
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(false));
 
     // fakeip server appended (idempotent tag).
@@ -52,7 +57,7 @@ fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
     assert_eq!(fakeip["inet4_range"], "198.18.0.0/15");
     assert_eq!(servers.len(), 2, "existing local server preserved");
 
-    // Head rules: drop first, then route A.
+    // Head rules: drop first, then CN → local, then non-CN A → fakeip.
     let rules = cfg["dns"]["rules"].as_array().unwrap();
     assert_eq!(
         rules[0],
@@ -60,9 +65,34 @@ fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
     );
     assert_eq!(
         rules[1],
-        json!({ "query_type": ["A"], "action": "route", "server": "fakeip" })
+        json!({ "rule_set": ["geosite-cn"], "action": "route", "server": "local" }),
+        "CN domains must resolve for real through local"
     );
-    assert_eq!(rules.len(), 2, "no other DNS rules in baseline");
+    assert_eq!(
+        rules[2],
+        json!({
+            "rule_set": ["geosite-cn"],
+            "invert": true,
+            "query_type": ["A"],
+            "action": "route",
+            "server": "fakeip"
+        }),
+        "only non-CN A queries enter fakeip"
+    );
+    assert_eq!(rules.len(), 3, "no other DNS rules in baseline");
+
+    // Remote CN rule set registered for the core to download.
+    let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
+    assert_eq!(rule_sets.len(), 1);
+    assert_eq!(
+        rule_sets[0],
+        json!({
+            "type": "remote",
+            "tag": "geosite-cn",
+            "format": "binary",
+            "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs"
+        })
+    );
 
     // cache_file deep merge + clash_api sibling preserved.
     assert_eq!(cfg["experimental"]["cache_file"]["enabled"], true);
@@ -76,58 +106,33 @@ fn apply_fakeip_mode_injects_server_rules_and_cache_file() {
     assert_eq!(cfg["dns"]["final"], "local");
     assert_eq!(cfg["dns"]["strategy"], "ipv4_only");
 
-    // route.rules: resolve injected right after sniff → hijack-dns (before clash_mode baseline
-    // rules); ipv6 off → strategy ipv4_only.
+    // No global resolve rule: FakeIP now carries the domain end-to-end to the outbound.
     let route_rules = cfg["route"]["rules"].as_array().unwrap();
-    assert_eq!(route_rules[0], json!({ "action": "sniff" }));
-    assert_eq!(
-        route_rules[1],
-        json!({ "protocol": "dns", "action": "hijack-dns" })
-    );
-    assert_eq!(
-        route_rules[2],
-        json!({ "action": "resolve", "strategy": "ipv4_only" }),
-        "resolve must follow hijack-dns (sniff → hijack-dns → resolve)"
+    assert!(
+        route_rules.iter().all(|r| r["action"] != "resolve"),
+        "global resolve rule must be removed: {route_rules:?}"
     );
 }
 
 /// FakeIP idempotency: a second `apply_panel_features` call must not duplicate the fakeip server,
-/// the head DNS rules or the cache_file keys.
+/// the head DNS rules, the `geosite-cn` rule set or the cache_file keys.
 #[test]
 fn apply_fakeip_mode_is_idempotent() {
-    let sub = json!({
-        "dns": {
-            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
-            "rules": [],
-            "final": "local",
-            "strategy": "prefer_ipv4"
-        },
-        "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
-    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(false));
     let first = cfg.clone();
     apply_panel_features(&mut cfg, &fakeip_features(false));
     assert_eq!(
         cfg, first,
-        "second fakeip injection must be a no-op (server/rules/cache_file idempotent)"
+        "second fakeip injection must be a no-op (server/rules/rule_set/cache_file idempotent)"
     );
 }
 
 /// FakeIP on with `ipv6_enabled = true`: the predefined rule drops only HTTPS/SVCB (AAAA kept),
-/// and the strategy override leaves the template `prefer_ipv4` untouched.
+/// the strategy override leaves the template `prefer_ipv4` untouched, and no resolve rule appears.
 #[test]
 fn apply_fakeip_mode_keeps_aaaa_when_ipv6_enabled() {
-    let sub = json!({
-        "dns": {
-            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
-            "rules": [],
-            "final": "local",
-            "strategy": "prefer_ipv4"
-        },
-        "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
-    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(true));
 
     let rules = cfg["dns"]["rules"].as_array().unwrap();
@@ -138,21 +143,29 @@ fn apply_fakeip_mode_keeps_aaaa_when_ipv6_enabled() {
     );
     assert_eq!(
         rules[1],
-        json!({ "query_type": ["A"], "action": "route", "server": "fakeip" })
+        json!({ "rule_set": ["geosite-cn"], "action": "route", "server": "local" })
+    );
+    assert_eq!(
+        rules[2],
+        json!({
+            "rule_set": ["geosite-cn"],
+            "invert": true,
+            "query_type": ["A"],
+            "action": "route",
+            "server": "fakeip"
+        })
     );
     assert_eq!(cfg["dns"]["strategy"], "prefer_ipv4");
 
-    // ipv6 enabled → resolve rule omits `strategy` (core default).
     let route_rules = cfg["route"]["rules"].as_array().unwrap();
-    assert_eq!(
-        route_rules[2],
-        json!({ "action": "resolve" }),
-        "ipv6 enabled must omit the resolve strategy"
+    assert!(
+        route_rules.iter().all(|r| r["action"] != "resolve"),
+        "no resolve rule with ipv6 enabled either: {route_rules:?}"
     );
 }
 
 /// DNS slice takeover exempts the whole fakeip injection: no fakeip server, no injected DNS
-/// rules, no cache_file — the user's slice DNS body is left untouched.
+/// rules, no cache_file, no `geosite-cn` rule set — the user's slice is left untouched.
 #[test]
 fn apply_fakeip_mode_skipped_on_takeover() {
     let sub = json!({
@@ -194,22 +207,21 @@ fn apply_fakeip_mode_skipped_on_takeover() {
         route_rules.iter().all(|r| r["action"] != "resolve"),
         "takeover must skip the fakeip resolve rule: {route_rules:?}"
     );
+    assert!(
+        cfg["route"]
+            .get("rule_set")
+            .and_then(|v| v.as_array())
+            .is_none_or(|arr| arr.iter().all(|rs| rs["tag"] != "geosite-cn")),
+        "takeover must skip the geosite-cn rule set injection: {cfg:?}"
+    );
 }
 
-/// A pre-existing user/template `action = resolve` rule (explicit takeover of resolution)
-/// suppresses the injection on the first fakeip call as well (no duplicate).
+/// A pre-existing user/template `action = resolve` rule (explicit takeover of resolution) is left
+/// untouched, and fakeip no longer adds a resolve rule of its own (count stays 1).
 #[test]
-fn apply_fakeip_mode_does_not_duplicate_existing_resolve_rule() {
-    let sub = json!({
-        "dns": {
-            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
-            "rules": [],
-            "final": "local",
-            "strategy": "prefer_ipv4"
-        },
-        "route": { "rules": [{ "action": "resolve", "strategy": "prefer_ipv6" }] },
-        "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
+fn apply_fakeip_mode_preserves_existing_resolve_rule() {
+    let mut sub = base_sub();
+    sub["route"] = json!({ "rules": [{ "action": "resolve", "strategy": "prefer_ipv6" }] });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(false));
 
@@ -220,13 +232,43 @@ fn apply_fakeip_mode_does_not_duplicate_existing_resolve_rule() {
         .count();
     assert_eq!(
         resolve_count, 1,
-        "existing user resolve rule must not be duplicated: {route_rules:?}"
+        "fakeip must not add a resolve rule: {route_rules:?}"
     );
     assert!(
         route_rules
             .iter()
             .any(|r| r == &json!({ "action": "resolve", "strategy": "prefer_ipv6" })),
         "user resolve rule must be left untouched: {route_rules:?}"
+    );
+}
+
+/// An existing `route.rule_set` entry carrying the same `geosite-cn` tag (user/override supplied)
+/// is respected: no duplicate and no overwrite.
+#[test]
+fn apply_fakeip_mode_does_not_override_existing_cn_rule_set() {
+    let mut sub = base_sub();
+    sub["route"] = json!({
+        "rule_set": [{
+            "type": "local",
+            "tag": "geosite-cn",
+            "format": "source",
+            "path": "/tmp/user-cn.json"
+        }]
+    });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &fakeip_features(false));
+
+    let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
+    assert_eq!(rule_sets.len(), 1, "existing tag must not be duplicated");
+    assert_eq!(
+        rule_sets[0],
+        json!({
+            "type": "local",
+            "tag": "geosite-cn",
+            "format": "source",
+            "path": "/tmp/user-cn.json"
+        }),
+        "user-supplied geosite-cn rule set must be left untouched"
     );
 }
 
@@ -261,20 +303,11 @@ fn apply_fakeip_mode_merges_cache_file_without_clobbering() {
     );
 }
 
-/// FakeIP off: no fakeip server, no injected DNS rules, no cache_file (isolated with
-/// `ipv6_enabled = true` so the IPv6 strategy override does not confound the comparison).
+/// FakeIP off: no fakeip server, no injected DNS rules, no cache_file, no `geosite-cn` rule set
+/// (isolated with `ipv6_enabled = true` so the IPv6 strategy override does not confound).
 #[test]
 fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
-    let sub = json!({
-        "dns": {
-            "servers": [{ "tag": "local", "type": "udp", "server": "223.5.5.5", "server_port": 53 }],
-            "rules": [],
-            "final": "local",
-            "strategy": "prefer_ipv4"
-        },
-        "outbounds": [{ "type": "direct", "tag": "direct" }]
-    });
-    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
     let features = PanelFeatures {
         dns_fakeip_enabled: false,
         ipv6_enabled: true,
@@ -293,6 +326,13 @@ fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
             .is_none_or(|v| v.is_null()),
         "disabled fakeip must not inject cache_file"
     );
+    assert!(
+        cfg["route"]
+            .get("rule_set")
+            .and_then(|v| v.as_array())
+            .is_none_or(|arr| arr.iter().all(|rs| rs["tag"] != "geosite-cn")),
+        "disabled fakeip must not inject the geosite-cn rule set"
+    );
     let route_rules = cfg["route"]["rules"].as_array().unwrap();
     assert!(
         route_rules.iter().all(|r| r["action"] != "resolve"),
@@ -300,8 +340,8 @@ fn apply_fakeip_mode_disabled_leaves_dns_untouched() {
     );
 }
 
-/// No `dns` object -> fakeip does not fabricate one (nor the cache_file), aligning with the
-/// existing defensive style.
+/// No `dns` object -> fakeip does not fabricate one (nor the cache_file / rule set), aligning with
+/// the existing defensive style.
 #[test]
 fn apply_fakeip_mode_requires_existing_dns() {
     let sub = json!({
@@ -319,6 +359,13 @@ fn apply_fakeip_mode_requires_existing_dns() {
             .get("cache_file")
             .is_none_or(|v| v.is_null()),
         "no dns -> fakeip injection skipped entirely, no cache_file"
+    );
+    assert!(
+        cfg["route"]
+            .get("rule_set")
+            .and_then(|v| v.as_array())
+            .is_none_or(|arr| arr.iter().all(|rs| rs["tag"] != "geosite-cn")),
+        "no dns -> fakeip injection skipped entirely, no rule set"
     );
     let route_rules = cfg["route"]["rules"].as_array().unwrap();
     assert!(
