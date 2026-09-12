@@ -169,6 +169,8 @@ export type {
   GroupOutbound,
   ExperimentalSlice,
   CacheFileSlice,
+  RouteSlice,
+  DomainResolverSlice,
 } from "./configSlices";
 export {
   SLICE_VERSION,

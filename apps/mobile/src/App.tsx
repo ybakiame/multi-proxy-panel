@@ -13,6 +13,7 @@ import DnsPage from "./pages/Config/Dns";
 import ExperimentalPage from "./pages/Config/ExperimentalPage";
 import NetworkPage from "./pages/Config/NetworkPage";
 import OutboundsPage from "./pages/Config/Outbounds";
+import RoutePage from "./pages/Config/Route";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
 import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
@@ -93,9 +94,11 @@ function TauriRequired() {
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
  *   `/panel` Clash 面板页（内嵌 zashboard）、`/logs` 日志页、`/subscriptions` 订阅管理页、
- *   `/config/rules` 自定义规则、`/config/rulesets` 规则集管理、`/config/dns`、`/config/outbounds`、
+ *   `/config/route` 路由、`/config/route/rules` 规则管理、`/config/route/rulesets` 规则集管理、
+ *   `/config/dns`、`/config/outbounds`、
  *   `/config/network`、`/config/clash-api`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
  * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向；
+ *   旧 `/config/{rules,rulesets}` 路径重定向到 `/config/route/*`（规则管理迁入路由菜单）；
  *   旧 `/proxies`、`/connections` 路径重定向到 `/panel`（原生页面已由内嵌面板取代，
  *   HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
@@ -130,14 +133,19 @@ function AppContent() {
           <Route path="/config/network" element={<NetworkPage />} />
           <Route path="/config/clash-api" element={<ClashApiPage />} />
           <Route path="/config/experimental" element={<ExperimentalPage />} />
-          <Route path="/config/rules" element={<CustomRulesPage />} />
-          <Route path="/config/rulesets" element={<RuleSetsPage />} />
-          <Route path="/config/rulesets/market" element={<RuleSetMarket />} />
+          <Route path="/config/route" element={<RoutePage />} />
+          <Route path="/config/route/rules" element={<CustomRulesPage />} />
+          <Route path="/config/route/rulesets" element={<RuleSetsPage />} />
+          <Route path="/config/route/rulesets/market" element={<RuleSetMarket />} />
+          {/* 规则管理 / 规则集管理迁入路由菜单：旧 /config/{rules,rulesets} 路径重定向兼容。 */}
+          <Route path="/config/rules" element={<Navigate to="/config/route/rules" replace />} />
+          <Route path="/config/rulesets" element={<Navigate to="/config/route/rulesets" replace />} />
+          <Route path="/config/rulesets/market" element={<Navigate to="/config/route/rulesets/market" replace />} />
           {/* 旧 /rules/* 路径重定向：HashRouter 下存量书签 / 导航兼容（ADR-0005 §3.3）。 */}
           <Route path="/rules" element={<Navigate to="/config" replace />} />
-          <Route path="/rules/custom" element={<Navigate to="/config/rules" replace />} />
-          <Route path="/rules/rulesets" element={<Navigate to="/config/rulesets" replace />} />
-          <Route path="/rules/rulesets/market" element={<Navigate to="/config/rulesets/market" replace />} />
+          <Route path="/rules/custom" element={<Navigate to="/config/route/rules" replace />} />
+          <Route path="/rules/rulesets" element={<Navigate to="/config/route/rulesets" replace />} />
+          <Route path="/rules/rulesets/market" element={<Navigate to="/config/route/rulesets/market" replace />} />
           {/* 网络 / Clash API 迁移为配置页必选切片：旧设置页路径重定向兼容。 */}
           <Route path="/settings/network" element={<Navigate to="/config/network" replace />} />
           <Route path="/settings/clash-api" element={<Navigate to="/config/clash-api" replace />} />

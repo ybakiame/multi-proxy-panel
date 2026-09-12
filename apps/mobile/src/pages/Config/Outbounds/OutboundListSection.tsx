@@ -161,7 +161,7 @@ export function OutboundListSection({
         title="节点"
         subtitle="vless / vmess / shadowsocks / trojan / hysteria2"
         emptyTitle="暂无自定义出站"
-        emptyHint="自定义出站可被「自定义规则」的出站动作引用"
+        emptyHint="自定义出站可被「规则管理」的出站动作引用"
         addLabel="添加节点"
         rows={nodes}
         onAdd={onAddNode}

@@ -39,7 +39,7 @@ import { buildRuleSetOptions } from "./ruleSetOptions";
 import { RuleListSection } from "./RuleListSection";
 
 /**
- * 自定义规则子页（ADR-0003 M5.4 拆分，路由 `/config/rules`）。
+ * 规则管理子页（ADR-0003 M5.4 拆分，路由 `/config/route/rules`）。
  *
  * 承接原规则主页的规则列表 CRUD：启停 / 上移下移 / 添加 / 编辑 / 删除，数据流不变
  * （`persist = buildSaveInput + localOverrideSave` 全量落盘，成功按动作差异化 toast）。
@@ -213,7 +213,7 @@ export default function CustomRulesPage() {
 
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="自定义规则" />
+      <BackHeader title="规则管理" />
       <div
         className="flex min-h-full flex-1 flex-col gap-3 pt-3"
         style={{

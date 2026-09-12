@@ -310,6 +310,39 @@ export interface ExperimentalSlice {
 }
 
 // ---------------------------------------------------------------------------
+// Route slice
+// ---------------------------------------------------------------------------
+
+/**
+ * sing-box `route.default_domain_resolver` (curated fields).
+ *
+ * Mirrors Rust `DomainResolverSlice` (`route.rs`): the sing-box 1.12+ dial-field
+ * object form `{ server, strategy? }`. `client_subnet` is out of scope, and a
+ * `null` `strategy` omits the key (follow the global DNS strategy).
+ */
+export interface DomainResolverSlice {
+  /** DNS server tag used to resolve outbound domains. Empty = no override. */
+  server: string;
+  /** Optional resolution strategy; `null` follows the global DNS strategy. */
+  strategy: DnsStrategy | null;
+}
+
+/**
+ * Route slice: structured form of the sing-box top-level `route` section.
+ *
+ * Only `final` and `default_domain_resolver` are curated; `rules` / `rule_set` /
+ * `auto_detect_interface` stay owned by the template / panel-feature layer.
+ */
+export interface RouteSlice {
+  /** Slice master switch; `false` never injects the route slice. */
+  enabled: boolean;
+  /** `route.final` override (default outbound tag). Empty = keep `proxy`. */
+  final_tag: string;
+  /** `route.default_domain_resolver` override. */
+  resolver: DomainResolverSlice;
+}
+
+// ---------------------------------------------------------------------------
 // Container
 // ---------------------------------------------------------------------------
 
@@ -325,6 +358,7 @@ export interface ConfigSlices {
   dns: DnsSlice;
   outbounds: OutboundsSlice;
   experimental: ExperimentalSlice;
+  route: RouteSlice;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +427,14 @@ export function defaultConfigSlices(): ConfigSlices {
         path: "",
         cache_id: "",
         store_fakeip: false,
+      },
+    },
+    route: {
+      enabled: false,
+      final_tag: "",
+      resolver: {
+        server: "",
+        strategy: null,
       },
     },
   };
