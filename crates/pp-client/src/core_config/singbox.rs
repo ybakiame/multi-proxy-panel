@@ -172,6 +172,28 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
         super::fakeip::apply_fakeip_mode(composed, features);
     }
 
+    // RealIP mode (FakeIP off): still enable `experimental.cache_file` when the config
+    // references any **remote** rule set — since sing-box 1.14 the cache file is the offline
+    // fallback for the synchronous startup rule-set download (restore-from-cache instead of
+    // failing the whole core when the URL is unreachable, see `ensure_cn_rule_sets` docs).
+    // Gated on remote-rule-set presence so rule-set-less configs keep no `experimental` bloat;
+    // FakeIP mode already pins it above (with `store_fakeip`). Not exempt on DNS takeover:
+    // cache_file is experimental, not part of the user-owned DNS slice. Existing keys
+    // (`path` / `cache_id` / a user `store_fakeip`) are preserved.
+    if !features.dns_fakeip_enabled {
+        let has_remote_rule_set = composed
+            .get("route")
+            .and_then(|r| r.get("rule_set"))
+            .and_then(Value::as_array)
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|rs| rs.get("type").and_then(Value::as_str) == Some("remote"))
+            });
+        if has_remote_rule_set && let Some(obj) = composed.as_object_mut() {
+            super::fakeip::ensure_cache_file(obj, &features.data_dir, false);
+        }
+    }
+
     // IPv6 switch off: reject IPv6 connections inside the tunnel at the route layer. This runs
     // last (after sniff/hijack-dns and fakeip) so the rule lands right after hijack-dns and
     // before the clash_mode / baseline rules. No DNS-takeover exemption: this is a routing-layer

@@ -157,33 +157,56 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
     }
     super::ensure_rule_set_http_client(obj);
 
-    // 4. experimental.cache_file deep merge (create the object when missing; sibling
-    // experimental keys such as clash_api stay untouched). `enabled` / `store_fakeip` are
-    // forced on; `path` is pinned to the client's persistent `<data_dir>/cache.db` only when
-    // absent/empty (a user-supplied path and `cache_id` are preserved), so FakeIP mappings
-    // survive a core restart independent of the platform working directory.
+    // 4. experimental.cache_file deep merge (FakeIP mappings + rule-set cache persisted).
+    ensure_cache_file(obj, &features.data_dir, true);
+}
+
+/// Deep-merge `experimental.cache_file` (create the object when missing; sibling
+/// `experimental` keys such as `clash_api` stay untouched).
+///
+/// `enabled` is forced on; `store_fakeip` follows the caller (FakeIP mode pins it on, the
+/// realip caller leaves a user-supplied value untouched). `path` is pinned to the client's
+/// persistent `<data_dir>/cache.db` only when absent/empty (a user-supplied `path` and
+/// `cache_id` are preserved): a bare `cache.db` default is resolved by libbox against the
+/// platform-dependent working path, so the explicit path keeps the FakeIP mapping — and the
+/// sing-box 1.14 remote rule-set cache — in the client's persistent data directory across core
+/// restarts. Empty `data_dir` leaves the sing-box default untouched.
+///
+/// The rule-set cache is the offline fallback for the synchronous startup download (see
+/// [`super::ensure_cn_rule_sets`]): once a remote rule set has been downloaded successfully,
+/// its content is restored from the cache on the next start instead of failing the whole core
+/// when the URL is unreachable.
+pub(super) fn ensure_cache_file(
+    obj: &mut serde_json::Map<String, Value>,
+    data_dir: &str,
+    store_fakeip: bool,
+) {
     let experimental = obj
         .entry("experimental")
         .or_insert_with(|| Value::Object(Default::default()));
-    if let Some(exp) = experimental.as_object_mut() {
-        let cache_file = exp
-            .entry("cache_file")
-            .or_insert_with(|| Value::Object(Default::default()));
-        if let Some(cf) = cache_file.as_object_mut() {
-            cf.insert("enabled".to_string(), Value::Bool(true));
-            cf.insert("store_fakeip".to_string(), Value::Bool(true));
-            let has_explicit_path = cf
-                .get("path")
-                .and_then(Value::as_str)
-                .is_some_and(|p| !p.is_empty());
-            if !has_explicit_path && !features.data_dir.is_empty() {
-                let path = Path::new(&features.data_dir).join("cache.db");
-                cf.insert(
-                    "path".to_string(),
-                    Value::String(path.to_string_lossy().into_owned()),
-                );
-            }
-        }
+    let Some(exp) = experimental.as_object_mut() else {
+        return;
+    };
+    let cache_file = exp
+        .entry("cache_file")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(cf) = cache_file.as_object_mut() else {
+        return;
+    };
+    cf.insert("enabled".to_string(), Value::Bool(true));
+    if store_fakeip {
+        cf.insert("store_fakeip".to_string(), Value::Bool(true));
+    }
+    let has_explicit_path = cf
+        .get("path")
+        .and_then(Value::as_str)
+        .is_some_and(|p| !p.is_empty());
+    if !has_explicit_path && !data_dir.is_empty() {
+        let path = Path::new(data_dir).join("cache.db");
+        cf.insert(
+            "path".to_string(),
+            Value::String(path.to_string_lossy().into_owned()),
+        );
     }
 }
 

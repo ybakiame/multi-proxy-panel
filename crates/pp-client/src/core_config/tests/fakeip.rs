@@ -39,6 +39,87 @@ fn base_sub() -> serde_json::Value {
     })
 }
 
+/// Baseline subscription carrying one **remote** rule set (as the CN-split baseline registers).
+fn remote_rule_set_sub() -> serde_json::Value {
+    let mut sub = base_sub();
+    sub["route"] = json!({
+        "final": "direct",
+        "rule_set": [{
+            "type": "remote",
+            "tag": "geosite-cn",
+            "format": "binary",
+            "url": "https://example.com/geosite-cn.srs"
+        }]
+    });
+    sub
+}
+
+/// RealIP mode (FakeIP off) with remote rule sets: `experimental.cache_file` is still enabled
+/// as the offline fallback for the synchronous startup rule-set download (sing-box 1.14
+/// restore-from-cache), with `path` pinned to `<data_dir>/cache.db` — but `store_fakeip` is
+/// not pinned (no fakeip mapping to persist).
+#[test]
+fn realip_mode_enables_cache_file_for_remote_rule_sets() {
+    let mut cfg = compose_singbox_config(&remote_rule_set_sub(), 17890, None).unwrap();
+    let features = PanelFeatures {
+        dns_fakeip_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+
+    let cache_file = &cfg["experimental"]["cache_file"];
+    assert_eq!(cache_file["enabled"], true);
+    assert_eq!(
+        cache_file["path"], "/tmp/pp-client-test/cache.db",
+        "path pinned to the client data dir"
+    );
+    assert!(
+        cache_file.get("store_fakeip").is_none(),
+        "realip mode must not pin store_fakeip"
+    );
+    // Sibling experimental keys (clash_api) stay untouched.
+    assert_eq!(
+        cfg["experimental"]["clash_api"]["external_controller"],
+        "127.0.0.1:9090"
+    );
+}
+
+/// RealIP cache_file injection preserves a user-supplied `path` and forces `enabled` on.
+#[test]
+fn realip_cache_file_preserves_user_path() {
+    let mut sub = remote_rule_set_sub();
+    sub["experimental"] =
+        json!({ "cache_file": { "path": "/data/user-cache.db", "enabled": false } });
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    let features = PanelFeatures {
+        dns_fakeip_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+
+    assert_eq!(cfg["experimental"]["cache_file"]["enabled"], true);
+    assert_eq!(
+        cfg["experimental"]["cache_file"]["path"], "/data/user-cache.db",
+        "user-supplied path preserved"
+    );
+}
+
+/// RealIP mode without any remote rule set: no cache_file injected (nothing to cache).
+#[test]
+fn realip_mode_without_remote_rule_sets_gets_no_cache_file() {
+    let mut cfg = compose_singbox_config(&base_sub(), 17890, None).unwrap();
+    let features = PanelFeatures {
+        dns_fakeip_enabled: false,
+        clash_api_enabled: false,
+        ..singbox_features()
+    };
+    apply_panel_features(&mut cfg, &features);
+    assert!(
+        cfg.get("experimental").is_none(),
+        "no remote rule set + clash_api off -> no experimental section at all"
+    );
+}
+
 /// FakeIP on (ipv6 off): fakeip server appended, DNS rules `[drop, fakeip]` (the CN split —
 /// `clash_mode` + `geosite-cn → local` — is owned by the baseline and is absent from this
 /// baseline-less subscription), the CN-split remote rule sets registered, `experimental.cache_file`
