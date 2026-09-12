@@ -15,6 +15,22 @@ import type { ClientConfig } from "@pp/client-core";
 /** 端口越界/非法时展示在输入框下方的提示。 */
 export const PORT_RANGE_ERROR = "端口需在 1-65535 之间";
 
+/** Clash API 密钥必填的提示（面板跳转携带密钥，不允许为空）。 */
+export const CLASH_API_SECRET_REQUIRED_ERROR = "密钥不能为空，可点右侧按钮随机生成";
+
+/** 随机 Clash API 密钥字母表（URL 安全，无需转义即可拼入面板跳转链接）。 */
+const SECRET_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * 生成随机 Clash API 密钥（24 位 base62，`crypto.getRandomValues` 安全随机源）。
+ * 字母表 URL 安全，可直接拼入面板页跳转链接的 query/hash 参数。
+ */
+export function randomClashApiSecret(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => SECRET_ALPHABET[byte % SECRET_ALPHABET.length]).join("");
+}
+
 /** 校验端口草稿：仅接受 1-65535 的整数。 */
 export function isValidPort(raw: string): boolean {
   if (!/^\d+$/.test(raw)) {
@@ -47,7 +63,11 @@ export interface UseSettingsConfigReturn {
   clashApiPortError: string | null;
   onClashApiPortChange: (raw: string) => void;
   clashApiSecretDraft: string;
+  /** 密钥必填校验错误（`null` = 合法）；空密钥不落库。 */
+  clashApiSecretError: string | null;
   onClashApiSecretChange: (value: string) => void;
+  /** 随机生成密钥并立即落库（显式动作，不经防抖）。 */
+  onGenerateClashApiSecret: () => void;
   mixedPortDraft: string;
   mixedPortError: string | null;
   onMixedPortChange: (raw: string) => void;
@@ -254,7 +274,18 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const onClashApiSecretChange = (value: string) => {
     setClashApiSecretDraft(value);
     cancelPersist("clash_api_secret");
+    // 密钥必填（面板跳转携带密钥不允许为空）：空值只提示不落库。
+    if (value.trim() === "") {
+      return;
+    }
     schedulePersist("clash_api_secret", () => ({ clash_api_secret: value }));
+  };
+
+  const onGenerateClashApiSecret = () => {
+    const secret = randomClashApiSecret();
+    setClashApiSecretDraft(secret);
+    cancelPersist("clash_api_secret");
+    void persist({ clash_api_secret: secret });
   };
 
   const onGithubProxyPrefixChange = (value: string) => {
@@ -276,7 +307,9 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     clashApiPortError: portError(clashApiPortDraft),
     onClashApiPortChange,
     clashApiSecretDraft,
+    clashApiSecretError: clashApiSecretDraft.trim() === "" ? CLASH_API_SECRET_REQUIRED_ERROR : null,
     onClashApiSecretChange,
+    onGenerateClashApiSecret,
     mixedPortDraft,
     mixedPortError: portError(mixedPortDraft),
     onMixedPortChange,
