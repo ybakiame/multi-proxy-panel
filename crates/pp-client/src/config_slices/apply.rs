@@ -3,6 +3,10 @@
 //! Rendering is split into pure functions ([`super::render_dns`] /
 //! [`render_outbound`]) so it can be unit tested without a pipeline.
 //! [`apply_config_slices`] only mutates the passed-in JSON value.
+//!
+//! Gate: the custom outbound and experimental slices are additionally gated by
+//! the local-override master switch (`local_override.json` `singbox.enabled`).
+//! The DNS slice is a required config and is **not** gated.
 
 use std::collections::{HashMap, HashSet};
 
@@ -39,15 +43,30 @@ pub struct OutboundTagRename {
 
 /// Apply the enabled slices to `config`.
 ///
-/// - DNS slice: replaces `config.dns` with the rendered DNS object.
+/// - DNS slice: replaces `config.dns` with the rendered DNS object. Applied
+///   whenever the slice itself is enabled; it is a **required config** and is
+///   deliberately not gated by the local-override master switch.
 /// - Outbounds slice: appends rendered custom outbounds to `config.outbounds`,
-///   renaming tags that collide with existing outbounds.
+///   renaming tags that collide with existing outbounds. Gated by
+///   `local_override_enabled`.
 /// - Experimental slice: deep merges the rendered `cache_file` object into
-///   `config.experimental`, preserving sibling keys (`clash_api`, …).
+///   `config.experimental`, preserving sibling keys (`clash_api`, …). Gated by
+///   `local_override_enabled`.
+///
+/// `local_override_enabled` mirrors [`CoreLocalOverride::enabled`] — the master
+/// switch of `local_override.json`. When `false`, the custom outbound and
+/// experimental slices are skipped while the DNS slice is still injected: the
+/// switch turns off local override *management*, not the required DNS setup.
 ///
 /// A disabled slice leaves the config untouched. Returns an error when `config`
 /// is not a JSON object (callers always pass a config object).
-pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelResult<ApplyReport> {
+///
+/// [`CoreLocalOverride::enabled`]: crate::local_override::CoreLocalOverride::enabled
+pub fn apply_config_slices(
+    config: &mut Value,
+    slices: &ConfigSlices,
+    local_override_enabled: bool,
+) -> PanelResult<ApplyReport> {
     let Some(obj) = config.as_object_mut() else {
         return Err(PanelError::Client(
             "apply_config_slices: config is not a JSON object".to_string(),
@@ -56,12 +75,15 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
 
     let mut report = ApplyReport::default();
 
+    // DNS is a required config: always applied when its own slice is enabled,
+    // regardless of the local-override master switch (takeover semantics stay
+    // untouched, see `core_config::dns_mode_from_slices`).
     if slices.dns.enabled {
         obj.insert("dns".to_string(), render_dns(&slices.dns));
         report.dns_applied = true;
     }
 
-    if slices.outbounds.enabled {
+    if local_override_enabled && slices.outbounds.enabled {
         let mut used = collect_outbound_tags(obj);
         let mut rendered = Vec::new();
         // Base tag -> final (possibly renamed) tag, used to remap group members
@@ -112,7 +134,7 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
         append_outbounds(obj, rendered);
     }
 
-    if slices.experimental.enabled {
+    if local_override_enabled && slices.experimental.enabled {
         // Deep merge: only the `cache_file` key is written, sibling keys such as
         // `clash_api` (owned by the ④ panel-feature layer) are preserved.
         let experimental = obj

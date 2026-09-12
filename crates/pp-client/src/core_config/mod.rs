@@ -122,6 +122,10 @@ pub fn apply_panel_features(composed: &mut Value, features: &PanelFeatures) {
 /// set to takeover; every other combination (including a disabled slice that
 /// still carries `mode = takeover`) stays [`DnsMode::FollowSystem`], so the
 /// Android forced DNS injection is never skipped by accident.
+///
+/// This derives from the DNS slice alone and deliberately ignores the
+/// local-override master switch (`singbox.enabled`): the DNS slice is a required
+/// config and stays ungated, so takeover semantics are unaffected by that switch.
 #[must_use]
 pub fn dns_mode_from_slices(slices: &ConfigSlices) -> DnsMode {
     if slices.dns.enabled && slices.dns.mode == DnsMode::Takeover {

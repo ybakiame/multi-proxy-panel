@@ -254,6 +254,9 @@ impl ClientState {
         // ⓪ Config slices (ADR-0005 §3.2): load from `data_dir/config_slices.json` and inject
         // into the template before profile overrides. A load failure (unreadable/corrupted file
         // is already handled inside the store) falls back to default so startup never blocks.
+        //
+        // Gate: the custom outbound / experimental slices follow the local-override master
+        // switch (`singbox.enabled`); the DNS slice stays ungated (required config).
         let slices =
             match crate::config_slices::ConfigSlicesStore::new(self.config.data_dir.clone()).load()
             {
@@ -266,7 +269,15 @@ impl ClientState {
                     crate::config_slices::ConfigSlices::default()
                 }
             };
-        let profile_cfg = profile::build_core_config_v2(&sub_content, &effective, &slices).await?;
+        let local_override_enabled =
+            crate::local_override::local_override_enabled(&self.config.data_dir);
+        let profile_cfg = profile::build_core_config_v2(
+            &sub_content,
+            &effective,
+            &slices,
+            local_override_enabled,
+        )
+        .await?;
 
         // MITM starts before core: need listen address to inject core routing rules.
         let chain = self.start_mitm_chain().await?;

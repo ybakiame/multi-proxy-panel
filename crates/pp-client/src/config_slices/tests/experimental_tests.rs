@@ -158,7 +158,7 @@ fn apply_merges_cache_file_preserving_clash_api() {
         },
     });
 
-    apply_config_slices(&mut config, &slices).unwrap();
+    apply_config_slices(&mut config, &slices, true).unwrap();
     assert_eq!(
         config["experimental"]["clash_api"]["external_controller"],
         "127.0.0.1:9090"
@@ -178,7 +178,7 @@ fn apply_creates_experimental_object_when_absent() {
         cache_file: cache_file(true),
     });
 
-    apply_config_slices(&mut config, &slices).unwrap();
+    apply_config_slices(&mut config, &slices, true).unwrap();
     assert_eq!(
         config["experimental"]["cache_file"],
         json!({ "enabled": true })
@@ -200,6 +200,6 @@ fn apply_disabled_slice_leaves_config_unchanged() {
             ..Default::default()
         },
     });
-    apply_config_slices(&mut config, &slices).unwrap();
+    apply_config_slices(&mut config, &slices, true).unwrap();
     assert_eq!(config, original);
 }

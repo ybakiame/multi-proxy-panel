@@ -17,6 +17,11 @@
 //! pipeline (before profile YAML/JS overrides, ADR-0005 §3.2). This module only
 //! builds the module and its tests; wiring into the pipeline is a later phase.
 //!
+//! Gate: the custom outbound and experimental slices are additionally gated by
+//! the local-override master switch (`local_override.json` `singbox.enabled`);
+//! the DNS slice stays ungated (required config). See
+//! [`apply::apply_config_slices`].
+//!
 //! Rendering targets **sing-box >= 1.14.0**; compatibility with older releases
 //! is intentionally not maintained. Fields emitted here are verified against the
 //! 1.14 configuration docs: vmess `alter_id` / `security`, vless `flow`, the
