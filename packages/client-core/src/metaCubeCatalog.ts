@@ -16,6 +16,14 @@
 /** 规则集分组：`ip` = geoip（IP 段），`site` = geosite（域名）。 */
 export type MetaCubeGroup = "ip" | "site";
 
+/**
+ * 条目分类：由 URL 路径判定。
+ * - `geoip`：`/geo/geoip/`（IP 段规则集）；
+ * - `geosite`：`/geo/geosite/`（域名规则集）；
+ * - `other`：非 MetaCubeX geo 直链，无法可靠归类。
+ */
+export type MetaCubeCategory = "geoip" | "geosite" | "other";
+
 /** 市场条目：一键添加为 Remote 规则集（binary = `.srs`）。 */
 export interface MetaCubeEntry {
   id: string;
@@ -252,13 +260,27 @@ export function buildMetaCubeEntry(name: string, group: MetaCubeGroup): MetaCube
 /**
  * 关键词本地检索：对两组文件名做大小写不敏感的 `contains` 过滤（geoip 在前）。
  * 空关键词返回空数组（页面据此渲染引导态）。
+ *
+ * `category` 可选：省略（或传 `undefined`）时返回全部分类，保持向后兼容；
+ * 传入具体分类时按 `metaCubeCategory` 的判定结果二次过滤。
  */
-export function searchMetaCubeEntries(keyword: string): MetaCubeEntry[] {
+export function searchMetaCubeEntries(keyword: string, category?: MetaCubeCategory): MetaCubeEntry[] {
   const query = keyword.trim().toLowerCase();
   if (!query) return [];
   const match = (name: string) => name.toLowerCase().includes(query);
-  return [
+  const entries = [
     ...GEOIP_NAMES.filter(match).map((name) => buildMetaCubeEntry(name, "ip")),
     ...GEOSITE_NAMES.filter(match).map((name) => buildMetaCubeEntry(name, "site")),
   ];
+  return category ? entries.filter((entry) => metaCubeCategory(entry) === category) : entries;
+}
+
+/**
+ * 由条目 URL 路径判定分类：路径含 `/geo/geoip/` → `geoip`，含 `/geo/geosite/` → `geosite`，
+ * 其余（非 MetaCubeX geo 直链）归入 `other`。
+ */
+export function metaCubeCategory(entry: MetaCubeEntry): MetaCubeCategory {
+  if (entry.url.includes("/geo/geoip/")) return "geoip";
+  if (entry.url.includes("/geo/geosite/")) return "geosite";
+  return "other";
 }

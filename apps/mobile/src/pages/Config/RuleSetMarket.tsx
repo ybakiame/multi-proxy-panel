@@ -21,6 +21,15 @@ import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 /** 常用检索词快捷 Chip（点击填充检索框）。 */
 const POPULAR_KEYWORDS = ["cn", "ads", "google", "netflix", "youtube", "telegram"];
 
+/** 分类过滤分段控件选项：全部 / GeoIP（IP 段）/ GeoSite（域名）。 */
+const CATEGORY_FILTERS = [
+  { id: "all", label: "全部" },
+  { id: "geoip", label: "GeoIP" },
+  { id: "geosite", label: "GeoSite" },
+] as const;
+
+type CategoryFilter = (typeof CATEGORY_FILTERS)[number]["id"];
+
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface pl-10 pr-3 text-sm text-foreground outline-none " +
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
@@ -53,10 +62,14 @@ export default function RuleSetMarket() {
 
   // ---- 局部 UI 状态 ----
   const [keyword, setKeyword] = useState("");
+  const [category, setCategory] = useState<CategoryFilter>("all");
   const [addingKey, setAddingKey] = useState<string | null>(null);
 
-  // 本地检索：空关键词返回空数组（渲染引导态）。
-  const results = useMemo(() => searchMetaCubeEntries(keyword), [keyword]);
+  // 本地检索：空关键词返回空数组（渲染引导态）；分类过滤与文本检索叠加生效。
+  const results = useMemo(
+    () => searchMetaCubeEntries(keyword, category === "all" ? undefined : category),
+    [keyword, category],
+  );
 
   // 已添加判定：按 URL 匹配。
   const addedUrls = useMemo(
@@ -92,6 +105,9 @@ export default function RuleSetMarket() {
   };
 
   const hasKeyword = keyword.trim().length > 0;
+  // 空结果文案前缀：选中分类时点明过滤范围（全部则留空）。
+  const filterPrefix =
+    category === "all" ? "" : `${CATEGORY_FILTERS.find((item) => item.id === category)?.label ?? ""} `;
 
   return (
     <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -169,11 +185,29 @@ export default function RuleSetMarket() {
               />
             </div>
 
+            {/* 分类过滤：全部 / GeoIP / GeoSite，与文本检索叠加生效 */}
+            <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
+              <legend className="sr-only">规则集分类过滤</legend>
+              {CATEGORY_FILTERS.map((item) => (
+                <Button
+                  key={item.id}
+                  variant={category === item.id ? "primary" : "secondary"}
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  onPress={() => setCategory(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </fieldset>
+
             {hasKeyword ? (
               results.length === 0 ? (
                 <Card>
                   <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
-                    <span className="text-sm text-muted">没有匹配「{keyword.trim()}」的规则集</span>
+                    <span className="text-sm text-muted">
+                      没有匹配「{keyword.trim()}」的{filterPrefix}规则集
+                    </span>
                   </Card.Content>
                 </Card>
               ) : (
