@@ -56,7 +56,12 @@ pub struct LocalOverride {
 // ---------------------------------------------------------------------------
 
 /// Per-core local override.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// 规则总开关（`enabled`）已移除：规则卡片与规则集引用各自携带 `enabled`，
+/// 注入按各自开关逐项决定。旧文件中的 `singbox.enabled == false` 由
+/// [`crate::local_override::LocalOverrideStore::load`] 迁移为「所有规则与规则集
+/// 引用置 false」。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreLocalOverride {
     /// User-defined rule cards (ordered).
     #[serde(default)]
@@ -64,19 +69,6 @@ pub struct CoreLocalOverride {
     /// Rule set reference list (ordered, maps to rule_sets).
     #[serde(default)]
     pub rule_sets: Vec<LocalRuleSetRef>,
-    /// Master switch for local override.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-impl Default for CoreLocalOverride {
-    fn default() -> Self {
-        Self {
-            rules: Vec::new(),
-            rule_sets: Vec::new(),
-            enabled: true,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

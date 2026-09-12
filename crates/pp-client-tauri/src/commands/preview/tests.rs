@@ -229,7 +229,6 @@ async fn preview_core_config_injects_active_local_override_rules() {
                 sort_order: 0,
             }],
             rule_sets: Vec::new(),
-            enabled: true,
         },
         ..Default::default()
     };

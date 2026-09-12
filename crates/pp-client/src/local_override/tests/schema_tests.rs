@@ -35,7 +35,6 @@ fn local_override_serde_roundtrip() {
                 auto_update_interval_minutes: 1440,
                 last_updated: 1234567890,
             }],
-            enabled: true,
         },
         rule_set_subscriptions: vec![RuleSetSubscription {
             id: "sub1".to_string(),
@@ -146,7 +145,6 @@ fn serde_missing_fields_defaults() {
     assert!(parsed.applied_templates.is_empty());
     assert!(parsed.custom_rule_sets.is_empty());
     assert!(parsed.custom_templates.is_empty());
-    assert!(parsed.singbox.enabled); // default_true
 }
 
 /// 旧版文件（无 `custom_templates` 段）反序列化为空 Vec。

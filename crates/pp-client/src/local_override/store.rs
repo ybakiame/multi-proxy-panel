@@ -11,6 +11,10 @@
 //!
 //! 自「移除场景模板」起，`load` 额外清空旧文件中的模板字段
 //! （`applied_templates` / `custom_templates`）：字段仅保留 serde 兼容，写回空数组。
+//!
+//! 自「移除规则总开关」起，`load` 把旧文件中的 `singbox.enabled == false` 折叠为
+//! 「所有规则卡片与规则集引用 `enabled = false`」（见
+//! [`migrate_disabled_master_switch`]）；写回后该字段不再序列化，幂等。
 
 use std::path::PathBuf;
 
@@ -38,11 +42,12 @@ impl LocalOverrideStore {
 
     /// Load local override config.
     ///
-    /// - File missing → returns default (empty) config with enabled = true.
+    /// - File missing → returns default (empty) config.
     /// - File corrupted → logs warning, returns default (does not block startup).
-    /// - Legacy file → runs the idempotent built-in mechanism migration and clears
-    ///   the removed scenario-template fields, then best-effort persists the
-    ///   normalized state back to disk.
+    /// - Legacy file → runs the idempotent built-in mechanism migration, folds the
+    ///   removed `singbox.enabled` master switch into per-rule / per-rule-set
+    ///   switches, and clears the removed scenario-template fields, then
+    ///   best-effort persists the normalized state back to disk.
     pub fn load(&self) -> PanelResult<LocalOverride> {
         let path = self.override_file();
         if !path.exists() {
@@ -70,7 +75,7 @@ impl LocalOverrideStore {
                 return Ok(LocalOverride::default());
             }
         };
-        let mut ovr: LocalOverride = match serde_json::from_value(value) {
+        let mut ovr: LocalOverride = match serde_json::from_value(value.clone()) {
             Ok(o) => o,
             Err(e) => {
                 tracing::warn!(
@@ -81,8 +86,9 @@ impl LocalOverrideStore {
                 return Ok(LocalOverride::default());
             }
         };
-        let migrated = migrate_legacy_builtins(&mut ovr);
-        if migrated {
+        let migrated_builtins = migrate_legacy_builtins(&mut ovr);
+        let migrated_switch = migrate_disabled_master_switch(&value, &mut ovr);
+        if migrated_builtins || migrated_switch {
             // 迁移结果写回磁盘，保证后续 load 读到已归一化数据（幂等）。
             if let Err(e) = self.save(&ovr) {
                 tracing::warn!(
@@ -156,6 +162,34 @@ fn migrate_legacy_builtins(ovr: &mut LocalOverride) -> bool {
     }
 
     changed
+}
+
+/// 存量迁移（幂等）：规则总开关 `singbox.enabled` 已移除。旧文件中
+/// `singbox.enabled == false` 时，把意图折叠为「所有规则卡片与规则集引用
+/// `enabled = false`」——即原本被总开关整体关闭的内容保持关闭，而
+/// `enabled == true`（或字段缺失）时不做任何改动。
+///
+/// `raw` 是反序列化前的 JSON（`enabled` 字段已被类型 schema 忽略）。写回后
+/// [`CoreLocalOverride`] 不再序列化该字段，因此二次 load 不会重复迁移。
+///
+/// 返回是否发生了改动；未改动时 `load` 不会因本迁移触发写盘。
+fn migrate_disabled_master_switch(raw: &Value, ovr: &mut LocalOverride) -> bool {
+    let disabled = raw
+        .get("singbox")
+        .and_then(|singbox| singbox.get("enabled"))
+        .and_then(Value::as_bool)
+        == Some(false);
+    if !disabled {
+        return false;
+    }
+
+    for rule in &mut ovr.singbox.rules {
+        rule.enabled = false;
+    }
+    for rule_set in &mut ovr.singbox.rule_sets {
+        rule_set.enabled = false;
+    }
+    true
 }
 
 #[cfg(test)]

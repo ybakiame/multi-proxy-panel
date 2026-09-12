@@ -29,6 +29,11 @@ pub struct LocalOverrideView {
 }
 
 /// Per-core local override view.
+///
+/// `enabled` is a **compatibility field**: the model's master switch was removed
+/// (rules / rule sets carry their own `enabled`), but the frontend
+/// `MasterSwitchCard` still consumes it until the frontend cleanup lands. It is
+/// therefore always serialized as `true` and ignored on save.
 #[derive(Debug, Clone, Serialize)]
 pub struct CoreLocalOverrideView {
     pub rules: Vec<LocalRuleView>,
@@ -137,7 +142,8 @@ impl CoreLocalOverrideView {
                 .iter()
                 .map(LocalRuleSetRefView::from_model)
                 .collect(),
-            enabled: model.enabled,
+            // 兼容字段：模型总开关已移除，恒输出 true（前端 MasterSwitchCard 待 T3 清理）。
+            enabled: true,
         }
     }
 }
@@ -269,6 +275,9 @@ pub struct SaveLocalOverrideInput {
 pub struct CoreLocalOverrideInput {
     pub rules: Vec<LocalRuleInput>,
     pub rule_sets: Vec<LocalRuleSetRefInput>,
+    /// Compatibility field: the model master switch was removed. Accepted for
+    /// the frontend contract but ignored on conversion (rules / rule sets carry
+    /// their own `enabled`).
     #[serde(default = "crate::commands::local_override::default_true")]
     pub enabled: bool,
 }

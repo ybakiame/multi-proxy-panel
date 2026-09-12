@@ -20,24 +20,6 @@ fn sample_rule(id: &str, match_type: RuleMatchType, target: &str, action: RuleAc
 }
 
 #[test]
-fn inject_disabled_is_noop() {
-    let mut config = json!({"route": {"rules": [{"outbound": "proxy"}]}});
-    let ovr = CoreLocalOverride {
-        enabled: false,
-        rules: vec![sample_rule(
-            "r1",
-            RuleMatchType::Domain,
-            "example.com",
-            RuleAction::Direct,
-        )],
-        ..Default::default()
-    };
-    apply_singbox_local_override(&mut config, &ovr);
-    let rules = config["route"]["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 1);
-}
-
-#[test]
 fn rules_prepended_before_subscription_rules() {
     let mut config = json!({
         "route": {
@@ -47,7 +29,6 @@ fn rules_prepended_before_subscription_rules() {
         }
     });
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![
             sample_rule(
                 "r1",
@@ -78,7 +59,6 @@ fn rules_prepended_before_subscription_rules() {
 fn rule_sets_appended_to_route_rule_set() {
     let mut config = json!({"route": {}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rule_sets: vec![LocalRuleSetRef {
             id: "rs1".to_string(),
             name: "GeoIP CN".to_string(),
@@ -109,7 +89,6 @@ fn rule_sets_appended_to_route_rule_set() {
 fn final_rule_writes_route_final() {
     let mut config = json!({"route": {"rules": []}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![LocalRule {
             id: "final1".to_string(),
             name: "final".to_string(),
@@ -136,7 +115,6 @@ fn rule_order_local_cards_then_rule_sets_then_subscription() {
         }
     });
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![sample_rule(
             "r1",
             RuleMatchType::Domain,
@@ -180,7 +158,6 @@ fn all_match_types_translate_correctly() {
     for (match_type, expected_key, target) in cases {
         let mut config = json!({"route": {"rules": []}});
         let ovr = CoreLocalOverride {
-            enabled: true,
             rules: vec![sample_rule(
                 "r1",
                 match_type.clone(),
@@ -210,7 +187,6 @@ fn all_match_types_translate_correctly() {
 fn invert_flag_translates() {
     let mut config = json!({"route": {"rules": []}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![LocalRule {
             id: "r1".to_string(),
             name: String::new(),
@@ -543,7 +519,6 @@ fn dns_rule_referencing_unknown_tag_injects_nothing() {
 fn rule_set_single_tag_keeps_string_form() {
     let mut config = json!({"route": {"rules": []}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![sample_rule(
             "r1",
             RuleMatchType::RuleSet,
@@ -562,7 +537,6 @@ fn rule_set_single_tag_keeps_string_form() {
 fn rule_set_multi_tag_renders_string_array() {
     let mut config = json!({"route": {"rules": []}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![sample_rule(
             "r1",
             RuleMatchType::RuleSet,
@@ -581,7 +555,6 @@ fn rule_set_multi_tag_renders_string_array() {
 fn rule_set_duplicate_tags_collapse_to_single_string() {
     let mut config = json!({"route": {"rules": []}});
     let ovr = CoreLocalOverride {
-        enabled: true,
         rules: vec![sample_rule(
             "r1",
             RuleMatchType::RuleSet,

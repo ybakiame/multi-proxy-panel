@@ -22,11 +22,9 @@ use super::{
 
 /// Apply local override to a composed sing-box config.
 ///
-/// No-op if `ovr.enabled` is false.
+/// No-op if the config is not a JSON object. Rules / rule sets are injected per
+/// their own `enabled` flag (the removed master switch is no longer consulted).
 pub fn apply_singbox_local_override(config: &mut Value, ovr: &CoreLocalOverride) {
-    if !ovr.enabled {
-        return;
-    }
     let Some(obj) = config.as_object_mut() else {
         return;
     };

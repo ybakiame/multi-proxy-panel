@@ -38,7 +38,6 @@ fn override_with(sets: Vec<CustomRuleSet>, rules: Vec<LocalRule>) -> LocalOverri
         singbox: CoreLocalOverride {
             rules,
             rule_sets: Vec::new(),
-            enabled: true,
         },
         rule_set_subscriptions: Vec::new(),
         applied_templates: Vec::new(),

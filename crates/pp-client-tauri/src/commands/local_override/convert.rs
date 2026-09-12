@@ -129,6 +129,9 @@ pub(super) fn convert_input_to_model(
 pub(super) fn convert_core_input(
     input: CoreLocalOverrideInput,
 ) -> Result<CoreLocalOverride, String> {
+    // 兼容字段：规则总开关已从模型移除（规则/规则集各自带 enabled），
+    // 这里显式消费该字段以保持前端契约，同时不写入模型。
+    let _ = input.enabled;
     Ok(CoreLocalOverride {
         rules: input
             .rules
@@ -140,7 +143,6 @@ pub(super) fn convert_core_input(
             .into_iter()
             .map(convert_rule_set_ref_input)
             .collect::<Result<Vec<_>, _>>()?,
-        enabled: input.enabled,
     })
 }
 

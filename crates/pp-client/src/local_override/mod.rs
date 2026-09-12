@@ -74,19 +74,3 @@ pub fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut 
     // 仅注入「被注入的 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
     apply_custom_rule_sets(config, &manager, &core.rules, &ovr.custom_rule_sets);
 }
-
-/// Read the local-override master switch (`singbox.enabled`).
-///
-/// Used by the ⓪ config-slice layer (ADR-0005) to decide whether the custom
-/// outbound / experimental slices may be injected. The DNS slice is a required
-/// config and is deliberately not gated by this switch.
-///
-/// A missing or corrupted `local_override.json` falls back to the store default
-/// (`enabled = true`), consistent with [`inject_local_override_warn_only`].
-#[must_use]
-pub fn local_override_enabled(data_dir: &std::path::Path) -> bool {
-    match LocalOverrideStore::new(data_dir.to_path_buf()).load() {
-        Ok(ovr) => ovr.singbox.enabled,
-        Err(_) => true,
-    }
-}
