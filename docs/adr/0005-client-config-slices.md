@@ -532,3 +532,32 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 
 - **无运行实例时出站模式空显修复**：`proxy_status` / `stop_proxy` 走 `idle_status_view` 归一化，核心未运行时返回归一化的出站模式而非空白。
 - **首页启停改为 FAB**：原启停操作卡移除，改为悬浮按钮（`StartStopFab`）；Alert 独立条件渲染，不再依赖操作卡容器。
+
+### P3 补记（2026-09-12）：FakeIP 模式 / IPv6 开关 / TUN 双栈化 / 内嵌面板
+
+本补记记录 P3 的客户端网络能力变更（FakeIP、IPv6 开关、TUN 双栈化）与内嵌面板决策。以下内容**修订** §2.2 / §3.1 / §3.3 的字段与页面清单，不改变 §2.3 的 D1–D6 决策，Status 仍为 Accepted。
+
+#### 内置 FakeIP 模式（opt-in，双路径）
+
+- **动机**：DNS 查询立即返回虚拟 IP、连接时按域名由出站解析，规避本地 DNS 污染与远程 DoH 脆弱链路。对齐参考仓库 `qixuancao/sing-box-config-templates` 的 `android/fakeip.json`，但 FakeIP 覆盖**全部 A 查询**且**不依赖规则集**。
+- **路径一·内置开关** `ClientConfig.dns_fakeip_enabled`（默认 `false`，`#[serde(default)]` 兼容旧 `client.json`）。开启时 ④ panel_features 层 `apply_fakeip_mode`（`core_config/fakeip.rs`）执行：向 `dns.servers` 追加 fakeip server（tag `fakeip`，`inet4_range` `198.18.0.0/15`）；向 `dns.rules` **头部**前插两条——`query_type:[HTTPS,SVCB]`（IPv6 关闭时并入 `AAAA`）→ `predefined` + `NOERROR` 丢弃、`query_type:[A]` → `route` 到 `fakeip`；深合并 `experimental.cache_file` 置 `enabled` + `store_fakeip`（保留 `clash_api` 等同级键）。不改 `dns.final` / `dns.strategy`（后者归 IPv6 开关）。实现**幂等**（按 tag 与精确 query-type 集合 + action 判定），且仅在已存在 `dns` 对象时注入。
+- **路径二·切片 schema**：`DnsServerType::Fakeip`（`inet4_range` / `inet6_range`，空 `inet4_range` 渲染默认 `198.18.0.0/15`）、`DnsMatchType::QueryType`（逗号分隔 target → 渲染大写数组，按白名单校验）、`DnsRuleAction::{Route,Predefined,Reject}`（`predefined` 带 `rcode`，白名单 `NOERROR/FORMERR/SERVFAIL/NXDOMAIN/NOTIMP/REFUSED`）；旧数据 serde default 兼容，渲染抽到 `dns_render.rs`。接管模式下用户可用切片自建 FakeIP（或任意 DNS），与内置开关互不冲突。
+- **前端**：client-core 类型 `inet4_range` / `inet6_range` / `action` / `rcode` 为**非 Option 必填 string**（serde default 恒在，恒可安全读）；DNS 页在 `follow_system` 模式新增 FakeIP 开关卡（接管模式隐藏），服务器表单支持 `fakeip`，规则表单支持 `query_type` 与三种动作。
+
+#### IPv6 开关与 FakeIP / takeover 的相互作用
+
+- **IPv6 开关**：`ClientConfig.ipv6_enabled` 默认 `false`，关闭时 ④ 层把 `dns.strategy` 覆写为 `ipv4_only`；须在 `inject_android_dns`（整段重写 `dns` 且 `strategy=prefer_ipv4`）**之后**执行，Android 上才能生效。
+- **FakeIP 顺序**：FakeIP 注入在 IPv6 覆写之后最后执行，故 `AAAA` 是否随 `HTTPS/SVCB` 一并丢弃取决于 `ipv6_enabled`（关闭才丢 `AAAA`）。
+- **接管豁免（ADR-0005 D1）**：`dns_mode == Takeover` 时，IPv6 `strategy` 覆写与 FakeIP 注入**整体跳过**——DNS 已在 ⓪ 层由用户切片完全接管，内置逻辑不得覆盖。
+
+#### TUN 双栈化与 IPv6 开关的动机（AAAA 黑洞 / 节点无 v6 出栈）
+
+- **问题**：TUN 入站此前仅配置 IPv4 地址（`172.19.0.1/30`），而 DNS 策略 `prefer_ipv4` 仍会对双栈域名返回 AAAA。App 优先尝试 IPv6 时 VPN 无 v6 路由，数据包进不了 TUN，导致有 AAAA 记录的域名直连失败/黑洞。
+- **TUN 双栈化**（b328249）：改为官方双栈地址 `["172.19.0.1/30", "fdfe:dcba:9876::1/126"]`，该函数双端共用（Android 仅额外 `strict_route`），v6 流量进入 TUN 后按路由规则走代理/direct，不再泄漏或超时。
+- **IPv6 开关**（d7aad04 / ba39242）：默认关闭并把 `dns.strategy` 设为 `ipv4_only`，从 DNS 层规避「节点无 v6 出栈时 AAAA 连接失败」；TUN 双栈与 `ipv4_only` 两者互补（前者兜住已产生的 v6 流量，后者从源头不再返回 AAAA）。
+
+#### 内嵌面板替代原生代理 / 连接页
+
+- **决策**（163a47c）：移动端新增 `/panel` 页，以 **iframe** 内嵌内核 Clash API `/ui` 路径提供的 zashboard 面板；移除原生 `/proxies` / `/connections` 页面，旧路径以 `<Navigate>` 重定向到 `/panel`（HashRouter 存量书签兼容）。
+- **iframe 路线**：直接复用核心 `external_ui` 内置服务，不维护自有面板 UI；核心未运行 / Clash API 未就绪时展示空态提示。
+- **约束**：受 Tauri Android 单 WebView 约束，无法以独立 WebView 控件承载面板，故采用同页 iframe 复用系统 WebView。

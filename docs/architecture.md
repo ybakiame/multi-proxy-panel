@@ -479,7 +479,10 @@ Composed 配置
    │  apply_panel_features（core_config/singbox.rs，设置页最高优先级）：TUN inbound 按设置整段替换、
    │    experimental.clash_api（含 default_mode）、出站模式基础 clash_mode 规则前插、
    │    Android DNS 强制注入 inject_android_dns（DNS 切片 FollowSystem 模式整体覆盖切片正文，
-   │    Takeover 模式跳过强制注入使切片正文生效，见 ADR-0005 D1）
+   │    Takeover 模式跳过强制注入使切片正文生效，见 ADR-0005 D1）、
+   │    IPv6 开关关闭（默认）时把 dns.strategy 覆写为 ipv4_only、
+   │    FakeIP 开关开启（opt-in）时注入 fakeip DNS server 并把全部 A 查询路由到 fakeip
+   │    （IPv6 策略覆写与 FakeIP 注入在 Takeover 下均跳过，见 ADR-0005 P3 补记）
    ▼
 最终 sing-box JSON ──► CoreRunner 启动（config_version = SHA-256 前 16 位）
 ```
@@ -493,7 +496,7 @@ Composed 配置
 | Profile 覆写（YAML/JS） | 模板与切片之上叠加用户 Profile（远端为底、本地覆盖），改写节点分组、路由与实验字段，可显式接管模式语义；优先级高于切片层 |
 | `compose_singbox_config` | 注入本地可用的 inbounds（mixed 主入口；桌面 MITM 双入站）与 MITM 白名单规则、DNS 兼容适配 |
 | `apply_local_override` | 前插**全部 enabled** 本地规则/规则集并处理 final（场景模板已移除，不再按模板引用过滤；本地规则优先于订阅规则）；规则集注入扫描的引用来源含规则卡与已渲染 DNS 规则的 `rule_set`（ADR-0005 P2 补记） |
-| `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式 / Android DNS），对同名字段整段替换、优先级最高；DNS 切片 FollowSystem 时 `inject_android_dns` 覆盖切片正文，Takeover 时跳过（ADR-0005 D1） |
+| `apply_panel_features` | 最后强制注入设置页配置（TUN / Clash API / 出站模式 / Android DNS / IPv6 策略 / FakeIP），对同名字段整段替换、优先级最高；DNS 切片 FollowSystem 时 `inject_android_dns` 覆盖切片正文，Takeover 时跳过（ADR-0005 D1）；IPv6 开关关闭（默认）时把 `dns.strategy` 覆写为 `ipv4_only`，FakeIP 开关开启（opt-in）时注入 fakeip server 并把全部 A 查询路由到 fakeip，两者在 Takeover 下均跳过（ADR-0005 P3 补记） |
 
 **规则优先级语义**（最终 `route.rules` 自前向后的匹配顺序）：
 
