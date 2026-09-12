@@ -41,6 +41,8 @@ export interface UseSettingsConfigReturn {
   vpnNotifySelection: boolean;
   onToggleVpnTraffic: (next: boolean) => Promise<void>;
   onToggleVpnSelection: (next: boolean) => Promise<void>;
+  ipv6Enabled: boolean;
+  onToggleIpv6: (next: boolean) => Promise<void>;
   clashApiPortDraft: string;
   clashApiPortError: string | null;
   onClashApiPortChange: (raw: string) => void;
@@ -81,6 +83,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   // ---- 表单草稿（config 变化时渲染期同步） ----
   const [vpnNotifyTraffic, setVpnNotifyTraffic] = useState(false);
   const [vpnNotifySelection, setVpnNotifySelection] = useState(false);
+  const [ipv6Enabled, setIpv6Enabled] = useState(false);
   const [mixedPortDraft, setMixedPortDraft] = useState("");
   const [clashApiPortDraft, setClashApiPortDraft] = useState("");
   const [clashApiSecretDraft, setClashApiSecretDraft] = useState("");
@@ -94,6 +97,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (config) {
       setVpnNotifyTraffic(config.vpn_notify_show_traffic);
       setVpnNotifySelection(config.vpn_notify_show_selection);
+      setIpv6Enabled(config.ipv6_enabled);
       setMixedPortDraft(String(config.mixed_port));
       setClashApiPortDraft(String(config.clash_api_port));
       setClashApiSecretDraft(config.clash_api_secret ?? "");
@@ -224,6 +228,11 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     await notifyVpnPrefs(vpnNotifyTraffic, next);
   };
 
+  const onToggleIpv6 = async (next: boolean) => {
+    setIpv6Enabled(next);
+    await persist({ ipv6_enabled: next });
+  };
+
   const onMixedPortChange = (raw: string) => {
     setMixedPortDraft(raw);
     cancelPersist("mixed_port");
@@ -261,6 +270,8 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     vpnNotifySelection,
     onToggleVpnTraffic,
     onToggleVpnSelection,
+    ipv6Enabled,
+    onToggleIpv6,
     clashApiPortDraft,
     clashApiPortError: portError(clashApiPortDraft),
     onClashApiPortChange,

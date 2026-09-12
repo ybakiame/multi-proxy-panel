@@ -14,6 +14,13 @@ export interface ClientConfig {
   active_subscription_id: string | null;
   core_binary: string;
   mixed_port: number;
+  /**
+   * Whether IPv6 (dual-stack) is enabled in the generated core config.
+   *
+   * `false` (default) makes DNS never return AAAA records (most stable when the
+   * node lacks IPv6); `true` enables dual-stack with IPv6 traffic routed by rules.
+   */
+  ipv6_enabled: boolean;
   mitm_enabled: boolean;
   mitm_hostnames: string[];
   mitm_script_dialect: string;
