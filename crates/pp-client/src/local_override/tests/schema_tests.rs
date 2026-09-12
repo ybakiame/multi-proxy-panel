@@ -326,3 +326,36 @@ fn rule_action_outbound_tag() {
         "custom"
     );
 }
+
+// -----------------------------------------------------------------------
+// parse_rule_set_tags
+// -----------------------------------------------------------------------
+
+/// 存量单值数据天然兼容：单 tag 解析为一元素 Vec。
+#[test]
+fn parse_rule_set_tags_single_value_legacy_compatible() {
+    assert_eq!(
+        parse_rule_set_tags("geosite-cn"),
+        vec!["geosite-cn".to_string()]
+    );
+}
+
+/// 多 tag：按逗号拆分、逐段 trim、去重（保留首次出现顺序）。
+#[test]
+fn parse_rule_set_tags_splits_trims_and_dedups() {
+    assert_eq!(
+        parse_rule_set_tags(" geosite-cn , my-custom,geosite-cn "),
+        vec!["geosite-cn".to_string(), "my-custom".to_string()]
+    );
+}
+
+/// 空段被丢弃；全空段/空串得到空 Vec。
+#[test]
+fn parse_rule_set_tags_drops_empty_segments() {
+    assert_eq!(
+        parse_rule_set_tags("a,,  ,b,"),
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert!(parse_rule_set_tags(" , ").is_empty());
+    assert!(parse_rule_set_tags("").is_empty());
+}

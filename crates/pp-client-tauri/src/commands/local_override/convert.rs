@@ -1,6 +1,6 @@
 //! Conversion and validation helpers for local override commands.
 
-use pp_client::local_override::{CoreLocalOverride, LocalOverride, LocalRule};
+use pp_client::local_override::{CoreLocalOverride, LocalOverride, LocalRule, parse_rule_set_tags};
 
 use super::views::*;
 
@@ -37,18 +37,33 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
 
     // Check RuleSet references resolve to an existing custom rule set tag.
     // （内置社区订阅已废弃；规则集是纯资源、无 enabled 概念——引用目标存在即可）。
+    // target 允许逗号分隔多 tag：每段 trim 后必须非空，且每个 tag 都必须存在。
     for rule in &core_ovr.rules {
         if matches!(
             rule.match_type,
             pp_client::local_override::RuleMatchType::RuleSet
         ) {
-            let custom_exists = ovr.custom_rule_sets.iter().any(|rs| rs.tag == rule.target);
-            if !custom_exists {
+            // 空段（`a,,b` / 尾随逗号）视为非法输入，不静默丢弃——与 DNS
+            // `query_type` 校验保持一致。
+            if rule
+                .target
+                .split(',')
+                .any(|segment| segment.trim().is_empty())
+            {
                 return Err(format!(
-                    "rule '{}' references unavailable rule set '{}' \
-                     (need a custom rule set with this tag)",
+                    "rule '{}' has an empty rule set tag in '{}'",
                     rule.id, rule.target
                 ));
+            }
+            for tag in parse_rule_set_tags(&rule.target) {
+                let custom_exists = ovr.custom_rule_sets.iter().any(|rs| rs.tag == tag);
+                if !custom_exists {
+                    return Err(format!(
+                        "rule '{}' references unavailable rule set '{}' \
+                         (need a custom rule set with this tag)",
+                        rule.id, tag
+                    ));
+                }
             }
         }
     }
@@ -358,3 +373,11 @@ mod roundtrip_tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// rule_set multi-tag validation
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[path = "convert_tests.rs"]
+mod rule_set_validation_tests;

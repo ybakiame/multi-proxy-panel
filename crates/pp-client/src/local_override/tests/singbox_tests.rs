@@ -533,3 +533,107 @@ fn dns_rule_referencing_unknown_tag_injects_nothing() {
         "unknown DNS tag must not inject anything"
     );
 }
+
+// -----------------------------------------------------------------------
+// rule_set multi-tag rendering (rule cards)
+// -----------------------------------------------------------------------
+
+/// 单 tag 保持字符串形态：存量快照零 diff。
+#[test]
+fn rule_set_single_tag_keeps_string_form() {
+    let mut config = json!({"route": {"rules": []}});
+    let ovr = CoreLocalOverride {
+        enabled: true,
+        rules: vec![sample_rule(
+            "r1",
+            RuleMatchType::RuleSet,
+            "geosite-cn",
+            RuleAction::Proxy,
+        )],
+        ..Default::default()
+    };
+    apply_singbox_local_override(&mut config, &ovr);
+    let rules = config["route"]["rules"].as_array().unwrap();
+    assert_eq!(rules[0]["rule_set"], "geosite-cn");
+}
+
+/// 多 tag（含空白）渲染为字符串数组并逐段 trim。
+#[test]
+fn rule_set_multi_tag_renders_string_array() {
+    let mut config = json!({"route": {"rules": []}});
+    let ovr = CoreLocalOverride {
+        enabled: true,
+        rules: vec![sample_rule(
+            "r1",
+            RuleMatchType::RuleSet,
+            " geosite-cn , my-custom ",
+            RuleAction::Proxy,
+        )],
+        ..Default::default()
+    };
+    apply_singbox_local_override(&mut config, &ovr);
+    let rules = config["route"]["rules"].as_array().unwrap();
+    assert_eq!(rules[0]["rule_set"], json!(["geosite-cn", "my-custom"]));
+}
+
+/// 重复 tag 去重后只剩单值 → 回落字符串形态。
+#[test]
+fn rule_set_duplicate_tags_collapse_to_single_string() {
+    let mut config = json!({"route": {"rules": []}});
+    let ovr = CoreLocalOverride {
+        enabled: true,
+        rules: vec![sample_rule(
+            "r1",
+            RuleMatchType::RuleSet,
+            "geosite-cn,geosite-cn",
+            RuleAction::Proxy,
+        )],
+        ..Default::default()
+    };
+    apply_singbox_local_override(&mut config, &ovr);
+    let rules = config["route"]["rules"].as_array().unwrap();
+    assert_eq!(rules[0]["rule_set"], "geosite-cn");
+}
+
+/// 多 tag 规则引用多个 custom set：每个被引用的 tag 都注入条目。
+#[test]
+fn multi_tag_rule_injects_every_referenced_custom_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = RuleSetManager::new(dir.path().to_path_buf());
+    let mut sets = Vec::new();
+    for (id, tag) in [("c1", "first-tag"), ("c2", "second-tag")] {
+        let rs = sample_custom_rule_set(
+            id,
+            tag,
+            crate::local_override::CustomRuleSetSource::Manual {
+                content: "[]".to_string(),
+            },
+        );
+        let path = mgr.custom_rule_set_file_path(id, super::RuleSetFormat::Source);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "[]").unwrap();
+        sets.push(rs);
+    }
+
+    let rule = LocalRule {
+        id: "r-multi".to_string(),
+        name: String::new(),
+        enabled: true,
+        match_type: RuleMatchType::RuleSet,
+        target: "first-tag, second-tag".to_string(),
+        action: RuleAction::Proxy,
+        advanced: Default::default(),
+        note: String::new(),
+        created_at: 0,
+        sort_order: 0,
+    };
+
+    let mut config = json!({"route": {}});
+    apply_custom_rule_sets(&mut config, &mgr, &[rule], &sets);
+    let entries = rule_set_entries(&config);
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    let tags: std::collections::HashSet<&str> =
+        entries.iter().filter_map(|e| e["tag"].as_str()).collect();
+    assert!(tags.contains("first-tag"));
+    assert!(tags.contains("second-tag"));
+}

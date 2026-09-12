@@ -2,6 +2,8 @@
 //!
 //! Client-side rule management abstraction (sing-box only).
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -348,6 +350,30 @@ impl CustomRuleSet {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Split a `rule_set` rule target into its individual tags.
+///
+/// Storage keeps [`LocalRule::target`] as a single string; multiple tags are
+/// comma-separated (e.g. `geosite-cn,my-custom`). Each segment is trimmed,
+/// empty segments are dropped, and duplicates are removed while preserving
+/// first-seen order.
+///
+/// A legacy single-value target (`geosite-cn`) yields a one-element vector, so
+/// existing data keeps its original behavior. Shared by rule rendering
+/// ([`super::singbox`]) and command-layer validation.
+#[must_use]
+pub fn parse_rule_set_tags(target: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut tags = Vec::new();
+    for segment in target.split(',') {
+        let tag = segment.trim();
+        if tag.is_empty() || !seen.insert(tag.to_string()) {
+            continue;
+        }
+        tags.push(tag.to_string());
+    }
+    tags
+}
 
 #[inline]
 #[must_use]

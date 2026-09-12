@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 
 use super::{
     CoreLocalOverride, CustomRuleSet, LocalRule, RuleMatchType, RuleSetFormat, RuleSetManager,
+    parse_rule_set_tags,
 };
 
 /// Apply local override to a composed sing-box config.
@@ -123,11 +124,13 @@ pub fn apply_custom_rule_sets(
         return;
     };
 
-    // Tags referenced by enabled `rule_set` rule cards (route rules).
+    // Tags referenced by enabled `rule_set` rule cards (route rules). A card
+    // target may carry multiple comma-separated tags; each referenced tag is
+    // collected so every custom set it names is injected.
     let mut referenced_tags: HashSet<String> = rules
         .iter()
         .filter(|r| r.enabled && matches!(r.match_type, RuleMatchType::RuleSet))
-        .map(|r| r.target.clone())
+        .flat_map(|r| parse_rule_set_tags(&r.target))
         .collect();
 
     // Plus tags referenced by already-rendered DNS rules. Merged into one set so
@@ -311,7 +314,15 @@ fn build_singbox_rule_entry(rule: &LocalRule) -> Value {
             );
         }
         RuleMatchType::RuleSet => {
-            map.insert("rule_set".to_string(), Value::String(rule.target.clone()));
+            // A single tag keeps the legacy string form (no snapshot diff for
+            // existing data); two or more render as a string array, which
+            // sing-box accepts for the `rule_set` match field.
+            let tags = parse_rule_set_tags(&rule.target);
+            let value = match tags.as_slice() {
+                [only] => Value::String(only.clone()),
+                _ => Value::Array(tags.iter().cloned().map(Value::String).collect()),
+            };
+            map.insert("rule_set".to_string(), value);
         }
         #[cfg(target_os = "android")]
         RuleMatchType::AppPackage => {
