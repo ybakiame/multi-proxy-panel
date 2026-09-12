@@ -182,6 +182,7 @@ pub fn run() {
             pp_client_tauri::commands::local_override_update_rule_set,
             pp_client_tauri::commands::config_slices_get,
             pp_client_tauri::commands::config_slices_save,
+            pp_client_tauri::commands::baseline_view_get,
             pp_client_tauri::commands::proxies_list,
             pp_client_tauri::commands::proxies_select,
             pp_client_tauri::commands::proxies_test_delay,

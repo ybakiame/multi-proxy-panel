@@ -35,6 +35,26 @@ pub const CN_RULE_SETS: [(&str, &str); 5] = [
     ),
 ];
 
+/// Built-in outbound tags (single source of truth shared by [`crate::profile::singbox_template`]
+/// and the read-only baseline view [`crate::core_config::BaselineView`]).
+pub const OUTBOUND_TAG_PROXY: &str = "proxy";
+/// See [`OUTBOUND_TAG_PROXY`].
+pub const OUTBOUND_TAG_AUTO: &str = "auto";
+/// See [`OUTBOUND_TAG_PROXY`].
+pub const OUTBOUND_TAG_DIRECT: &str = "direct";
+/// See [`OUTBOUND_TAG_PROXY`].
+pub const OUTBOUND_TAG_BLOCK: &str = "block";
+
+/// Built-in outbound `type` values (single source of truth shared by
+/// [`crate::profile::singbox_template`] and [`crate::core_config::BaselineView`]).
+pub const OUTBOUND_KIND_SELECTOR: &str = "selector";
+/// See [`OUTBOUND_KIND_SELECTOR`].
+pub const OUTBOUND_KIND_URLTEST: &str = "urltest";
+/// See [`OUTBOUND_KIND_SELECTOR`].
+pub const OUTBOUND_KIND_DIRECT: &str = "direct";
+/// See [`OUTBOUND_KIND_SELECTOR`].
+pub const OUTBOUND_KIND_BLOCK: &str = "block";
+
 /// CN-split baseline DNS rules (GUI.for.SingBox default profile): `clash_mode direct → local`,
 /// `clash_mode global → remote`, `geosite-cn → local`; `dns.final = remote` handles the rest.
 ///

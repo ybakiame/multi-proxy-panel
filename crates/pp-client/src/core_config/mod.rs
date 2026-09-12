@@ -11,6 +11,7 @@ mod clash_api;
 mod compose;
 mod fakeip;
 mod singbox;
+mod view;
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +20,7 @@ pub use baseline::*;
 pub use clash_api::*;
 pub use compose::*;
 pub use singbox::*;
+pub use view::*;
 
 /// MITM chain info: inbound / outbound / rules injected during core config synthesis.
 pub struct MitmChain {

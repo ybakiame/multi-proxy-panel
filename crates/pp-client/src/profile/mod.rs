@@ -36,6 +36,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::config_slices::{ConfigSlices, apply_config_slices};
+use crate::core_config::{
+    OUTBOUND_KIND_BLOCK, OUTBOUND_KIND_DIRECT, OUTBOUND_KIND_SELECTOR, OUTBOUND_KIND_URLTEST,
+    OUTBOUND_TAG_AUTO, OUTBOUND_TAG_BLOCK, OUTBOUND_TAG_DIRECT, OUTBOUND_TAG_PROXY,
+};
 
 /// Profile override config: empty string = disabled.
 ///
@@ -207,35 +211,35 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         .collect();
     let mut auto_outbounds: Vec<Value> = tags.iter().cloned().map(Value::String).collect();
     if auto_outbounds.is_empty() {
-        auto_outbounds.push(Value::String("direct".to_string()));
+        auto_outbounds.push(Value::String(OUTBOUND_TAG_DIRECT.to_string()));
     }
-    let mut proxy_outbounds = vec![Value::String("auto".to_string())];
+    let mut proxy_outbounds = vec![Value::String(OUTBOUND_TAG_AUTO.to_string())];
     proxy_outbounds.extend(tags.iter().cloned().map(Value::String));
 
     let mut outbounds = nodes.to_vec();
     outbounds.push(json!({
-        "type": "selector",
-        "tag": "proxy",
+        "type": OUTBOUND_KIND_SELECTOR,
+        "tag": OUTBOUND_TAG_PROXY,
         "outbounds": proxy_outbounds,
-        "default": "auto"
+        "default": OUTBOUND_TAG_AUTO
     }));
     outbounds.push(json!({
-        "type": "urltest",
-        "tag": "auto",
+        "type": OUTBOUND_KIND_URLTEST,
+        "tag": OUTBOUND_TAG_AUTO,
         "outbounds": auto_outbounds,
         "url": "https://www.gstatic.com/generate_204",
         "interval": "5m"
     }));
-    outbounds.push(json!({ "type": "direct", "tag": "direct" }));
-    outbounds.push(json!({ "type": "block", "tag": "block" }));
+    outbounds.push(json!({ "type": OUTBOUND_KIND_DIRECT, "tag": OUTBOUND_TAG_DIRECT }));
+    outbounds.push(json!({ "type": OUTBOUND_KIND_BLOCK, "tag": OUTBOUND_TAG_BLOCK }));
 
     // Main selector tag: read from the generated outbounds (never hardcoded) so the CN-split
     // baseline and the remote DNS detour follow the template's actual group tag.
     let proxy_tag = outbounds
         .iter()
-        .find(|o| o.get("type").and_then(Value::as_str) == Some("selector"))
+        .find(|o| o.get("type").and_then(Value::as_str) == Some(OUTBOUND_KIND_SELECTOR))
         .and_then(|o| o.get("tag").and_then(Value::as_str))
-        .unwrap_or("proxy")
+        .unwrap_or(OUTBOUND_TAG_PROXY)
         .to_string();
 
     let mut cfg = json!({
