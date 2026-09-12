@@ -1,11 +1,4 @@
-import {
-  ArrowsRightLeftIcon,
-  BeakerIcon,
-  BoltIcon,
-  GlobeAltIcon,
-  MapIcon,
-  WifiIcon,
-} from "@heroicons/react/24/outline";
+import { ArrowsRightLeftIcon, BeakerIcon, GlobeAltIcon, MapIcon, WifiIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
 import { EntryLinkCard } from "../../components/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
@@ -14,8 +7,8 @@ import { PageShell } from "../../components/PageShell";
  * 配置管理入口页（ADR-0005 §3.3，路由 `/config`，Tab 2）。
  *
  * 入口卡列表：DNS（`/config/dns`）、自定义出站（`/config/outbounds`）、
- * 路由（`/config/route`）、网络（TUN，`/config/network`）、Clash API（`/config/clash-api`）、
- * Experimental（`/config/experimental`）。
+ * 路由（`/config/route`）、网络（TUN，`/config/network`）、
+ * Experimental（`/config/experimental`，含 Clash API 设置）。
  *
  * 网络（TUN）与 Clash API 为必选切片（ADR-0005 后续决策）：始终启用、无切片级关闭开关，
  * 入口仅提供参数调整（混合端口 / API 端口与密钥）。其余切片无总开关，有内容即生效。
@@ -60,15 +53,9 @@ export default function Config() {
           onPress={() => navigate("/config/network")}
         />
         <EntryLinkCard
-          icon={<BoltIcon className="size-6" aria-hidden="true" />}
-          title="Clash API"
-          description="仪表盘与节点页数据源 · 调整端口与密钥"
-          onPress={() => navigate("/config/clash-api")}
-        />
-        <EntryLinkCard
           icon={<BeakerIcon className="size-6" aria-hidden="true" />}
           title="Experimental"
-          description="实验性缓存与 fakeip 持久化配置"
+          description="Clash API（端口 / 密钥）与缓存等实验性配置"
           onPress={() => navigate("/config/experimental")}
         />
       </div>

@@ -7,7 +7,6 @@ import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Panel from "./pages/Panel";
 import Config from "./pages/Config";
-import ClashApiPage from "./pages/Config/ClashApiPage";
 import CustomRulesPage from "./pages/Config/CustomRulesPage";
 import DnsPage from "./pages/Config/Dns";
 import ExperimentalPage from "./pages/Config/ExperimentalPage";
@@ -96,7 +95,8 @@ function TauriRequired() {
  *   `/panel` Clash 面板页（内嵌 zashboard）、`/logs` 日志页、`/subscriptions` 订阅管理页、
  *   `/config/route` 路由、`/config/route/rules` 规则管理、`/config/route/rulesets` 规则集管理、
  *   `/config/dns`、`/config/outbounds`、
- *   `/config/network`、`/config/clash-api`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染。
+ *   `/config/network`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染；
+ *   旧 `/config/clash-api` 重定向到 `/config/experimental`（Clash API 设置已并入）。
  * - 旧 `/rules/*` 路径与旧 `/settings/{network,clash-api}` 路径保留 `<Navigate>` 重定向；
  *   旧 `/config/{rules,rulesets}` 路径重定向到 `/config/route/*`（规则管理迁入路由菜单）；
  *   旧 `/proxies`、`/connections` 路径重定向到 `/panel`（原生页面已由内嵌面板取代，
@@ -131,8 +131,9 @@ function AppContent() {
           <Route path="/config/dns" element={<DnsPage />} />
           <Route path="/config/outbounds" element={<OutboundsPage />} />
           <Route path="/config/network" element={<NetworkPage />} />
-          <Route path="/config/clash-api" element={<ClashApiPage />} />
           <Route path="/config/experimental" element={<ExperimentalPage />} />
+          {/* Clash API 设置已并入 Experimental 页 */}
+          <Route path="/config/clash-api" element={<Navigate to="/config/experimental" replace />} />
           <Route path="/config/route" element={<RoutePage />} />
           <Route path="/config/route/rules" element={<CustomRulesPage />} />
           <Route path="/config/route/rulesets" element={<RuleSetsPage />} />
@@ -148,7 +149,7 @@ function AppContent() {
           <Route path="/rules/rulesets/market" element={<Navigate to="/config/route/rulesets/market" replace />} />
           {/* 网络 / Clash API 迁移为配置页必选切片：旧设置页路径重定向兼容。 */}
           <Route path="/settings/network" element={<Navigate to="/config/network" replace />} />
-          <Route path="/settings/clash-api" element={<Navigate to="/config/clash-api" replace />} />
+          <Route path="/settings/clash-api" element={<Navigate to="/config/experimental" replace />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/vpn-notify" element={<VpnNotifyPage />} />
           <Route path="/settings/github" element={<GithubPage />} />

@@ -1,17 +1,22 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner, Switch } from "@heroui/react";
 import {
+  CONFIG_KEY,
   CONFIG_SLICES_KEY,
   configSlicesGet,
   configSlicesSave,
   toErrorMessage,
   toastError,
   toastSuccess,
+  useClientConfig,
   useProxyStatus,
+  useSaveConfig,
 } from "@pp/client-core";
-import type { CacheFileSlice, ConfigSlices, ExperimentalSlice } from "@pp/client-core";
+import type { CacheFileSlice, ClientConfig, ConfigSlices, ExperimentalSlice } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
+import { useSettingsConfig, randomClashApiSecret } from "../Settings/useSettingsConfig";
+import { ClashApiCard } from "./ClashApiCard";
 import { isConfigSlices } from "./Dns/dnsUtils";
 
 /** 文本输入样式（对齐 DnsServerFormSheet / OutboundField 的 inputClass）。 */
@@ -20,11 +25,16 @@ const INPUT_CLASS =
   "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 /**
- * Experimental 切片配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`）。
+ * Experimental 配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`；2026-09 起并入
+ * Clash API 设置，取代独立 `/config/clash-api` 页）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 实验性能力提示 →
- * Cache File 分区（enabled / path / cache_id / store_fakeip）。
+ * 结构自上而下：BackHeader（右侧保存动作，仅作用于 Cache File 切片草稿）→
+ * Clash API 卡（端口 / 必填密钥，即时保存，ClientConfig 存储，不经页面保存按钮）→
+ * 实验性能力提示 → Cache File 分区（enabled / path / cache_id / store_fakeip）。
  * 无切片总开关：`cache_file.enabled` 即注入开关。
+ *
+ * 存量纠正（进入本页一次性静默落盘）：`clash_api_enabled: false`（历史关闭开关）纠正为
+ * true；`clash_api_secret` 为空（密钥必填前的存量）自动生成随机密钥填充。
  *
  * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；编辑只改内存中的
  * experimental 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，
@@ -36,6 +46,38 @@ export default function ExperimentalPage() {
   const { data: status } = useProxyStatus();
   // 切片在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
   const coreRunning = status?.core_running ?? false;
+  // Clash API 卡（ClientConfig 即时保存体系，与本页切片草稿互不干扰）。
+  const settings = useSettingsConfig();
+  const { data: config } = useClientConfig();
+  const { mutateAsync: saveConfigAsync } = useSaveConfig();
+
+  // 必选切片恒启用 + 密钥必填：仅本页负责纠正存量（一次性，失败下次进入重试）。
+  // 读缓存最新基底叠加补丁（对齐 useSettingsConfig.persist），避免展开渲染期快照覆盖
+  // 并发保存（lost update）。
+  const correctedRef = useRef(false);
+  useEffect(() => {
+    if (correctedRef.current || !config) {
+      return;
+    }
+    const needEnable = !config.clash_api_enabled;
+    const needSecret = (config.clash_api_secret ?? "").trim() === "";
+    if (!needEnable && !needSecret) {
+      return;
+    }
+    const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
+    if (!current) {
+      return;
+    }
+    correctedRef.current = true;
+    void saveConfigAsync({
+      ...current,
+      clash_api_enabled: true,
+      clash_api_secret: needSecret ? randomClashApiSecret() : current.clash_api_secret,
+    }).catch(() => {
+      // 静默纠正失败：保留原值不阻塞页面，重置标记以便下次进入重试。
+      correctedRef.current = false;
+    });
+  }, [config, queryClient, saveConfigAsync]);
 
   const {
     data: rawSlices,
@@ -145,6 +187,9 @@ export default function ExperimentalPage() {
             </Card.Content>
           </Card>
         )}
+
+        {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
+        <ClashApiCard settings={settings} />
 
         {draft && (
           <>
