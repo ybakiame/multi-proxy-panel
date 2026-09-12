@@ -113,6 +113,7 @@ pub fn run() {
             pp_client_tauri::commands::config_slices_get,
             pp_client_tauri::commands::config_slices_save,
             pp_client_tauri::commands::baseline_view_get,
+            pp_client_tauri::commands::builtin_dns_slice_get,
             // Android 专属三命令来自共享层 pp-client-tauri::core_bridge（ADR-0003
             // M3.5）。mobile 壳只编 android target，host 构建仅供编译检查，模块在
             // host 不可见，故以 cfg 显式包裹（桌面构建裁剪）。
