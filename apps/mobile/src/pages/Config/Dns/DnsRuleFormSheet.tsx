@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal, Switch } from "@heroui/react";
-import type { DnsMatchType, DnsRule } from "@pp/client-core";
+import type { DnsMatchType, DnsRule, DnsRuleAction } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import type { RuleSetOption } from "../ruleSetOptions";
-import { DNS_MATCH_TYPE_OPTIONS, DNS_TARGET_PLACEHOLDER } from "./dnsUtils";
+import {
+  DEFAULT_DNS_RCODE,
+  DNS_MATCH_TYPE_OPTIONS,
+  DNS_RCODE_OPTIONS,
+  DNS_RULE_ACTION_OPTIONS,
+  DNS_TARGET_PLACEHOLDER,
+  firstInvalidQueryType,
+  isValidRcode,
+} from "./dnsUtils";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
@@ -50,6 +58,8 @@ export function DnsRuleFormSheet({
   const [matchType, setMatchType] = useState<DnsMatchType>("domain");
   const [target, setTarget] = useState("");
   const [serverTag, setServerTag] = useState("");
+  const [action, setAction] = useState<DnsRuleAction>("route");
+  const [rcode, setRcode] = useState(DEFAULT_DNS_RCODE);
   const [enabled, setEnabled] = useState(true);
   const [prevKey, setPrevKey] = useState<string | null>(null);
 
@@ -60,6 +70,8 @@ export function DnsRuleFormSheet({
     setMatchType(editing?.match_type ?? "domain");
     setTarget(editing?.target ?? "");
     setServerTag(editing?.server_tag ?? "");
+    setAction(editing?.action ?? "route");
+    setRcode(editing?.rcode?.trim() !== "" && editing?.rcode ? editing.rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE);
     setEnabled(editing?.enabled ?? true);
   }
 
@@ -103,16 +115,26 @@ export function DnsRuleFormSheet({
         : effectiveRuleSetOptions.some((option) => option.value === target.trim())
           ? null
           : "规则集不存在"
-      : target.trim() === ""
-        ? "请输入匹配目标"
-        : null;
+      : matchType === "query_type"
+        ? target.trim() === ""
+          ? "请输入查询类型"
+          : (() => {
+              const invalid = firstInvalidQueryType(target);
+              return invalid === null ? null : invalid === "" ? "查询类型项不能为空" : `查询类型「${invalid}」无效`;
+            })()
+        : target.trim() === ""
+          ? "请输入匹配目标"
+          : null;
   const serverError =
-    serverTag.trim() === ""
-      ? "请选择目标 DNS 服务器"
-      : serverOptions.some((option) => option.value === serverTag)
-        ? null
-        : "目标 DNS 服务器不存在";
-  const canSave = targetError === null && serverError === null;
+    action !== "route"
+      ? null
+      : serverTag.trim() === ""
+        ? "请选择目标 DNS 服务器"
+        : serverOptions.some((option) => option.value === serverTag)
+          ? null
+          : "目标 DNS 服务器不存在";
+  const rcodeError = action === "predefined" && !isValidRcode(rcode) ? "应答码无效" : null;
+  const canSave = targetError === null && serverError === null && rcodeError === null;
 
   const handleSave = () => {
     if (!canSave) return;
@@ -121,7 +143,9 @@ export function DnsRuleFormSheet({
       enabled,
       match_type: matchType,
       target: target.trim(),
-      server_tag: serverTag.trim(),
+      server_tag: action === "route" ? serverTag.trim() : "",
+      action,
+      rcode: action === "predefined" ? (rcode.trim() !== "" ? rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE) : "",
     });
     onClose();
   };
@@ -189,27 +213,58 @@ export function DnsRuleFormSheet({
                 <span className="text-xs text-warning">{targetError}</span>
               ) : matchType === "rule_set" ? (
                 <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+              ) : matchType === "query_type" ? (
+                <span className="text-xs text-muted">多个查询类型用英文逗号分隔，如 A,AAAA</span>
               ) : (
                 <span className="text-xs text-muted">按所选匹配类型填写目标值</span>
               )}
             </div>
 
-            {/* 目标服务器 */}
+            {/* 规则动作 */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">目标 DNS 服务器</span>
+              <span className="text-sm font-medium text-foreground">动作</span>
               <MobileSelectSheet
-                label="目标 DNS 服务器"
-                value={serverTag}
-                onChange={setServerTag}
-                placeholder={serverOptions.length === 0 ? "请先添加 DNS 服务器" : "请选择"}
-                options={effectiveServerOptions}
+                label="动作"
+                value={action}
+                onChange={(value) => setAction(value as DnsRuleAction)}
+                options={DNS_RULE_ACTION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               />
-              {serverError ? (
-                <span className="text-xs text-warning">{serverError}</span>
-              ) : (
-                <span className="text-xs text-muted">命中后使用该 DNS 服务器解析</span>
-              )}
             </div>
+
+            {/* route：目标服务器 */}
+            {action === "route" && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">目标 DNS 服务器</span>
+                <MobileSelectSheet
+                  label="目标 DNS 服务器"
+                  value={serverTag}
+                  onChange={setServerTag}
+                  placeholder={serverOptions.length === 0 ? "请先添加 DNS 服务器" : "请选择"}
+                  options={effectiveServerOptions}
+                />
+                {serverError ? (
+                  <span className="text-xs text-warning">{serverError}</span>
+                ) : (
+                  <span className="text-xs text-muted">命中后使用该 DNS 服务器解析</span>
+                )}
+              </div>
+            )}
+
+            {/* predefined：应答码 */}
+            {action === "predefined" && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">应答码</span>
+                <MobileSelectSheet label="应答码" value={rcode} onChange={setRcode} options={DNS_RCODE_OPTIONS} />
+                {rcodeError ? (
+                  <span className="text-xs text-warning">{rcodeError}</span>
+                ) : (
+                  <span className="text-xs text-muted">命中后直接返回该应答码，不再向上游查询</span>
+                )}
+              </div>
+            )}
+
+            {/* reject：无额外字段 */}
+            {action === "reject" && <span className="text-xs text-muted">命中后直接拒绝该 DNS 查询</span>}
 
             {/* 启用开关 */}
             <div className="flex min-h-11 items-center justify-between gap-3">

@@ -26,6 +26,7 @@ import { BackHeader } from "../../../components/BackHeader";
 import { isLocalOverrideView } from "../localOverrideGuards";
 import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
+import { DnsFakeipCard } from "./DnsFakeipCard";
 import { DnsMasterSwitchCard } from "./DnsMasterSwitchCard";
 import { DnsModeCard } from "./DnsModeCard";
 import { DnsRoutingCard } from "./DnsRoutingCard";
@@ -294,6 +295,9 @@ export default function DnsPage() {
             <DnsMasterSwitchCard enabled={draft.enabled} onToggle={handleToggleEnabled} />
 
             <DnsModeCard mode={draft.mode} isAndroid={isAndroid} onChangeMode={handleChangeMode} />
+
+            {/* FakeIP（W2，ClientConfig）仅在非接管模式可见：接管后由切片正文全权接管 */}
+            {draft.mode !== "takeover" && <DnsFakeipCard />}
 
             <DnsServerListSection servers={draft.servers} onEdit={openEditServer} onAdd={openAddServer} />
 

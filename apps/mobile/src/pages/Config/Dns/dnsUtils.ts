@@ -3,6 +3,7 @@ import type {
   DnsMatchType,
   DnsMode,
   DnsRule,
+  DnsRuleAction,
   DnsServer,
   DnsServerType,
   DnsSlice,
@@ -27,7 +28,7 @@ export const DNS_MODE_OPTIONS: { value: DnsMode; label: string }[] = [
   { value: "takeover", label: "接管" },
 ];
 
-/** DNS 服务器类型选项（`local` 无需 server / port）。 */
+/** DNS 服务器类型选项（`local` / `fakeip` 无需 server / port）。 */
 export const DNS_SERVER_TYPE_OPTIONS: { value: DnsServerType; label: string }[] = [
   { value: "udp", label: "UDP" },
   { value: "tls", label: "TLS" },
@@ -35,6 +36,7 @@ export const DNS_SERVER_TYPE_OPTIONS: { value: DnsServerType; label: string }[] 
   { value: "quic", label: "QUIC" },
   { value: "h3", label: "HTTP/3" },
   { value: "local", label: "本地 (local)" },
+  { value: "fakeip", label: "FakeIP" },
 ];
 
 /** DNS 分流规则匹配类型选项。 */
@@ -43,7 +45,81 @@ export const DNS_MATCH_TYPE_OPTIONS: { value: DnsMatchType; label: string }[] = 
   { value: "domain_suffix", label: "域名后缀" },
   { value: "domain_keyword", label: "域名关键词" },
   { value: "rule_set", label: "规则集" },
+  { value: "query_type", label: "查询类型" },
 ];
+
+/** DNS 规则动作选项。 */
+export const DNS_RULE_ACTION_OPTIONS: { value: DnsRuleAction; label: string }[] = [
+  { value: "route", label: "路由到服务器" },
+  { value: "predefined", label: "预定义应答" },
+  { value: "reject", label: "拒绝" },
+];
+
+/** `predefined` 动作的应答码选项（对齐 Rust `DNS_RCODE_NAMES`）。 */
+export const DNS_RCODE_OPTIONS: { value: string; label: string }[] = [
+  { value: "NOERROR", label: "NOERROR" },
+  { value: "FORMERR", label: "FORMERR" },
+  { value: "SERVFAIL", label: "SERVFAIL" },
+  { value: "NXDOMAIN", label: "NXDOMAIN" },
+  { value: "NOTIMP", label: "NOTIMP" },
+  { value: "REFUSED", label: "REFUSED" },
+];
+
+/** 默认应答码（Rust 渲染 `predefined` 且 rcode 为空时使用）。 */
+export const DEFAULT_DNS_RCODE = "NOERROR";
+
+/** FakeIP 默认 IPv4 网段（对齐 Rust `DEFAULT_FAKEIP_INET4_RANGE`）。 */
+export const DEFAULT_FAKEIP_INET4_RANGE = "198.18.0.0/15";
+
+/**
+ * `query_type` 匹配目标允许的查询类型名（对齐 Rust `QUERY_TYPE_NAMES`）。
+ *
+ * 匹配大小写不敏感；渲染时 Rust 会归一化为大写。
+ */
+export const DNS_QUERY_TYPE_NAMES: readonly string[] = [
+  "A",
+  "NS",
+  "CNAME",
+  "SOA",
+  "PTR",
+  "MX",
+  "TXT",
+  "AAAA",
+  "SRV",
+  "NAPTR",
+  "CAA",
+  "TLSA",
+  "DS",
+  "DNSKEY",
+  "RRSIG",
+  "NSEC",
+  "NSEC3",
+  "SVCB",
+  "HTTPS",
+  "ANY",
+  "OPT",
+  "HINFO",
+  "MINFO",
+  "WKS",
+  "AXFR",
+  "IXFR",
+];
+
+/** 查询类型名是否合法（大小写不敏感，对齐 Rust `is_valid_query_type`）。 */
+export function isValidQueryType(value: string): boolean {
+  return DNS_QUERY_TYPE_NAMES.includes(value.trim().toUpperCase());
+}
+
+/** 逗号分隔的 `query_type` 目标逐项校验；返回首个非法项（`null` = 全部合法）。 */
+export function firstInvalidQueryType(target: string): string | null {
+  for (const item of target.split(",")) {
+    const trimmed = item.trim();
+    if (trimmed === "" || !isValidQueryType(trimmed)) {
+      return trimmed === "" ? item : trimmed;
+    }
+  }
+  return null;
+}
 
 /** 全局解析策略选项。 */
 export const DNS_STRATEGY_OPTIONS: { value: DnsStrategy; label: string }[] = [
@@ -58,6 +134,7 @@ const DNS_MATCH_TYPE_LABELS: Record<DnsMatchType, string> = {
   domain_suffix: "域名后缀",
   domain_keyword: "域名关键词",
   rule_set: "规则集",
+  query_type: "查询类型",
 };
 
 const DNS_SERVER_TYPE_LABELS: Record<DnsServerType, string> = {
@@ -67,6 +144,13 @@ const DNS_SERVER_TYPE_LABELS: Record<DnsServerType, string> = {
   quic: "QUIC",
   h3: "HTTP/3",
   local: "本地",
+  fakeip: "FakeIP",
+};
+
+const DNS_RULE_ACTION_LABELS: Record<DnsRuleAction, string> = {
+  route: "路由",
+  predefined: "预定义应答",
+  reject: "拒绝",
 };
 
 const DNS_STRATEGY_LABELS: Record<DnsStrategy, string> = {
@@ -88,12 +172,17 @@ export function dnsStrategyLabel(value: DnsStrategy): string {
   return DNS_STRATEGY_LABELS[value] ?? value;
 }
 
+export function dnsRuleActionLabel(value: DnsRuleAction): string {
+  return DNS_RULE_ACTION_LABELS[value] ?? value;
+}
+
 /** 匹配目标输入占位（按 match_type 语义变化）。 */
 export const DNS_TARGET_PLACEHOLDER: Record<DnsMatchType, string> = {
   domain: "例如：example.com",
   domain_suffix: "例如：google.com",
   domain_keyword: "例如：google",
   rule_set: "规则集 tag",
+  query_type: "如 A,AAAA",
 };
 
 // ---------------------------------------------------------------------------
@@ -131,6 +220,14 @@ export function dnsServerSummary(server: DnsServer): string {
   if (server.server_type === "local") {
     return "使用系统本地 DNS";
   }
+  if (server.server_type === "fakeip") {
+    const inet4 = server.inet4_range.trim() !== "" ? server.inet4_range.trim() : DEFAULT_FAKEIP_INET4_RANGE;
+    const parts = [`虚拟网段 ${inet4}`];
+    if (server.inet6_range.trim() !== "") {
+      parts.push(server.inet6_range.trim());
+    }
+    return parts.join(" · ");
+  }
   const address = server.server_port !== null ? `${server.server}:${server.server_port}` : server.server;
   const parts = [address];
   if (server.detour.trim() !== "") {
@@ -144,7 +241,15 @@ export function dnsServerSummary(server: DnsServer): string {
 
 /** DNS 分流规则摘要（列表卡片副标题）。 */
 export function dnsRuleSummary(rule: DnsRule): string {
-  return `${dnsMatchTypeLabel(rule.match_type)}: ${rule.target} → ${rule.server_tag}`;
+  const target = `${dnsMatchTypeLabel(rule.match_type)}: ${rule.target}`;
+  if (rule.action === "predefined") {
+    const rcode = rule.rcode.trim() !== "" ? rule.rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE;
+    return `${target} → 预定义应答 ${rcode}`;
+  }
+  if (rule.action === "reject") {
+    return `${target} → 拒绝`;
+  }
+  return `${target} → ${rule.server_tag}`;
 }
 
 /** 已定义 server tag 的下拉选项（供规则的 server_tag 与 final_tag 复用）。 */
@@ -178,11 +283,28 @@ export function parsePortDraft(raw: string): { value: number | null; error: stri
   return { value, error: null };
 }
 
+/** 应答码是否合法（大小写不敏感，对齐 Rust `is_valid_rcode`）。 */
+export function isValidRcode(value: string): boolean {
+  return DNS_RCODE_OPTIONS.some((option) => option.value === value.trim().toUpperCase());
+}
+
+/** 宽松 CIDR 校验：空串合法（核心默认）；非空须含非空地址与 `/` 前缀（对齐 Rust `validate_cidr_loose`）。 */
+export function isCidrLoose(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return true;
+  }
+  const slash = trimmed.indexOf("/");
+  return slash > 0 && slash < trimmed.length - 1;
+}
+
 /** 服务器表单字段错误（`null` = 合法）。 */
 export interface DnsServerFormErrors {
   tag: string | null;
   server: string | null;
   port: string | null;
+  inet4: string | null;
+  inet6: string | null;
 }
 
 /**
@@ -190,7 +312,14 @@ export interface DnsServerFormErrors {
  * 用于唯一性校验。
  */
 export function validateDnsServerForm(
-  fields: { tag: string; serverType: DnsServerType; server: string; port: string },
+  fields: {
+    tag: string;
+    serverType: DnsServerType;
+    server: string;
+    port: string;
+    inet4Range: string;
+    inet6Range: string;
+  },
   otherTags: readonly string[],
 ): DnsServerFormErrors {
   const trimmedTag = fields.tag.trim();
@@ -203,9 +332,17 @@ export function validateDnsServerForm(
     tagError = "tag 已存在，请保持唯一";
   }
 
-  const serverError = fields.serverType !== "local" && fields.server.trim() === "" ? "请输入服务器地址" : null;
+  const usesServer = fields.serverType !== "local" && fields.serverType !== "fakeip";
+  const serverError = usesServer && fields.server.trim() === "" ? "请输入服务器地址" : null;
+  const isFakeip = fields.serverType === "fakeip";
 
-  return { tag: tagError, server: serverError, port: parsePortDraft(fields.port).error };
+  return {
+    tag: tagError,
+    server: serverError,
+    port: parsePortDraft(fields.port).error,
+    inet4: isFakeip && !isCidrLoose(fields.inet4Range) ? "需为 CIDR 网段，如 198.18.0.0/15" : null,
+    inet6: isFakeip && !isCidrLoose(fields.inet6Range) ? "需为 CIDR 网段，如 fd00::/8" : null,
+  };
 }
 
 /** 整切片校验结果（页面保存按钮据此禁用）。 */
@@ -229,8 +366,17 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
       return "tag 重复";
     }
     serverTags.add(server.tag.trim());
-    if (server.server_type !== "local" && server.server.trim() === "") {
-      return "非 local 类型必须填写服务器地址";
+    const usesServer = server.server_type !== "local" && server.server_type !== "fakeip";
+    if (usesServer && server.server.trim() === "") {
+      return "非 local/FakeIP 类型必须填写服务器地址";
+    }
+    if (server.server_type === "fakeip") {
+      if (!isCidrLoose(server.inet4_range)) {
+        return "inet4_range 需为 CIDR 网段";
+      }
+      if (!isCidrLoose(server.inet6_range)) {
+        return "inet6_range 需为 CIDR 网段";
+      }
     }
     if (server.server_port !== null && (server.server_port < 1 || server.server_port > 65535)) {
       return "端口需在 1-65535 之间";
@@ -241,6 +387,27 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
   const ruleErrors = dns.rules.map((rule) => {
     if (rule.target.trim() === "") {
       return "匹配目标不能为空";
+    }
+    if (rule.match_type === "query_type") {
+      const invalid = firstInvalidQueryType(rule.target);
+      if (invalid !== null) {
+        return invalid === "" ? "查询类型项不能为空" : `查询类型「${invalid}」无效`;
+      }
+    }
+    if (rule.action === "predefined") {
+      if (rule.server_tag.trim() !== "") {
+        return "预定义应答不能指定目标服务器";
+      }
+      if (rule.rcode.trim() !== "" && !isValidRcode(rule.rcode)) {
+        return "应答码无效";
+      }
+      return null;
+    }
+    if (rule.action === "reject") {
+      if (rule.server_tag.trim() !== "") {
+        return "拒绝动作不能指定目标服务器";
+      }
+      return null;
     }
     if (rule.server_tag.trim() === "") {
       return "请选择目标 DNS 服务器";

@@ -3,7 +3,7 @@ import { TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal } from "@heroui/react";
 import type { DnsServer, DnsServerType } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
-import { DNS_SERVER_TYPE_OPTIONS, parsePortDraft, validateDnsServerForm } from "./dnsUtils";
+import { DEFAULT_FAKEIP_INET4_RANGE, DNS_SERVER_TYPE_OPTIONS, parsePortDraft, validateDnsServerForm } from "./dnsUtils";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
@@ -44,6 +44,8 @@ export function DnsServerFormSheet({
   const [serverType, setServerType] = useState<DnsServerType>("udp");
   const [server, setServer] = useState("");
   const [port, setPort] = useState("");
+  const [inet4Range, setInet4Range] = useState("");
+  const [inet6Range, setInet6Range] = useState("");
   const [detour, setDetour] = useState("");
   const [domainResolver, setDomainResolver] = useState("");
   const [prevKey, setPrevKey] = useState<string | null>(null);
@@ -56,24 +58,36 @@ export function DnsServerFormSheet({
     setServerType(editing?.server_type ?? "udp");
     setServer(editing?.server ?? "");
     setPort(editing?.server_port != null ? String(editing.server_port) : "");
+    setInet4Range(editing?.inet4_range ?? "");
+    setInet6Range(editing?.inet6_range ?? "");
     setDetour(editing?.detour ?? "");
     setDomainResolver(editing?.domain_resolver ?? "");
   }
 
   const isLocal = serverType === "local";
-  const errors = validateDnsServerForm({ tag, serverType, server, port }, otherTags);
-  const canSave = errors.tag === null && errors.server === null && errors.port === null;
+  const isFakeip = serverType === "fakeip";
+  // FakeIP 无拨号字段（server / port / detour / domain_resolver 均由 Rust 渲染时忽略）。
+  const showDialFields = !isLocal && !isFakeip;
+  const errors = validateDnsServerForm({ tag, serverType, server, port, inet4Range, inet6Range }, otherTags);
+  const canSave =
+    errors.tag === null &&
+    errors.server === null &&
+    errors.port === null &&
+    errors.inet4 === null &&
+    errors.inet6 === null;
 
   const handleSave = () => {
     if (!canSave) return;
     onSave({
       tag: tag.trim(),
-      server: isLocal ? "" : server.trim(),
+      server: showDialFields ? server.trim() : "",
       server_type: serverType,
-      server_port: parsePortDraft(port).value,
-      detour: detour.trim(),
+      server_port: showDialFields ? parsePortDraft(port).value : null,
+      inet4_range: isFakeip ? inet4Range.trim() : "",
+      inet6_range: isFakeip ? inet6Range.trim() : "",
+      detour: showDialFields ? detour.trim() : "",
       strategy: null,
-      domain_resolver: domainResolver.trim(),
+      domain_resolver: showDialFields ? domainResolver.trim() : "",
     });
     onClose();
   };
@@ -128,8 +142,8 @@ export function DnsServerFormSheet({
               />
             </div>
 
-            {/* server / port（local 隐藏） */}
-            {!isLocal && (
+            {/* server / port（local / fakeip 隐藏） */}
+            {showDialFields && (
               <>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="dns-server-address" className="text-sm font-medium text-foreground">
@@ -172,41 +186,90 @@ export function DnsServerFormSheet({
               </>
             )}
 
-            {/* detour */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="dns-server-detour" className="text-sm font-medium text-foreground">
-                出站 (detour)
-              </label>
-              <input
-                id="dns-server-detour"
-                aria-label="出站 detour"
-                value={detour}
-                onChange={(event) => setDetour(event.target.value)}
-                placeholder="留空为默认直连，例如：proxy"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className={`${inputClass} font-mono`}
-              />
-            </div>
+            {/* fakeip 网段（仅 fakeip） */}
+            {isFakeip && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="dns-server-inet4" className="text-sm font-medium text-foreground">
+                    IPv4 网段
+                  </label>
+                  <input
+                    id="dns-server-inet4"
+                    aria-label="FakeIP IPv4 网段"
+                    value={inet4Range}
+                    onChange={(event) => setInet4Range(event.target.value)}
+                    placeholder={`留空使用默认 ${DEFAULT_FAKEIP_INET4_RANGE}`}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className={`${inputClass} font-mono`}
+                  />
+                  {errors.inet4 ? (
+                    <span className="text-xs text-warning">{errors.inet4}</span>
+                  ) : (
+                    <span className="text-xs text-muted">虚拟 IPv4 地址池，CIDR 格式</span>
+                  )}
+                </div>
 
-            {/* domain_resolver */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="dns-server-resolver" className="text-sm font-medium text-foreground">
-                域名解析器
-              </label>
-              <input
-                id="dns-server-resolver"
-                aria-label="域名解析器"
-                value={domainResolver}
-                onChange={(event) => setDomainResolver(event.target.value)}
-                placeholder="用于解析本服务器域名的 server tag"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className={`${inputClass} font-mono`}
-              />
-            </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="dns-server-inet6" className="text-sm font-medium text-foreground">
+                    IPv6 网段
+                  </label>
+                  <input
+                    id="dns-server-inet6"
+                    aria-label="FakeIP IPv6 网段"
+                    value={inet6Range}
+                    onChange={(event) => setInet6Range(event.target.value)}
+                    placeholder="留空则不返回虚拟 IPv6 地址"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className={`${inputClass} font-mono`}
+                  />
+                  {errors.inet6 && <span className="text-xs text-warning">{errors.inet6}</span>}
+                </div>
+              </>
+            )}
+
+            {/* detour（fakeip 隐藏） */}
+            {!isFakeip && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="dns-server-detour" className="text-sm font-medium text-foreground">
+                  出站 (detour)
+                </label>
+                <input
+                  id="dns-server-detour"
+                  aria-label="出站 detour"
+                  value={detour}
+                  onChange={(event) => setDetour(event.target.value)}
+                  placeholder="留空为默认直连，例如：proxy"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+            )}
+
+            {/* domain_resolver（fakeip 隐藏） */}
+            {!isFakeip && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="dns-server-resolver" className="text-sm font-medium text-foreground">
+                  域名解析器
+                </label>
+                <input
+                  id="dns-server-resolver"
+                  aria-label="域名解析器"
+                  value={domainResolver}
+                  onChange={(event) => setDomainResolver(event.target.value)}
+                  placeholder="用于解析本服务器域名的 server tag"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+            )}
 
             {/* 编辑模式删除入口 */}
             {editing && (
