@@ -76,6 +76,9 @@ pub struct ClientState {
     tun_auth_check: Arc<dyn Fn(&Path) -> TunAuthStatus + Send + Sync>,
     /// Number of rules in the composed config (written after successful start, cleared on stop; returned by status()).
     rule_count: u64,
+    /// 本次启动未能本地化的内置 CN 规则集 tag（降级启动；空 = 完整分流）。后台重试补齐
+    /// 后由命令层重载核心恢复完整配置（见 `ruleset_manager` 模块文档）。
+    missing_rule_sets: Vec<String>,
 }
 
 impl ClientState {
@@ -117,6 +120,7 @@ impl ClientState {
             connection_tracker: None,
             tun_auth_check: Arc::new(tun_auth_status),
             rule_count: 0,
+            missing_rule_sets: Vec::new(),
         }
     }
 
@@ -327,6 +331,7 @@ impl ClientState {
             // ADR-0005 D1: Android DNS takeover only when the DNS slice is enabled and set to
             // takeover; otherwise follow system (keep the forced injection).
             dns_mode: core_config::dns_mode_from_slices(&slices),
+            github_proxy_prefix: self.config.github_proxy_prefix.clone(),
         };
         let mut config_json = match core_config::compose_singbox_config(
             &profile_cfg,
@@ -345,6 +350,31 @@ impl ClientState {
             &mut config_json,
         );
         core_config::apply_panel_features(&mut config_json, &features);
+
+        // 内置 CN 规则集本地化物化（ruleset_manager）：App 侧按镜像回退下载（jsDelivr →
+        // GitHub raw → GitHub 代理前缀）并改写为 type:local；下载全部失败的 tag 连同引用
+        // 它的路由 / DNS 规则降级移除——优先保证核心可启动，缺失 tag 暴露到运行状态供
+        // 命令层后台重试与自动重载。
+        let available = crate::ruleset_manager::ensure_builtin_rule_sets(
+            &self.config.data_dir,
+            &self.config.github_proxy_prefix,
+        )
+        .await;
+        let report = crate::ruleset_manager::materialize_rule_sets(
+            &mut config_json,
+            &self.config.data_dir,
+            &available,
+        );
+        if !report.missing_tags.is_empty() {
+            tracing::warn!(
+                missing = ?report.missing_tags,
+                stripped_route_rules = report.stripped_route_rules,
+                stripped_dns_rules = report.stripped_dns_rules,
+                "内置规则集未全部就绪，降级启动（CN 分流由 route.final 兜底）"
+            );
+        }
+        self.missing_rule_sets = report.missing_tags;
+
         self.start_services(&config_json).await?;
 
         // 运行状态扩展：记录本次合成配置的规则条数（未运行时为 0）。
@@ -364,6 +394,7 @@ impl ClientState {
         self.stop_core().await;
         // 未运行时规则条数清零。
         self.rule_count = 0;
+        self.missing_rule_sets = Vec::new();
     }
 
     /// 当前运行状态。
@@ -389,6 +420,7 @@ impl ClientState {
             rule_mode: self.config.normalized_rule_mode().to_string(),
             rule_count: self.rule_count,
             clash_api_url,
+            missing_rule_sets: self.missing_rule_sets.clone(),
         }
     }
 }

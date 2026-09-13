@@ -19,4 +19,6 @@ pub struct ClientStatus {
     /// Clash dashboard API address (when core is running and `clash_api_enabled`,
     /// `http://127.0.0.1:{clash_api_port}`, otherwise `None`).
     pub clash_api_url: Option<String>,
+    /// 本次启动未能本地化的内置 CN 规则集 tag（降级启动；空 = 完整分流）。
+    pub missing_rule_sets: Vec<String>,
 }

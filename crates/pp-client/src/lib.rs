@@ -25,6 +25,7 @@ pub mod privilege;
 pub mod profile;
 pub mod proxies;
 pub mod remote;
+pub mod ruleset_manager;
 pub mod runner;
 pub mod share_link;
 pub mod state;

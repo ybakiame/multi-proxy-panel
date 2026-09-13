@@ -19,6 +19,8 @@ pub struct ClientStatusView {
     pub rule_count: u64,
     /// Clash dashboard API URL (when core running and clash_api_enabled).
     pub clash_api_url: Option<String>,
+    /// 本次启动未能本地化的内置 CN 规则集 tag（降级运行；空 = 完整分流）。
+    pub missing_rule_sets: Vec<String>,
 }
 
 impl ClientStatusView {
@@ -30,6 +32,7 @@ impl ClientStatusView {
             rule_mode: status.rule_mode.clone(),
             rule_count: status.rule_count,
             clash_api_url: status.clash_api_url.clone(),
+            missing_rule_sets: status.missing_rule_sets.clone(),
         }
     }
 }
@@ -54,7 +57,52 @@ pub async fn start_proxy(
         .ok_or_else(|| "客户端状态初始化失败".to_string())?;
     client.start().await.map_err(|e| format!("启动失败: {e}"))?;
     let status = client.status().await;
+    // 降级启动（内置规则集未全部本地化）：后台重试下载，补齐后自动重载核心恢复完整
+    // 分流（延迟下载能力；详见 pp_client::ruleset_manager 模块文档）。
+    if !status.missing_rule_sets.is_empty() {
+        spawn_ruleset_retry(std::sync::Arc::clone(&state.client), state.data_dir.clone());
+    }
     Ok(ClientStatusView::from_status(&status))
+}
+
+/// 规则集后台重试任务：降级启动后每 20s 重试下载（上限 5 分钟），全部补齐且核心仍在
+/// 运行时自动 stop+start 重载（重跑合成即获得完整 CN 分流）；核心被停止或超时即退出。
+fn spawn_ruleset_retry(
+    client: std::sync::Arc<tokio::sync::Mutex<Option<pp_client::ClientState>>>,
+    data_dir: std::path::PathBuf,
+) {
+    tokio::spawn(async move {
+        const MAX_ATTEMPTS: u32 = 15;
+        const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+        for attempt in 1..=MAX_ATTEMPTS {
+            tokio::time::sleep(RETRY_INTERVAL).await;
+            // 读取 GitHub 代理前缀（可能已被用户修改）。
+            let prefix = pp_client::ClientConfig::load(&data_dir)
+                .map(|cfg| cfg.github_proxy_prefix)
+                .unwrap_or_default();
+            let available =
+                pp_client::ruleset_manager::ensure_builtin_rule_sets(&data_dir, &prefix).await;
+            if available.len() < pp_client::ruleset_manager::builtin_tags().len() {
+                tracing::debug!(attempt, "规则集后台重试：仍未全部就绪");
+                continue;
+            }
+            // 全部补齐：核心仍在运行则重载恢复完整分流。
+            let mut lock = client.lock().await;
+            let Some(state) = lock.as_mut() else {
+                return;
+            };
+            if !state.status().await.core_running {
+                return;
+            }
+            tracing::info!(attempt, "规则集后台重试补齐，自动重载核心恢复完整分流");
+            state.stop().await;
+            if let Err(e) = state.start().await {
+                tracing::error!(error = %e, "规则集补齐后自动重载失败");
+            }
+            return;
+        }
+        tracing::warn!("规则集后台重试达到上限，保持降级运行（下次启动重试）");
+    });
 }
 
 /// Stop proxy.
@@ -91,6 +139,7 @@ pub(crate) fn idle_status_view(data_dir: &std::path::Path) -> ClientStatusView {
             .unwrap_or_else(|_| "rule".to_string()),
         rule_count: 0,
         clash_api_url: None,
+        missing_rule_sets: Vec::new(),
     }
 }
 
