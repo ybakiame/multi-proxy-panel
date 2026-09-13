@@ -579,7 +579,7 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 - **路由基线**：`route.rules` 注入 `geosite-private` / `geosite-cn` / `geoip-private` / `geoip-cn` → `direct`，`geolocation-!cn` → 主 selector。基线位于模板**末尾**，compose（MITM 白名单）、local_override（本地规则）、panel_features（`clash_mode` 模式规则）均**前插**，用户规则优先级始终高于基线。
 - **远程规则集**：`route.rule_set` 幂等注册 5 个 MetaCubeX jsDelivr 远程规则集（`geosite-private` / `geoip-private` / `geosite-cn` / `geoip-cn` / `geolocation-!cn`，`format: binary`）；2026-09 起统一引用顶层 `http_clients.rule-set-direct`（无 detour = 绕过路由直连拨号，`domain_resolver` 走直连 `local` DNS）下载，冷启动不再依赖代理可用。
 - **默认行为变化**：客户端默认链路从「全量代理」改为「CN 直连分流」——CN / 私有目的地直连，非 CN 走主 selector；`route.final` 仍为主 selector。（已获项目所有者确认。）
-- **启动风险（重要，已缓解）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。2026-09 补记后有两层兜底：①规则集经 `rule-set-direct` HTTP client **直连**下载（不再走 `route.final` 代理），只需 jsDelivr（`testingcf.jsdelivr.net`）直连可达；②`apply_panel_features` 在配置引用远程规则集时注入 `experimental.cache_file`（realip 模式同样注入，不再仅限 FakeIP），sing-box 1.14 起成功下载过的规则集下次启动直接从缓存恢复。
+- **启动风险（重要，已根除）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。2026-09 先以 ①`rule-set-direct` HTTP client 直连下载、②`experimental.cache_file` 离线缓存两层兜底缓解；随后在实际故障中（jsDelivr 不可达 + 无缓存地区直连 DNS 全失效，`no available network interface`）改为**根除方案（ruleset_manager）**：内置 5 个规则集改由 App 侧按镜像回退下载为本地文件（jsDelivr → GitHub raw → 用户 GitHub 代理前缀 + GitHub raw），合成配置改写为 `type: local`；全部镜像失败且无旧文件的 tag 连同引用它的路由/DNS 规则**降级移除**（CN 分流退化为 `route.final` 兜底），核心永远可启动；缺失 tag 暴露 `ClientStatus.missing_rule_sets`，`start_proxy` 派生后台重试（20s×15），补齐后自动 stop+start 恢复完整分流。Clash 面板 UI 下载地址（github.com）同样经 GitHub 代理前缀包装。
 
 #### FakeIP 架构修正定案
 
