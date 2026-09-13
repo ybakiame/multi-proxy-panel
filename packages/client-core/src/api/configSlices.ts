@@ -43,6 +43,13 @@ export type DnsRuleAction = "route" | "predefined" | "reject";
 export interface DnsServer {
   /** Unique tag within the slice; referenced by `rules` and `final_tag`. */
   tag: string;
+  /** Display name (preset ISP label / user note); UI only, never rendered. */
+  name: string;
+  /**
+   * Whether the server is active. Disabled (弃用) servers stay in the slice but are not
+   * rendered into `dns.servers`, and rules / final must not reference them.
+   */
+  enabled: boolean;
   /** Server address (IP or domain); unused for `local` and `fakeip`. */
   server: string;
   server_type: DnsServerType;
@@ -374,6 +381,24 @@ export function configSlicesGet(): Promise<ConfigSlices> {
 /** Save the full config slices document (frontend full-patch; validated server-side). */
 export function configSlicesSave(input: ConfigSlices): Promise<void> {
   return invoke<void>("config_slices_save", { input });
+}
+
+/** Input of `dns_server_probe` (aligned with the slice `DnsServer` fields). */
+export interface DnsServerProbeInput {
+  server_type: string;
+  server: string;
+  server_port: number | null;
+  /** Probe target domain (default `gstatic.com`). */
+  domain?: string;
+}
+
+/**
+ * Probe one DNS server: issues one real A-record query and returns the round-trip
+ * latency in milliseconds. Rejects with an error message string on failure / unsupported
+ * type (quic / h3 / local / fakeip).
+ */
+export function dnsServerProbe(input: DnsServerProbeInput): Promise<number> {
+  return invoke<number>("dns_server_probe", { input });
 }
 
 /**

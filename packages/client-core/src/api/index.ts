@@ -172,15 +172,20 @@ export type {
   RouteSlice,
   DomainResolverSlice,
 } from "./configSlices";
+export type { DnsServerProbeInput } from "./configSlices";
 export {
   SLICE_VERSION,
   configSlicesGet,
   configSlicesSave,
   builtinDnsSliceGet,
+  dnsServerProbe,
   outboundTag,
   defaultConfigSlices,
   isGroupOutbound,
 } from "./configSlices";
+
+export type { DnsServerPreset } from "./dnsPresets";
+export { DNS_SERVER_PRESETS, uniquePresetTag } from "./dnsPresets";
 
 // ---------------------------------------------------------------------------
 // Baseline View
