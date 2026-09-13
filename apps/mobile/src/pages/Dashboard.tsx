@@ -197,7 +197,12 @@ export default function Dashboard() {
       </header>
 
       {/* 2. 状态卡（运行中内嵌出站模式分段切换） */}
-      <StatusCard running={running} ruleMode={ruleMode} clashApiEnabled={config?.clash_api_enabled ?? false} />
+      <StatusCard
+        running={running}
+        ruleMode={ruleMode}
+        clashApiEnabled={config?.clash_api_enabled ?? false}
+        missingRuleSets={status?.missing_rule_sets ?? []}
+      />
 
       {/* 3+4. 运行依赖区（仅核心运行中渲染；未运行时整组隐藏，相关轮询不发起） */}
       {running && (

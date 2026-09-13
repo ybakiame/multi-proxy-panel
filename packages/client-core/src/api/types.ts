@@ -69,6 +69,11 @@ export interface ClientStatus {
   rule_count: number;
   /** Clash dashboard API address when core is running and Clash API is enabled, otherwise `null`. */
   clash_api_url: string | null;
+  /**
+   * Built-in CN rule-set tags that failed to localize on this start (degraded run;
+   * empty = full CN split). A background retry auto-reloads the core once all are ready.
+   */
+  missing_rule_sets: string[];
 }
 
 /** `save_config` return view (carries non-blocking warnings). */

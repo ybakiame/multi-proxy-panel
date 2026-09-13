@@ -9,6 +9,8 @@ interface StatusCardProps {
   ruleMode: string;
   /** Clash API 是否开启（决定运行期出站模式「即时生效」提示）。 */
   clashApiEnabled: boolean;
+  /** 未就绪的内置规则集（非空 = 降级运行，后台重试补齐后自动重载）。 */
+  missingRuleSets?: string[];
 }
 
 /**
@@ -19,7 +21,7 @@ interface StatusCardProps {
  *
  * 注：`ClientStatus` 无运行时长字段（见 `@pp/client-core` 的 types.ts），故不展示时长。
  */
-export function StatusCard({ running, ruleMode, clashApiEnabled }: StatusCardProps) {
+export function StatusCard({ running, ruleMode, clashApiEnabled, missingRuleSets = [] }: StatusCardProps) {
   return (
     <Card>
       <Card.Header>
@@ -39,6 +41,11 @@ export function StatusCard({ running, ruleMode, clashApiEnabled }: StatusCardPro
           )}
         </div>
         {running && <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={clashApiEnabled} />}
+        {running && missingRuleSets.length > 0 && (
+          <span className="text-xs text-warning">
+            分流规则集未全部就绪（{missingRuleSets.join("、")}），已降级运行；后台重试补齐后将自动恢复完整分流
+          </span>
+        )}
       </Card.Content>
     </Card>
   );
