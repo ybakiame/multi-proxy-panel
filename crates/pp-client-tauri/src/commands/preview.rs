@@ -151,6 +151,7 @@ pub(crate) async fn preview_core_config_impl(
         // ADR-0005 D1: derive exactly like `ClientState::start()` so the preview
         // reflects the slices loaded above instead of a hardcoded default.
         dns_mode: pp_client::core_config::dns_mode_from_slices(&slices),
+        github_proxy_prefix: cfg.github_proxy_prefix.clone(),
     };
     let mut value = compose_singbox_config(&profile_cfg, cfg.mixed_port, None)
         .map_err(|e| format!("合成 sing-box 配置失败: {e}"))?;
@@ -158,6 +159,11 @@ pub(crate) async fn preview_core_config_impl(
     // mirroring `ClientState::start()`.
     inject_local_override_warn_only(&data_dir, &mut value);
     apply_panel_features(&mut value, &features);
+
+    // 镜像 `ClientState::start()` 的规则集物化（只读本地已有文件、不触发下载）：
+    // 预览反映当前本地规则集状态下的真实运行形态（缺失即降级后的配置）。
+    let available = pp_client::ruleset_manager::existing_rule_sets(&data_dir);
+    pp_client::ruleset_manager::materialize_rule_sets(&mut value, &data_dir, &available);
 
     serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))
 }

@@ -70,6 +70,20 @@ pub fn builtin_tags() -> Vec<&'static str> {
     BUILTIN_RULE_SETS.iter().map(|(tag, _)| *tag).collect()
 }
 
+/// 仅读取本地已有文件构成可用表（不发任何网络请求；配置预览等只读场景使用）。
+#[must_use]
+pub fn existing_rule_sets(data_dir: &Path) -> BTreeMap<String, PathBuf> {
+    builtin_tags()
+        .into_iter()
+        .filter_map(|tag| {
+            let path = rule_set_path(data_dir, tag);
+            std::fs::metadata(&path)
+                .is_ok_and(|m| m.len() > 0)
+                .then(|| (tag.to_string(), path))
+        })
+        .collect()
+}
+
 /// 确保内置规则集本地可用：已存在（非空）直接使用；缺失按镜像回退下载（原子写入）。
 ///
 /// 返回 `tag → 本地路径` 的可用表；下载全部镜像失败且无旧文件的 tag 不在表中（调用方
