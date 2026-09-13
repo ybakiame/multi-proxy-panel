@@ -220,11 +220,31 @@ impl ClientState {
                     "所选订阅已停用，请在订阅页启用或在首页重新选择".to_string(),
                 ));
             }
-            let fetch =
-                subscription::fetch_subscription_with_ua(&sub.url, sub.user_agent.as_deref())
+            // 启动 VPN 不主动拉取订阅（2026-09 起）：订阅更新只在用户手动刷新（或后续
+            // 的自动更新）时进行，两者都会把内容写入 `subscription_cache/<id>.json`；
+            // 启动一律读缓存。缓存缺失/损坏（如手工删档、旧版本从未写过缓存）才拉取
+            // 一次兜底并回写缓存——否则首次启动将无节点可用。
+            let nodes = match sub_store.load_cached_content(sub.id) {
+                Some(cached) => cached.singbox_nodes,
+                None => {
+                    tracing::info!("订阅缓存缺失，启动时兜底拉取一次");
+                    let fetch = subscription::fetch_subscription_with_ua(
+                        &sub.url,
+                        sub.user_agent.as_deref(),
+                    )
                     .await?;
+                    let cache = subscription::CachedSubscriptionContent {
+                        format: fetch.format,
+                        singbox_nodes: fetch.singbox_nodes.clone(),
+                    };
+                    if let Err(e) = sub_store.write_cached_content(sub.id, &cache) {
+                        tracing::warn!(error = %e, "回写订阅缓存失败（不阻断启动）");
+                    }
+                    fetch.singbox_nodes
+                }
+            };
             let content = serde_json::json!({
-                "outbounds": fetch.singbox_nodes,
+                "outbounds": nodes,
             });
             (sub.profile_id, content)
         } else {

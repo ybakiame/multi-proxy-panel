@@ -354,6 +354,56 @@ async fn start_with_subscription_store_fetches_and_starts() {
     assert!(!status.core_running);
 }
 
+/// 启动不主动拉取订阅（2026-09 行为变更）：订阅 URL 不可达但缓存存在时，
+/// 启动必须直接用缓存节点成功起核心（只有手动刷新/自动更新才写缓存）。
+#[tokio::test]
+async fn start_uses_cached_subscription_without_fetching() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = subscription::SubscriptionStore::new(dir.path().to_path_buf());
+    // URL 指向不可达地址：若启动仍主动拉取必然失败。
+    let sub = store
+        .add("cached", "http://127.0.0.1:1/sub", true, None)
+        .unwrap();
+    store
+        .write_cached_content(
+            sub.id,
+            &subscription::CachedSubscriptionContent {
+                format: subscription::SubFormat::ShareLinks,
+                singbox_nodes: vec![serde_json::json!({
+                    "type": "vless",
+                    "tag": "cached-n1",
+                    "server": "example.com",
+                    "server_port": 443,
+                    "uuid": "12345678-1234-1234-1234-123456789012"
+                })],
+            },
+        )
+        .unwrap();
+
+    let mut cfg = ClientConfig::new(
+        dir.path().to_path_buf(),
+        String::new(),
+        String::new(),
+        fake_core_script(&dir),
+    );
+    cfg.active_subscription_id = Some(sub.id);
+    cfg.mitm_enabled = false;
+    cfg.clash_api_enabled = false;
+    cfg.save().unwrap();
+
+    let mock = Arc::new(MockSystemProxy::new());
+    let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+    state.start().await.unwrap();
+
+    let status = state.status().await;
+    assert!(
+        status.core_running,
+        "cached subscription must start the core without any network fetch"
+    );
+
+    state.stop().await;
+}
+
 #[tokio::test]
 async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_port() {
     let base = spawn_integration_server().await;
