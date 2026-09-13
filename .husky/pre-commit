@@ -2,7 +2,10 @@
 # Fast pre-commit checks (authoritative gate remains CI):
 # 1. file-size guard on staged source files
 # 2. cargo fmt check when Rust files are staged
-# 3. oxlint/oxfmt on the affected frontend app when TS/TSX files are staged
+# 3. fast Rust compile gate (scripts/check-rust-gates.sh, PP_RUST_GATE_FAST=1) when
+#    Rust files are staged — 覆盖根 workspace 之外的双壳独立 cargo 项目与（有 NDK
+#    时的）Android target，避免提交「host 全绿但壳/Android 编译失败」的代码
+# 4. oxlint/oxfmt on the affected frontend app when TS/TSX files are staged
 set -euo pipefail
 
 files=$(git diff --cached --name-only --diff-filter=ACM || true)
@@ -14,6 +17,7 @@ fi
 
 if echo "$files" | grep -q '\.rs$'; then
     cargo fmt --all --check
+    PP_RUST_GATE_FAST=1 bash scripts/check-rust-gates.sh
 fi
 
 if echo "$files" | grep -qE '^apps/panel/.*\.(ts|tsx)$'; then
@@ -21,4 +25,10 @@ if echo "$files" | grep -qE '^apps/panel/.*\.(ts|tsx)$'; then
 fi
 if echo "$files" | grep -qE '^apps/desktop/.*\.(ts|tsx)$'; then
     bun run --filter pp-client-ui lint && bun run --filter pp-client-ui format:check
+fi
+if echo "$files" | grep -qE '^apps/mobile/.*\.(ts|tsx)$'; then
+    bun run --filter pp-client-mobile-ui lint && bun run --filter pp-client-mobile-ui format:check
+fi
+if echo "$files" | grep -qE '^packages/.*\.(ts|tsx)$'; then
+    bun run --filter @pp/client-core lint && bun run --filter @pp/client-core format:check
 fi

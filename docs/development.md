@@ -114,16 +114,26 @@ git checkout -b feature/your-feature
 # 4. 格式化代码
 cargo fmt --all
 
-# 5. 静态检查
+# 5. 静态检查 + 测试 + 双壳编译门禁（推荐一条命令，等价于下面 6/7 两条再加双壳检查）
+bun run verify:rust        # = cargo fmt --check + clippy + test + desktop/mobile 壳 clippy + Android target 检查
+# 或快速版（跳过测试）：bun run verify:rust:fast
+
+# 6. 静态检查（仅根 workspace；注意不覆盖 apps/*/src-tauri 双壳）
 cargo clippy --workspace --all-targets -- -D warnings
 
-# 6. 运行测试
+# 7. 运行测试
 cargo test --workspace
 
-# 7. 提交代码
+# 8. 提交代码
 git add .
 git commit -m "feat: your feature description"
 ```
+
+> **注意**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是**独立 cargo 项目**，
+> 不在根 workspace 内，根目录的 `cargo clippy/test --workspace` 覆盖不到它们；Android
+> 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。提交涉及 Rust 的
+> 改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），它补齐双壳
+> clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
 
 ### 启动开发环境
 
@@ -180,12 +190,13 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 ### CI (`.github/workflows/ci.yml`)
 
-在每次 push 到 `main`/`master` 或提交 Pull Request 时触发，包含两个并行 Job：
+在每次 push 到 `main`/`master` 或提交 Pull Request 时触发，包含三个并行 Job：
 
 | Job | 说明 |
 |-----|------|
 | `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `web` | 在 `apps/panel` 目录执行 `bun run verify`（构建 + oxc Linter + 格式检查） |
+| `client-shells` | 双壳独立 cargo 项目门禁：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 的 clippy（host），以及 mobile 壳 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，NDK 用 runner 预装版本以环境变量覆盖 `.cargo/config.toml` 的本机绝对路径） |
+| `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-ui`（desktop）、`pp-client-mobile-ui`（mobile）四个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
 

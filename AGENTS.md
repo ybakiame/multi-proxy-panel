@@ -51,7 +51,20 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 # 格式化
 cargo fmt --all
+
+# Rust 全量门禁（推荐提交前执行；scripts/check-rust-gates.sh）
+# = fmt --check + clippy + test + desktop/mobile 壳（独立 cargo 项目）clippy
+#   + 有 NDK 时 mobile 壳 aarch64-linux-android 交叉编译检查
+bun run verify:rust
+# 快速版（跳过测试，pre-commit 钩子同款）
+bun run verify:rust:fast
 ```
+
+> **双壳盲区提醒**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是退出根
+> workspace 的独立 cargo 项目，根目录 `cargo clippy/test --workspace` **覆盖不到**；
+> Android 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。涉及 Rust
+> 的提交前务必跑 `bun run verify:rust`，不要只跑 `-p <crate>` 的包级测试——跨 crate 的
+> 字段/签名变更（如 `PanelFeatures` 增字段）在包级测试下无法暴露。
 
 ### 2.3 前端构建（Bun workspaces）
 
@@ -85,12 +98,12 @@ bun run --filter pp-web verify
 
 ### 2.4 Git 钩子（husky）
 
-仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**快速本地检查**：
+仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**本地检查**：
 - `scripts/check-file-size.sh`：文件规模门禁（业务 >500 行 / 测试 >1000 行拦截，>400 行告警，规则见 `.agents/rules/code-organization.md`）
-- 暂存含 Rust 文件时 `cargo fmt --all --check`
-- 暂存含前端文件时对对应 app 跑 oxlint + oxfmt
+- 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + desktop/mobile 壳 clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
+- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / desktop / mobile / client-core 全覆盖）
 
-本地钩子只做快检查（秒级），完整验证（clippy/test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
+Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（双壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
 
 ---
 

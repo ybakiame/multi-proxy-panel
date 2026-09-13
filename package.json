@@ -8,7 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "verify:rust": "bash scripts/check-rust-gates.sh",
+    "verify:rust:fast": "PP_RUST_GATE_FAST=1 bash scripts/check-rust-gates.sh"
   },
   "devDependencies": {
     "husky": "^9.1.7"
