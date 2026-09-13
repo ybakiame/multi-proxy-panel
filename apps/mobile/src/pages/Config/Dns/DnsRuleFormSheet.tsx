@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { TrashIcon } from "@heroicons/react/24/outline";
+import { CheckIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button, Modal, Switch } from "@heroui/react";
 import type { DnsMatchType, DnsRule, DnsRuleAction } from "@pp/client-core";
+import { parseRuleSetTags } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import type { RuleSetOption } from "../ruleSetOptions";
 import {
@@ -44,8 +45,10 @@ interface DnsRuleFormSheetProps {
 /**
  * DNS 分流规则编辑底部 Sheet（ADR-0005 P0-4b）。
  *
- * 字段：match_type / target / server_tag / enabled。校验：target 非空、
- * server_tag 必须指向已定义 server，非法时禁用保存并给出行内错误。
+ * 字段：match_type / target / server_tag / enabled。`rule_set` 匹配为多选勾选列表
+ * （逗号分隔 target 渲染为 sing-box 数组，对齐路由规则编辑）；校验：target 非空
+ * （rule_set 至少一项）、server_tag 必须指向已定义 server，非法时禁用保存并给出行内
+ * 错误。
  */
 export function DnsRuleFormSheet({
   isOpen,
@@ -58,6 +61,8 @@ export function DnsRuleFormSheet({
 }: DnsRuleFormSheetProps) {
   const [matchType, setMatchType] = useState<DnsMatchType>("domain");
   const [target, setTarget] = useState("");
+  /** `rule_set` 匹配的已选 tag（多选，对齐路由规则编辑）；其余匹配类型走 `target`。 */
+  const [ruleSetTags, setRuleSetTags] = useState<string[]>([]);
   const [serverTag, setServerTag] = useState("");
   const [action, setAction] = useState<DnsRuleAction>("route");
   const [rcode, setRcode] = useState(DEFAULT_DNS_RCODE);
@@ -70,6 +75,8 @@ export function DnsRuleFormSheet({
     setPrevKey(key);
     setMatchType(editing?.match_type ?? "domain");
     setTarget(editing?.target ?? "");
+    // 存量 rule_set target 为逗号分隔多 tag（或单值）：拆分回填勾选。
+    setRuleSetTags(editing?.match_type === "rule_set" ? parseRuleSetTags(editing.target) : []);
     setServerTag(editing?.server_tag ?? "");
     setAction(editing?.action ?? "route");
     setRcode(editing?.rcode?.trim() !== "" && editing?.rcode ? editing.rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE);
@@ -99,15 +106,23 @@ export function DnsRuleFormSheet({
    * 追加「原值保留」项——选择器显示原值且不强清，由用户决定改选或保留（同
    * `RuleEditSheet`；保留且规则集不存在时，引用该 tag 的规则集不会注入）。
    */
+  /**
+   * 规则集多选候选：编辑存量 rule_set 规则时若其原 tag 不在候选中（自定义规则集已删
+   * 除/尚未添加），追加「原值保留」项——保持勾选态并标注，由用户决定取消或保留
+   * （对齐路由 RuleEditSheet）。
+   */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
-    const stale =
-      matchType === "rule_set" &&
-      editing?.match_type === "rule_set" &&
-      target.trim() !== "" &&
-      !ruleSetOptions.some((option) => option.value === target);
-    if (!stale) return ruleSetOptions;
-    return [...ruleSetOptions, { value: target, label: target, hint: "当前无此规则集（原值保留）" }];
-  }, [matchType, editing, target, ruleSetOptions]);
+    if (matchType !== "rule_set") return ruleSetOptions;
+    const known = new Set(ruleSetOptions.map((option) => option.value));
+    const stale = ruleSetTags.filter((tag) => !known.has(tag));
+    if (stale.length === 0) return ruleSetOptions;
+    return [...ruleSetOptions, ...stale.map((tag) => ({ value: tag, label: tag, hint: "当前无此规则集（原值保留）" }))];
+  }, [matchType, ruleSetOptions, ruleSetTags]);
+
+  /** 切换规则集勾选：追加保持点击顺序；取消移除该项。 */
+  const toggleRuleSetTag = (tag: string) => {
+    setRuleSetTags((tags) => (tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags, tag]));
+  };
 
   const targetError =
     matchType === "clash_mode"
@@ -149,7 +164,8 @@ export function DnsRuleFormSheet({
       id: editing?.id ?? crypto.randomUUID(),
       enabled,
       match_type: matchType,
-      target: target.trim(),
+      // rule_set 多 tag 以英文逗号连接（渲染为数组，与路由规则同语义）。
+      target: matchType === "rule_set" ? ruleSetTags.join(",") : target.trim(),
       server_tag: action === "route" ? serverTag.trim() : "",
       action,
       rcode: action === "predefined" ? (rcode.trim() !== "" ? rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE) : "",
@@ -197,17 +213,32 @@ export function DnsRuleFormSheet({
                   options={DNS_CLASH_MODE_OPTIONS}
                 />
               ) : matchType === "rule_set" ? (
-                <MobileSelectSheet
-                  label="规则集"
-                  value={target}
-                  onChange={setTarget}
-                  placeholder="请选择规则集"
-                  options={effectiveRuleSetOptions.map((option) => ({
-                    value: option.value,
-                    label: option.label,
-                    description: option.hint,
-                  }))}
-                />
+                <div className="flex flex-col gap-2">
+                  {effectiveRuleSetOptions.length === 0
+                    ? null
+                    : effectiveRuleSetOptions.map((option) => {
+                        const selected = ruleSetTags.includes(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => toggleRuleSetTag(option.value)}
+                            className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors ${
+                              selected
+                                ? "border-primary/50 bg-primary/5"
+                                : "border-border/70 active:bg-surface-secondary/60"
+                            }`}
+                          >
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="truncate text-sm font-medium text-foreground">{option.label}</span>
+                              {option.hint && <span className="truncate text-xs text-muted">{option.hint}</span>}
+                            </span>
+                            {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                          </button>
+                        );
+                      })}
+                </div>
               ) : (
                 <input
                   id="dns-rule-target"
@@ -227,7 +258,7 @@ export function DnsRuleFormSheet({
               ) : targetError ? (
                 <span className="text-xs text-warning">{targetError}</span>
               ) : matchType === "rule_set" ? (
-                <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+                <span className="text-xs text-muted">可多选；规则集随引用它的规则一同注入</span>
               ) : matchType === "clash_mode" ? (
                 <span className="text-xs text-muted">仅在对应出站模式下命中（需启用 Clash API）</span>
               ) : matchType === "query_type" ? (

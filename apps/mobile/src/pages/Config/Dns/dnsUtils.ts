@@ -1,3 +1,4 @@
+import { formatRuleSetTarget, parseRuleSetTags } from "@pp/client-core";
 import type {
   ConfigSlices,
   DnsMatchType,
@@ -242,9 +243,10 @@ export function dnsServerSummary(server: DnsServer): string {
   return parts.join(" · ");
 }
 
-/** DNS 分流规则摘要（列表卡片副标题）。 */
+/** DNS 分流规则摘要（列表卡片副标题；rule_set 多 tag 展示为 `a + b`）。 */
 export function dnsRuleSummary(rule: DnsRule): string {
-  const target = `${dnsMatchTypeLabel(rule.match_type)}: ${rule.target}`;
+  const displayTarget = rule.match_type === "rule_set" ? formatRuleSetTarget(rule.target) : rule.target;
+  const target = `${dnsMatchTypeLabel(rule.match_type)}: ${displayTarget}`;
   if (rule.action === "predefined") {
     const rcode = rule.rcode.trim() !== "" ? rule.rcode.trim().toUpperCase() : DEFAULT_DNS_RCODE;
     return `${target} → 预定义应答 ${rcode}`;
@@ -393,6 +395,9 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
   const ruleErrors = dns.rules.map((rule) => {
     if (rule.target.trim() === "") {
       return "匹配目标不能为空";
+    }
+    if (rule.match_type === "rule_set" && parseRuleSetTags(rule.target).length === 0) {
+      return "请至少选择一个规则集";
     }
     if (rule.match_type === "clash_mode" && !DNS_CLASH_MODE_OPTIONS.some((o) => o.value === rule.target.trim())) {
       return "出站模式须为 rule / global / direct";
