@@ -93,6 +93,10 @@ pub struct PanelFeatures {
     /// Only meaningful on Android; desktop ignores it (the injection is Android-only).
     /// Derive with [`dns_mode_from_slices`].
     pub dns_mode: DnsMode,
+    /// GitHub 代理前缀（`ClientConfig::github_proxy_prefix`）：Clash 面板 UI 下载地址
+    /// （github.com 域名）经 [`crate::apply_github_proxy_prefix`] 加前缀，与核心下载器、
+    /// 规则集镜像回退同一套语义；空串不加前缀。
+    pub github_proxy_prefix: String,
     /// Client data directory (`ClientConfig::data_dir`), used by FakeIP mode to resolve the
     /// explicit persistent cache file path `<data_dir>/cache.db`.
     ///

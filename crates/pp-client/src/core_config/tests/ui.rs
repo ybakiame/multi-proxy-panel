@@ -14,6 +14,7 @@ fn singbox_features() -> PanelFeatures {
         ipv6_enabled: false,
         dns_fakeip_enabled: false,
         dns_mode: crate::config_slices::DnsMode::FollowSystem,
+        github_proxy_prefix: String::new(),
         data_dir: "/tmp/pp-client-test".to_string(),
     }
 }
@@ -118,5 +119,32 @@ fn switching_ui_choice_changes_external_ui_dir() {
         sb_yacd["experimental"]["clash_api"]["external_ui"],
         sb_zash["experimental"]["clash_api"]["external_ui"],
         "sing-box external_ui directory must differ after switching choice"
+    );
+}
+
+/// 配置 GitHub 代理前缀时，面板 UI 下载地址经前缀包装（不可达地区镜像下载）；
+/// 空前缀保持原地址。
+#[test]
+fn apply_singbox_panel_features_prefixes_ui_download_url_with_github_proxy() {
+    let sub = json!({
+        "outbounds": [{ "type": "direct", "tag": "direct" }]
+    });
+    let features = PanelFeatures {
+        github_proxy_prefix: "https://gh-proxy.com".to_string(),
+        ..singbox_features()
+    };
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &features);
+    assert_eq!(
+        cfg["experimental"]["clash_api"]["external_ui_download_url"],
+        "https://gh-proxy.com/https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
+    );
+
+    let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
+    apply_panel_features(&mut cfg, &singbox_features());
+    assert_eq!(
+        cfg["experimental"]["clash_api"]["external_ui_download_url"],
+        "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip",
+        "empty prefix keeps the original URL"
     );
 }

@@ -90,9 +90,14 @@ pub fn apply_singbox_panel_features(composed: &mut Value, features: &PanelFeatur
             super::normalized_clash_api_ui(&features.clash_api_ui)
         );
         clash_api.insert("external_ui".to_string(), Value::String(ui_dir));
+        // GitHub 下载地址应用用户代理前缀（面板 UI 包托管在 github.com，
+        // 不可达地区经前缀镜像下载，与规则集镜像回退同一语义）。
         clash_api.insert(
             "external_ui_download_url".to_string(),
-            Value::String(super::clash_api_ui_download_url(&features.clash_api_ui).to_string()),
+            Value::String(crate::apply_github_proxy_prefix(
+                super::clash_api_ui_download_url(&features.clash_api_ui),
+                &features.github_proxy_prefix,
+            )),
         );
         // Startup mode pinned to the persisted (normalized small-case) rule mode: sing-box mode is
         // only the `clash_mode` rule matching value, core default is "Rule" (uppercase) — writing
