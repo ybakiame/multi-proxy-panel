@@ -67,11 +67,12 @@ export default function Subscriptions() {
 
   // ---- Mutations ----
   const addMutation = useMutation({
-    mutationFn: (draft: SubscriptionDraft) => addSubscription({ name: draft.name, url: draft.url }),
+    mutationFn: (draft: SubscriptionDraft) =>
+      addSubscription({ name: draft.name, url: draft.url, user_agent: draft.userAgent || undefined }),
   });
   const editMutation = useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: SubscriptionDraft }) =>
-      updateSubscription(id, draft.name, draft.url, null),
+      updateSubscription(id, draft.name, draft.url, null, draft.userAgent || undefined),
   });
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSubscriptionEnabled(id, enabled),
