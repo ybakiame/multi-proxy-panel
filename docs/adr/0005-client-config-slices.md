@@ -596,6 +596,14 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
   模式开关（模式字段保留于数据模型，仅 UX 自动化）。为支撑内置规则的无损映射，切片 schema 新增
   `clash_mode` 匹配类型（渲染为字符串，目标限 rule/global/direct）与 `reverse_mapping` 字段。FakeIP
   开关仍是设置页独立层，不属于该视图。
+
+- **DNS 服务器库：预置目录 + 启用/弃用 + 探测（2026-09 补记，借鉴 karing）**：`DnsServer`
+  新增 `name`（纯展示）与 `enabled`（弃用保留在切片但不渲染进 `dns.servers`；`dns.final` /
+  规则引用弃用服务器属校验错误；`Default` 手工实现保证默认启用）字段。前端「添加服务器」
+  以预置目录（client-core `DNS_SERVER_PRESETS`，境内/境外分组，对齐 karing `kDNSList` 并按
+  切片 schema 裁剪）物化常用服务器；列表行支持启用/弃用切换与真实查询延迟探测——后端
+  `pp-client::dns_probe`（udp wireformat 直连 / DoT RFC 7858 / DoH RFC 8484，3s 超时，
+  默认目标 gstatic.com）经 `dns_server_probe` 命令暴露，quic/h3/local/fakeip v1 不支持探测。
 - 其余（`cache_file` 合并、`takeover` 豁免、幂等）不变。
 
 #### 冗余开关移除（内容驱动注入）
