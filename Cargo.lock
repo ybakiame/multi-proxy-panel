@@ -4892,8 +4892,10 @@ dependencies = [
  "pp-core",
  "pp-mitm",
  "pp-script",
+ "rand 0.9.4",
  "regex",
  "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4901,9 +4903,11 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "urlencoding",
  "uuid",
+ "webpki-roots 0.26.11",
  "zip",
 ]
 
