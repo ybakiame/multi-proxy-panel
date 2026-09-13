@@ -73,7 +73,11 @@ impl ConfigSlices {
 impl DnsSlice {
     /// Validate DNS tags, references and addresses.
     pub fn validate(&self) -> PanelResult<()> {
+        // `tags` tracks every defined tag (duplicate check); `enabled_tags` is the
+        // referenceable set (rules / final must not point at a 弃用 server — it is
+        // not rendered, so the reference would dangle in the running config).
         let mut tags: HashSet<&str> = HashSet::new();
+        let mut enabled_tags: HashSet<&str> = HashSet::new();
         for server in &self.servers {
             if server.tag.trim().is_empty() {
                 return Err(validation("DNS server tag must not be empty"));
@@ -89,6 +93,9 @@ impl DnsSlice {
                     "duplicate DNS server tag `{}`",
                     server.tag
                 )));
+            }
+            if server.enabled {
+                enabled_tags.insert(server.tag.as_str());
             }
             if server.server_type.uses_server() && server.server.trim().is_empty() {
                 return Err(validation(format!(
@@ -111,6 +118,12 @@ impl DnsSlice {
         if !self.final_tag.is_empty() && !tags.contains(self.final_tag.as_str()) {
             return Err(validation(format!(
                 "dns.final `{}` does not reference a defined DNS server",
+                self.final_tag
+            )));
+        }
+        if !self.final_tag.is_empty() && !enabled_tags.contains(self.final_tag.as_str()) {
+            return Err(validation(format!(
+                "dns.final `{}` references a disabled (弃用) DNS server",
                 self.final_tag
             )));
         }
@@ -143,6 +156,12 @@ impl DnsSlice {
                     if !tags.contains(rule.server_tag.as_str()) {
                         return Err(validation(format!(
                             "DNS rule `{}` references unknown DNS server `{}`",
+                            rule.id, rule.server_tag
+                        )));
+                    }
+                    if !enabled_tags.contains(rule.server_tag.as_str()) {
+                        return Err(validation(format!(
+                            "DNS rule `{}` references disabled (弃用) DNS server `{}`",
                             rule.id, rule.server_tag
                         )));
                     }

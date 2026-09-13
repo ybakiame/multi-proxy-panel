@@ -734,3 +734,21 @@ fn render_dns_rule_actions() {
     assert!(rules[3].get("server").is_none());
     assert!(rules[3].get("rcode").is_none());
 }
+
+/// 弃用（`enabled = false`）的服务器保留在切片中但不渲染进 `dns.servers`；
+/// `Default::default()` 构造的服务器默认 `enabled = true`（不静默产出弃用项）。
+#[test]
+fn render_dns_skips_disabled_servers() {
+    let mut slice = dns_slice();
+    slice.servers[0].enabled = false; // local 弃用，只剩 remote
+    let rendered = render_dns(&slice);
+    let servers = rendered["servers"].as_array().unwrap();
+    assert_eq!(servers.len(), 1, "disabled server must not render");
+    assert_eq!(servers[0]["tag"], "remote");
+
+    let default_server = DnsServer::default();
+    assert!(
+        default_server.enabled,
+        "Default must produce enabled server"
+    );
+}

@@ -643,3 +643,43 @@ fn dns_slice_rejects_invalid_clash_mode_target() {
     slice.rules[0].target = "direct".to_string();
     slice.validate().unwrap();
 }
+
+/// `dns.final` / DNS 规则引用弃用（disabled）服务器是校验错误（引用会在运行配置中悬空）。
+#[test]
+fn dns_slice_rejects_references_to_disabled_servers() {
+    let mut slice = dns_slice();
+    // final 指向弃用的 remote。
+    slice.servers[1].enabled = false;
+    let err = slice.validate().unwrap_err();
+    assert!(err.to_string().contains("disabled"), "{err}");
+
+    // 恢复 final 目标启用，让规则指向弃用服务器。
+    let mut slice = dns_slice();
+    slice.servers[0].enabled = false; // local 弃用
+    slice.rules = vec![DnsRule {
+        id: "r-disabled".to_string(),
+        enabled: true,
+        match_type: DnsMatchType::Domain,
+        target: "example.com".to_string(),
+        server_tag: "local".to_string(),
+        action: DnsRuleAction::Route,
+        rcode: String::new(),
+    }];
+    slice.final_tag = "remote".to_string();
+    let err = slice.validate().unwrap_err();
+    assert!(err.to_string().contains("disabled"), "{err}");
+
+    // 弃用服务器的 tag 仍占用命名空间（重复 tag 仍冲突）。
+    let mut slice = dns_slice();
+    slice.servers[0].enabled = false;
+    slice.servers.push(DnsServer {
+        tag: "local".to_string(),
+        server: "9.9.9.9".to_string(),
+        server_type: DnsServerType::Udp,
+        ..Default::default()
+    });
+    assert!(
+        slice.validate().is_err(),
+        "duplicate tag with disabled server"
+    );
+}

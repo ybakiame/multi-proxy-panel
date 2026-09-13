@@ -19,7 +19,13 @@ use super::{DnsSlice, str_value};
 /// `strategy` is always emitted.
 #[must_use]
 pub fn render_dns(dns: &DnsSlice) -> Value {
-    let servers: Vec<Value> = dns.servers.iter().map(render_dns_server).collect();
+    // Disabled (弃用) servers are kept in the slice for reference but never rendered.
+    let servers: Vec<Value> = dns
+        .servers
+        .iter()
+        .filter(|server| server.enabled)
+        .map(render_dns_server)
+        .collect();
     let rules: Vec<Value> = dns
         .rules
         .iter()

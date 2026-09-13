@@ -128,11 +128,25 @@ impl DnsStrategy {
 }
 
 /// A single DNS server (curated fields).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Default` is implemented manually (not derived) so `enabled` defaults to
+/// `true`, matching the serde `default_true` deserialization fallback —
+/// `..Default::default()` construction sites must not silently produce a
+/// 弃用 server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnsServer {
     /// Unique tag within the slice; referenced by `dns.rules` and `dns.final`.
     #[serde(default)]
     pub tag: String,
+    /// Display name (preset ISP label / user note); UI only, never rendered
+    /// into the sing-box config.
+    #[serde(default)]
+    pub name: String,
+    /// Whether the server is active. Disabled (弃用) servers stay in the slice
+    /// for reference but are **not rendered** into `dns.servers`, and
+    /// `dns.rules` / `dns.final` must not reference them (validation error).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Server address (IP or domain); unused for [`DnsServerType::Local`] and
     /// [`DnsServerType::Fakeip`].
     #[serde(default)]
@@ -164,6 +178,24 @@ pub struct DnsServer {
     /// Dial field: DNS server tag used to resolve this server's own domain.
     #[serde(default)]
     pub domain_resolver: String,
+}
+
+impl Default for DnsServer {
+    fn default() -> Self {
+        Self {
+            tag: String::new(),
+            name: String::new(),
+            enabled: true,
+            server: String::new(),
+            server_type: DnsServerType::default(),
+            server_port: None,
+            inet4_range: String::new(),
+            inet6_range: String::new(),
+            detour: String::new(),
+            strategy: None,
+            domain_resolver: String::new(),
+        }
+    }
 }
 
 /// DNS server type (`dns.servers[].type`).
