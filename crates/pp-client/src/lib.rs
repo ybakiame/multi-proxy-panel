@@ -14,6 +14,7 @@ pub mod connections;
 pub mod core_config;
 pub mod core_engine;
 pub mod cores;
+pub mod dns_probe;
 pub mod http_exec;
 pub mod import;
 pub mod local_override;

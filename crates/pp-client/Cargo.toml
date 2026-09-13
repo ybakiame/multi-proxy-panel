@@ -22,7 +22,11 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 flate2 = "1.0"
+rand = { workspace = true }
 regex = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = "0.26"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
