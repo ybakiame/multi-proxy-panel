@@ -25,9 +25,9 @@ interface DnsServerFormSheetProps {
 /**
  * DNS 服务器编辑底部 Sheet（ADR-0005 P0-4b）。
  *
- * 字段：tag / type / server / server_port / detour / domain_resolver；
- * `local` 类型隐藏 server 与 port。校验（tag 唯一无空白、非 local server 必填、
- * 端口 1-65535）即时进行，非法时禁用保存并给出行内错误。
+ * 字段：tag / name（可选展示名）/ type / server / server_port / detour /
+ * domain_resolver；`local` 类型隐藏 server 与 port。校验（tag 唯一无空白、非 local
+ * server 必填、端口 1-65535）即时进行，非法时禁用保存并给出行内错误。
  *
  * 不提供 per-server 解析策略：sing-box 1.12+ 新 DNS 服务器格式已无该字段，
  * schema 中的 `strategy` 仅作前向兼容保留（保存恒写 `null`）。
@@ -41,6 +41,7 @@ export function DnsServerFormSheet({
   onDeleteRequest,
 }: DnsServerFormSheetProps) {
   const [tag, setTag] = useState("");
+  const [name, setName] = useState("");
   const [serverType, setServerType] = useState<DnsServerType>("udp");
   const [server, setServer] = useState("");
   const [port, setPort] = useState("");
@@ -55,6 +56,7 @@ export function DnsServerFormSheet({
   if (key !== null && key !== prevKey) {
     setPrevKey(key);
     setTag(editing?.tag ?? "");
+    setName(editing?.name ?? "");
     setServerType(editing?.server_type ?? "udp");
     setServer(editing?.server ?? "");
     setPort(editing?.server_port != null ? String(editing.server_port) : "");
@@ -80,6 +82,8 @@ export function DnsServerFormSheet({
     if (!canSave) return;
     onSave({
       tag: tag.trim(),
+      name: name.trim(),
+      enabled: editing?.enabled ?? true,
       server: showDialFields ? server.trim() : "",
       server_type: serverType,
       server_port: showDialFields ? parsePortDraft(port).value : null,
@@ -129,6 +133,24 @@ export function DnsServerFormSheet({
               ) : (
                 <span className="text-xs text-muted">切片内唯一，供规则与 final 引用</span>
               )}
+            </div>
+
+            {/* name（可选展示名，仅 UI 展示，不写入核心配置） */}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="dns-server-name" className="text-sm font-medium text-foreground">
+                名称（可选）
+              </label>
+              <input
+                id="dns-server-name"
+                aria-label="服务器名称"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="例如：AliDNS"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={inputClass}
+              />
             </div>
 
             {/* type */}

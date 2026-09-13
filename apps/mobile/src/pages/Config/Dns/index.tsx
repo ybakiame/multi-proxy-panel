@@ -26,6 +26,8 @@ import { DnsRuleFormSheet } from "./DnsRuleFormSheet";
 import { DnsRuleListSection } from "./DnsRuleListSection";
 import { DnsServerFormSheet } from "./DnsServerFormSheet";
 import { DnsServerListSection } from "./DnsServerListSection";
+import { DnsServerPresetSheet } from "./DnsServerPresetSheet";
+import { useDnsServers } from "./useDnsServers";
 import {
   dnsRuleSummary,
   dnsServerTagOptions,
@@ -111,7 +113,10 @@ export default function DnsPage() {
   }
 
   // ---- 局部 UI 状态 ----
+  const [presetSheetOpen, setPresetSheetOpen] = useState(false);
   const [serverSheetOpen, setServerSheetOpen] = useState(false);
+  // 服务器库逻辑（启用/弃用、预置物化、批量探测）拆分为独立 hook。
+  const { probes, probing, handleToggleServer, handlePickPreset, handleProbeServers } = useDnsServers(setDraft);
   const [editingServer, setEditingServer] = useState<DnsServer | null>(null);
   const [pendingServerDelete, setPendingServerDelete] = useState<DnsServer | null>(null);
   const [ruleSheetOpen, setRuleSheetOpen] = useState(false);
@@ -165,7 +170,13 @@ export default function DnsPage() {
     setDraft((current) => (current ? { ...current, reverse_mapping } : current));
 
   // ---- DNS 服务器 ----
+  /** 添加入口：先出预置目录 Sheet；「自定义添加」再切到编辑表单。 */
   const openAddServer = () => {
+    setPresetSheetOpen(true);
+  };
+
+  const openCustomServer = () => {
+    setPresetSheetOpen(false);
     setEditingServer(null);
     setServerSheetOpen(true);
   };
@@ -338,7 +349,15 @@ export default function DnsPage() {
             {/* FakeIP（W2，ClientConfig）仅在内置默认（跟随系统）生效时可见：接管后由切片正文全权接管 */}
             {!willTakeover && <DnsFakeipCard />}
 
-            <DnsServerListSection servers={draft.servers} onEdit={openEditServer} onAdd={openAddServer} />
+            <DnsServerListSection
+              servers={draft.servers}
+              probes={probes}
+              probing={probing}
+              onToggle={handleToggleServer}
+              onProbe={() => void handleProbeServers(draft)}
+              onEdit={openEditServer}
+              onAdd={openAddServer}
+            />
 
             <DnsRuleListSection
               rules={draft.rules}
@@ -362,6 +381,16 @@ export default function DnsPage() {
       </div>
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
+      <DnsServerPresetSheet
+        isOpen={presetSheetOpen}
+        existingTags={draft ? draft.servers.map((server) => server.tag) : []}
+        onClose={() => setPresetSheetOpen(false)}
+        onPick={(preset) => {
+          setPresetSheetOpen(false);
+          handlePickPreset(preset);
+        }}
+        onCustom={openCustomServer}
+      />
       <DnsServerFormSheet
         isOpen={serverSheetOpen}
         editing={editingServer}

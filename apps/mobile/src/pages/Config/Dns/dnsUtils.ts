@@ -255,10 +255,11 @@ export function dnsRuleSummary(rule: DnsRule): string {
   return `${target} → ${rule.server_tag}`;
 }
 
-/** 已定义 server tag 的下拉选项（供规则的 server_tag 与 final_tag 复用）。 */
+/** 已定义且**启用中** server tag 的下拉选项（供规则的 server_tag 与 final_tag 复用）；
+ * 弃用（enabled=false）服务器不渲染进运行配置，不可作为引用目标。 */
 export function dnsServerTagOptions(servers: DnsServer[]): { value: string; label: string; description: string }[] {
   return servers
-    .filter((server) => isTagValid(server.tag))
+    .filter((server) => server.enabled && isTagValid(server.tag))
     .map((server) => ({
       value: server.tag.trim(),
       label: server.tag.trim(),
@@ -387,6 +388,8 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
     return null;
   });
 
+  const enabledTags = new Set(dns.servers.filter((server) => server.enabled).map((server) => server.tag.trim()));
+
   const ruleErrors = dns.rules.map((rule) => {
     if (rule.target.trim() === "") {
       return "匹配目标不能为空";
@@ -421,6 +424,9 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
     if (!serverTags.has(rule.server_tag.trim())) {
       return "目标 DNS 服务器不存在";
     }
+    if (!enabledTags.has(rule.server_tag.trim())) {
+      return "目标 DNS 服务器已弃用";
+    }
     return null;
   });
 
@@ -432,6 +438,8 @@ export function validateDnsSlice(dns: DnsSlice): DnsSliceErrors {
     finalTag = "必须选择 final 服务器（保存后按自定义 DNS 接管生效）";
   } else if (trimmedFinalTag !== "" && !serverTags.has(trimmedFinalTag)) {
     finalTag = "final 服务器不存在";
+  } else if (trimmedFinalTag !== "" && !enabledTags.has(trimmedFinalTag)) {
+    finalTag = "final 服务器已弃用";
   }
 
   return { serverErrors, ruleErrors, finalTag };

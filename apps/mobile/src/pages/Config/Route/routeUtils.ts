@@ -90,7 +90,10 @@ export function buildResolverServerOptions(slices: ConfigSlices | null, fakeipEn
 
   const dns = slices?.dns;
   if (dns?.mode === "takeover") {
-    for (const server of dns.servers) push(server.tag, server.tag, "DNS 切片服务器");
+    // 弃用（enabled=false）的切片服务器不渲染进运行配置，不可选。
+    for (const server of dns.servers) {
+      if (server.enabled) push(server.tag, server.tag, "DNS 切片服务器");
+    }
   }
 
   return options;
