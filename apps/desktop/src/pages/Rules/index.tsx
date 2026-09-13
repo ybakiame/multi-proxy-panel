@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, AlertDialog, Button, Card, Switch } from "@heroui/react";
+import { Alert, AlertDialog, Button } from "@heroui/react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } from "@pp/client-core";
@@ -49,15 +49,6 @@ export default function Rules() {
       toastError(toErrorMessage(err));
       invalidate();
     }
-  };
-
-  const handleToggleEnabled = async () => {
-    if (!overrideData || !currentCore) return;
-    const next: CoreLocalOverrideInput = {
-      ...viewToInput(currentCore),
-      enabled: !currentCore.enabled,
-    };
-    await persist(next, next.enabled ? "本地规则已启用" : "本地规则已关闭");
   };
 
   const handleToggleRule = async (id: string) => {
@@ -144,24 +135,6 @@ export default function Rules() {
 
       {overrideData && currentCore && (
         <>
-          {/* 总开关 */}
-          <Card>
-            <Card.Header>
-              <Card.Title>本地规则总开关</Card.Title>
-              <Card.Description>控制当前核心的本地 Override 是否生效</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <Switch isSelected={currentCore.enabled} onChange={() => void handleToggleEnabled()}>
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                  启用本地规则（sing-box）
-                </Switch.Content>
-              </Switch>
-            </Card.Content>
-          </Card>
-
           {/* 规则卡片 */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
