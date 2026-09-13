@@ -91,9 +91,13 @@ fn render_dns_server(server: &DnsServer) -> Value {
 /// Render a single DNS rule match value.
 ///
 /// [`DnsMatchType::QueryType`] targets are comma-separated and rendered as an
-/// array of canonical uppercase names; [`DnsMatchType::ClashMode`] renders the
-/// mode as a bare string (sing-box expects `clash_mode` as a string, not an
-/// array); all other match types render a single-element array.
+/// array of canonical uppercase names; [`DnsMatchType::RuleSet`] targets are
+/// comma-separated tag lists (sing-box `rule_set` accepts an array, enabling
+/// one DNS rule to match multiple rule sets) rendered as a trimmed non-empty
+/// array, falling back to a single-element array when no comma is present;
+/// [`DnsMatchType::ClashMode`] renders the mode as a bare string (sing-box
+/// expects `clash_mode` as a string, not an array); all other match types
+/// render a single-element array.
 fn render_dns_match(rule: &DnsRule) -> Value {
     if rule.match_type.renders_string_target() {
         str_value(&rule.target)
@@ -104,6 +108,15 @@ fn render_dns_match(rule: &DnsRule) -> Value {
                 .map(str::trim)
                 .filter(|item| !item.is_empty())
                 .map(|item| str_value(&normalize_query_type(item)))
+                .collect(),
+        )
+    } else if rule.match_type == DnsMatchType::RuleSet && rule.target.contains(',') {
+        Value::Array(
+            rule.target
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str_value)
                 .collect(),
         )
     } else {

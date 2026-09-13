@@ -752,3 +752,40 @@ fn render_dns_skips_disabled_servers() {
         "Default must produce enabled server"
     );
 }
+
+/// rule_set 目标为逗号分隔多 tag 时渲染为 sing-box 数组（单值保持单元素数组）。
+#[test]
+fn render_dns_rule_set_target_multi_tag_array() {
+    let mut slice = dns_slice();
+    slice.rules = vec![
+        DnsRule {
+            id: "r-multi".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::RuleSet,
+            target: "geosite-cn, geosite-private,,".to_string(),
+            server_tag: "local".to_string(),
+            action: DnsRuleAction::Route,
+            rcode: String::new(),
+        },
+        DnsRule {
+            id: "r-single".to_string(),
+            enabled: true,
+            match_type: DnsMatchType::RuleSet,
+            target: "geosite-cn".to_string(),
+            server_tag: "local".to_string(),
+            action: DnsRuleAction::Route,
+            rcode: String::new(),
+        },
+    ];
+    let rendered = render_dns(&slice);
+    assert_eq!(
+        rendered["rules"][0]["rule_set"],
+        serde_json::json!(["geosite-cn", "geosite-private"]),
+        "comma-separated target renders as a trimmed non-empty array"
+    );
+    assert_eq!(
+        rendered["rules"][1]["rule_set"],
+        serde_json::json!(["geosite-cn"]),
+        "single value stays a single-element array"
+    );
+}

@@ -145,6 +145,16 @@ impl DnsSlice {
                     rule.id
                 )));
             }
+            // rule_set 目标为逗号分隔多 tag（渲染为数组，见 dns_render）：至少一个
+            // 非空段；段内不再校验存在性（规则集为引用注入，存在性由引用扫描保证）。
+            if rule.match_type == DnsMatchType::RuleSet
+                && !rule.target.split(',').any(|seg| !seg.trim().is_empty())
+            {
+                return Err(validation(format!(
+                    "DNS rule `{}` rule_set target must contain at least one rule-set tag",
+                    rule.id
+                )));
+            }
             match rule.action {
                 DnsRuleAction::Route => {
                     if rule.server_tag.trim().is_empty() {

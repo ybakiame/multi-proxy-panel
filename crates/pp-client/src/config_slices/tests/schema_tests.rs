@@ -683,3 +683,22 @@ fn dns_slice_rejects_references_to_disabled_servers() {
         "duplicate tag with disabled server"
     );
 }
+
+/// rule_set 目标全为空白段（如 `" , ,"`）时校验报错；多 tag 混合空白段合法。
+#[test]
+fn dns_slice_rule_set_target_requires_one_non_empty_tag() {
+    let mut slice = dns_slice();
+    slice.rules = vec![DnsRule {
+        id: "r-rs".to_string(),
+        enabled: true,
+        match_type: DnsMatchType::RuleSet,
+        target: " , ,".to_string(),
+        server_tag: "local".to_string(),
+        action: DnsRuleAction::Route,
+        rcode: String::new(),
+    }];
+    assert!(slice.validate().is_err());
+
+    slice.rules[0].target = "geosite-cn, , geosite-private".to_string();
+    slice.validate().unwrap();
+}
