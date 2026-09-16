@@ -74,7 +74,11 @@ mod tests {
             assert!(!item.description.is_empty(), "description 不应为空");
         }
 
-        assert_eq!(view.route_rules.len(), 5);
+        assert_eq!(
+            view.route_rules.len(),
+            2,
+            "4 个直连规则集已合并为一条内置规则"
+        );
         assert_eq!(view.dns_rules.len(), 3);
         assert_eq!(view.outbounds.len(), 4);
         assert_eq!(view.route_final, "proxy");

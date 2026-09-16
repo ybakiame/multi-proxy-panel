@@ -175,14 +175,18 @@ pub fn cn_baseline_dns_rules() -> Vec<Value> {
 /// CN-split baseline route rules (GUI.for.SingBox default profile): private / CN destinations
 /// go `direct`, `geolocation-!cn` (non-CN) goes through the main selector.
 ///
+/// 2026-09 起合并为 2 条：4 个直连规则集塞进同一条规则（sing-box `rule_set` 数组为 OR
+/// 语义，与拆分四条等价），非 CN 一条。内置规则物化进 local_override 后，本函数仍作为
+/// 物化默认值与 BaselineView 的真值源。
+///
 /// `proxy_tag` is the main selector outbound tag, read from the generated outbounds rather than
 /// hardcoded so the rules follow the template's actual group tag.
 pub fn cn_baseline_route_rules(proxy_tag: &str) -> Vec<Value> {
     vec![
-        json!({ "rule_set": ["geosite-private"], "outbound": "direct" }),
-        json!({ "rule_set": ["geosite-cn"], "outbound": "direct" }),
-        json!({ "rule_set": ["geoip-private"], "outbound": "direct" }),
-        json!({ "rule_set": ["geoip-cn"], "outbound": "direct" }),
+        json!({
+            "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
+            "outbound": "direct"
+        }),
         json!({ "rule_set": ["geolocation-!cn"], "outbound": proxy_tag }),
     ]
 }

@@ -141,13 +141,13 @@ fn singbox_template_builds_groups_and_route() {
     assert_eq!(
         cfg["route"]["rules"],
         json!([
-            { "rule_set": ["geosite-private"], "outbound": "direct" },
-            { "rule_set": ["geosite-cn"], "outbound": "direct" },
-            { "rule_set": ["geoip-private"], "outbound": "direct" },
-            { "rule_set": ["geoip-cn"], "outbound": "direct" },
+            {
+                "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
+                "outbound": "direct"
+            },
             { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
         ]),
-        "CN-split baseline route rules (GUI.for.SingBox default profile)"
+        "CN-split baseline route rules (4 direct sets merged into one rule)"
     );
     assert_eq!(cfg["route"]["auto_detect_interface"], true);
     assert_eq!(
@@ -393,10 +393,10 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     assert_eq!(
         cfg["route"]["rules"],
         json!([
-            { "rule_set": ["geosite-private"], "outbound": "direct" },
-            { "rule_set": ["geosite-cn"], "outbound": "direct" },
-            { "rule_set": ["geoip-private"], "outbound": "direct" },
-            { "rule_set": ["geoip-cn"], "outbound": "direct" },
+            {
+                "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
+                "outbound": "direct"
+            },
             { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
         ])
     );
@@ -411,13 +411,16 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
 
     // MITM whitelist rule prepends ahead of the template CN-split baseline.
     let rules = composed["route"]["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 6);
+    assert_eq!(rules.len(), 3);
     assert_eq!(rules[0]["outbound"], "pp-mitm");
     assert_eq!(rules[0]["domain_suffix"], json!(["example.com"]));
     assert_eq!(
         rules[1],
-        json!({ "rule_set": ["geosite-private"], "outbound": "direct" }),
-        "CN-split baseline stays after the MITM whitelist (user rule wins)"
+        json!({
+            "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
+            "outbound": "direct"
+        }),
+        "merged CN-split baseline stays after the MITM whitelist (user rule wins)"
     );
     assert_eq!(composed["route"]["final"], "proxy");
     // Groups and nodes preserved.
