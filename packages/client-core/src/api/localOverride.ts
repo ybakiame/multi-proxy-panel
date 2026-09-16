@@ -18,6 +18,8 @@ export interface LocalRuleView {
   note: string;
   created_at: number;
   sort_order: number;
+  /** 内置规则（CN 分流基线物化）：可修改开关/出站/排序，不可删除，匹配字段不可改。 */
+  builtin: boolean;
 }
 
 export interface LocalRuleSetRefView {
@@ -115,6 +117,8 @@ export interface LocalRuleInput {
   note: string;
   created_at: number;
   sort_order: number;
+  /** 透传内置标记（后端按 id 归一化，删除保护由后端 store 复活兜底）。 */
+  builtin?: boolean;
 }
 
 export interface LocalRuleSetRefInput {

@@ -1,5 +1,5 @@
 import { ArrowDownIcon, ArrowUpIcon } from "@heroicons/react/24/outline";
-import { Card, Switch } from "@heroui/react";
+import { Card, Chip, Switch } from "@heroui/react";
 import type { LocalRuleView } from "@pp/client-core";
 import {
   actionLabel,
@@ -56,7 +56,9 @@ function OrderButton({
  *
  * - 左侧主体（规则名或「类型: 目标」摘要 + 类型/目标/动作/标记详情行）点击进编辑 Sheet；
  * - 动作 badge（代理/直连/拒绝语义色）；右侧启停 Switch——启用的规则在核心启动时注入；
- * - 底部栏：顺序提示 + 上移/下移（边界禁用，重排由页面层回写 sort_order）。
+ * - 底部栏：顺序提示 + 上移/下移（边界禁用，重排由页面层回写 sort_order）；
+ * - 内置规则（builtin）：动作 badge 后追加「内置」chip；不可删除（编辑 Sheet 内无删除
+ *   入口），可调整启停 / 出站 / 排序。
  */
 export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleCardProps) {
   const isOutbound = isOutboundAction(rule.action);
@@ -83,6 +85,11 @@ export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleC
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium leading-5 ${badgeClass}`}>
               {actionLabel(rule.action)}
             </span>
+            {rule.builtin && (
+              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+                内置
+              </Chip>
+            )}
           </span>
           <span className="truncate text-xs text-muted">{metaDetail}</span>
         </button>

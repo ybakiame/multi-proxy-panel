@@ -6,6 +6,7 @@ import {
   RULE_ACTIONS,
   buildOutboundAction,
   isOutboundAction,
+  matchTypeLabel,
   outboundTagFromAction,
   parseRuleSetTags,
 } from "@pp/client-core";
@@ -151,6 +152,9 @@ export function RuleEditSheet({
 
   const isFinal = matchType === "final";
   const isOutbound = isOutboundAction(action);
+  // 内置规则（CN 分流基线物化）：匹配类型/目标/名称/高级选项只读，仅出站动作可改，
+  // 无删除入口（后端 store 保存时会复活并归一化内置条目，双保险）。
+  const isBuiltin = editing?.builtin === true;
   const selectedOutboundTag = outboundTagFromAction(action);
   const targetOk = isFinal ? true : matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0;
   const actionOk = !isOutbound || selectedOutboundTag.trim().length > 0;
@@ -194,11 +198,19 @@ export function RuleEditSheet({
     const now = Math.floor(Date.now() / 1000);
     const rule: LocalRuleInput = {
       id: editing?.id ?? crypto.randomUUID(),
-      name: name.trim(),
+      // 内置规则：匹配字段与名称保持原值（后端 store 也会归一化，双保险）。
+      name: isBuiltin && editing ? editing.name : name.trim(),
       enabled: editing?.enabled ?? true,
+      builtin: editing?.builtin,
       match_type: matchType,
       // rule_set 多选序列化为逗号分隔 target（对齐 Rust parse_rule_set_tags）。
-      target: isFinal ? "" : matchType === "rule_set" ? ruleSetTags.join(",") : target.trim(),
+      target: isFinal
+        ? ""
+        : isBuiltin && editing
+          ? editing.target
+          : matchType === "rule_set"
+            ? ruleSetTags.join(",")
+            : target.trim(),
       action: isOutbound ? buildOutboundAction(selectedOutboundTag) : action,
       no_resolve: noResolve,
       invert,
@@ -225,27 +237,41 @@ export function RuleEditSheet({
         <Modal.Dialog>
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading>{editing ? "编辑规则" : "添加规则"}</Modal.Heading>
+            <Modal.Heading>{isBuiltin ? "编辑内置规则" : editing ? "编辑规则" : "添加规则"}</Modal.Heading>
           </Modal.Header>
           <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 匹配类型 */}
+            {/* 匹配类型（内置规则只读） */}
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-foreground">匹配类型</span>
-              <MobileSelectSheet
-                label="匹配类型"
-                value={matchType}
-                onChange={setMatchType}
-                disabled={saving}
-                options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
-              />
-              {matchType === "app_package" && (
+              {isBuiltin ? (
+                <span className="text-sm text-foreground">{matchTypeLabel(matchType)}（内置规则不可改）</span>
+              ) : (
+                <MobileSelectSheet
+                  label="匹配类型"
+                  value={matchType}
+                  onChange={setMatchType}
+                  disabled={saving}
+                  options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+                />
+              )}
+              {!isBuiltin && matchType === "app_package" && (
                 <span className="text-xs text-muted">应用包名匹配为 Android 专属能力</span>
               )}
             </div>
 
-            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入） */}
+            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入；内置规则只读） */}
             {!isFinal &&
-              (matchType === "rule_set" ? (
+              (isBuiltin ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-foreground">
+                    {matchType === "rule_set" ? "规则集" : "匹配目标"}
+                  </span>
+                  <span className="font-mono text-sm text-foreground">
+                    {matchType === "rule_set" ? ruleSetTags.join(" + ") : target}
+                  </span>
+                  <span className="text-xs text-muted">内置规则的匹配内容不可修改</span>
+                </div>
+              ) : matchType === "rule_set" ? (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-sm font-medium text-foreground">规则集</span>
                   {effectiveRuleSetOptions.length === 0 ? (
@@ -363,65 +389,67 @@ export function RuleEditSheet({
               </div>
             )}
 
-            {/* 高级折叠段（默认收起） */}
-            <div className="flex flex-col gap-3 rounded-xl border border-border/40 p-3">
-              <button
-                type="button"
-                aria-expanded={advancedOpen}
-                disabled={saving}
-                onClick={() => setAdvancedOpen((open) => !open)}
-                className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
-              >
-                <span className="text-sm font-medium text-foreground">高级选项</span>
-                <ChevronDownIcon
-                  aria-hidden="true"
-                  className={`size-5 text-muted transition-transform ${advancedOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {advancedOpen && (
-                <div className="flex flex-col gap-3">
-                  <label htmlFor="rule-name" className="flex flex-col gap-1.5">
-                    <span className="text-sm font-medium text-foreground">规则名称（可选）</span>
-                    <input
-                      id="rule-name"
-                      aria-label="规则名称"
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      placeholder="留空则自动生成摘要"
-                      disabled={saving}
-                      className={inputClass}
-                    />
-                  </label>
-                  <SheetSwitchRow
-                    label="跳过 DNS 解析 (no-resolve)"
-                    checked={noResolve}
-                    disabled={saving}
-                    onChange={(next) => setNoResolve(next)}
+            {/* 高级折叠段（默认收起；内置规则隐藏） */}
+            {!isBuiltin && (
+              <div className="flex flex-col gap-3 rounded-xl border border-border/40 p-3">
+                <button
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  disabled={saving}
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
+                >
+                  <span className="text-sm font-medium text-foreground">高级选项</span>
+                  <ChevronDownIcon
+                    aria-hidden="true"
+                    className={`size-5 text-muted transition-transform ${advancedOpen ? "rotate-180" : ""}`}
                   />
-                  <SheetSwitchRow
-                    label="反选 (invert)"
-                    checked={invert}
-                    disabled={saving}
-                    onChange={(next) => setInvert(next)}
-                  />
-                  <label htmlFor="rule-note" className="flex flex-col gap-1.5">
-                    <span className="text-sm font-medium text-foreground">备注</span>
-                    <input
-                      id="rule-note"
-                      aria-label="备注"
-                      value={note}
-                      onChange={(event) => setNote(event.target.value)}
-                      placeholder="可选备注"
+                </button>
+                {advancedOpen && (
+                  <div className="flex flex-col gap-3">
+                    <label htmlFor="rule-name" className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-foreground">规则名称（可选）</span>
+                      <input
+                        id="rule-name"
+                        aria-label="规则名称"
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        placeholder="留空则自动生成摘要"
+                        disabled={saving}
+                        className={inputClass}
+                      />
+                    </label>
+                    <SheetSwitchRow
+                      label="跳过 DNS 解析 (no-resolve)"
+                      checked={noResolve}
                       disabled={saving}
-                      className={inputClass}
+                      onChange={(next) => setNoResolve(next)}
                     />
-                  </label>
-                </div>
-              )}
-            </div>
+                    <SheetSwitchRow
+                      label="反选 (invert)"
+                      checked={invert}
+                      disabled={saving}
+                      onChange={(next) => setInvert(next)}
+                    />
+                    <label htmlFor="rule-note" className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-foreground">备注</span>
+                      <input
+                        id="rule-note"
+                        aria-label="备注"
+                        value={note}
+                        onChange={(event) => setNote(event.target.value)}
+                        placeholder="可选备注"
+                        disabled={saving}
+                        className={inputClass}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
 
-            {/* 编辑模式删除入口 */}
-            {editing && (
+            {/* 编辑模式删除入口（内置规则不可删除） */}
+            {editing && !isBuiltin && (
               <Button
                 variant="danger"
                 className="min-h-12 w-full"
