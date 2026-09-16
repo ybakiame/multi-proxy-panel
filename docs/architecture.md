@@ -513,7 +513,7 @@ Composed 配置
 ```
 
 - 各层在更早阶段把自己的规则前插到头部：compose 前插 MITM 白名单 → local_override 前插本地规则 → panel features 前插模式开关，因此后执行者反而排在更前、优先级更高
-- CN 分流基线由模板直接写入 `route.rules` 末尾（private/CN→`direct`、`geolocation-!cn`→主 selector），各层前插后基线始终排在用户规则之后，作为 `route.final` 之前的兜底分流（ADR-0005 P4 补记）
+- CN 分流基线规则（2 条：合并后的私有/国内直连 + 非中国大陆代理）物化进 local_override 统一规则列表（可修改不可删除，ADR-0005 2026-09 补记），与用户规则同一排序、同一注入阶段；`route.final`（模板默认 `proxy`）仍是最终兜底
 - 未命中任何规则时回落 `route.final`（模板默认 `proxy`，可被本地 final 规则覆写）
 
 **出站模式（rule/global/direct）实现说明**：sing-box 的 mode **不是核心内置语义**，仅是路由规则 `clash_mode` 条件的匹配值（大小写敏感，见 sing-box issue #2477）——模板路由为空时切换 direct/global 无效果，核心甚至不会在 mode-list 注册这三档。因此 `apply_panel_features` 在 Clash API 开启时：

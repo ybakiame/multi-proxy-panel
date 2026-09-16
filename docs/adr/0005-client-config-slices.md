@@ -581,6 +581,15 @@ P2（静态节点列表命令 / DNS rule_set 闭环 / Experimental 切片上线 
 - **默认行为变化**：客户端默认链路从「全量代理」改为「CN 直连分流」——CN / 私有目的地直连，非 CN 走主 selector；`route.final` 仍为主 selector。（已获项目所有者确认。）
 - **启动风险（重要，已根除）**：sing-box 在启动阶段**同步下载**远程规则集，URL 不可达会导致**核心启动失败**（已对 sing-box 1.14 实测；早期「下载失败优雅降级」的描述错误）。2026-09 先以 ①`rule-set-direct` HTTP client 直连下载、②`experimental.cache_file` 离线缓存两层兜底缓解；随后在实际故障中（jsDelivr 不可达 + 无缓存地区直连 DNS 全失效，`no available network interface`）改为**根除方案（ruleset_manager）**：内置 5 个规则集改由 App 侧按镜像回退下载为本地文件（jsDelivr → GitHub raw → 用户 GitHub 代理前缀 + GitHub raw），合成配置改写为 `type: local`；全部镜像失败且无旧文件的 tag 连同引用它的路由/DNS 规则**降级移除**（CN 分流退化为 `route.final` 兜底），核心永远可启动；缺失 tag 暴露 `ClientStatus.missing_rule_sets`，`start_proxy` 派生后台重试（20s×15），补齐后自动 stop+start 恢复完整分流。Clash 面板 UI 下载地址（github.com）同样经 GitHub 代理前缀包装。
 
+- **内置规则/分组物化模型（2026-09 补记）**：内置 CN 分流规则与 proxy/auto 分组不再是
+  模板黑盒——`BUILTIN_ROUTE_RULES` / `BUILTIN_OUTBOUND_GROUPS` 为规格真值源，
+  `LocalOverrideStore` / `ConfigSlicesStore` 在加载（含缺失/损坏回退）与保存时播种、
+  复活并归一化内置条目（**可修改不可删除**：规则可调 enabled/动作/排序，分组可调
+  selector default / urltest 参数 / interrupt；匹配字段与名称归一化回规格）。4 条直连
+  规则集合并为单条多规则集规则（OR 语义）。内置规则与用户规则同一列表统一排序
+  （sort_order 即匹配优先级），模板不再携带基线路由规则；内置分组在 apply 时做模板
+  字段覆写而非追加出站（成员列表动态计算跟随订阅）。
+
 #### FakeIP 架构修正定案
 
 - **定案**：FakeIP 仅作用于**非 CN A 查询**——`{rule_set: ["geolocation-!cn"], query_type: ["A"], action: "route", server: "fakeip"}`，取代此前 `{geosite-cn, invert, A}` 形态。非 CN 域名端到端以**域名**交给出站（核心按域名路由，而非本地解析的真实 IP）；CN 域名由基线的 `geosite-cn → local` 走国内解析器连真实 IP。
