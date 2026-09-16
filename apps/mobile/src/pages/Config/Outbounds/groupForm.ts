@@ -108,6 +108,32 @@ export interface GroupFormErrors {
   tolerance: string | null;
 }
 
+/** 内置分组的即时校验：仅 urltest 的 url / interval / tolerance 格式。 */
+function validateBuiltinGroupFields(fields: OutboundFormFields): GroupFormErrors {
+  let urlError: string | null = null;
+  let intervalError: string | null = null;
+  let toleranceError: string | null = null;
+  if (fields.protocol === "urltest") {
+    const url = fields.groupUrl.trim();
+    if (url !== "" && !/^https?:\/\/\S+$/i.test(url)) {
+      urlError = "URL 需以 http:// 或 https:// 开头";
+    }
+    const interval = fields.groupInterval.trim();
+    if (interval !== "" && !DURATION_PATTERN.test(interval)) {
+      intervalError = "格式如 3m / 30s / 1h";
+    }
+    const tolerance = fields.groupTolerance.trim();
+    if (tolerance !== "") {
+      if (!/^\d+$/.test(tolerance)) {
+        toleranceError = "请输入 0-65535 的整数";
+      } else if (Number(tolerance) > 65535) {
+        toleranceError = "范围 0-65535";
+      }
+    }
+  }
+  return { members: null, defaultMember: null, url: urlError, interval: intervalError, tolerance: toleranceError };
+}
+
 /**
  * 校验分组表单草稿（即时，与 Rust 校验相容）。
  *
@@ -116,6 +142,11 @@ export interface GroupFormErrors {
  * 表示使用核心默认值，合法。
  */
 export function validateGroupFields(fields: OutboundFormFields): GroupFormErrors {
+  // 内置分组：成员由模板动态计算，仅可调字段参与校验；default 的悬空由后端 apply 兜底。
+  if (fields.builtin) {
+    const base = validateBuiltinGroupFields(fields);
+    return base;
+  }
   const membersError = fields.members.length === 0 ? "请至少选择一个成员" : null;
 
   let defaultError: string | null = null;

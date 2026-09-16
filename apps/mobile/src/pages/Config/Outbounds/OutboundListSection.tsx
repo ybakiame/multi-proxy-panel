@@ -1,5 +1,5 @@
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { Button, Card, Switch } from "@heroui/react";
+import { Button, Card, Chip, Switch } from "@heroui/react";
 import { isGroupOutbound, outboundTag } from "@pp/client-core";
 import type { CustomOutbound } from "@pp/client-core";
 import { outboundSummary } from "./outboundForm";
@@ -48,11 +48,18 @@ function OutboundCard({
             <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium leading-5 text-accent">
               {outboundProtocolLabel(item.type)}
             </span>
+            {item.builtin === true && (
+              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+                内置
+              </Chip>
+            )}
           </span>
           <span className="truncate text-xs text-muted">
             {isGroupOutbound(item) ? groupSummary(item) : outboundSummary(item)}
           </span>
-          <span className="truncate font-mono text-xs text-muted/80">{outboundTag(item.name)}</span>
+          <span className="truncate font-mono text-xs text-muted/80">
+            {item.builtin === true ? item.name : outboundTag(item.name)}
+          </span>
           {error && <span className="truncate text-xs text-warning">{error}</span>}
         </button>
         <Switch

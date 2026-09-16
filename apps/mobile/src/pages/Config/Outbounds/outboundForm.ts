@@ -42,6 +42,8 @@ export function isConfigSlices(value: unknown): value is ConfigSlices {
 
 /** 出站编辑表单草稿（数字字段以字符串承载，保存时转换）。 */
 export interface OutboundFormFields {
+  /** 内置分组条目（编辑时只读名称/协议，成员不可编辑；后端做模板字段覆写）。 */
+  builtin: boolean;
   name: string;
   enabled: boolean;
   protocol: OutboundProtocolType;
@@ -91,6 +93,7 @@ function defaultTlsEnabled(type: OutboundProtocolType): boolean {
 /** 生成指定协议的默认表单草稿（切换协议时重置协议字段用）。 */
 export function defaultOutboundForm(type: OutboundProtocolType = "vless"): OutboundFormFields {
   return {
+    builtin: false,
     name: "",
     enabled: true,
     protocol: type,
@@ -127,6 +130,7 @@ export function outboundToForm(item: CustomOutbound): OutboundFormFields {
   const form = defaultOutboundForm(item.type);
   form.name = item.name;
   form.enabled = item.enabled;
+  form.builtin = item.builtin === true;
   if (isGroupOutbound(item)) {
     applyGroupToForm(form, item);
     return form;
@@ -183,7 +187,12 @@ function applyTransportToForm(form: OutboundFormFields, transport: OutboundTrans
 
 /** 表单草稿 → 结构化出站（保存转换）。 */
 export function formToOutbound(fields: OutboundFormFields, id: string): CustomOutbound {
-  const base = { id, name: fields.name.trim(), enabled: fields.enabled };
+  const base = {
+    id,
+    name: fields.name.trim(),
+    enabled: fields.enabled,
+    ...(fields.builtin ? { builtin: true } : {}),
+  };
   if (isGroupProtocol(fields.protocol)) {
     return groupFormToOutbound(fields, base);
   }
@@ -325,6 +334,17 @@ export interface OutboundFormErrors {
  * 用于 tag（`slice-` slug）唯一性校验。
  */
 export function validateOutboundForm(fields: OutboundFormFields, otherNames: readonly string[]): OutboundFormErrors {
+  // 内置分组：名称/协议由规格固定，免名称唯一性与节点字段校验。
+  if (fields.builtin) {
+    return {
+      name: null,
+      server: null,
+      port: null,
+      uuid: null,
+      method: null,
+      password: null,
+    };
+  }
   const name = fields.name.trim();
   let nameError: string | null = null;
   if (name === "") {

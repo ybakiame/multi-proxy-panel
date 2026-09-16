@@ -2,9 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import {
-  BASELINE_VIEW_KEY,
   CONFIG_SLICES_KEY,
-  baselineViewGet,
   configSlicesGet,
   configSlicesSave,
   isGroupOutbound,
@@ -17,9 +15,8 @@ import {
   useClientConfig,
   useProxyStatus,
 } from "@pp/client-core";
-import type { BaselineView, ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
+import type { ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
-import { BaselineOutboundSection } from "../BaselineSections";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
 import { OutboundListSection } from "./OutboundListSection";
@@ -55,14 +52,6 @@ export default function OutboundsPage() {
     // 表单页草稿期间避免窗口聚焦触发的后台重取覆盖未保存编辑；保存后仍显式 invalidate。
     refetchOnWindowFocus: false,
   });
-  // 内置 CN 分流基线（纯静态只读）；始终展示，自定义出站为空时仍可见。
-  const { data: baseline } = useQuery<BaselineView>({
-    queryKey: BASELINE_VIEW_KEY,
-    queryFn: baselineViewGet,
-    staleTime: Infinity,
-    retry: false,
-  });
-
   // 分组成员候选数据源：静态订阅节点读生效订阅的本地缓存（不依赖核心运行），
   // 无生效订阅时不发起；核心未运行时仍能拿到订阅节点。
   const { data: config } = useClientConfig();
@@ -110,6 +99,16 @@ export default function OutboundsPage() {
 
   // 分组成员候选：静态订阅节点（订阅缓存）+ 切片节点出站（enabled）+ 内置 direct；
   // 候选不含其它分组（禁嵌套，与 Rust `validate_group_members` 一致）。
+  // 内置 selector（proxy）的默认成员候选：运行时成员 = auto + 订阅节点（切片节点与
+  // direct/block 不在内置分组成员中，后端 apply 对悬空 default 保持模板默认并告警）。
+  const builtinDefaultCandidates = useMemo<GroupMemberCandidate[]>(() => {
+    const options: GroupMemberCandidate[] = [{ value: "auto", label: "auto（自动测速）", hint: "内置分组" }];
+    for (const node of subscriptionNodes ?? []) {
+      options.push({ value: node.tag, label: node.name, hint: "订阅节点" });
+    }
+    return options;
+  }, [subscriptionNodes]);
+
   const memberCandidates = useMemo<GroupMemberCandidate[]>(() => {
     const sliceNodes = (draft?.items ?? [])
       .filter((item) => item.enabled && !isGroupOutbound(item))
@@ -252,7 +251,6 @@ export default function OutboundsPage() {
         )}
 
         {/* 内置出站：置底只读 */}
-        {baseline && <BaselineOutboundSection outbounds={baseline.outbounds} />}
       </div>
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
@@ -261,7 +259,7 @@ export default function OutboundsPage() {
         editing={editing}
         otherNames={otherNames}
         defaultProtocol={newProtocol}
-        memberCandidates={memberCandidates}
+        memberCandidates={editing?.builtin === true ? builtinDefaultCandidates : memberCandidates}
         subscriptionCacheAvailable={subscriptionCacheAvailable}
         onClose={() => setSheetOpen(false)}
         onSave={handleSaveItem}

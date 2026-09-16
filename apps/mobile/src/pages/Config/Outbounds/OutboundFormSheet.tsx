@@ -106,47 +106,60 @@ export function OutboundFormSheet({
         <Modal.Dialog>
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading>{editing ? "编辑自定义出站" : "添加自定义出站"}</Modal.Heading>
+            <Modal.Heading>
+              {editing?.builtin ? "编辑内置分组" : editing ? "编辑自定义出站" : "添加自定义出站"}
+            </Modal.Heading>
           </Modal.Header>
           <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 名称 */}
+            {/* 名称（内置分组只读） */}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="outbound-name" className="text-sm font-medium text-foreground">
                 名称
               </label>
-              <input
-                id="outbound-name"
-                aria-label="出站名称"
-                aria-required="true"
-                value={fields.name}
-                onChange={(event) => patch({ name: event.target.value })}
-                placeholder="例如：my-node"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className={inputClass}
-              />
-              {errors.name ? (
-                <span className="text-xs text-warning">{errors.name}</span>
+              {fields.builtin ? (
+                <>
+                  <span className="font-mono text-sm text-foreground">{fields.name}</span>
+                  <span className="text-xs text-muted">内置分组名称不可修改</span>
+                </>
               ) : (
-                <span className="text-xs text-muted">
-                  渲染 tag：
-                  <code className="font-mono text-foreground">{outboundTag(fields.name)}</code>
-                </span>
+                <>
+                  <input
+                    id="outbound-name"
+                    aria-label="出站名称"
+                    aria-required="true"
+                    value={fields.name}
+                    onChange={(event) => patch({ name: event.target.value })}
+                    placeholder="例如：my-node"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className={inputClass}
+                  />
+                  {errors.name ? (
+                    <span className="text-xs text-warning">{errors.name}</span>
+                  ) : (
+                    <span className="text-xs text-muted">
+                      渲染 tag：
+                      <code className="font-mono text-foreground">{outboundTag(fields.name)}</code>
+                    </span>
+                  )}
+                </>
               )}
             </div>
 
-            {/* 协议类型 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">协议类型</span>
-              <MobileSelectSheet
-                label="协议类型"
-                value={fields.protocol}
-                onChange={handleProtocolChange}
-                options={OUTBOUND_PROTOCOL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-              />
-              <span className="text-xs text-muted">切换协议会重置该出站的协议字段</span>
-            </div>
+            {/* 协议类型（内置分组只读） */}
+            {!fields.builtin && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">协议类型</span>
+                <MobileSelectSheet
+                  label="协议类型"
+                  value={fields.protocol}
+                  onChange={handleProtocolChange}
+                  options={OUTBOUND_PROTOCOL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <span className="text-xs text-muted">切换协议会重置该出站的协议字段</span>
+              </div>
+            )}
 
             {/* 协议字段：分组出站渲染成员/分组字段，节点出站渲染协议字段 */}
             {isGroup ? (
@@ -184,8 +197,8 @@ export function OutboundFormSheet({
               </Switch>
             </div>
 
-            {/* 编辑模式删除入口 */}
-            {editing && (
+            {/* 编辑模式删除入口（内置分组不可删除） */}
+            {editing && !editing.builtin && (
               <Button variant="danger" className="min-h-12 w-full" onPress={() => onDeleteRequest(editing)}>
                 <TrashIcon className="size-4" aria-hidden="true" />
                 删除出站

@@ -280,6 +280,11 @@ export type CustomOutbound = {
   /** Display name; also the source of the generated `slice-` tag. */
   name: string;
   enabled: boolean;
+  /**
+   * Built-in group entry (materialized `proxy` selector / `auto` urltest): editable but not
+   * deletable; rendered as field overrides onto the template group (members stay dynamic).
+   */
+  builtin?: boolean;
 } & OutboundProtocol;
 
 /** Custom outbound slice; enabled items are injected, an empty list is a no-op. */

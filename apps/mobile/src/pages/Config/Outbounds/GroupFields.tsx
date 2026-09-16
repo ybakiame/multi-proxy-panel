@@ -6,7 +6,8 @@ import { DEFAULT_URLTEST_URL, type GroupFormErrors, type GroupMemberCandidate } 
 interface GroupFieldsProps {
   fields: OutboundFormFields;
   errors: GroupFormErrors;
-  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组）。 */
+  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组；内置分组编辑时作为
+   *  默认成员的完整候选——成员本身由模板动态计算、不可编辑）。 */
   candidates: GroupMemberCandidate[];
   /** 生效订阅是否存在节点缓存：false 时顶部引导先同步订阅。 */
   subscriptionCacheAvailable: boolean;
@@ -22,6 +23,7 @@ interface GroupFieldsProps {
  * 两者共用 interrupt_exist_connections 开关。
  */
 export function GroupFields({ fields, errors, candidates, subscriptionCacheAvailable, onChange }: GroupFieldsProps) {
+  const builtin = fields.builtin;
   /** 切换成员选中态；取消选中默认成员时同步清空 default（避免悬空）。 */
   const toggleMember = (tag: string) => {
     const selected = fields.members.includes(tag);
@@ -33,46 +35,54 @@ export function GroupFields({ fields, errors, candidates, subscriptionCacheAvail
     onChange(patch);
   };
 
-  const memberOptions = fields.members.map((tag) => {
-    const found = candidates.find((candidate) => candidate.value === tag);
-    return { value: tag, label: found?.label ?? tag };
-  });
+  // 内置分组：成员不可编辑，默认成员候选直接用全候选（成员由模板动态计算）。
+  const memberOptions = builtin
+    ? candidates.map((candidate) => ({ value: candidate.value, label: candidate.label }))
+    : fields.members.map((tag) => {
+        const found = candidates.find((candidate) => candidate.value === tag);
+        return { value: tag, label: found?.label ?? tag };
+      });
 
   return (
     <>
-      {!subscriptionCacheAvailable && <span className="text-xs text-muted">未找到订阅节点缓存，请先同步订阅</span>}
+      {!subscriptionCacheAvailable && !builtin && (
+        <span className="text-xs text-muted">未找到订阅节点缓存，请先同步订阅</span>
+      )}
+      {builtin && <span className="text-xs text-muted">内置分组的成员列表由模板按订阅动态计算，不可编辑</span>}
 
-      {/* 成员多选 */}
-      <div className="flex flex-col gap-1.5">
-        <SectionTitle>成员</SectionTitle>
-        {candidates.length === 0 ? (
-          <span className="text-xs text-muted">暂无可选成员</span>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {candidates.map((candidate) => {
-              const selected = fields.members.includes(candidate.value);
-              return (
-                <button
-                  key={candidate.value}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleMember(candidate.value)}
-                  className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors ${
-                    selected ? "border-primary/50 bg-primary/5" : "border-border/70 active:bg-surface-secondary/60"
-                  }`}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium text-foreground">{candidate.label}</span>
-                    <span className="truncate font-mono text-xs text-muted">{candidate.value}</span>
-                  </span>
-                  {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {errors.members && <span className="text-xs text-warning">{errors.members}</span>}
-      </div>
+      {/* 成员多选（内置分组隐藏） */}
+      {!builtin && (
+        <div className="flex flex-col gap-1.5">
+          <SectionTitle>成员</SectionTitle>
+          {candidates.length === 0 ? (
+            <span className="text-xs text-muted">暂无可选成员</span>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {candidates.map((candidate) => {
+                const selected = fields.members.includes(candidate.value);
+                return (
+                  <button
+                    key={candidate.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleMember(candidate.value)}
+                    className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors ${
+                      selected ? "border-primary/50 bg-primary/5" : "border-border/70 active:bg-surface-secondary/60"
+                    }`}
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-sm font-medium text-foreground">{candidate.label}</span>
+                      <span className="truncate font-mono text-xs text-muted">{candidate.value}</span>
+                    </span>
+                    {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {errors.members && <span className="text-xs text-warning">{errors.members}</span>}
+        </div>
+      )}
 
       {/* selector 专属：默认成员 */}
       {fields.protocol === "selector" && (
