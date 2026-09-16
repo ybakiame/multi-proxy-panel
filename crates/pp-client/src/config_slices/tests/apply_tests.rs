@@ -51,6 +51,7 @@ fn ss_outbound(id: &str, name: &str) -> CustomOutbound {
             method: "aes-256-gcm".to_string(),
             password: "secret".to_string(),
         }),
+        builtin: false,
     }
 }
 
@@ -300,6 +301,7 @@ fn render_outbound_vless_with_tls_and_ws() {
                 host: "host.example.com".to_string(),
             },
         }),
+        builtin: false,
     };
 
     let value = render_outbound(&item, "slice-my-vless");
@@ -332,6 +334,7 @@ fn render_outbound_protocol_specific_fields() {
             alter_id: 1,
             ..Default::default()
         }),
+        builtin: false,
     };
     let value = render_outbound(&vmess, "slice-vm");
     assert_eq!(value["type"], "vmess");
@@ -354,6 +357,7 @@ fn render_outbound_protocol_specific_fields() {
             },
             ..Default::default()
         }),
+        builtin: false,
     };
     let value = render_outbound(&trojan, "slice-tj");
     assert_eq!(value["type"], "trojan");
@@ -379,6 +383,7 @@ fn render_outbound_protocol_specific_fields() {
                 ..Default::default()
             },
         }),
+        builtin: false,
     };
     let value = render_outbound(&hy2, "slice-hy");
     assert_eq!(value["type"], "hysteria2");
@@ -406,6 +411,7 @@ fn render_outbound_grpc_and_http_transports() {
             transport: grpc,
             ..Default::default()
         }),
+        builtin: false,
     };
     let value = render_outbound(&item, "slice-g");
     assert_eq!(value["transport"]["type"], "grpc");
@@ -427,6 +433,7 @@ fn render_outbound_grpc_and_http_transports() {
             transport: http,
             ..Default::default()
         }),
+        builtin: false,
     };
     let value = render_outbound(&item, "slice-h");
     assert_eq!(value["transport"]["type"], "http");
@@ -444,6 +451,7 @@ fn render_outbound_selector_fields() {
             default: "direct".to_string(),
             interrupt_exist_connections: true,
         }),
+        builtin: false,
     };
 
     let value = render_outbound(&item, "slice-auto-select");
@@ -466,6 +474,7 @@ fn render_outbound_urltest_fields() {
             tolerance: 80,
             interrupt_exist_connections: false,
         }),
+        builtin: false,
     };
 
     let value = render_outbound(&item, "slice-auto-test");
@@ -490,6 +499,7 @@ fn render_urltest_omits_zero_tolerance_and_empty_optionals() {
             tolerance: 0,
             interrupt_exist_connections: false,
         }),
+        builtin: false,
     };
 
     let value = render_outbound(&item, "slice-auto-test");
@@ -510,6 +520,7 @@ fn render_selector_omits_empty_default() {
             default: String::new(),
             interrupt_exist_connections: false,
         }),
+        builtin: false,
     };
 
     let value = render_outbound(&item, "slice-auto-select");
@@ -533,6 +544,7 @@ fn apply_renders_groups_after_nodes_and_remaps_members() {
                         default: "slice-node".to_string(),
                         interrupt_exist_connections: false,
                     }),
+                    builtin: false,
                 },
             ],
         },
@@ -568,6 +580,7 @@ fn apply_skips_disabled_group_outbounds() {
             outbounds: vec!["direct".to_string()],
             ..Default::default()
         }),
+        builtin: false,
     };
     let slices = ConfigSlices {
         outbounds: OutboundsSlice { items: vec![group] },
@@ -787,5 +800,98 @@ fn render_dns_rule_set_target_multi_tag_array() {
         rendered["rules"][1]["rule_set"],
         serde_json::json!(["geosite-cn"]),
         "single value stays a single-element array"
+    );
+}
+
+/// 内置分组条目不追加新出站，而是把可调字段覆写到模板同名分组（2026-09 物化模型）：
+/// - selector：`default` 属于当前成员列表才覆写（悬空引用保持模板默认并告警）；
+/// - urltest：`url` / `interval` / `tolerance` / interrupt 覆写；成员列表保持模板动态计算。
+#[test]
+fn apply_builtin_group_entries_override_template_groups() {
+    let mut cfg = json!({
+        "outbounds": [
+            { "type": "selector", "tag": "proxy", "outbounds": ["auto", "n1"], "default": "auto" },
+            { "type": "urltest", "tag": "auto", "outbounds": ["n1"], "url": "https://www.gstatic.com/generate_204", "interval": "5m", "tolerance": 150 }
+        ]
+    });
+    let mut slices = ConfigSlices::default();
+    slices.outbounds.items = vec![
+        CustomOutbound {
+            id: "builtin-group-proxy".to_string(),
+            name: "proxy".to_string(),
+            enabled: true,
+            builtin: true,
+            protocol: OutboundProtocol::Selector(SelectorOutbound {
+                outbounds: vec![],
+                default: "n1".to_string(),
+                interrupt_exist_connections: true,
+            }),
+        },
+        CustomOutbound {
+            id: "builtin-group-auto".to_string(),
+            name: "auto".to_string(),
+            enabled: true,
+            builtin: true,
+            protocol: OutboundProtocol::UrlTest(UrlTestOutbound {
+                outbounds: vec![],
+                url: "https://cp.cloudflare.com/".to_string(),
+                interval: "3m".to_string(),
+                tolerance: 300,
+                interrupt_exist_connections: true,
+            }),
+        },
+    ];
+    apply_config_slices(&mut cfg, &slices).unwrap();
+
+    assert_eq!(
+        cfg["outbounds"].as_array().unwrap().len(),
+        2,
+        "builtin entries must not append new outbounds"
+    );
+    let proxy = &cfg["outbounds"][0];
+    assert_eq!(proxy["default"], "n1", "selector default overridden");
+    assert_eq!(proxy["interrupt_exist_connections"], true);
+    assert_eq!(
+        proxy["outbounds"],
+        json!(["auto", "n1"]),
+        "members stay template-computed"
+    );
+    let auto = &cfg["outbounds"][1];
+    assert_eq!(auto["url"], "https://cp.cloudflare.com/");
+    assert_eq!(auto["interval"], "3m");
+    assert_eq!(auto["tolerance"], 300);
+    assert_eq!(auto["interrupt_exist_connections"], true);
+
+    // 悬空 default（成员里没有）不覆写。
+    slices.outbounds.items[0].protocol = OutboundProtocol::Selector(SelectorOutbound {
+        outbounds: vec![],
+        default: "ghost".to_string(),
+        interrupt_exist_connections: false,
+    });
+    let mut cfg2 = json!({
+        "outbounds": [
+            { "type": "selector", "tag": "proxy", "outbounds": ["auto", "n1"], "default": "auto" }
+        ]
+    });
+    apply_config_slices(&mut cfg2, &slices).unwrap();
+    assert_eq!(
+        cfg2["outbounds"][0]["default"], "auto",
+        "dangling default ignored"
+    );
+
+    // 停用的内置条目不覆写。
+    slices.outbounds.items[0].enabled = false;
+    slices.outbounds.items[1].enabled = false;
+    let mut cfg3 = json!({
+        "outbounds": [
+            { "type": "selector", "tag": "proxy", "outbounds": ["auto"], "default": "auto" },
+            { "type": "urltest", "tag": "auto", "outbounds": [], "url": "https://www.gstatic.com/generate_204" }
+        ]
+    });
+    apply_config_slices(&mut cfg3, &slices).unwrap();
+    assert_eq!(cfg3["outbounds"][0]["default"], "auto");
+    assert_eq!(
+        cfg3["outbounds"][1]["url"],
+        "https://www.gstatic.com/generate_204"
     );
 }

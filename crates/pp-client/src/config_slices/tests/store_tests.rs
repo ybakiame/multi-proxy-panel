@@ -20,6 +20,7 @@ fn valid_slices() -> ConfigSlices {
                     method: "aes-256-gcm".to_string(),
                     password: "secret".to_string(),
                 }),
+                builtin: false,
             }],
         },
         experimental: ExperimentalSlice::default(),
@@ -32,8 +33,12 @@ fn load_missing_file_returns_default() {
     let dir = tempfile::tempdir().unwrap();
     let store = ConfigSlicesStore::new(dir.path().to_path_buf());
     let slices = store.load().unwrap();
-    assert_eq!(slices, ConfigSlices::default());
-    assert!(!store.slices_file().exists());
+    // 2026-09 起：文件缺失也播种内置分组（proxy/auto，可修改不可删除）并落盘。
+    assert_eq!(slices.outbounds.items.len(), 2);
+    assert!(slices.outbounds.items.iter().all(|i| i.builtin));
+    assert_eq!(slices.outbounds.items[0].id, "builtin-group-proxy");
+    assert_eq!(slices.outbounds.items[1].id, "builtin-group-auto");
+    assert!(store.slices_file().exists(), "seeding persists the file");
 }
 
 #[test]
@@ -42,7 +47,9 @@ fn load_corrupted_file_falls_back_to_default() {
     let store = ConfigSlicesStore::new(dir.path().to_path_buf());
     std::fs::write(store.slices_file(), "not valid json {{{").unwrap();
     let slices = store.load().unwrap();
-    assert_eq!(slices, ConfigSlices::default());
+    // 损坏回退到播种默认值（含 2 条内置分组）。
+    assert_eq!(slices.outbounds.items.len(), 2);
+    assert!(slices.outbounds.items.iter().all(|i| i.builtin));
 }
 
 #[test]
@@ -52,7 +59,15 @@ fn save_then_load_roundtrip() {
     let slices = valid_slices();
     store.save(&slices).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(slices, loaded);
+    // save 播种内置分组：loaded = 用户条目 + 2 条内置条目（追加在后）。
+    assert_eq!(loaded.outbounds.items.len(), 3);
+    assert_eq!(loaded.outbounds.items[0].id, "o1");
+    assert!(loaded.outbounds.items[1..].iter().all(|i| i.builtin));
+    // 用户条目逐字段不变。
+    assert_eq!(loaded.outbounds.items[0], slices.outbounds.items[0]);
+    assert_eq!(loaded.dns, slices.dns);
+    assert_eq!(loaded.experimental, slices.experimental);
+    assert_eq!(loaded.route, slices.route);
 }
 
 #[test]
@@ -206,7 +221,58 @@ fn migration_is_noop_for_v2_document() {
     let before = std::fs::read_to_string(store.slices_file()).unwrap();
 
     let loaded = store.load().unwrap();
-    assert_eq!(loaded, slices);
+    // save 会播种/归一化内置分组：loaded 比原始输入多 2 条内置条目。
+    let mut expected = slices.clone();
+    expected
+        .outbounds
+        .items
+        .extend(loaded.outbounds.items.iter().filter(|i| i.builtin).cloned());
+    assert_eq!(loaded, expected);
     let after = std::fs::read_to_string(store.slices_file()).unwrap();
     assert_eq!(before, after, "v2 load must not rewrite the file");
+}
+
+/// 内置分组「可修改不可删除」：save 时缺失条目复活、name/协议归一化；可调字段保留。
+#[test]
+fn save_resurrects_and_normalizes_builtin_groups() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ConfigSlicesStore::new(dir.path().to_path_buf());
+
+    // 空保存 → 复活两条内置分组。
+    store.save(&ConfigSlices::default()).unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.outbounds.items.len(), 2);
+    assert!(loaded.outbounds.items.iter().all(|i| i.builtin));
+
+    // 篡改 name / 协议类型，调整可调字段：保存后前者归一、后者保留。
+    let mut slices = loaded;
+    let proxy = slices
+        .outbounds
+        .items
+        .iter_mut()
+        .find(|i| i.id == "builtin-group-proxy")
+        .unwrap();
+    proxy.name = "tampered".to_string();
+    proxy.protocol = OutboundProtocol::Selector(SelectorOutbound {
+        outbounds: vec![],
+        default: "slice-x".to_string(),
+        interrupt_exist_connections: true,
+    });
+    store.save(&slices).unwrap();
+
+    let loaded = store.load().unwrap();
+    let proxy = loaded
+        .outbounds
+        .items
+        .iter()
+        .find(|i| i.id == "builtin-group-proxy")
+        .unwrap();
+    assert_eq!(proxy.name, "proxy");
+    match &proxy.protocol {
+        OutboundProtocol::Selector(sel) => {
+            assert_eq!(sel.default, "slice-x", "user-tunable default preserved");
+            assert!(sel.interrupt_exist_connections);
+        }
+        _ => panic!("protocol must stay selector"),
+    }
 }

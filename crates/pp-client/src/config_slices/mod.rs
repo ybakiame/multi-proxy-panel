@@ -31,6 +31,7 @@
 use serde_json::Value;
 
 pub mod apply;
+mod apply_groups;
 pub mod dns;
 pub mod dns_render;
 pub mod experimental;

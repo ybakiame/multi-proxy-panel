@@ -172,6 +172,34 @@ pub fn cn_baseline_dns_rules() -> Vec<Value> {
     ]
 }
 
+/// 内置分组规格（物化进出站切片的真值源，2026-09）。
+///
+/// 内置分组**可修改不可删除**：物化后用户可调 selector 的 `default` / urltest 的
+/// `url` / `interval` / `tolerance` / 两者的 `interrupt_exist_connections`，成员列表
+/// 由模板动态计算（订阅节点变化跟随），不可在切片中编辑。id / name 稳定，勿改。
+pub struct BuiltinOutboundGroupSpec {
+    /// 稳定条目 ID（物化进切片的 `CustomOutbound.id`）。
+    pub id: &'static str,
+    /// 名称 = 模板分组 tag（apply 时按此匹配模板出站做字段覆写）。
+    pub name: &'static str,
+    /// 是否 selector（false = urltest）。
+    pub selector: bool,
+}
+
+/// 内置分组（顺序 = 列表展示顺序：主选择器在前，自动测速在后）。
+pub const BUILTIN_OUTBOUND_GROUPS: [BuiltinOutboundGroupSpec; 2] = [
+    BuiltinOutboundGroupSpec {
+        id: "builtin-group-proxy",
+        name: OUTBOUND_TAG_PROXY,
+        selector: true,
+    },
+    BuiltinOutboundGroupSpec {
+        id: "builtin-group-auto",
+        name: OUTBOUND_TAG_AUTO,
+        selector: false,
+    },
+];
+
 /// 内置路由规则规格（物化进 local_override 统一规则列表的真值源，2026-09）。
 ///
 /// 内置规则**可修改不可删除**（见 `local_override` store 迁移与保存守卫）：物化后用户可

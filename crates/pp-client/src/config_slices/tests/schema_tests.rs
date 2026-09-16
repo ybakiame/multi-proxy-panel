@@ -63,6 +63,7 @@ fn outbounds_slice() -> OutboundsSlice {
                         host: "example.com".to_string(),
                     },
                 }),
+                builtin: false,
             },
             CustomOutbound {
                 id: "o2".to_string(),
@@ -74,6 +75,7 @@ fn outbounds_slice() -> OutboundsSlice {
                     method: "aes-256-gcm".to_string(),
                     password: "secret".to_string(),
                 }),
+                builtin: false,
             },
         ],
     }
@@ -287,6 +289,7 @@ fn outbound_tag_is_used_by_custom_outbound() {
         name: "My Node".to_string(),
         enabled: true,
         protocol: OutboundProtocol::Shadowsocks(ShadowsocksOutbound::default()),
+        builtin: false,
     };
     assert_eq!(item.tag(), "slice-my-node");
 }
@@ -297,6 +300,7 @@ fn group_item(id: &str, name: &str, protocol: OutboundProtocol) -> CustomOutboun
         name: name.to_string(),
         enabled: true,
         protocol,
+        builtin: false,
     }
 }
 

@@ -253,6 +253,22 @@ impl OutboundsSlice {
 
         // First pass: reserve every enabled tag and classify groups vs. nodes.
         for item in self.items.iter().filter(|i| i.enabled) {
+            // 内置分组条目（2026-09 物化模型）：name 限 proxy/auto 且协议类型须匹配，
+            // 不参与 tag 预留与成员校验（渲染时做模板字段覆写，不产生新出站）。
+            if item.builtin {
+                let kind_ok = matches!(
+                    (item.name.as_str(), &item.protocol),
+                    ("proxy", OutboundProtocol::Selector(_))
+                        | ("auto", OutboundProtocol::UrlTest(_))
+                );
+                if !kind_ok {
+                    return Err(validation(format!(
+                        "builtin outbound group `{}` must keep its reserved name (proxy/auto) and protocol kind",
+                        item.id
+                    )));
+                }
+                continue;
+            }
             if item.name.trim().is_empty() {
                 return Err(validation(format!(
                     "custom outbound `{}` requires a name",
@@ -278,7 +294,7 @@ impl OutboundsSlice {
         }
 
         // Second pass: validate group membership now that all tags are known.
-        for item in self.items.iter().filter(|i| i.enabled) {
+        for item in self.items.iter().filter(|i| i.enabled && !i.builtin) {
             let tag = outbound_tag(&item.name);
             match &item.protocol {
                 OutboundProtocol::Selector(o) => {

@@ -40,6 +40,16 @@ pub struct CustomOutbound {
     /// Whether the outbound is injected.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Whether this is a materialized built-in group entry（`proxy` 主 selector / `auto`
+    /// urltest，2026-09 起物化进出站切片）。
+    ///
+    /// 内置分组**可修改不可删除**：渲染时不追加新出站，而是把可调字段（selector 的
+    /// `default` / urltest 的 `url` / `interval` / `tolerance` / 两者的
+    /// `interrupt_exist_connections`）覆写到模板的同名内置分组上（成员列表保持模板动态
+    /// 计算，物化条目里的 `outbounds` 字段仅作前端默认成员候选展示）；`name` /
+    /// 协议类型由规格归一化，缺失条目在 store 加载/保存时自动补种。
+    #[serde(default)]
+    pub builtin: bool,
     /// Protocol-specific fields (structured enum, tagged by `type`).
     #[serde(flatten)]
     pub protocol: OutboundProtocol,

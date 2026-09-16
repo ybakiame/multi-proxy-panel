@@ -74,6 +74,7 @@ mod tests {
                         flow: "xtls-rprx-vision".to_string(),
                         ..Default::default()
                     }),
+                    builtin: false,
                 }],
             },
             experimental: ExperimentalSlice::default(),

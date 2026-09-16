@@ -77,7 +77,25 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
         report.dns_applied = true;
     }
 
-    if !slices.outbounds.items.is_empty() {
+    // 内置分组条目（2026-09 物化模型）：不追加新出站，而是把可调字段覆写到模板的同名
+    // 内置分组上（成员列表保持模板动态计算）。先覆写，再处理用户自定义出站。
+    let builtin_groups: Vec<&CustomOutbound> = slices
+        .outbounds
+        .items
+        .iter()
+        .filter(|item| item.builtin && item.enabled)
+        .collect();
+    for item in builtin_groups {
+        super::apply_groups::apply_builtin_group_override(obj, item, &mut report);
+    }
+
+    let custom_items: Vec<&CustomOutbound> = slices
+        .outbounds
+        .items
+        .iter()
+        .filter(|item| !item.builtin)
+        .collect();
+    if !custom_items.is_empty() {
         let mut used = collect_outbound_tags(obj);
         let mut rendered = Vec::new();
         // Base tag -> final (possibly renamed) tag, used to remap group members
@@ -86,9 +104,7 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
 
         // Render concrete node outbounds first so group outbounds (rendered
         // below) come after the members they reference.
-        for item in slices
-            .outbounds
-            .items
+        for item in custom_items
             .iter()
             .filter(|item| item.enabled && !item.protocol.is_group())
         {
@@ -107,9 +123,7 @@ pub fn apply_config_slices(config: &mut Value, slices: &ConfigSlices) -> PanelRe
         }
 
         // Then render selector / urltest groups.
-        for item in slices
-            .outbounds
-            .items
+        for item in custom_items
             .iter()
             .filter(|item| item.enabled && item.protocol.is_group())
         {
