@@ -184,6 +184,9 @@ export {
   isGroupOutbound,
 } from "./configSlices";
 
+export type { DiagReport, DiagStatus, DiagStep } from "./diagnose";
+export { diagnoseConnectivityRun } from "./diagnose";
+
 export type { DnsServerPreset } from "./dnsPresets";
 export { DNS_SERVER_PRESETS, uniquePresetTag } from "./dnsPresets";
 

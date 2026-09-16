@@ -18,6 +18,7 @@ import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
 import AboutPage from "./pages/Settings/AboutPage";
 import DevToolsPage from "./pages/Settings/DevToolsPage";
+import DiagnosePage from "./pages/Settings/DiagnosePage";
 import GithubPage from "./pages/Settings/GithubPage";
 import VpnNotifyPage from "./pages/Settings/VpnNotifyPage";
 import Subscriptions from "./pages/Subscriptions";
@@ -157,6 +158,7 @@ function AppContent() {
           <Route path="/settings/vpn-notify" element={<VpnNotifyPage />} />
           <Route path="/settings/github" element={<GithubPage />} />
           <Route path="/settings/dev-tools" element={<DevToolsPage />} />
+          <Route path="/settings/dev-tools/diagnose" element={<DiagnosePage />} />
           <Route path="/settings/about" element={<AboutPage />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="*" element={<Navigate to="/" replace />} />
