@@ -248,6 +248,9 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         .unwrap_or(OUTBOUND_TAG_PROXY)
         .to_string();
 
+    // 路由规则不再由模板携带（2026-09 起内置 CN 分流规则物化进 local_override 统一规则
+    // 列表，由 inject_local_override 注入；见 core_config::BUILTIN_ROUTE_RULES）。模板只保留
+    // 规则集注册与 final 兜底。
     let mut cfg = json!({
         "log": { "level": "info" },
         "dns": {
@@ -267,7 +270,7 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
             "strategy": "prefer_ipv4"
         },
         "route": {
-            "rules": crate::core_config::cn_baseline_route_rules(&proxy_tag),
+            "rules": [],
             "final": proxy_tag,
             "auto_detect_interface": true,
             "default_domain_resolver": { "server": "local" }

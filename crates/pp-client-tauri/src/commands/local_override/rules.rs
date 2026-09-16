@@ -99,9 +99,9 @@ mod tests {
             note: String::new(),
             created_at: 1,
             sort_order,
+            builtin: false,
         }
     }
-
     /// An override carrying every user-editable segment (custom rule set +
     /// rules), shaped like a post-edit save.
     fn sample_override() -> LocalOverride {
@@ -163,7 +163,13 @@ mod tests {
         assert!(custom.cached, "manual 内容同步落盘后 cached 应为 true");
         assert!(view.custom_templates.is_empty());
         assert!(view.applied_templates.is_empty());
-        assert_eq!(view.singbox.rules.len(), 1);
+        // 1 条用户规则 + 2 条播种的内置规则（物化模型）。
+        assert_eq!(view.singbox.rules.len(), 3);
+        assert_eq!(
+            view.singbox.rules.iter().filter(|r| r.builtin).count(),
+            2,
+            "builtin rules are seeded into the unified list"
+        );
         assert!(view.singbox.enabled);
         // 写回文件里订阅段恒为空数组（序列化契约：字段保留 serde 兼容）。
         let reloaded = store.load().unwrap();

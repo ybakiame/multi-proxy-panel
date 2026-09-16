@@ -172,6 +172,38 @@ pub fn cn_baseline_dns_rules() -> Vec<Value> {
     ]
 }
 
+/// 内置路由规则规格（物化进 local_override 统一规则列表的真值源，2026-09）。
+///
+/// 内置规则**可修改不可删除**（见 `local_override` store 迁移与保存守卫）：物化后用户可
+/// 调整 `enabled` / 出站动作与排序位置，`match_type` / `target` 由本规格在保存时归一化。
+/// id 稳定（写入 local_override.json），勿改。
+pub struct BuiltinRouteRuleSpec {
+    /// 稳定规则 ID（物化进 local_override 的 `LocalRule.id`）。
+    pub id: &'static str,
+    /// 展示名（列表标题；内置规则名称不可改）。
+    pub name: &'static str,
+    /// 逗号分隔的规则集 tag（渲染为 sing-box `rule_set` 数组）。
+    pub target: &'static str,
+    /// 默认动作：`true` = direct，`false` = 主 selector（proxy）。
+    pub direct: bool,
+}
+
+/// 内置路由规则（顺序 = 物化默认排序：CN 直连在前，非 CN 代理兜底在后）。
+pub const BUILTIN_ROUTE_RULES: [BuiltinRouteRuleSpec; 2] = [
+    BuiltinRouteRuleSpec {
+        id: "builtin-cn-direct",
+        name: "内置：私有与国内直连",
+        target: "geosite-private,geoip-private,geosite-cn,geoip-cn",
+        direct: true,
+    },
+    BuiltinRouteRuleSpec {
+        id: "builtin-non-cn-proxy",
+        name: "内置：非中国大陆代理",
+        target: "geolocation-!cn",
+        direct: false,
+    },
+];
+
 /// CN-split baseline route rules (GUI.for.SingBox default profile): private / CN destinations
 /// go `direct`, `geolocation-!cn` (non-CN) goes through the main selector.
 ///

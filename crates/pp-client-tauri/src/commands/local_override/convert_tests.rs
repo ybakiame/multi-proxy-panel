@@ -30,9 +30,9 @@ fn rule_set_rule(id: &str, target: &str) -> LocalRule {
         note: String::new(),
         created_at: 1,
         sort_order: 0,
+        builtin: false,
     }
 }
-
 fn override_with(sets: Vec<CustomRuleSet>, rules: Vec<LocalRule>) -> LocalOverride {
     LocalOverride {
         singbox: CoreLocalOverride {

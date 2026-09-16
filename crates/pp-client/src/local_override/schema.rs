@@ -102,6 +102,13 @@ pub struct LocalRule {
     pub created_at: u64,
     /// Sort weight (smaller = earlier).
     pub sort_order: i32,
+    /// Whether this is a materialized built-in rule (CN-split baseline).
+    ///
+    /// 内置规则**可修改不可删除**：`enabled` / `action` / 排序可调，`id` /
+    /// `match_type` / `target` / `name` 由内置规格在加载迁移与保存时归一化；缺失的
+    /// 内置规则在加载时自动补种（见 store 迁移）。
+    #[serde(default)]
+    pub builtin: bool,
 }
 
 /// Rule match type (aligned with sing-box route rule fields).

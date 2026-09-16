@@ -51,7 +51,14 @@ impl LocalOverrideStore {
     pub fn load(&self) -> PanelResult<LocalOverride> {
         let path = self.override_file();
         if !path.exists() {
-            return Ok(LocalOverride::default());
+            // 文件缺失：从默认值起步也要播种内置规则（2026-09 起内置 CN 分流规则物化进
+            // 统一规则列表），并落盘使后续 load 读到归一化数据。
+            let mut ovr = LocalOverride::default();
+            seed_builtin_route_rules(&mut ovr);
+            if let Err(e) = self.save(&ovr) {
+                tracing::warn!(error = %e, "failed to persist builtin rule seeding");
+            }
+            return Ok(ovr);
         }
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
@@ -64,16 +71,15 @@ impl LocalOverrideStore {
                 return Ok(LocalOverride::default());
             }
         };
-        let value: Value = match serde_json::from_str(&text) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "local_override.json corrupted, fall back to default"
-                );
-                return Ok(LocalOverride::default());
-            }
+        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            tracing::warn!(
+                path = %path.display(),
+                "local_override.json corrupted, fall back to seeded default"
+            );
+            // 损坏回退也播种内置规则（与文件缺失路径语义一致）。
+            let mut ovr = LocalOverride::default();
+            seed_builtin_route_rules(&mut ovr);
+            return Ok(ovr);
         };
         let mut ovr: LocalOverride = match serde_json::from_value(value.clone()) {
             Ok(o) => o,
@@ -81,14 +87,17 @@ impl LocalOverrideStore {
                 tracing::warn!(
                     path = %path.display(),
                     error = %e,
-                    "local_override.json schema mismatch, fall back to default"
+                    "local_override.json schema mismatch, fall back to seeded default"
                 );
-                return Ok(LocalOverride::default());
+                let mut ovr = LocalOverride::default();
+                seed_builtin_route_rules(&mut ovr);
+                return Ok(ovr);
             }
         };
         let migrated_builtins = migrate_legacy_builtins(&mut ovr);
         let migrated_switch = migrate_disabled_master_switch(&value, &mut ovr);
-        if migrated_builtins || migrated_switch {
+        let seeded = seed_builtin_route_rules(&mut ovr);
+        if migrated_builtins || migrated_switch || seeded {
             // 迁移结果写回磁盘，保证后续 load 读到已归一化数据（幂等）。
             if let Err(e) = self.save(&ovr) {
                 tracing::warn!(
@@ -102,12 +111,18 @@ impl LocalOverrideStore {
     }
 
     /// Save local override config to `data_dir/local_override.json`.
+    ///
+    /// 内置规则保护（2026-09）：内置规则**可修改不可删除**——保存前把内置条目的
+    /// 不可变字段（`match_type` / `target` / `name`）归一化到内置规格，缺失的内置
+    /// 条目按规格重新补种到末尾（而不是报错让保存整体失败）。
     pub fn save(&self, ovr: &LocalOverride) -> PanelResult<()> {
+        let mut ovr = ovr.clone();
+        seed_builtin_route_rules(&mut ovr);
         let path = self.override_file();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let text = serde_json::to_string_pretty(ovr)?;
+        let text = serde_json::to_string_pretty(&ovr)?;
         std::fs::write(&path, text)?;
         Ok(())
     }
@@ -195,3 +210,69 @@ fn migrate_disabled_master_switch(raw: &Value, ovr: &mut LocalOverride) -> bool 
 #[cfg(test)]
 #[path = "tests/store_tests.rs"]
 mod tests;
+
+/// 内置规则播种与归一化（幂等，返回是否改动）。
+///
+/// - 规格中缺失的内置规则：按 [`crate::core_config::BUILTIN_ROUTE_RULES`] 追加到
+///   `sort_order` 末尾（`enabled = true`，动作取规格默认 direct / proxy）；
+/// - 已存在的内置条目：`builtin` 标记置位，`name` / `match_type`（RuleSet）/ `target`
+///   归一化到规格（这些字段不可修改）；`enabled` / `action` / `sort_order` / `note` /
+///   `created_at` 尊重用户改动。
+fn seed_builtin_route_rules(ovr: &mut LocalOverride) -> bool {
+    let mut changed = false;
+    let mut next_sort = ovr
+        .singbox
+        .rules
+        .iter()
+        .map(|r| r.sort_order)
+        .max()
+        .unwrap_or(-1)
+        + 1;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    for spec in crate::core_config::BUILTIN_ROUTE_RULES {
+        match ovr.singbox.rules.iter_mut().find(|r| r.id == spec.id) {
+            Some(rule) => {
+                let normalized_target = spec.target.to_string();
+                if !rule.builtin
+                    || rule.name != spec.name
+                    || !matches!(
+                        rule.match_type,
+                        crate::local_override::RuleMatchType::RuleSet
+                    )
+                    || rule.target != normalized_target
+                {
+                    rule.builtin = true;
+                    rule.name = spec.name.to_string();
+                    rule.match_type = crate::local_override::RuleMatchType::RuleSet;
+                    rule.target = normalized_target;
+                    changed = true;
+                }
+            }
+            None => {
+                ovr.singbox.rules.push(crate::local_override::LocalRule {
+                    id: spec.id.to_string(),
+                    name: spec.name.to_string(),
+                    enabled: true,
+                    match_type: crate::local_override::RuleMatchType::RuleSet,
+                    target: spec.target.to_string(),
+                    action: if spec.direct {
+                        crate::local_override::RuleAction::Direct
+                    } else {
+                        crate::local_override::RuleAction::Proxy
+                    },
+                    advanced: Default::default(),
+                    note: "内置规则：可调整开关、出站与排序，不可删除".to_string(),
+                    created_at: now,
+                    sort_order: next_sort,
+                    builtin: true,
+                });
+                next_sort += 1;
+                changed = true;
+            }
+        }
+    }
+    changed
+}

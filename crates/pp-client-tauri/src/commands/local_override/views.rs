@@ -55,6 +55,8 @@ pub struct LocalRuleView {
     pub note: String,
     pub created_at: u64,
     pub sort_order: i32,
+    /// 是否为内置规则（可修改开关/出站/排序，不可删除）。
+    pub builtin: bool,
 }
 
 /// Rule set reference view.
@@ -162,6 +164,7 @@ impl LocalRuleView {
             note: model.note.clone(),
             created_at: model.created_at,
             sort_order: model.sort_order,
+            builtin: model.builtin,
         }
     }
 }
@@ -285,6 +288,9 @@ pub struct CoreLocalOverrideInput {
 #[derive(Debug, Deserialize)]
 pub struct LocalRuleInput {
     pub id: String,
+    /// 内置标记透传（保存时按 id 归一化/补种，前端保留该字段即可）。
+    #[serde(default)]
+    pub builtin: bool,
     #[serde(default)]
     pub name: String,
     #[serde(default = "crate::commands::local_override::default_true")]

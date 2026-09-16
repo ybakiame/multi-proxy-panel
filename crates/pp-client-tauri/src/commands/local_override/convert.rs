@@ -15,7 +15,10 @@ use super::views::*;
 /// - Custom rule set IDs/tags are unique; Remote URLs / Manual contents are
 ///   non-empty.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
+    // 注：内置规则「不可删除」由 LocalOverrideStore::save 的播种/归一化兜底
+    // （缺失自动补回），不在此处报错打断保存。
     let core_ovr = &ovr.singbox;
+
     // Check rule ID uniqueness.
     let mut seen = std::collections::HashSet::new();
     for rule in &core_ovr.rules {
@@ -164,6 +167,7 @@ fn convert_rule_input(input: LocalRuleInput) -> Result<LocalRule, String> {
         note: input.note,
         created_at: input.created_at,
         sort_order: input.sort_order,
+        builtin: input.builtin,
     })
 }
 
@@ -254,6 +258,7 @@ mod roundtrip_tests {
             note: String::new(),
             created_at: 1,
             sort_order: 0,
+            builtin: false,
         }
     }
 
@@ -261,6 +266,7 @@ mod roundtrip_tests {
     fn rule_round_trip(model: LocalRule) -> LocalRule {
         let view = LocalRuleView::from_model(&model);
         let input = LocalRuleInput {
+            builtin: view.builtin,
             id: view.id,
             name: view.name,
             enabled: view.enabled,

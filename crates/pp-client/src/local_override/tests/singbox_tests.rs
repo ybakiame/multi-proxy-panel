@@ -16,9 +16,9 @@ fn sample_rule(id: &str, match_type: RuleMatchType, target: &str, action: RuleAc
         note: String::new(),
         created_at: 0,
         sort_order: 0,
+        builtin: false,
     }
 }
-
 #[test]
 fn rules_prepended_before_subscription_rules() {
     let mut config = json!({
@@ -100,6 +100,7 @@ fn final_rule_writes_route_final() {
             note: String::new(),
             created_at: 0,
             sort_order: 999,
+            builtin: false,
         }],
         ..Default::default()
     };
@@ -201,6 +202,7 @@ fn invert_flag_translates() {
             note: String::new(),
             created_at: 0,
             sort_order: 0,
+            builtin: false,
         }],
         ..Default::default()
     };
@@ -248,9 +250,9 @@ fn referencing_rule(tag: &str) -> LocalRule {
         note: String::new(),
         created_at: 0,
         sort_order: 0,
+        builtin: false,
     }
 }
-
 #[test]
 fn custom_manual_rule_set_injected_as_local_source_when_file_exists_and_referenced() {
     let dir = tempfile::tempdir().unwrap();
@@ -599,6 +601,7 @@ fn multi_tag_rule_injects_every_referenced_custom_set() {
         note: String::new(),
         created_at: 0,
         sort_order: 0,
+        builtin: false,
     };
 
     let mut config = json!({"route": {}});
@@ -609,4 +612,46 @@ fn multi_tag_rule_injects_every_referenced_custom_set() {
         entries.iter().filter_map(|e| e["tag"].as_str()).collect();
     assert!(tags.contains("first-tag"));
     assert!(tags.contains("second-tag"));
+}
+
+/// 统一排序：渲染按（sort_order, created_at, id）排序，内置规则可被用户移到任意位置。
+#[test]
+fn rules_render_in_unified_sort_order_with_builtins() {
+    let mut config = json!({ "route": { "rules": [], "final": "direct" } });
+    let mut ovr = CoreLocalOverride::default();
+    ovr.rules.push(LocalRule {
+        id: "user-rule".to_string(),
+        name: String::new(),
+        enabled: true,
+        match_type: RuleMatchType::Domain,
+        target: "user.example".to_string(),
+        action: RuleAction::Direct,
+        advanced: Default::default(),
+        note: String::new(),
+        created_at: 1,
+        sort_order: 0,
+        builtin: false,
+    });
+    ovr.rules.push(LocalRule {
+        id: "builtin-cn-direct".to_string(),
+        name: "内置：私有与国内直连".to_string(),
+        enabled: true,
+        match_type: RuleMatchType::RuleSet,
+        target: "geosite-private,geoip-private,geosite-cn,geoip-cn".to_string(),
+        action: RuleAction::Direct,
+        advanced: Default::default(),
+        note: String::new(),
+        created_at: 0,
+        sort_order: -1, // 用户把内置规则移到了用户规则之前
+        builtin: true,
+    });
+    apply_singbox_local_override(&mut config, &ovr);
+
+    let rules = config["route"]["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 2);
+    assert!(
+        rules[0].get("rule_set").is_some(),
+        "builtin rule (sort_order=-1) must come first: {rules:?}"
+    );
+    assert_eq!(rules[1]["domain"], "user.example");
 }

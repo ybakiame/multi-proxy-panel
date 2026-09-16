@@ -22,6 +22,7 @@ fn local_override_serde_roundtrip() {
                 note: "note".to_string(),
                 created_at: 1234567890,
                 sort_order: 0,
+                builtin: false,
             }],
             rule_sets: vec![LocalRuleSetRef {
                 id: "rs1".to_string(),

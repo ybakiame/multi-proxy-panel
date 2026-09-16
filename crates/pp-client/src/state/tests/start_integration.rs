@@ -509,13 +509,22 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
         rules[3],
         serde_json::json!({ "ip_version": 6, "action": "reject" })
     );
-    assert_eq!(rules[4]["inbound"], serde_json::json!(["main-in"]));
+    // 内置 CN 分流规则经 local_override 物化注入（统一规则列表，默认在用户规则之后、
+    // MITM 白名单之前——本地规则块整体前插的既有语义）。
     assert_eq!(
-        rules[4]["domain_suffix"],
+        rules[4]["rule_set"],
+        serde_json::json!(["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"])
+    );
+    assert_eq!(rules[4]["outbound"], "direct");
+    assert_eq!(rules[5]["rule_set"], serde_json::json!("geolocation-!cn"));
+    assert_eq!(rules[5]["outbound"], "proxy");
+    assert_eq!(rules[6]["inbound"], serde_json::json!(["main-in"]));
+    assert_eq!(
+        rules[6]["domain_suffix"],
         serde_json::json!(["example.com"])
     );
-    assert_eq!(rules[4]["domain"], serde_json::json!(["api.example2.com"]));
-    assert_eq!(rules[4]["outbound"], "pp-mitm");
+    assert_eq!(rules[6]["domain"], serde_json::json!(["api.example2.com"]));
+    assert_eq!(rules[6]["outbound"], "pp-mitm");
 
     // Running status extension: composed config contains sniff + hijack-dns + realip resolve + IPv6 reject + 1 MITM whitelist rule + 2 merged CN-split baseline rules.
     let status = state.status().await;

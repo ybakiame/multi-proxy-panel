@@ -15,9 +15,16 @@ fn store_load_missing_file_returns_default() {
     let dir = tempfile::tempdir().unwrap();
     let store = LocalOverrideStore::new(dir.path().to_path_buf());
     let ovr = store.load().unwrap();
-    assert!(ovr.singbox.rules.is_empty());
+    // 2026-09 起：文件缺失也播种 2 条内置 CN 分流规则（统一规则列表物化模型）。
+    assert_eq!(ovr.singbox.rules.len(), 2);
+    assert!(ovr.singbox.rules.iter().all(|r| r.builtin));
+    assert_eq!(ovr.singbox.rules[0].id, "builtin-cn-direct");
+    assert_eq!(ovr.singbox.rules[1].id, "builtin-non-cn-proxy");
     assert!(ovr.rule_set_subscriptions.is_empty());
     assert!(ovr.applied_templates.is_empty());
+    // 播种已落盘：二次 load 幂等不重复追加。
+    let reloaded = store.load().unwrap();
+    assert_eq!(reloaded.singbox.rules.len(), 2);
 }
 
 #[test]
@@ -26,8 +33,9 @@ fn store_load_corrupted_file_falls_back() {
     let store = LocalOverrideStore::new(dir.path().to_path_buf());
     std::fs::write(store.override_file(), "not valid json {{{").unwrap();
     let ovr = store.load().unwrap();
-    // Should fall back to default, not panic/error.
-    assert!(ovr.singbox.rules.is_empty());
+    // 损坏回退到播种默认值（含 2 条内置规则），不 panic/error。
+    assert_eq!(ovr.singbox.rules.len(), 2);
+    assert!(ovr.singbox.rules.iter().all(|r| r.builtin));
 }
 
 #[test]
@@ -46,10 +54,15 @@ fn store_save_and_load_roundtrip() {
         note: String::new(),
         created_at: 1,
         sort_order: 0,
+        builtin: false,
     });
     store.save(&ovr).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(ovr, loaded);
+    // save 播种内置规则：用户规则原样保留，两条内置规则追加在后。
+    assert_eq!(loaded.singbox.rules.len(), 3);
+    assert_eq!(loaded.singbox.rules[0].id, "r1");
+    assert!(loaded.singbox.rules[1].builtin);
+    assert!(loaded.singbox.rules[2].builtin);
 }
 
 /// 构造一份旧版 `local_override.json`（内置订阅 + 内置/自定义模板记录）。
@@ -175,8 +188,8 @@ fn migration_ignores_unsubscribed_and_keeps_rules() {
     // 未订阅 → 不转换 custom；订阅段清空。
     assert!(ovr.custom_rule_sets.is_empty());
     assert!(ovr.rule_set_subscriptions.is_empty());
-    // 内置模板生成的规则保留在 singbox.rules，用户可手动管理。
-    assert_eq!(ovr.singbox.rules.len(), 1);
+    // 内置模板生成的规则保留在 singbox.rules（用户可手动管理），另有 2 条播种的内置规则。
+    assert_eq!(ovr.singbox.rules.len(), 3);
     assert_eq!(ovr.singbox.rules[0].target, "geoip-cn");
     // 场景模板字段清空。
     assert!(ovr.applied_templates.is_empty());
@@ -249,8 +262,8 @@ fn migration_clears_removed_scenario_template_fields() {
 
     assert!(ovr.applied_templates.is_empty());
     assert!(ovr.custom_templates.is_empty());
-    // 规则卡片不被清理触碰。
-    assert_eq!(ovr.singbox.rules.len(), 1);
+    // 规则卡片不被清理触碰（另有 2 条播种的内置规则）。
+    assert_eq!(ovr.singbox.rules.len(), 3);
     assert_eq!(ovr.singbox.rules[0].id, "r1");
 
     // 清理结果已写回磁盘：文件里模板段为空数组，再次 load 幂等。
@@ -297,8 +310,22 @@ fn migration_folds_disabled_master_switch_into_per_item_switches() {
 
     let store = LocalOverrideStore::new(dir.path().to_path_buf());
     let ovr = store.load().unwrap();
-    assert_eq!(ovr.singbox.rules.len(), 2);
-    assert!(ovr.singbox.rules.iter().all(|r| !r.enabled));
+    assert_eq!(ovr.singbox.rules.len(), 4);
+    // 总开关折叠只影响存量规则；播种的内置规则默认启用。
+    assert!(
+        ovr.singbox
+            .rules
+            .iter()
+            .filter(|r| !r.builtin)
+            .all(|r| !r.enabled)
+    );
+    assert!(
+        ovr.singbox
+            .rules
+            .iter()
+            .filter(|r| r.builtin)
+            .all(|r| r.enabled)
+    );
     assert_eq!(ovr.singbox.rule_sets.len(), 1);
     assert!(!ovr.singbox.rule_sets[0].enabled);
 
@@ -343,4 +370,55 @@ fn migration_keeps_per_item_switches_when_master_enabled() {
     let ovr = store.load().unwrap();
     assert!(ovr.singbox.rules[0].enabled);
     assert!(!ovr.singbox.rules[1].enabled);
+}
+
+/// 内置规则「可修改不可删除」（2026-09 物化模型）：
+/// - save 时缺失的内置条目按规格复活到末尾；
+/// - 已存在内置条目的不可变字段（match_type/target/name）被归一化回规格，
+///   用户可改的 enabled/action/sort_order 保留。
+#[test]
+fn save_resurrects_and_normalizes_builtin_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LocalOverrideStore::new(dir.path().to_path_buf());
+
+    // 删除全部内置条目：save 后复活。
+    let ovr = LocalOverride::default();
+    store.save(&ovr).unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.singbox.rules.len(), 2);
+    assert!(loaded.singbox.rules.iter().all(|r| r.builtin));
+
+    // 篡改内置条目的不可变字段 + 调整可改字段：保存后前者归一、后者保留。
+    let mut ovr = store.load().unwrap();
+    let cn = ovr
+        .singbox
+        .rules
+        .iter_mut()
+        .find(|r| r.id == "builtin-cn-direct")
+        .unwrap();
+    cn.match_type = super::super::RuleMatchType::DomainKeyword;
+    cn.target = "tampered".to_string();
+    cn.name = "篡改名".to_string();
+    cn.enabled = false;
+    cn.action = super::super::RuleAction::Proxy;
+    store.save(&ovr).unwrap();
+
+    let loaded = store.load().unwrap();
+    let cn = loaded
+        .singbox
+        .rules
+        .iter()
+        .find(|r| r.id == "builtin-cn-direct")
+        .unwrap();
+    assert!(matches!(
+        cn.match_type,
+        super::super::RuleMatchType::RuleSet
+    ));
+    assert_eq!(
+        cn.target,
+        "geosite-private,geoip-private,geosite-cn,geoip-cn"
+    );
+    assert_eq!(cn.name, "内置：私有与国内直连");
+    assert!(!cn.enabled, "user-toggleable enabled must be preserved");
+    assert!(matches!(cn.action, super::super::RuleAction::Proxy));
 }

@@ -140,14 +140,8 @@ fn singbox_template_builds_groups_and_route() {
     assert_eq!(cfg["route"]["final"], "proxy");
     assert_eq!(
         cfg["route"]["rules"],
-        json!([
-            {
-                "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
-                "outbound": "direct"
-            },
-            { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
-        ]),
-        "CN-split baseline route rules (4 direct sets merged into one rule)"
+        json!([]),
+        "2026-09 起模板不再携带基线路由规则（内置 CN 分流规则由 local_override 物化注入）"
     );
     assert_eq!(cfg["route"]["auto_detect_interface"], true);
     assert_eq!(
@@ -392,13 +386,8 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
         .unwrap();
     assert_eq!(
         cfg["route"]["rules"],
-        json!([
-            {
-                "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
-                "outbound": "direct"
-            },
-            { "rule_set": ["geolocation-!cn"], "outbound": "proxy" }
-        ])
+        json!([]),
+        "2026-09 起模板不再携带基线路由规则（内置 CN 分流规则由 local_override 物化注入）"
     );
 
     let composed = compose_singbox_config(&cfg, 17890, Some(mitm_chain())).unwrap();
@@ -409,19 +398,12 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     assert_eq!(inbounds[0]["tag"], "main-in");
     assert_eq!(inbounds[1]["tag"], "mitm-return");
 
-    // MITM whitelist rule prepends ahead of the template CN-split baseline.
+    // 模板不再携带基线路由规则：compose 后只剩 MITM 白名单（内置 CN 分流规则改由
+    // local_override 物化注入，见 BUILTIN_ROUTE_RULES）。
     let rules = composed["route"]["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 3);
+    assert_eq!(rules.len(), 1);
     assert_eq!(rules[0]["outbound"], "pp-mitm");
     assert_eq!(rules[0]["domain_suffix"], json!(["example.com"]));
-    assert_eq!(
-        rules[1],
-        json!({
-            "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
-            "outbound": "direct"
-        }),
-        "merged CN-split baseline stays after the MITM whitelist (user rule wins)"
-    );
     assert_eq!(composed["route"]["final"], "proxy");
     // Groups and nodes preserved.
     let outbounds = composed["outbounds"].as_array().unwrap();

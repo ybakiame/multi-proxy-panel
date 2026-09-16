@@ -227,6 +227,7 @@ async fn preview_core_config_injects_active_local_override_rules() {
                 note: String::new(),
                 created_at: 0,
                 sort_order: 0,
+                builtin: false,
             }],
             rule_sets: Vec::new(),
         },

@@ -239,9 +239,17 @@ fn build_singbox_rule_set_entry(rs: &super::LocalRuleSetRef) -> Option<Value> {
 // ---------------------------------------------------------------------------
 
 fn inject_singbox_rules(obj: &mut serde_json::Map<String, Value>, ovr: &CoreLocalOverride) {
-    let mut local_rules: Vec<Value> = ovr
-        .rules
-        .iter()
+    // 统一排序：内置规则与用户规则同处一个列表（物化模型，2026-09），渲染前显式按
+    // （sort_order, created_at, id）排序，不再依赖存储顺序。
+    let mut ordered: Vec<&LocalRule> = ovr.rules.iter().collect();
+    ordered.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then(a.created_at.cmp(&b.created_at))
+            .then(a.id.cmp(&b.id))
+    });
+    let mut local_rules: Vec<Value> = ordered
+        .into_iter()
         .filter(|r| r.enabled)
         .filter(|r| !matches!(r.match_type, RuleMatchType::Final))
         .map(build_singbox_rule_entry)
