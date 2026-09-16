@@ -36,8 +36,22 @@ pub struct DnsProbeInput {
     pub domain: Option<String>,
 }
 
+/// 探测结果：往返延迟 + 应答地址（A/AAAA）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsProbeResult {
+    /// 往返延迟（毫秒）。
+    pub latency_ms: u64,
+    /// 应答中的 IP 地址（A / AAAA 记录，字符串形态）。
+    pub answers: Vec<String>,
+}
+
 /// 探测入口：返回往返延迟（毫秒）或错误文案（UI 直接展示）。
 pub async fn probe_dns_server(input: &DnsProbeInput) -> Result<u64, String> {
+    Ok(probe_dns_server_full(input).await?.latency_ms)
+}
+
+/// 完整探测入口：往返延迟 + 应答 IP 列表（诊断工具用）。
+pub async fn probe_dns_server_full(input: &DnsProbeInput) -> Result<DnsProbeResult, String> {
     let server = input.server.trim();
     if server.is_empty() {
         return Err("服务器地址为空".to_string());
@@ -97,7 +111,7 @@ fn check_dns_response(query: &[u8], response: &[u8]) -> Result<(), String> {
 }
 
 /// UDP 直连探测。
-async fn probe_udp(server: &str, port: u16, query: &[u8]) -> Result<u64, String> {
+async fn probe_udp(server: &str, port: u16, query: &[u8]) -> Result<DnsProbeResult, String> {
     // 按目标地址族选择本地绑定地址（v6 服务器需 v6 本地 socket）。
     let bind_addr = match server.parse::<IpAddr>() {
         Ok(IpAddr::V6(_)) => "[::]:0",
@@ -111,19 +125,23 @@ async fn probe_udp(server: &str, port: u16, query: &[u8]) -> Result<u64, String>
         .await
         .map_err(|e| format!("UDP 连接失败: {e}"))?;
     let started = Instant::now();
-    tokio::time::timeout(PROBE_TIMEOUT, async {
+    let answers = tokio::time::timeout(PROBE_TIMEOUT, async {
         socket.send(query).await.map_err(|e| e.to_string())?;
         let mut buf = [0u8; 512];
         let len = socket.recv(&mut buf).await.map_err(|e| e.to_string())?;
-        check_dns_response(query, &buf[..len])
+        check_dns_response(query, &buf[..len])?;
+        Ok::<_, String>(parse_dns_answers(&buf[..len]))
     })
     .await
     .map_err(|_| "探测超时".to_string())??;
-    Ok(started.elapsed().as_millis() as u64)
+    Ok(DnsProbeResult {
+        latency_ms: started.elapsed().as_millis() as u64,
+        answers,
+    })
 }
 
 /// DoT（RFC 7858）探测：TLS 建立后发送 2 字节长度前缀的 wireformat 查询。
-async fn probe_tls(server: &str, port: u16, query: &[u8]) -> Result<u64, String> {
+async fn probe_tls(server: &str, port: u16, query: &[u8]) -> Result<DnsProbeResult, String> {
     let started = Instant::now();
     let stream = tokio::time::timeout(
         PROBE_TIMEOUT,
@@ -152,7 +170,7 @@ async fn probe_tls(server: &str, port: u16, query: &[u8]) -> Result<u64, String>
     let query_len = u16::try_from(query.len()).map_err(|_| "查询包过长".to_string())?;
     let mut framed = query_len.to_be_bytes().to_vec();
     framed.extend_from_slice(query);
-    tokio::time::timeout(PROBE_TIMEOUT, async {
+    let answers = tokio::time::timeout(PROBE_TIMEOUT, async {
         tls.write_all(&framed).await.map_err(|e| e.to_string())?;
         let mut len_buf = [0u8; 2];
         tls.read_exact(&mut len_buf)
@@ -164,15 +182,19 @@ async fn probe_tls(server: &str, port: u16, query: &[u8]) -> Result<u64, String>
         }
         let mut resp = vec![0u8; resp_len];
         tls.read_exact(&mut resp).await.map_err(|e| e.to_string())?;
-        check_dns_response(query, &resp)
+        check_dns_response(query, &resp)?;
+        Ok::<_, String>(parse_dns_answers(&resp))
     })
     .await
     .map_err(|_| "探测超时".to_string())??;
-    Ok(started.elapsed().as_millis() as u64)
+    Ok(DnsProbeResult {
+        latency_ms: started.elapsed().as_millis() as u64,
+        answers,
+    })
 }
 
 /// DoH（RFC 8484）探测：POST `application/dns-message` 到 `/dns-query`。
-async fn probe_https(server: &str, port: u16, query: &[u8]) -> Result<u64, String> {
+async fn probe_https(server: &str, port: u16, query: &[u8]) -> Result<DnsProbeResult, String> {
     let url = if port == 443 {
         format!("https://{server}/dns-query")
     } else {
@@ -199,7 +221,77 @@ async fn probe_https(server: &str, port: u16, query: &[u8]) -> Result<u64, Strin
         .await
         .map_err(|e| format!("DoH 读取响应失败: {e}"))?;
     check_dns_response(query, &body)?;
-    Ok(started.elapsed().as_millis() as u64)
+    Ok(DnsProbeResult {
+        latency_ms: started.elapsed().as_millis() as u64,
+        answers: parse_dns_answers(&body),
+    })
+}
+
+/// 解析 wireformat 响应中的 A / AAAA 应答地址（诊断展示用）。
+///
+/// 依次跳过 12 字节头部与问题段（label 序列或 0xC0 压缩指针），再逐个读应答记录；
+/// 仅提取 A（4 字节）/ AAAA（16 字节）RDATA，其余类型跳过。包截断 / 指针越界时返回
+/// 已解析到的部分（不报错——探测成败已由 `check_dns_response` 裁定）。
+pub fn parse_dns_answers(response: &[u8]) -> Vec<String> {
+    let mut answers = Vec::new();
+    if response.len() < 12 {
+        return answers;
+    }
+    let qdcount = u16::from_be_bytes([response[4], response[5]]) as usize;
+    let ancount = u16::from_be_bytes([response[6], response[7]]) as usize;
+    let mut pos = 12;
+
+    // 跳过名字（label 序列直到 0，或 0xC0 压缩指针两字节）。
+    fn skip_name(buf: &[u8], mut pos: usize) -> Option<usize> {
+        loop {
+            let len = *buf.get(pos)? as usize;
+            if len == 0 {
+                return Some(pos + 1);
+            }
+            if len & 0xC0 == 0xC0 {
+                return Some(pos + 2);
+            }
+            if len & 0xC0 != 0 {
+                return None;
+            }
+            pos = pos.checked_add(1 + len)?;
+        }
+    }
+
+    for _ in 0..qdcount {
+        match skip_name(response, pos).and_then(|p| p.checked_add(4)) {
+            Some(p) if p <= response.len() => pos = p,
+            _ => return answers,
+        }
+    }
+    for _ in 0..ancount {
+        let Some(p) = skip_name(response, pos) else {
+            break;
+        };
+        pos = p;
+        if pos + 10 > response.len() {
+            break;
+        }
+        let rtype = u16::from_be_bytes([response[pos], response[pos + 1]]);
+        let rdlen = u16::from_be_bytes([response[pos + 8], response[pos + 9]]) as usize;
+        pos += 10;
+        if pos + rdlen > response.len() {
+            break;
+        }
+        let rdata = &response[pos..pos + rdlen];
+        match (rtype, rdlen) {
+            (1, 4) => answers
+                .push(std::net::Ipv4Addr::new(rdata[0], rdata[1], rdata[2], rdata[3]).to_string()),
+            (28, 16) => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(rdata);
+                answers.push(std::net::Ipv6Addr::from(octets).to_string());
+            }
+            _ => {}
+        }
+        pos += rdlen;
+    }
+    answers
 }
 
 #[cfg(test)]
@@ -245,6 +337,39 @@ mod tests {
         assert!(check_dns_response(&query, &bad_rcode).is_err());
 
         assert!(check_dns_response(&query, &[0u8; 4]).is_err());
+    }
+
+    /// 应答解析：构造含压缩指针 + A/AAAA/CNAME 混合应答，仅提取 A/AAAA 地址。
+    #[test]
+    fn parse_answers_extracts_a_and_aaaa() {
+        // 手工构造：header(qd=1, an=3) + question(gstatic.com A IN)
+        // + answer1(name=压缩指针 0xC00C, A, 1.2.3.4)
+        // + answer2(CNAME，跳过) + answer3(AAAA, ::1)
+        let mut resp = build_dns_query(0x1234, "gstatic.com").unwrap();
+        resp[6] = 0;
+        resp[7] = 3; // ANCOUNT=3
+        let answer = |rtype: u16, rdlen: u16| {
+            let mut v = vec![0xC0, 0x0C]; // 压缩指针指向问题段域名
+            v.extend_from_slice(&rtype.to_be_bytes());
+            v.extend_from_slice(&1u16.to_be_bytes()); // IN
+            v.extend_from_slice(&60u32.to_be_bytes()); // TTL
+            v.extend_from_slice(&rdlen.to_be_bytes());
+            v
+        };
+        resp.extend_from_slice(&answer(1, 4));
+        resp.extend_from_slice(&[1, 2, 3, 4]);
+        resp.extend_from_slice(&answer(5, 4));
+        resp.extend_from_slice(&[0xC0, 0x0C, 0xC0, 0x0C]); // 伪 CNAME 目标
+        resp.extend_from_slice(&answer(28, 16));
+        resp.extend_from_slice(&[0u8; 15]);
+        resp.push(1); // ::1
+
+        let answers = parse_dns_answers(&resp);
+        assert_eq!(answers, vec!["1.2.3.4".to_string(), "::1".to_string()]);
+
+        // 截断包不 panic，返回已解析部分。
+        let truncated = &resp[..resp.len() - 8];
+        let _ = parse_dns_answers(truncated);
     }
 
     /// 空服务器地址与不支持类型给出明确错误（不发包）。
