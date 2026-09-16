@@ -184,6 +184,7 @@ pub fn run() {
             pp_client_tauri::commands::config_slices_save,
             pp_client_tauri::commands::baseline_view_get,
             pp_client_tauri::commands::builtin_dns_slice_get,
+            pp_client_tauri::commands::diagnose_connectivity_run,
             pp_client_tauri::commands::dns_server_probe,
             pp_client_tauri::commands::proxies_list,
             pp_client_tauri::commands::proxies_select,
