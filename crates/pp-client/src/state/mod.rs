@@ -344,6 +344,12 @@ impl ClientState {
                 return Err(e);
             }
         };
+        // 启动时补齐「被引用但尚未下载」的社区规则集（best-effort）：用户在市场/规则集
+        // 页添加 remote 规则集后可能从未点过「立即更新」，backing 文件缺失会导致引用它的
+        // 规则在物化阶段被剥离（静默失效）；启动时补下载一次，失败仅告警（规则仍被剥
+        // 离，核心照常启动）。
+        crate::local_override::download_missing_rule_sets_warn_only(&self.config.data_dir).await;
+
         // [ADR-0002] Inject local override after compose, before panel features.
         crate::local_override::inject_local_override_warn_only(
             &self.config.data_dir,

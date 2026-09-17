@@ -74,3 +74,32 @@ pub fn inject_local_override_warn_only(data_dir: &std::path::Path, config: &mut 
     // 仅注入「被注入的 rule_set 规则引用」的 tag（见 apply_custom_rule_sets 语义）。
     apply_custom_rule_sets(config, &manager, &core.rules, &ovr.custom_rule_sets);
 }
+
+/// 启动前补齐「backing 文件缺失的 remote 规则集」（best-effort，全部失败不阻断启动）。
+///
+/// 背景：社区/市场规则集是 remote 资源，添加后需「立即更新」才有本地内容；用户未下载时
+/// 引用它的规则会在规则集物化阶段被剥离（`ruleset_manager`），表现为「规则加了但不生
+/// 效」。启动时统一补下载一次（逐个尝试，单条失败仅告警），让「添加即用」成立。
+pub async fn download_missing_rule_sets_warn_only(data_dir: &std::path::Path) {
+    let store = LocalOverrideStore::new(data_dir.to_path_buf());
+    let Ok(ovr) = store.load() else {
+        return;
+    };
+    let manager = RuleSetManager::new(data_dir.to_path_buf());
+    for rs in &ovr.custom_rule_sets {
+        if !matches!(rs.source, CustomRuleSetSource::Remote { .. })
+            || manager.has_custom_rule_set_file(rs)
+        {
+            continue;
+        }
+        if let Err(e) = manager.download_custom_rule_set(rs).await {
+            tracing::warn!(
+                tag = %rs.tag,
+                error = %e,
+                "规则集启动补下载失败（引用它的规则本次启动不生效）"
+            );
+        } else {
+            tracing::info!(tag = %rs.tag, "规则集启动补下载完成");
+        }
+    }
+}
