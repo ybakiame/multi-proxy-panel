@@ -30,4 +30,6 @@ mod real_core;
 #[cfg(test)]
 mod resolve;
 #[cfg(test)]
+mod tun;
+#[cfg(test)]
 mod ui;

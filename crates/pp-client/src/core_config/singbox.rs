@@ -426,7 +426,12 @@ pub fn build_singbox_tun_inbound(features: &PanelFeatures, is_android: bool) -> 
     );
     tun.insert("mtu".to_string(), json!(9000));
     tun.insert("auto_route".to_string(), json!(features.tun_auto_route));
-    tun.insert("stack".to_string(), json!(features.tun_stack));
+    // `go`（sing-tun 自研栈，上游 1.15+ 唯一栈）的正确形态是**不写 stack 字段**
+    // （见 sing-box 迁移指南 Migrate TUN Stack：移除该字段即启用 sing-tun 栈），
+    // 而不是序列化 "go"——后者在 1.15+ 会被废弃警告/拒绝。
+    if features.tun_stack != "go" {
+        tun.insert("stack".to_string(), json!(features.tun_stack));
+    }
     if is_android {
         tun.insert("strict_route".to_string(), json!(true));
     }
