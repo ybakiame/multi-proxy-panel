@@ -63,13 +63,16 @@ open class RustPlugin : Plugin<Project> {
                     val targetName = targetPair.value
                     val targetArch = archList[targetPair.index]
                     val targetArchCapitalized = targetArch.replaceFirstChar { it.uppercase() }
-                    val targetBuildTask = project.tasks.maybeCreate(
+                    // BuildTask 改为 abstract + 注入 ExecOperations 后需用 tasks.register 惰性创建；
+                    // projectDir 在配置期捕获，避免执行期访问 Task.project（Gradle 9 起弃用）。
+                    val targetBuildTask = project.tasks.register(
                         "rustBuild$targetArchCapitalized$profileCapitalized",
                         BuildTask::class.java
-                    ).apply {
+                    ) {
                         group = TASK_GROUP
                         description = "Build dynamic library in $profile mode for $targetArch"
                         rootDirRel = config.rootDirRel
+                        projectDir = project.projectDir.path
                         target = targetName
                         release = profile == "release"
                     }

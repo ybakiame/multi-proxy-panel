@@ -5,10 +5,19 @@ import org.gradle.api.GradleException
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.TaskAction
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
 
-open class BuildTask : DefaultTask() {
+// Gradle 9 起 Project.exec / 执行期访问 Task.project 已被移除或弃用，
+// 改为注入 ExecOperations，并在配置期捕获 projectDir（对齐 tauri 上游模板）。
+abstract class BuildTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
     @Input
     var rootDirRel: String? = null
+    @Input
+    var projectDir: String? = null
     @Input
     var target: String? = null
     @Input
@@ -27,7 +36,7 @@ open class BuildTask : DefaultTask() {
                     "$executable.cmd",
                     "$executable.bat",
                 )
-                
+
                 var lastException: Exception = e
                 for (fallback in fallbacks) {
                     try {
@@ -46,17 +55,18 @@ open class BuildTask : DefaultTask() {
 
     fun runTauriCli(executable: String) {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
+        val projectDir = projectDir ?: throw GradleException("projectDir cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
         val args = listOf("tauri", "android", "android-studio-script");
 
-        project.exec {
-            workingDir(File(project.projectDir, rootDirRel))
+        execOperations.exec {
+            workingDir(File(projectDir, rootDirRel))
             executable(executable)
             args(args)
-            if (project.logger.isEnabled(LogLevel.DEBUG)) {
+            if (logger.isEnabled(LogLevel.DEBUG)) {
                 args("-vv")
-            } else if (project.logger.isEnabled(LogLevel.INFO)) {
+            } else if (logger.isEnabled(LogLevel.INFO)) {
                 args("-v")
             }
             if (release) {
