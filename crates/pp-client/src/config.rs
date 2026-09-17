@@ -146,7 +146,15 @@ impl Default for ClientConfig {
             mitm: MitmClientConfig::default(),
             system_proxy_enabled: false,
             tun_enabled: false,
-            tun_stack: "mixed".to_string(),
+            // Android 默认 gVisor（纯用户态栈，兼容性最好）：system/mixed 的 system TCP
+            // 栈在部分设备上收不到任何 TCP 连接（实测：UDP 正常、TCP 全灭，gVisor 恢复）；
+            // 桌面保持 mixed。存量 client.json 中已持久化的值不受影响。
+            tun_stack: if cfg!(target_os = "android") {
+                "gvisor"
+            } else {
+                "mixed"
+            }
+            .to_string(),
             tun_auto_route: true,
             // IPv6 默认关闭：DNS 策略 ipv4_only，规避无 v6 出栈节点的 AAAA 连接失败。
             ipv6_enabled: false,
