@@ -92,7 +92,7 @@ export function MobileSelectSheet({
                         onClick={() => handleSelect(opt.value)}
                         className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-left transition-colors ${
                           isSelected
-                            ? "border-primary/50 bg-primary/5"
+                            ? "border-accent/50 bg-accent/5"
                             : "border-border/70 active:bg-surface-secondary/60"
                         }`}
                       >
@@ -100,7 +100,7 @@ export function MobileSelectSheet({
                           <span className="truncate text-sm font-medium text-foreground">{opt.label}</span>
                           {opt.description && <span className="truncate text-xs text-muted">{opt.description}</span>}
                         </span>
-                        {isSelected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                        {isSelected && <CheckIcon className="size-5 shrink-0 text-accent" aria-hidden="true" />}
                       </button>
                     );
                   })}

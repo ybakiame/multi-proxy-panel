@@ -94,14 +94,14 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
                       disabled={selecting}
                       onClick={() => void selectSubscription(sub.id)}
                       className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
-                        isCurrent ? "border-primary/50 bg-primary/5" : "border-border/70"
+                        isCurrent ? "border-accent/50 bg-accent/5" : "border-border/70"
                       }`}
                     >
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="truncate text-sm font-medium text-foreground">{sub.name}</span>
                         <span className="text-xs text-muted">{sub.node_count} 个节点</span>
                       </span>
-                      {isCurrent && <span className="shrink-0 text-xs font-medium text-primary">使用中</span>}
+                      {isCurrent && <span className="shrink-0 text-xs font-medium text-accent">使用中</span>}
                     </button>
                   );
                 })

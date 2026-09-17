@@ -182,7 +182,7 @@ export default function Logs() {
                       onClick={() => void handleSelectFile(name)}
                       className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80 ${
                         selected
-                          ? "border-primary/60 bg-primary/10"
+                          ? "border-accent/60 bg-accent/10"
                           : "border-border/60 bg-surface hover:bg-surface-secondary/60"
                       }`}
                     >
@@ -228,7 +228,7 @@ export default function Logs() {
             ) : (
               <div
                 ref={tailBoxRef}
-                className="max-h-[55vh] overflow-auto rounded-medium border border-border bg-default-50 p-3"
+                className="max-h-[55vh] overflow-auto rounded-lg border border-border bg-surface-secondary/60 p-3"
               >
                 <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
                   {fileContent || "(空文件)"}

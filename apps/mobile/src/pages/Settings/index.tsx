@@ -2,13 +2,15 @@ import { BellAlertIcon, CodeBracketIcon, GlobeAltIcon, InformationCircleIcon } f
 import { useNavigate } from "react-router-dom";
 import { EntryLinkCard } from "../../components/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
+import { AppearanceCard } from "./AppearanceCard";
 
 /**
  * 设置主页（ADR-0003 M5.3，列表化重构）。Tab 页（非二级页），保留 PageShell 标题。
  *
- * 各功能分组由原分组卡片改为 `EntryLinkCard` 列表入口，卡片内容抽离到对应二级子页：
- * VPN 通知 / GitHub 访问 / 开发者工具 / 关于。表单状态由各子页独立实例化
- * `useSettingsConfig` 消费（保存链路经共享 CONFIG_KEY 缓存）。
+ * 「外观」为直挂设置卡（主题切换高频操作，不入二级页）；其余功能分组为
+ * `EntryLinkCard` 列表入口，卡片内容抽离到对应二级子页：VPN 通知 / GitHub 访问 /
+ * 开发者工具 / 关于。表单状态由各子页独立实例化 `useSettingsConfig` 消费
+ * （保存链路经共享 CONFIG_KEY 缓存）。
  *
  * 入站管理与 Clash API 已迁移为配置页必选切片入口（`/config/inbounds`、`/config/experimental`）。
  */
@@ -21,6 +23,8 @@ export default function Settings() {
         <h1 className="text-xl font-semibold">设置</h1>
         <p className="text-sm text-muted">客户端全局设置 · 修改即时保存</p>
       </div>
+
+      <AppearanceCard />
 
       <div className="flex flex-col gap-4">
         <EntryLinkCard

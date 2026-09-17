@@ -3,6 +3,7 @@ import { ToastProvider } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { isTauriEnv } from "@pp/client-core";
 import { TABS, TabBar } from "./components/TabBar";
+import { ThemeProvider } from "./theme";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Panel from "./pages/Panel";
@@ -61,7 +62,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <p className="max-w-md break-all text-center text-sm text-muted">{this.state.error.message}</p>
           <button
             type="button"
-            className="min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="min-h-11 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             onClick={this.handleReload}
           >
             重新加载
@@ -80,7 +81,7 @@ function TauriRequired() {
       <h1 className="text-xl font-semibold">请在客户端内运行</h1>
       <p className="max-w-md text-center text-sm text-muted">
         当前页面通过浏览器直接访问，缺少 Tauri 运行环境，所有本地命令不可用。 请使用{" "}
-        <code className="rounded bg-default-100 px-1 py-0.5">bun run tauri android dev</code> 启动移动客户端（端口
+        <code className="rounded bg-default px-1 py-0.5">bun run tauri android dev</code> 启动移动客户端（端口
         1430），或运行已构建的 ProxyPanel 应用。
       </p>
     </div>
@@ -176,8 +177,11 @@ export default function App() {
   return (
     <HashRouter>
       <ErrorBoundary>
-        <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
-        <AppContent />
+        {/* 主题能力（浅色/深色/跟随系统）：根部常驻挂载，保证「跟随系统」时持续监听系统切换 */}
+        <ThemeProvider>
+          <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
+          <AppContent />
+        </ThemeProvider>
       </ErrorBoundary>
     </HashRouter>
   );

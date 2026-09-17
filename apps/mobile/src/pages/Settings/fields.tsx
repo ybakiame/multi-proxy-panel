@@ -2,7 +2,7 @@ import { Switch } from "@heroui/react";
 
 /** 移动设置页输入框统一样式（对齐 SubscriptionFormSheet 的输入外观）。 */
 export const settingsInputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-primary/60 disabled:opacity-60";
+  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
 
 export const settingsLabelClass = "text-sm font-medium text-foreground";
 

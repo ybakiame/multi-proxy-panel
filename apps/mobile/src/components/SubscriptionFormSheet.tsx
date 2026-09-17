@@ -72,7 +72,7 @@ export function SubscriptionFormSheet({ isOpen, editing, busy, onClose, onSave }
                 placeholder="我的机场"
                 aria-required="true"
                 disabled={busy}
-                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-primary/60 disabled:opacity-60"
+                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60"
               />
             </label>
             <label className="flex flex-col gap-1.5">
@@ -88,7 +88,7 @@ export function SubscriptionFormSheet({ isOpen, editing, busy, onClose, onSave }
                 spellCheck={false}
                 inputMode="url"
                 disabled={busy}
-                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-primary/60 disabled:opacity-60"
+                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60"
               />
             </label>
             <label className="flex flex-col gap-1.5">
@@ -101,7 +101,7 @@ export function SubscriptionFormSheet({ isOpen, editing, busy, onClose, onSave }
                 autoCorrect="off"
                 spellCheck={false}
                 disabled={busy}
-                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-primary/60 disabled:opacity-60"
+                className="h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60"
               />
               <span className="text-xs text-muted">部分订阅源按 UA 返回不同格式（如 clash / sing-box）</span>
             </label>

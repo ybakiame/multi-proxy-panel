@@ -1,9 +1,26 @@
 <!doctype html>
-<html lang="zh-CN" class="dark" data-theme="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ProxyPanel Mobile</title>
+    <script>
+      // 主题预置（首帧前执行，避免 React 挂载前的闪变）：与 HeroUI useTheme 的
+      // 存储键/值域一致（heroui-theme：light / dark / system）。无记录时保持深色
+      // （历史版本的固定主题，行为不变）；system 跟随系统深浅色。
+      (function () {
+        var stored = null;
+        try {
+          stored = localStorage.getItem("heroui-theme");
+        } catch (e) {
+          /* 存储不可用（如 WebView 私密模式）：按无记录处理 */
+        }
+        var systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = stored === "light" || stored === "dark" ? stored : stored === "system" ? (systemDark ? "dark" : "light") : "dark";
+        document.documentElement.classList.add(resolved);
+        document.documentElement.setAttribute("data-theme", resolved);
+      })();
+    </script>
   </head>
   <body class="bg-background text-foreground antialiased">
     <div id="root"></div>

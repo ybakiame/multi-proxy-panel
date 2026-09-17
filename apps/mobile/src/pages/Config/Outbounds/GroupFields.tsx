@@ -78,14 +78,14 @@ export function GroupFields({
                     aria-pressed={selected}
                     onClick={() => toggleMember(candidate.value)}
                     className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors ${
-                      selected ? "border-primary/50 bg-primary/5" : "border-border/70 active:bg-surface-secondary/60"
+                      selected ? "border-accent/50 bg-accent/5" : "border-border/70 active:bg-surface-secondary/60"
                     }`}
                   >
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium text-foreground">{candidate.label}</span>
                       <span className="truncate font-mono text-xs text-muted">{candidate.value}</span>
                     </span>
-                    {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                    {selected && <CheckIcon className="size-5 shrink-0 text-accent" aria-hidden="true" />}
                   </button>
                 );
               })}

@@ -70,7 +70,7 @@ export function SubscriptionRow({
   return (
     <div
       className={`flex flex-col overflow-hidden rounded-xl border transition-colors ${
-        isActive ? "border-primary/60 bg-primary/5" : "border-border/60 bg-surface"
+        isActive ? "border-accent/60 bg-accent/5" : "border-border/60 bg-surface"
       }`}
     >
       <div className="flex items-center gap-1 px-2">
