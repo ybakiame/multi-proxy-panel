@@ -20,12 +20,32 @@ export interface DnsServerPreset {
   serverPort: number | null;
   /** 建议 tag（冲突时由 `uniquePresetTag` 追加序号）。 */
   tag: string;
-  /** 分组展示与行内提示（境内 / 境外）。 */
-  group: "cn" | "global";
+  /** 分组展示与行内提示（内置默认 / 境内 / 境外）。 */
+  group: "builtin" | "cn" | "global";
+  /** 拨号出站（如内置 `proxy` 经代理出站；空 = 默认直连）。 */
+  detour?: string;
 }
 
-/** 内置预置目录（先境内后境外，同 ISP 内 udp → tls → https）。 */
+/** 内置预置目录（先内置默认，再境内后境外，同 ISP 内 udp → tls → https）。 */
 export const DNS_SERVER_PRESETS: readonly DnsServerPreset[] = [
+  // ---- 内置默认（与运行配置的内置 DNS 一致；删除内置默认后可从目录一键找回） ----
+  {
+    isp: "内置默认（直连）",
+    serverType: "https",
+    server: "223.5.5.5",
+    serverPort: 443,
+    tag: "local",
+    group: "builtin",
+  },
+  {
+    isp: "内置默认（经代理）",
+    serverType: "udp",
+    server: "8.8.8.8",
+    serverPort: 53,
+    tag: "proxy",
+    group: "builtin",
+    detour: "proxy",
+  },
   // ---- 境内 ----
   { isp: "AliDNS", serverType: "udp", server: "223.5.5.5", serverPort: 53, tag: "alidns-udp", group: "cn" },
   { isp: "AliDNS", serverType: "udp", server: "223.6.6.6", serverPort: 53, tag: "alidns-udp-2", group: "cn" },

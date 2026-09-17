@@ -1,4 +1,4 @@
-import { GlobeAltIcon, HomeModernIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
+import { GlobeAltIcon, HomeModernIcon, PencilSquareIcon, Square2StackIcon } from "@heroicons/react/24/outline";
 import { Button, Modal } from "@heroui/react";
 import type { DnsServerPreset } from "@pp/client-core";
 import { DNS_SERVER_PRESETS } from "@pp/client-core";
@@ -24,6 +24,7 @@ interface DnsServerPresetSheetProps {
  */
 export function DnsServerPresetSheet({ isOpen, existingTags, onClose, onPick, onCustom }: DnsServerPresetSheetProps) {
   const groups: { key: DnsServerPreset["group"]; label: string; icon: typeof HomeModernIcon }[] = [
+    { key: "builtin", label: "内置默认", icon: Square2StackIcon },
     { key: "cn", label: "境内常用", icon: HomeModernIcon },
     { key: "global", label: "境外常用", icon: GlobeAltIcon },
   ];

@@ -52,7 +52,7 @@ export function useDnsServers(setDraft: React.Dispatch<React.SetStateAction<DnsS
         server_port: preset.serverPort,
         inet4_range: "",
         inet6_range: "",
-        detour: "",
+        detour: preset.detour ?? "",
         strategy: null,
         domain_resolver: "",
       };
