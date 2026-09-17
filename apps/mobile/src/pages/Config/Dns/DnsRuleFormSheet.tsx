@@ -102,11 +102,6 @@ export function DnsRuleFormSheet({
   }, [editing, serverOptions]);
 
   /**
-   * 编辑已有 `rule_set` 规则时若其原 target 不在候选中（规则集已删除/尚未添加），
-   * 追加「原值保留」项——选择器显示原值且不强清，由用户决定改选或保留（同
-   * `RuleEditSheet`；保留且规则集不存在时，引用该 tag 的规则集不会注入）。
-   */
-  /**
    * 规则集多选候选：编辑存量 rule_set 规则时若其原 tag 不在候选中（自定义规则集已删
    * 除/尚未添加），追加「原值保留」项——保持勾选态并标注，由用户决定取消或保留
    * （对齐路由 RuleEditSheet）。
@@ -132,11 +127,9 @@ export function DnsRuleFormSheet({
           ? null
           : "出站模式无效"
       : matchType === "rule_set"
-        ? target.trim() === ""
-          ? "请选择规则集"
-          : effectiveRuleSetOptions.some((option) => option.value === target.trim())
-            ? null
-            : "规则集不存在"
+        ? ruleSetTags.length === 0
+          ? "请至少选择一个规则集"
+          : null
         : matchType === "query_type"
           ? target.trim() === ""
             ? "请输入查询类型"
