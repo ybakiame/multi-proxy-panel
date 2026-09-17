@@ -15,12 +15,21 @@ import {
   toastSuccess,
   useProxyStatus,
 } from "@pp/client-core";
-import type { ConfigSlices, DnsRule, DnsServer, DnsSlice, DnsStrategy, LocalOverrideView } from "@pp/client-core";
+import type {
+  ConfigSlices,
+  DnsRule,
+  DnsServer,
+  DnsServerPreset,
+  DnsSlice,
+  DnsStrategy,
+  LocalOverrideView,
+} from "@pp/client-core";
 import { BackHeader } from "../../../components/BackHeader";
 import { isLocalOverrideView } from "../localOverrideGuards";
 import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
 import { DnsFakeipCard } from "./DnsFakeipCard";
+import { DnsRolePickerSheet } from "./DnsRolePickerSheet";
 import { DnsRoutingCard } from "./DnsRoutingCard";
 import { DnsRuleFormSheet } from "./DnsRuleFormSheet";
 import { DnsRuleListSection } from "./DnsRuleListSection";
@@ -118,6 +127,8 @@ export default function DnsPage() {
   // 服务器库逻辑（启用/弃用、预置物化、批量探测）拆分为独立 hook。
   const { probes, probing, handleToggleServer, handlePickPreset, handleProbeServers } = useDnsServers(setDraft);
   const [editingServer, setEditingServer] = useState<DnsServer | null>(null);
+  // 内置角色服务器（local / proxy）更换目录：非 null 时弹出选择 Sheet。
+  const [rolePick, setRolePick] = useState<DnsServer | null>(null);
   const [pendingServerDelete, setPendingServerDelete] = useState<DnsServer | null>(null);
   const [ruleSheetOpen, setRuleSheetOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<DnsRule | null>(null);
@@ -201,6 +212,35 @@ export default function DnsPage() {
       );
       return { ...current, servers, final_tag, rules };
     });
+  };
+
+  /**
+   * 内置角色服务器（local / proxy）原位替换：tag 与 enabled（强制重新启用）不变，
+   * 名称/地址/类型/端口/出站取预置项——引用该 tag 的分流规则与 final 无需变动。
+   */
+  const handleRolePresetPick = (target: DnsServer, preset: DnsServerPreset) => {
+    setRolePick(null);
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            servers: current.servers.map((server) =>
+              server === target
+                ? {
+                    ...server,
+                    name: preset.isp,
+                    enabled: true,
+                    server: preset.server,
+                    server_type: preset.serverType,
+                    server_port: preset.serverPort,
+                    detour: preset.detour ?? "",
+                    domain_resolver: "",
+                  }
+                : server,
+            ),
+          }
+        : current,
+    );
   };
 
   const handleServerDeleteRequest = (server: DnsServer) => {
@@ -357,6 +397,7 @@ export default function DnsPage() {
               onProbe={() => void handleProbeServers(draft)}
               onEdit={openEditServer}
               onAdd={openAddServer}
+              onRolePick={setRolePick}
             />
 
             <DnsRuleListSection
@@ -391,6 +432,8 @@ export default function DnsPage() {
         }}
         onCustom={openCustomServer}
       />
+      {/* 内置角色服务器（local / proxy）更换目录：点击行弹出，点选原位替换 */}
+      <DnsRolePickerSheet target={rolePick} onClose={() => setRolePick(null)} onPick={handleRolePresetPick} />
       <DnsServerFormSheet
         isOpen={serverSheetOpen}
         editing={editingServer}

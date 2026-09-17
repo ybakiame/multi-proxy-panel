@@ -5,6 +5,7 @@ import type {
   DnsRule,
   DnsRuleAction,
   DnsServer,
+  DnsServerPreset,
   DnsServerType,
   DnsSlice,
   DnsStrategy,
@@ -187,6 +188,37 @@ export const DNS_TARGET_PLACEHOLDER: Record<DnsMatchType, string> = {
   rule_set: "规则集 tag",
   query_type: "如 A,AAAA",
   clash_mode: "",
+};
+
+// ---------------------------------------------------------------------------
+// 内置角色服务器（local / proxy）
+// ---------------------------------------------------------------------------
+
+/** 内置默认 DNS 的角色服务器 tag：`local`（境内直连解析）/ `proxy`（境外解析，经代理出站）。 */
+export type DnsRoleTag = "local" | "proxy";
+
+/** tag 是否为内置角色服务器（`local` / `proxy` 两行；大小写敏感，对齐切片 schema）。 */
+export function dnsRoleTag(tag: string): DnsRoleTag | null {
+  const trimmed = tag.trim();
+  if (trimmed === "local") {
+    return "local";
+  }
+  if (trimmed === "proxy") {
+    return "proxy";
+  }
+  return null;
+}
+
+/** 角色服务器的行内说明（列表副标题前缀）。 */
+export const DNS_ROLE_LABELS: Record<DnsRoleTag, string> = {
+  local: "境内直连",
+  proxy: "境外经代理",
+};
+
+/** 角色服务器可更换的预置目录分组：local 取内置 + 境内，proxy 取内置 + 境外。 */
+export const DNS_ROLE_PRESET_GROUPS: Record<DnsRoleTag, readonly DnsServerPreset["group"][]> = {
+  local: ["builtin", "cn"],
+  proxy: ["builtin", "global"],
 };
 
 // ---------------------------------------------------------------------------
