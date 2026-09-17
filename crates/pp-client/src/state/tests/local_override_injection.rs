@@ -57,7 +57,7 @@ fn injection_injects_all_enabled_rules_regardless_of_templates() {
     let ovr = store.load().unwrap();
     assert!(ovr.custom_templates.is_empty());
     assert!(ovr.applied_templates.is_empty());
-    assert_eq!(ovr.singbox.rules.len(), 4, "2 用户规则 + 2 播种内置规则");
+    assert_eq!(ovr.singbox.rules.len(), 3, "2 用户规则 + 1 播种内置规则");
 
     let mut config = serde_json::json!({ "route": { "rules": [], "final": "direct" } });
     inject_local_override_warn_only(dir.path(), &mut config);
@@ -71,8 +71,8 @@ fn injection_injects_all_enabled_rules_regardless_of_templates() {
         !rules.iter().any(|r| r["domain"] == "off.example"),
         "disabled rule must NOT be injected: {rules:?}"
     );
-    // 1 条启用的用户规则 + 2 条启用的播种内置规则。
-    assert_eq!(rules.len(), 3, "{rules:?}");
+    // 1 条启用的用户规则 + 1 条启用的播种内置规则。
+    assert_eq!(rules.len(), 2, "{rules:?}");
 }
 
 /// 无模板字段的普通文件：所有 enabled 规则注入。
@@ -105,14 +105,15 @@ fn injection_injects_enabled_rules_without_any_template_data() {
     inject_local_override_warn_only(dir.path(), &mut config);
 
     let rules = config["route"]["rules"].as_array().unwrap();
-    // 2 条用户规则 + 2 条播种内置规则（统一排序列表）。
-    assert_eq!(rules.len(), 4, "{rules:?}");
+    // 2 条用户规则 + 1 条播种内置规则（统一排序列表，内置置顶）。
+    assert_eq!(rules.len(), 3, "{rules:?}");
     assert!(rules.iter().any(|r| r["domain"] == "a.example"));
     assert!(rules.iter().any(|r| r["domain"] == "b.example"));
     assert!(
-        rules.iter().any(|r| r["rule_set"]
-            == serde_json::json!(["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"])),
-        "seeded builtin CN-direct rule injected: {rules:?}"
+        rules
+            .iter()
+            .any(|r| r["rule_set"] == serde_json::json!(["geosite-private", "geoip-private"])),
+        "seeded builtin private-direct rule injected: {rules:?}"
     );
 }
 

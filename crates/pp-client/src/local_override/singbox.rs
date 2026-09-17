@@ -167,7 +167,41 @@ pub fn apply_custom_rule_sets(
         })
         .collect();
 
+    // De-duplicate: one entry per tag in `route.rule_set`. A built-in rule set exists both as
+    // the remote entry registered by the template and as a materialized custom entry, so the
+    // user-downloaded custom file wins (local path replaces remote) and sing-box never sees a
+    // duplicated tag.
+    remove_rule_set_entries_by_tag(obj, &entries);
     append_route_rule_set_entries(obj, entries);
+}
+
+/// Remove existing `route.rule_set` entries sharing a tag with `entries` (making room for the
+/// append that follows).
+fn remove_rule_set_entries_by_tag(
+    route_container: &mut serde_json::Map<String, Value>,
+    entries: &[Value],
+) {
+    if entries.is_empty() {
+        return;
+    }
+    let tags: Vec<String> = entries
+        .iter()
+        .filter_map(|entry| entry.get("tag").and_then(Value::as_str).map(String::from))
+        .collect();
+    let Some(arr) = route_container
+        .get_mut("route")
+        .and_then(Value::as_object_mut)
+        .and_then(|route| route.get_mut("rule_set"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    arr.retain(|entry| {
+        entry
+            .get("tag")
+            .and_then(Value::as_str)
+            .is_none_or(|tag| !tags.iter().any(|t| t == tag))
+    });
 }
 
 /// Collect `rule_set` tags referenced by already-rendered DNS rules

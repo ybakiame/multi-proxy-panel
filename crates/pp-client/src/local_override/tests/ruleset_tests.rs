@@ -11,6 +11,7 @@ fn custom(id: &str, tag: &str, source: CustomRuleSetSource) -> CustomRuleSet {
         source,
         last_updated: 0,
         remote_updated_at: 0,
+        builtin: false,
     }
 }
 

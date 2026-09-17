@@ -34,10 +34,12 @@ fn load_missing_file_returns_default() {
     let store = ConfigSlicesStore::new(dir.path().to_path_buf());
     let slices = store.load().unwrap();
     // 2026-09 起：文件缺失也播种内置分组（proxy/auto，可修改不可删除）并落盘。
-    assert_eq!(slices.outbounds.items.len(), 2);
+    assert_eq!(slices.outbounds.items.len(), 4);
     assert!(slices.outbounds.items.iter().all(|i| i.builtin));
     assert_eq!(slices.outbounds.items[0].id, "builtin-group-proxy");
     assert_eq!(slices.outbounds.items[1].id, "builtin-group-auto");
+    assert_eq!(slices.outbounds.items[2].id, "builtin-group-global");
+    assert_eq!(slices.outbounds.items[3].id, "builtin-group-final");
     assert!(store.slices_file().exists(), "seeding persists the file");
 }
 
@@ -48,7 +50,7 @@ fn load_corrupted_file_falls_back_to_default() {
     std::fs::write(store.slices_file(), "not valid json {{{").unwrap();
     let slices = store.load().unwrap();
     // 损坏回退到播种默认值（含 2 条内置分组）。
-    assert_eq!(slices.outbounds.items.len(), 2);
+    assert_eq!(slices.outbounds.items.len(), 4);
     assert!(slices.outbounds.items.iter().all(|i| i.builtin));
 }
 
@@ -60,7 +62,7 @@ fn save_then_load_roundtrip() {
     store.save(&slices).unwrap();
     let loaded = store.load().unwrap();
     // save 播种内置分组：loaded = 用户条目 + 2 条内置条目（追加在后）。
-    assert_eq!(loaded.outbounds.items.len(), 3);
+    assert_eq!(loaded.outbounds.items.len(), 5);
     assert_eq!(loaded.outbounds.items[0].id, "o1");
     assert!(loaded.outbounds.items[1..].iter().all(|i| i.builtin));
     // 用户条目逐字段不变。
@@ -241,7 +243,7 @@ fn save_resurrects_and_normalizes_builtin_groups() {
     // 空保存 → 复活两条内置分组。
     store.save(&ConfigSlices::default()).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.outbounds.items.len(), 2);
+    assert_eq!(loaded.outbounds.items.len(), 4);
     assert!(loaded.outbounds.items.iter().all(|i| i.builtin));
 
     // 篡改 name / 协议类型，调整可调字段：保存后前者归一、后者保留。

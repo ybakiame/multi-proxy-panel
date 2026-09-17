@@ -163,9 +163,10 @@ fn apply_fakeip_mode_injects_fakeip_rules_and_rule_set() {
         "no other DNS rules in this baseline-less subscription"
     );
 
-    // CN-split remote rule sets registered for the core to download (idempotent registry).
+    // Only the non-CN rule set this split depends on is registered: country lists were retired
+    // from the built-in baseline, and FakeIP (opt-in) registers what it needs itself.
     let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 5);
+    assert_eq!(rule_sets.len(), 1);
     let geolocation = rule_sets
         .iter()
         .find(|rs| rs["tag"] == "geolocation-!cn")
@@ -173,10 +174,6 @@ fn apply_fakeip_mode_injects_fakeip_rules_and_rule_set() {
     assert_eq!(
         geolocation["url"],
         "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs"
-    );
-    assert!(
-        rule_sets.iter().any(|rs| rs["tag"] == "geosite-cn"),
-        "geosite-cn registered by the shared baseline registry"
     );
 
     // cache_file deep merge + clash_api sibling preserved.
@@ -326,33 +323,33 @@ fn apply_fakeip_mode_preserves_existing_resolve_rule() {
     );
 }
 
-/// An existing `route.rule_set` entry carrying the same `geosite-cn` tag (user/override supplied)
-/// is respected: no duplicate and no overwrite (the other CN-split tags are still registered).
+/// A user/override-supplied `route.rule_set` entry is respected: no duplicate, no overwrite.
+/// FakeIP only adds the non-CN rule set it needs (country lists are no longer built-in).
 #[test]
 fn apply_fakeip_mode_does_not_override_existing_cn_rule_set() {
     let mut sub = base_sub();
     sub["route"] = json!({
         "rule_set": [{
             "type": "local",
-            "tag": "geosite-cn",
+            "tag": "geolocation-!cn",
             "format": "source",
-            "path": "/tmp/user-cn.json"
+            "path": "/tmp/user-non-cn.json"
         }]
     });
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     apply_panel_features(&mut cfg, &fakeip_features(false));
 
     let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 5, "existing tag must not be duplicated");
+    assert_eq!(rule_sets.len(), 1, "existing tag must not be duplicated");
     assert_eq!(
         rule_sets[0],
         json!({
             "type": "local",
-            "tag": "geosite-cn",
+            "tag": "geolocation-!cn",
             "format": "source",
-            "path": "/tmp/user-cn.json"
+            "path": "/tmp/user-non-cn.json"
         }),
-        "user-supplied geosite-cn rule set must be left untouched"
+        "user-supplied non-CN rule set must be left untouched"
     );
 }
 

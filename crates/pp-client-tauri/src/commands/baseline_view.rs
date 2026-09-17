@@ -59,29 +59,30 @@ pub fn builtin_dns_slice_get(state: State<'_, AppState>) -> Result<DnsSlice, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pp_client::core_config::CN_RULE_SETS;
+    use pp_client::core_config::{BUILTIN_ROUTE_RULES, BUILTIN_RULE_SETS};
 
-    /// 视图规则集与基线真值源 [`CN_RULE_SETS`] 一一对应（tag / URL 不漂移），
-    /// 且路由 / 出站数量与 `route_final` 符合预期。
+    /// 视图规则集与内置规格 [`BUILTIN_RULE_SETS`] 一一对应（tag / URL / id 不漂移），
+    /// 且路由 / DNS / 出站数量与 `route_final` 符合预期。
     #[test]
     fn view_rule_sets_match_baseline_source() {
         let view = baseline_view();
 
-        assert_eq!(view.rule_sets.len(), CN_RULE_SETS.len());
-        for (item, (tag, url)) in view.rule_sets.iter().zip(CN_RULE_SETS) {
-            assert_eq!(item.tag, tag);
-            assert_eq!(item.url, url);
-            assert!(!item.description.is_empty(), "description 不应为空");
+        assert_eq!(view.rule_sets.len(), BUILTIN_RULE_SETS.len());
+        for (item, spec) in view.rule_sets.iter().zip(BUILTIN_RULE_SETS) {
+            assert_eq!(item.id, spec.id);
+            assert_eq!(item.tag, spec.tag);
+            assert_eq!(item.url, spec.url);
+            assert_eq!(item.name, spec.name);
         }
 
-        assert_eq!(
-            view.route_rules.len(),
-            2,
-            "4 个直连规则集已合并为一条内置规则"
-        );
-        assert_eq!(view.dns_rules.len(), 3);
-        assert_eq!(view.outbounds.len(), 4);
-        assert_eq!(view.route_final, "proxy");
+        // 内置路由规则只剩「私有域名 + 私有 IP → 直连」一条。
+        assert_eq!(view.route_rules.len(), 1);
+        assert_eq!(view.route_rules[0].id, BUILTIN_ROUTE_RULES[0].id);
+        // 国家类 DNS 规则已下线，只保留 clash_mode 两条。
+        assert_eq!(view.dns_rules.len(), 2);
+        // proxy / auto / final / global + direct / block。
+        assert_eq!(view.outbounds.len(), 6);
+        assert_eq!(view.route_final, "final");
     }
 
     /// 序列化形态断言：前端消费的字段名 / 类型固定。
@@ -96,11 +97,24 @@ mod tests {
         assert_eq!(value["dns_rules"][0]["server"], "local");
         assert_eq!(value["outbounds"][0]["tag"], "proxy");
         assert_eq!(value["outbounds"][0]["kind"], "selector");
-        assert_eq!(value["route_final"], "proxy");
+        assert_eq!(value["route_final"], "final");
 
-        // 非模式 DNS 规则不带 clash_mode 字段（serde skip）。
-        assert!(value["dns_rules"][2].get("clash_mode").is_none());
-        assert_eq!(value["dns_rules"][2]["rule_set_tags"][0], "geosite-cn");
+        // 规则集 / 路由规则视图同时给出 id 与 name，供「重置内置规则集 / 恢复内置规则」按
+        // id 还原条目。
+        assert_eq!(
+            value["rule_sets"][0]["id"],
+            "builtin-ruleset-geosite-private"
+        );
+        assert_eq!(value["rule_sets"][0]["name"], "私有域名");
+        assert_eq!(value["route_rules"][0]["id"], "builtin-private-direct");
+        assert_eq!(
+            value["route_rules"][0]["name"],
+            "内置：私有域名与私有 IP 直连"
+        );
+        assert_eq!(
+            value["route_rules"][0]["rule_set_tags"],
+            serde_json::json!(["geosite-private", "geoip-private"])
+        );
     }
 
     /// 内置 DNS 切片视图：IPv6 开关决定丢弃规则目标与默认 strategy；序列化字段名与

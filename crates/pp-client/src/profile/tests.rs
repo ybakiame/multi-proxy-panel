@@ -137,7 +137,10 @@ fn singbox_template_builds_groups_and_route() {
             .any(|o| o["tag"] == "block" && o["type"] == "block")
     );
 
-    assert_eq!(cfg["route"]["final"], "proxy");
+    assert_eq!(
+        cfg["route"]["final"], "final",
+        "route.final 指向内置 final 兜底分组（节点选择 + 直连）"
+    );
     assert_eq!(
         cfg["route"]["rules"],
         json!([]),
@@ -176,10 +179,9 @@ fn singbox_template_builds_groups_and_route() {
         cfg["dns"]["rules"],
         json!([
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" },
-            { "rule_set": ["geosite-cn"], "action": "route", "server": "local" }
+            { "clash_mode": "global", "action": "route", "server": "remote" }
         ]),
-        "CN-split baseline DNS rules (GUI.for.SingBox default profile)"
+        "built-in baseline DNS rules (country lists are user opt-in)"
     );
     assert_eq!(
         cfg["dns"]["final"], "remote",
@@ -191,7 +193,7 @@ fn singbox_template_builds_groups_and_route() {
     // Remote rule sets download through the direct-dial HTTP client (never via the proxy),
     // resolved by the direct `local` DNS (see ensure_cn_rule_sets / ensure_rule_set_http_client).
     let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 5, "five CN-split remote rule sets");
+    assert_eq!(rule_sets.len(), 2, "two built-in remote rule sets");
     for rs in rule_sets {
         assert_eq!(
             rs["http_client"], "rule-set-direct",
@@ -404,7 +406,7 @@ async fn compose_singbox_injects_inbounds_and_mitm_into_profile_output() {
     assert_eq!(rules.len(), 1);
     assert_eq!(rules[0]["outbound"], "pp-mitm");
     assert_eq!(rules[0]["domain_suffix"], json!(["example.com"]));
-    assert_eq!(composed["route"]["final"], "proxy");
+    assert_eq!(composed["route"]["final"], "final");
     // Groups and nodes preserved.
     let outbounds = composed["outbounds"].as_array().unwrap();
     assert!(outbounds.iter().any(|o| o["tag"] == "proxy"));

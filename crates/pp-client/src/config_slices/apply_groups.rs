@@ -35,6 +35,17 @@ pub(super) fn apply_builtin_group_override(
     };
     match &item.protocol {
         OutboundProtocol::Selector(sel) => {
+            // 静态成员分组（global/final）：成员可由切片编辑，非空才覆写（模板动态分组的
+            // 成员不可经切片编辑）。
+            let is_static = crate::core_config::BUILTIN_OUTBOUND_GROUPS
+                .iter()
+                .any(|spec| spec.name == item.name && !spec.dynamic_members);
+            if is_static && !sel.outbounds.is_empty() {
+                target_obj.insert(
+                    "outbounds".to_string(),
+                    Value::Array(sel.outbounds.iter().map(|m| str_value(m)).collect()),
+                );
+            }
             let members: Vec<&str> = target_obj
                 .get("outbounds")
                 .and_then(Value::as_array)

@@ -61,6 +61,9 @@ pub(crate) fn run_save(
             rs.remote_updated_at = *remote;
         }
     }
+    // The built-in rule set seeding marker is backfilled the same way: a full-segment
+    // replacement must not reset it, otherwise deleted built-in entries would be re-seeded.
+    ovr.builtins_seeded = existing.builtins_seeded;
 
     let manager = RuleSetManager::new(data_dir.to_path_buf());
     manager
@@ -119,28 +122,32 @@ mod tests {
                 },
                 last_updated: 0,
                 remote_updated_at: 0,
+                builtin: false,
             }],
             custom_templates: Vec::new(),
+            // 未播种过的文件：首次 get 时内置规则集一次性物化。
+            builtins_seeded: false,
         };
         ovr.singbox.rules.push(sample_rule("r1", 0));
         ovr
     }
 
     #[test]
-    fn first_run_get_returns_empty_user_controlled_segments() {
-        // 首次进入（local_override.json 缺失）：不再注入任何内置订阅，
-        // 返回纯空的自定义段（custom 模型）。
+    fn first_run_get_seeds_builtin_rule_sets_once() {
+        // First run (local_override.json missing): no legacy subscription is injected, and the
+        // built-in rule sets are materialized as ordinary custom entries exactly once.
         let dir = tempfile::tempdir().unwrap();
         let store = LocalOverrideStore::new(dir.path().to_path_buf());
         assert!(!store.override_file().exists());
         let view = load_override_view(dir.path()).unwrap();
-        assert!(view.custom_rule_sets.is_empty());
+        assert_eq!(view.custom_rule_sets.len(), 2);
+        assert!(view.custom_rule_sets.iter().all(|rs| rs.builtin));
         assert!(view.custom_templates.is_empty());
         assert!(view.applied_templates.is_empty());
         assert!(view.singbox.enabled);
-        // 重复读取结果一致，不写盘、不注入内置数据。
+        // Repeated reads are stable: no duplicate seeding.
         let view2 = load_override_view(dir.path()).unwrap();
-        assert!(view2.custom_rule_sets.is_empty());
+        assert_eq!(view2.custom_rule_sets.len(), 2);
     }
 
     #[test]
@@ -157,17 +164,30 @@ mod tests {
         store.save(&ovr).unwrap();
 
         let view = load_override_view(dir.path()).unwrap();
-        assert_eq!(view.custom_rule_sets.len(), 1);
-        let custom = &view.custom_rule_sets[0];
-        assert_eq!(custom.tag, "my-block");
-        assert!(custom.cached, "manual 内容同步落盘后 cached 应为 true");
+        // 1 user entry + 2 built-in entries materialized once.
+        assert_eq!(view.custom_rule_sets.len(), 3);
+        let custom = view
+            .custom_rule_sets
+            .iter()
+            .find(|rs| rs.tag == "my-block")
+            .unwrap();
+        assert!(
+            custom.cached,
+            "manual content is persisted on save -> cached"
+        );
+        assert!(!custom.builtin);
+        assert_eq!(
+            view.custom_rule_sets.iter().filter(|rs| rs.builtin).count(),
+            2,
+            "built-in rule sets are materialized as ordinary custom entries"
+        );
         assert!(view.custom_templates.is_empty());
         assert!(view.applied_templates.is_empty());
-        // 1 条用户规则 + 2 条播种的内置规则（物化模型）。
-        assert_eq!(view.singbox.rules.len(), 3);
+        // 1 user rule + 1 seeded built-in rule (materialized model).
+        assert_eq!(view.singbox.rules.len(), 2);
         assert_eq!(
             view.singbox.rules.iter().filter(|r| r.builtin).count(),
-            2,
+            1,
             "builtin rules are seeded into the unified list"
         );
         assert!(view.singbox.enabled);
@@ -206,18 +226,31 @@ mod tests {
         .unwrap();
 
         let view = load_override_view(dir.path()).unwrap();
-        assert_eq!(view.custom_rule_sets.len(), 1);
-        let migrated = &view.custom_rule_sets[0];
-        assert_eq!(migrated.tag, "geoip-cn");
+        // 1 migrated entry + 2 built-in entries materialized once.
+        assert_eq!(view.custom_rule_sets.len(), 3);
+        let migrated = view
+            .custom_rule_sets
+            .iter()
+            .find(|rs| rs.tag == "geoip-cn")
+            .unwrap();
         assert_eq!(migrated.name, "GeoIP China");
         assert_eq!(migrated.last_updated, 0);
-        assert!(!migrated.cached, "迁移后尚未下载，无 backing 文件");
+        assert!(!migrated.cached, "not downloaded yet -> no backing file");
+        assert!(!migrated.builtin, "migrated entry stays user-owned");
         assert!(view.applied_templates.is_empty());
         assert!(view.custom_templates.is_empty());
 
-        // 幂等：二次读取不重复转换。
+        // Idempotent: a second load neither re-migrates nor re-seeds.
         let view2 = load_override_view(dir.path()).unwrap();
-        assert_eq!(view2.custom_rule_sets.len(), 1);
-        assert_eq!(view2.custom_rule_sets[0].id, migrated.id);
+        assert_eq!(view2.custom_rule_sets.len(), 3);
+        assert_eq!(
+            view2
+                .custom_rule_sets
+                .iter()
+                .find(|rs| rs.tag == "geoip-cn")
+                .unwrap()
+                .id,
+            migrated.id
+        );
     }
 }

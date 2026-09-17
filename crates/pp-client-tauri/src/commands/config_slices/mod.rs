@@ -83,14 +83,32 @@ mod tests {
     }
 
     #[test]
-    fn get_missing_file_returns_default() {
+    fn get_missing_file_returns_seeded_default() {
         let dir = tempfile::tempdir().unwrap();
         let slices = load_slices(dir.path()).unwrap();
-        assert_eq!(slices, ConfigSlices::default());
+        // 2026-09 起内置 proxy / auto 分组在读取时播种：默认文档自带这两条不可删除的条目。
+        let expected = {
+            let mut default = ConfigSlices::default();
+            default.outbounds.items = slices.outbounds.items.clone();
+            default
+        };
+        assert_eq!(slices, expected);
+        assert_eq!(
+            slices
+                .outbounds
+                .items
+                .iter()
+                .filter(|item| item.builtin)
+                .count(),
+            4,
+            "four built-in outbound groups are seeded"
+        );
+        // 播种结果落盘，后续读取不再重复播种。
         assert!(
-            !ConfigSlicesStore::new(dir.path().to_path_buf())
+            ConfigSlicesStore::new(dir.path().to_path_buf())
                 .slices_file()
-                .exists()
+                .exists(),
+            "seeding persists the file"
         );
     }
 
@@ -99,7 +117,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         save_slices(dir.path(), sample_slices()).unwrap();
         let loaded = load_slices(dir.path()).unwrap();
-        assert_eq!(loaded, sample_slices());
+        // 用户条目原样保留，内置分组（可修改不可删除）由 store 补种在末尾。
+        assert_eq!(
+            loaded.outbounds.items[0],
+            sample_slices().outbounds.items[0]
+        );
+        assert_eq!(loaded.outbounds.items.len(), 5);
+        assert!(loaded.outbounds.items[1..].iter().all(|item| item.builtin));
+        assert_eq!(loaded.dns, sample_slices().dns);
+        assert_eq!(loaded.experimental, sample_slices().experimental);
+        assert_eq!(loaded.route, sample_slices().route);
     }
 
     #[test]

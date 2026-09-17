@@ -26,8 +26,9 @@
 //! out of FakeIP (IPv6 off drops it above; IPv6 on falls through to `dns.final` for a real
 //! answer — the `fakeip` server only declares `inet4_range`).
 //!
-//! The rule set is registered by the CN-split baseline ([`super::ensure_cn_rule_sets`], called
-//! here too as an idempotent safety net).
+//! The rule set is registered by FakeIP itself ([`register_non_cn_rule_set`]): it was retired
+//! from the built-in baseline together with the other country lists, and FakeIP is opt-in, so
+//! it only pays for the remote resource when the feature is actually on.
 //!
 //! **Startup caveat**: sing-box downloads remote rule sets synchronously at startup and fails to
 //! start when a URL is unreachable and no cached copy exists (verified against sing-box 1.14).
@@ -57,8 +58,39 @@ use serde_json::{Value, json};
 
 use super::PanelFeatures;
 
-/// Rule-set tag for the non-CN FakeIP split (the CN-split baseline registers it).
+/// Rule-set tag for the non-CN FakeIP split.
+///
+/// Retired from the built-in baseline (country lists are user opt-in), so FakeIP registers it
+/// itself — see [`register_non_cn_rule_set`].
 const NON_CN_RULE_SET_TAG: &str = "geolocation-!cn";
+
+/// Remote URL backing [`NON_CN_RULE_SET_TAG`] (jsDelivr mirror of `meta-rules-dat@sing`).
+const NON_CN_RULE_SET_URL: &str = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs";
+
+/// Register [`NON_CN_RULE_SET_TAG`] under `route.rule_set` (idempotent by tag).
+///
+/// Existing entries with the same tag (user-supplied) are respected and left untouched.
+fn register_non_cn_rule_set(route: &mut serde_json::Map<String, Value>) {
+    let rule_set = route
+        .entry("rule_set")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(arr) = rule_set.as_array_mut() else {
+        return;
+    };
+    if arr
+        .iter()
+        .any(|rs| rs.get("tag").and_then(Value::as_str) == Some(NON_CN_RULE_SET_TAG))
+    {
+        return;
+    }
+    arr.push(json!({
+        "type": "remote",
+        "tag": NON_CN_RULE_SET_TAG,
+        "format": "binary",
+        "url": NON_CN_RULE_SET_URL,
+        "http_client": super::RULE_SET_HTTP_CLIENT_TAG
+    }));
+}
 
 /// FakeIP mode injection (opt-in; caller skips entirely on DNS takeover).
 ///
@@ -76,9 +108,8 @@ const NON_CN_RULE_SET_TAG: &str = "geolocation-!cn";
 ///      only non-CN A queries enter FakeIP, so the proxy outbound receives the domain
 ///      end-to-end. `HTTPS`/`SVCB`/`AAAA` are excluded by query type / the drop rule; non-CN
 ///      AAAA (IPv6 on) falls through to `dns.final` for a real answer;
-/// 3. register the CN-split rule sets in `route.rule_set` (idempotent by tag, reuses
-///    [`super::ensure_cn_rule_sets`]; the baseline already registers `geolocation-!cn` /
-///    `geosite-cn`, so this is normally a no-op);
+/// 3. register the non-CN rule set in `route.rule_set` (idempotent by tag; the baseline no
+///    longer registers country lists, so FakeIP registers the one it needs);
 /// 4. deep-merge `experimental.cache_file`: force `enabled = true` and `store_fakeip = true`
 ///    (preserving every other key and sibling `experimental` keys such as `clash_api`), and
 ///    fill `path` with an explicit absolute `<data_dir>/cache.db` when no non-empty `path` is
@@ -151,13 +182,15 @@ pub(super) fn apply_fakeip_mode(composed: &mut Value, features: &PanelFeatures) 
         }
     }
 
-    // 3. Register the CN-split rule sets (idempotent by tag; baseline normally already did)
-    //    plus the direct-dial HTTP client they download through.
+    // 3. Register the non-CN rule set this split depends on (idempotent by tag).
+    //    The country lists were retired from the built-in baseline, so FakeIP — an opt-in
+    //    feature — registers the one it needs itself; a same-tag entry supplied by the user is
+    //    respected. Plus the direct-dial HTTP client it downloads through.
     let route = obj
         .entry("route")
         .or_insert_with(|| Value::Object(Default::default()));
     if let Some(route_obj) = route.as_object_mut() {
-        super::ensure_cn_rule_sets(route_obj);
+        register_non_cn_rule_set(route_obj);
     }
     super::ensure_rule_set_http_client(obj);
 

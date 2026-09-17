@@ -5,12 +5,13 @@ use serde_json::json;
 use crate::core_config::ensure_cn_rule_sets;
 use crate::profile::singbox_template;
 
-/// The template registers the five remote CN-split rule sets with the MetaCubeX jsDelivr URLs.
+/// The template registers the two built-in rule sets (private domain / private IP) with the
+/// MetaCubeX jsDelivr URLs; country lists are user opt-in from the market.
 #[test]
 fn singbox_template_registers_cn_rule_sets() {
     let cfg = singbox_template(&[]);
     let rule_sets = cfg["route"]["rule_set"].as_array().unwrap();
-    assert_eq!(rule_sets.len(), 5);
+    assert_eq!(rule_sets.len(), 2);
     for (tag, url) in [
         (
             "geosite-private",
@@ -19,18 +20,6 @@ fn singbox_template_registers_cn_rule_sets() {
         (
             "geoip-private",
             "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/private.srs",
-        ),
-        (
-            "geosite-cn",
-            "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs",
-        ),
-        (
-            "geoip-cn",
-            "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs",
-        ),
-        (
-            "geolocation-!cn",
-            "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs",
         ),
     ] {
         let entry = rule_sets
@@ -118,7 +107,7 @@ fn cn_rule_set_registration_is_idempotent() {
     });
     ensure_cn_rule_sets(&mut route);
     let arr = route["rule_set"].as_array().unwrap();
-    assert_eq!(arr.len(), 5, "same-tag entry must not be duplicated");
+    assert_eq!(arr.len(), 2, "same-tag entry must not be duplicated");
     assert_eq!(arr[0]["type"], "local");
     assert_eq!(arr[0]["path"], "/tmp/user.json");
 }

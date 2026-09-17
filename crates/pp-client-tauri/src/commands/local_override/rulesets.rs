@@ -146,6 +146,7 @@ mod tests {
             },
             last_updated,
             remote_updated_at: 0,
+            builtin: false,
         }
     }
 
@@ -157,6 +158,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ovr = pp_client::local_override::LocalOverride {
             custom_rule_sets: vec![sample_set("c-1", url, 0)],
+            // 标记已播种：本用例只关心用户条目的更新链路，不引入内置规则集。
+            builtins_seeded: true,
             ..Default::default()
         };
         let store = LocalOverrideStore::new(dir.path().to_path_buf());

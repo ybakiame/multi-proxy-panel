@@ -14,26 +14,38 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::baseline::{
-    CN_RULE_SETS, OUTBOUND_KIND_BLOCK, OUTBOUND_KIND_DIRECT, OUTBOUND_KIND_SELECTOR,
-    OUTBOUND_KIND_URLTEST, OUTBOUND_TAG_AUTO, OUTBOUND_TAG_BLOCK, OUTBOUND_TAG_DIRECT,
-    OUTBOUND_TAG_PROXY, cn_baseline_dns_rules, cn_baseline_route_rules,
+    BUILTIN_ROUTE_RULES, BUILTIN_RULE_SETS, OUTBOUND_KIND_BLOCK, OUTBOUND_KIND_DIRECT,
+    OUTBOUND_KIND_SELECTOR, OUTBOUND_KIND_URLTEST, OUTBOUND_TAG_AUTO, OUTBOUND_TAG_BLOCK,
+    OUTBOUND_TAG_DIRECT, OUTBOUND_TAG_PROXY, cn_baseline_dns_rules,
 };
 
-/// 内置规则集视图项（只读）。
+/// Built-in rule set view item (read-only).
+///
+/// Since 2026-09 a built-in rule set is an **ordinary rule set** (materialized into
+/// `custom_rule_sets`); this view is the restore template behind "reset built-in rule sets":
+/// the frontend looks up / rebuilds entries by `id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BaselineRuleSetView {
-    /// 规则集 tag（与 [`CN_RULE_SETS`] 一致）。
+    /// Stable entry ID (aligned with [`BUILTIN_RULE_SETS`]).
+    pub id: String,
+    /// Rule set tag (aligned with [`BUILTIN_RULE_SETS`]).
     pub tag: String,
-    /// 远程规则集 URL（与 [`CN_RULE_SETS`] 一致）。
+    /// Remote rule set URL (aligned with [`BUILTIN_RULE_SETS`]).
     pub url: String,
-    /// 中文友好名（如「国内域名」）。
-    pub description: String,
+    /// Localized display name (e.g. `私有域名`).
+    pub name: String,
 }
 
-/// 内置路由规则视图项（只读）。
+/// Built-in route rule view item (read-only).
+///
+/// Same role as [`BaselineRuleSetView`]: the restore template behind "restore built-in rule".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BaselineRuleView {
-    /// 中文描述（如「国内域名 → 直连」）。
+    /// Stable rule ID (aligned with [`BUILTIN_ROUTE_RULES`]).
+    pub id: String,
+    /// Rule name (aligned with [`BUILTIN_ROUTE_RULES`]).
+    pub name: String,
+    /// Localized description (e.g. `私有域名、私有 IP → 直连`).
     pub description: String,
     /// 命中的规则集 tag 列表。
     pub rule_set_tags: Vec<String>,
@@ -67,16 +79,17 @@ pub struct BaselineOutboundView {
     pub description: String,
 }
 
-/// 内置 CN 分流基线只读视图。
+/// Read-only view of the built-in baseline.
 ///
-/// 前端把本结构与各配置列表只读合并展示；所有项均不可编辑 / 删除。
+/// Rule sets / route rules are materialized as user-editable entries, so this view only serves
+/// as a **restore template**; outbounds stay read-only.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BaselineView {
-    /// 5 个 CN 规则集。
+    /// Built-in rule set restore templates (private domain / private IP).
     pub rule_sets: Vec<BaselineRuleSetView>,
-    /// 5 条基线路由规则。
+    /// Built-in route rule restore templates (private domain + private IP → direct).
     pub route_rules: Vec<BaselineRuleView>,
-    /// 基线 DNS 规则摘要（clash_mode 分流 + geosite-cn → local）。
+    /// Baseline DNS rule summary (clash_mode split).
     pub dns_rules: Vec<BaselineDnsRuleView>,
     /// 内置出站：proxy / auto / direct / block。
     pub outbounds: Vec<BaselineOutboundView>,
@@ -85,36 +98,46 @@ pub struct BaselineView {
 }
 
 impl BaselineView {
-    /// 从基线真值源派生只读视图。
+    /// Derive the read-only view from the baseline source of truth.
     ///
-    /// 纯静态、无 IO、无参数：规则集 / 路由规则 / DNS 规则分别取自 [`CN_RULE_SETS`]、
-    /// [`cn_baseline_route_rules`]、[`cn_baseline_dns_rules`]，出站 tag/kind 引用常量。
+    /// Pure static, no IO, no arguments: rule sets / route rules are derived from
+    /// [`BUILTIN_RULE_SETS`] / [`BUILTIN_ROUTE_RULES`] (restore templates), DNS rules
+    /// from [`cn_baseline_dns_rules`], and outbound tag/kind from the constants.
     #[must_use]
     pub fn new() -> Self {
-        let rule_sets = CN_RULE_SETS
+        let rule_sets = BUILTIN_RULE_SETS
             .iter()
-            .map(|(tag, url)| BaselineRuleSetView {
-                tag: (*tag).to_string(),
-                url: (*url).to_string(),
-                description: rule_set_description(tag).to_string(),
+            .map(|spec| BaselineRuleSetView {
+                id: spec.id.to_string(),
+                tag: spec.tag.to_string(),
+                url: spec.url.to_string(),
+                name: spec.name.to_string(),
             })
             .collect();
 
-        let route_rules = cn_baseline_route_rules(OUTBOUND_TAG_PROXY)
+        let route_rules = BUILTIN_ROUTE_RULES
             .iter()
-            .map(|rule| {
-                let rule_set_tags = string_array(rule.get("rule_set"));
-                let outbound = rule
-                    .get("outbound")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
+            .map(|spec| {
+                let rule_set_tags: Vec<String> = spec
+                    .target
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|tag| !tag.is_empty())
+                    .map(String::from)
+                    .collect();
+                let outbound = if spec.direct {
+                    OUTBOUND_TAG_DIRECT.to_string()
+                } else {
+                    OUTBOUND_TAG_PROXY.to_string()
+                };
                 let names = rule_set_tags
                     .iter()
                     .map(|tag| rule_set_description(tag))
                     .collect::<Vec<_>>()
                     .join("、");
                 BaselineRuleView {
+                    id: spec.id.to_string(),
+                    name: spec.name.to_string(),
                     description: format!("{names} → {}", route_outbound_description(&outbound)),
                     rule_set_tags,
                     outbound,
@@ -159,6 +182,16 @@ impl BaselineView {
                 description: outbound_description(OUTBOUND_TAG_PROXY).to_string(),
             },
             BaselineOutboundView {
+                tag: crate::core_config::baseline::OUTBOUND_TAG_FINAL.to_string(),
+                kind: OUTBOUND_KIND_SELECTOR.to_string(),
+                description: "兜底（节点选择 + 直连）".to_string(),
+            },
+            BaselineOutboundView {
+                tag: crate::core_config::baseline::OUTBOUND_TAG_GLOBAL.to_string(),
+                kind: OUTBOUND_KIND_SELECTOR.to_string(),
+                description: "全局模式（含全部内置出站）".to_string(),
+            },
+            BaselineOutboundView {
                 tag: OUTBOUND_TAG_AUTO.to_string(),
                 kind: OUTBOUND_KIND_URLTEST.to_string(),
                 description: outbound_description(OUTBOUND_TAG_AUTO).to_string(),
@@ -180,7 +213,7 @@ impl BaselineView {
             route_rules,
             dns_rules,
             outbounds,
-            route_final: OUTBOUND_TAG_PROXY.to_string(),
+            route_final: crate::core_config::baseline::OUTBOUND_TAG_FINAL.to_string(),
         }
     }
 }

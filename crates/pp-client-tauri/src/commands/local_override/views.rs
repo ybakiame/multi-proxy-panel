@@ -92,6 +92,9 @@ pub struct CustomRuleSetView {
     /// means the remote has a newer version (frontend "有更新" chip).
     pub remote_updated_at: u64,
     pub cached: bool,
+    /// Whether this entry was materialized from a built-in rule set spec (badge + restore
+    /// target). Built-in entries behave like user entries: editable and deletable.
+    pub builtin: bool,
 }
 
 /// Aggregated rule set update outcome (single or batch smart update).
@@ -201,6 +204,7 @@ impl CustomRuleSetView {
             last_updated: model.last_updated,
             remote_updated_at: model.remote_updated_at,
             cached: manager.has_custom_rule_set_file(model),
+            builtin: model.builtin,
         }
     }
 }

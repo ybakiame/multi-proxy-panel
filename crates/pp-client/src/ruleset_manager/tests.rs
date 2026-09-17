@@ -14,14 +14,14 @@ fn data_dir() -> tempfile::TempDir {
 #[tokio::test]
 async fn ensure_uses_existing_files_and_marks_missing() {
     let dir = data_dir();
-    let path = rule_set_path(dir.path(), "geosite-cn");
+    let path = rule_set_path(dir.path(), "geosite-private");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"local-cache").unwrap();
 
     let available =
         ensure_with_downloader(dir.path(), |_rel| async move { Err("offline".to_string()) }).await;
-    assert_eq!(available.get("geosite-cn"), Some(&path));
-    assert!(!available.contains_key("geoip-cn"));
+    assert_eq!(available.get("geosite-private"), Some(&path));
+    assert!(!available.contains_key("geoip-private"));
 }
 
 /// 下载桩全部成功 → 文件原子写入且全部可用。
@@ -34,7 +34,7 @@ async fn ensure_writes_downloaded_files() {
     .await;
     assert_eq!(available.len(), builtin_tags().len());
     assert_eq!(
-        std::fs::read(rule_set_path(dir.path(), "geoip-cn")).unwrap(),
+        std::fs::read(rule_set_path(dir.path(), "geoip-private")).unwrap(),
         b"srs"
     );
 }
@@ -99,7 +99,7 @@ async fn download_falls_back_to_github_mirror() {
 #[test]
 fn write_atomic_creates_parent_and_writes() {
     let dir = data_dir();
-    let path = rule_set_path(dir.path(), "geoip-cn");
+    let path = rule_set_path(dir.path(), "geoip-private");
     write_atomic(&path, b"content").unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), b"content");
     // 重写覆盖正常。
@@ -111,28 +111,28 @@ fn write_atomic_creates_parent_and_writes() {
 #[test]
 fn materialize_rewrites_available_and_strips_missing() {
     let dir = data_dir();
-    let path = rule_set_path(dir.path(), "geosite-cn");
+    let path = rule_set_path(dir.path(), "geosite-private");
     let mut available = BTreeMap::new();
-    available.insert("geosite-cn".to_string(), path.clone());
+    available.insert("geosite-private".to_string(), path.clone());
 
     let mut config = json!({
         "dns": {
             "rules": [
                 { "query_type": ["HTTPS"], "action": "predefined", "rcode": "NOERROR" },
-                { "rule_set": ["geosite-cn"], "action": "route", "server": "local" },
-                { "rule_set": ["geolocation-!cn"], "query_type": ["A"], "action": "route", "server": "fakeip" }
+                { "rule_set": ["geosite-private"], "action": "route", "server": "local" },
+                { "rule_set": ["geoip-private"], "query_type": ["A"], "action": "route", "server": "fakeip" }
             ]
         },
         "route": {
             "rule_set": [
-                { "type": "remote", "tag": "geosite-cn", "format": "binary", "url": "https://x/cn.srs" },
-                { "type": "remote", "tag": "geoip-cn", "format": "binary", "url": "https://x/ip.srs" },
+                { "type": "remote", "tag": "geosite-private", "format": "binary", "url": "https://x/private.srs" },
+                { "type": "remote", "tag": "geoip-private", "format": "binary", "url": "https://x/ip.srs" },
                 { "type": "local", "tag": "geosite-telegram", "format": "binary", "path": "/user/t.srs" }
             ],
             "rules": [
                 { "action": "sniff" },
-                { "rule_set": ["geosite-cn"], "outbound": "direct" },
-                { "rule_set": ["geoip-cn"], "outbound": "direct" },
+                { "rule_set": ["geosite-private"], "outbound": "direct" },
+                { "rule_set": ["geoip-private"], "outbound": "direct" },
                 { "rule_set": ["geosite-telegram"], "outbound": "proxy" }
             ]
         }
@@ -140,26 +140,26 @@ fn materialize_rewrites_available_and_strips_missing() {
 
     let report = materialize_rule_sets(&mut config, dir.path(), &available);
 
-    // geosite-cn 改写为 local；geoip-cn 缺失被移除；用户条目不动。
+    // geosite-private 改写为 local；geoip-private 缺失被移除；用户条目不动。
     let rule_sets = config["route"]["rule_set"].as_array().unwrap();
     assert_eq!(rule_sets.len(), 2);
     assert_eq!(rule_sets[0]["type"], "local");
-    assert_eq!(rule_sets[0]["tag"], "geosite-cn");
+    assert_eq!(rule_sets[0]["tag"], "geosite-private");
     assert_eq!(rule_sets[0]["path"], json!(path.to_string_lossy()));
     assert_eq!(rule_sets[1]["tag"], "geosite-telegram");
 
-    // 引用 geoip-cn 的路由规则被移除，其余保留。
+    // 引用 geoip-private 的路由规则被移除，其余保留。
     let route_rules = config["route"]["rules"].as_array().unwrap();
     assert_eq!(route_rules.len(), 3);
     assert_eq!(report.stripped_route_rules, 1);
 
-    // 引用 geolocation-!cn（缺失）的 DNS 规则被移除，其余保留。
+    // 引用 geoip-private（缺失）的 DNS 规则被移除，其余保留。
     let dns_rules = config["dns"]["rules"].as_array().unwrap();
     assert_eq!(dns_rules.len(), 2);
     assert_eq!(report.stripped_dns_rules, 1);
 
-    assert!(report.missing_tags.contains(&"geoip-cn".to_string()));
-    assert!(!report.missing_tags.contains(&"geosite-cn".to_string()));
+    assert!(report.missing_tags.contains(&"geoip-private".to_string()));
+    assert!(!report.missing_tags.contains(&"geosite-private".to_string()));
 }
 
 /// 无缺失时物化为纯改写（不移除任何规则）。
@@ -172,8 +172,8 @@ fn materialize_no_missing_keeps_all_rules() {
         .collect();
     let mut config = json!({
         "route": {
-            "rule_set": [{ "type": "remote", "tag": "geoip-cn", "format": "binary", "url": "https://x" }],
-            "rules": [{ "rule_set": ["geoip-cn"], "outbound": "direct" }]
+            "rule_set": [{ "type": "remote", "tag": "geoip-private", "format": "binary", "url": "https://x" }],
+            "rules": [{ "rule_set": ["geoip-private"], "outbound": "direct" }]
         }
     });
     let report = materialize_rule_sets(&mut config, dir.path(), &available);

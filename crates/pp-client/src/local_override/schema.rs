@@ -49,6 +49,15 @@ pub struct LocalOverride {
     /// 字段仅保留 serde 兼容，不再被任何逻辑读取，写回恒为空数组。
     #[serde(default)]
     pub custom_templates: Vec<serde_json::Value>,
+    /// Whether the built-in rule sets have already been materialized into
+    /// [`Self::custom_rule_sets`] for this file.
+    ///
+    /// Built-in rule sets are ordinary (editable / deletable) entries, so seeding must run
+    /// **exactly once** — otherwise a user deletion would be undone by the next `load`. Legacy
+    /// files lack the field (`false`) and are seeded once, which is exactly the migration we
+    /// want.
+    #[serde(default)]
+    pub builtins_seeded: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +343,14 @@ pub struct CustomRuleSet {
     /// 无该响应头时保持 0。旧版文件无此字段时 serde 默认 0。
     #[serde(default)]
     pub remote_updated_at: u64,
+    /// Whether this entry was materialized from a built-in rule set spec
+    /// ([`crate::core_config::BUILTIN_RULE_SETS`]).
+    ///
+    /// Built-in entries behave exactly like user entries (editable, deletable); the flag only
+    /// drives the "内置" badge and the "reset built-in rule sets" restore target, which
+    /// matches by `id`. Old files default to `false` (user-owned).
+    #[serde(default)]
+    pub builtin: bool,
 }
 
 impl CustomRuleSet {

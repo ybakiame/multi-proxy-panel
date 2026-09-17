@@ -64,6 +64,10 @@ pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
                 ..Default::default()
             },
         ],
+        // Country/region rule sets (`geosite-cn` and friends) are no longer built-in
+        // (2026-09): users add them from the rule-set market and then build their own DNS
+        // rules. The built-in default keeps only the mode-driven split (drop + clash_mode)
+        // plus the `final` fallback, so it never references a rule set the user may not have.
         rules: vec![
             DnsRule {
                 id: "builtin-drop".to_string(),
@@ -86,12 +90,6 @@ pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
                 "global",
                 "remote",
             ),
-            rule(
-                "builtin-geosite-cn",
-                DnsMatchType::RuleSet,
-                "geosite-cn",
-                "local",
-            ),
         ],
         final_tag: "remote".to_string(),
         strategy: if ipv6_enabled {
@@ -109,33 +107,58 @@ pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
 /// referenced by every CN-split rule set registered in [`ensure_cn_rule_sets`].
 pub const RULE_SET_HTTP_CLIENT_TAG: &str = "rule-set-direct";
 
-/// CN-split remote rule-set registry (`tag`, jsDelivr URL), aligned with the GUI.for.SingBox
-/// default profile and the MetaCubeX `meta-rules-dat@sing` source family already used by the
-/// FakeIP split.
+/// Built-in rule set spec: the source of truth materialized into `custom_rule_sets` (2026-09).
 ///
-/// `geolocation-!cn` lives under the `geosite/` directory (it is a geosite list of non-CN
-/// domains); the rest map to their same-named `geosite/` / `geoip/` entry.
-pub const CN_RULE_SETS: [(&str, &str); 5] = [
-    (
-        "geosite-private",
-        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/private.srs",
-    ),
-    (
-        "geoip-private",
-        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/private.srs",
-    ),
-    (
-        "geosite-cn",
-        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs",
-    ),
-    (
-        "geoip-cn",
-        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs",
-    ),
-    (
-        "geolocation-!cn",
-        "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs",
-    ),
+/// A built-in rule set **is an ordinary rule set**: once materialized it has exactly the same
+/// shape as an entry the user adds from the market (Remote + Binary), so it can be edited,
+/// deleted, and restored from this spec by the "reset built-in rule sets" action. Every place
+/// that picks a rule set (route rules, DNS rules, …) therefore sees it like any other entry.
+///
+/// Only **private domain / private IP** remain built-in; country lists (`geosite-cn`,
+/// `geoip-cn`, `geolocation-!cn`) are user opt-in from the market, so we do not ship remote
+/// resources most users neither need nor could remove. IDs are stable (persisted in
+/// `local_override.json`) — never change them.
+pub struct BuiltinRuleSetSpec {
+    /// Stable entry ID (materialized as `CustomRuleSet.id`).
+    pub id: &'static str,
+    /// Display name (localized; user-editable).
+    pub name: &'static str,
+    /// Rule set tag referenced by route / DNS rules.
+    pub tag: &'static str,
+    /// Remote download URL (jsDelivr mirror of `meta-rules-dat@sing`).
+    pub url: &'static str,
+}
+
+/// Built-in rule sets (order = materialized display order).
+pub const BUILTIN_RULE_SETS: [BuiltinRuleSetSpec; 2] = [
+    BuiltinRuleSetSpec {
+        id: "builtin-ruleset-geosite-private",
+        name: "私有域名",
+        tag: "geosite-private",
+        url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/private.srs",
+    },
+    BuiltinRuleSetSpec {
+        id: "builtin-ruleset-geoip-private",
+        name: "私有 IP",
+        tag: "geoip-private",
+        url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/private.srs",
+    },
+];
+
+/// Retired built-in country/region rule set tags (for legacy-file cleanup; do not add more).
+///
+/// These tags no longer carry a built-in meaning — users who still need them add them from
+/// the market (a custom entry with the same tag is fully equivalent). Legacy references in
+/// `local_override.json` (rule-set reference entries plus the rules referencing them) are
+/// cleaned up on load so no permanently unresolvable reference is left behind.
+pub const RETIRED_BUILTIN_RULE_SET_TAGS: [&str; 3] = ["geosite-cn", "geoip-cn", "geolocation-!cn"];
+
+/// CN-split remote rule-set registry (`tag`, jsDelivr URL), derived from
+/// [`BUILTIN_RULE_SETS`] so the template registration and the materialized
+/// custom entries never drift apart.
+pub const CN_RULE_SETS: [(&str, &str); 2] = [
+    (BUILTIN_RULE_SETS[0].tag, BUILTIN_RULE_SETS[0].url),
+    (BUILTIN_RULE_SETS[1].tag, BUILTIN_RULE_SETS[1].url),
 ];
 
 /// Built-in outbound tags (single source of truth shared by [`crate::profile::singbox_template`]
@@ -158,17 +181,20 @@ pub const OUTBOUND_KIND_DIRECT: &str = "direct";
 /// See [`OUTBOUND_KIND_SELECTOR`].
 pub const OUTBOUND_KIND_BLOCK: &str = "block";
 
-/// CN-split baseline DNS rules (GUI.for.SingBox default profile): `clash_mode direct → local`,
-/// `clash_mode global → remote`, `geosite-cn → local`; `dns.final = remote` handles the rest.
+/// CN-split baseline DNS rules: `clash_mode direct → local`, `clash_mode global → remote`;
+/// `dns.final = remote` handles the rest.
 ///
 /// The clash_mode rules make DNS follow the outbound mode switch (direct mode resolves
 /// everything through the domestic resolver, global through the remote one) and deliberately
 /// precede the FakeIP rule, so FakeIP never leaks into direct/global mode.
+///
+/// The built-in `geosite-cn → local` rule was dropped together with the country rule sets:
+/// users who want domestic domains resolved locally add the `geosite-cn` rule set and a DNS
+/// rule themselves (the built-in default must not reference a resource it does not ship).
 pub fn cn_baseline_dns_rules() -> Vec<Value> {
     vec![
         json!({ "clash_mode": "direct", "action": "route", "server": "local" }),
         json!({ "clash_mode": "global", "action": "route", "server": "remote" }),
-        json!({ "rule_set": ["geosite-cn"], "action": "route", "server": "local" }),
     ]
 }
 
@@ -184,71 +210,118 @@ pub struct BuiltinOutboundGroupSpec {
     pub name: &'static str,
     /// 是否 selector（false = urltest）。
     pub selector: bool,
+    /// 成员是否模板动态计算（proxy/auto = 跟随订阅，不可编辑；global/final = 静态内置
+    /// 成员集合，可在切片中编辑）。
+    pub dynamic_members: bool,
+    /// 静态成员（`dynamic_members = false` 时的模板与播种默认值）。
+    pub members: &'static [&'static str],
+    /// 默认成员 tag。
+    pub default: &'static str,
 }
 
-/// 内置分组（顺序 = 列表展示顺序：主选择器在前，自动测速在后）。
-pub const BUILTIN_OUTBOUND_GROUPS: [BuiltinOutboundGroupSpec; 2] = [
+/// See [`OUTBOUND_TAG_PROXY`].
+pub const OUTBOUND_TAG_GLOBAL: &str = "global";
+/// See [`OUTBOUND_TAG_PROXY`].
+pub const OUTBOUND_TAG_FINAL: &str = "final";
+
+/// 内置分组（顺序 = 列表展示顺序）。
+///
+/// `proxy` / `auto` 成员跟随订阅动态计算；`global`（Clash GLOBAL 语义：全局模式出站，
+/// 含其它内置出站）/ `final`（兜底：节点选择 + 直连，`route.final` 指向它）成员为静态
+/// 内置集合，可在切片中编辑。
+pub const BUILTIN_OUTBOUND_GROUPS: [BuiltinOutboundGroupSpec; 4] = [
     BuiltinOutboundGroupSpec {
         id: "builtin-group-proxy",
         name: OUTBOUND_TAG_PROXY,
         selector: true,
+        dynamic_members: true,
+        members: &[],
+        default: OUTBOUND_TAG_AUTO,
     },
     BuiltinOutboundGroupSpec {
         id: "builtin-group-auto",
         name: OUTBOUND_TAG_AUTO,
         selector: false,
+        dynamic_members: true,
+        members: &[],
+        default: "",
+    },
+    BuiltinOutboundGroupSpec {
+        id: "builtin-group-global",
+        name: OUTBOUND_TAG_GLOBAL,
+        selector: true,
+        dynamic_members: false,
+        members: &[
+            OUTBOUND_TAG_PROXY,
+            OUTBOUND_TAG_AUTO,
+            OUTBOUND_TAG_FINAL,
+            OUTBOUND_TAG_DIRECT,
+            OUTBOUND_TAG_BLOCK,
+        ],
+        default: OUTBOUND_TAG_PROXY,
+    },
+    BuiltinOutboundGroupSpec {
+        id: "builtin-group-final",
+        name: OUTBOUND_TAG_FINAL,
+        selector: true,
+        dynamic_members: false,
+        members: &[OUTBOUND_TAG_PROXY, OUTBOUND_TAG_DIRECT],
+        default: OUTBOUND_TAG_PROXY,
     },
 ];
 
-/// 内置路由规则规格（物化进 local_override 统一规则列表的真值源，2026-09）。
+/// Built-in route rule spec: the source of truth materialized into the unified
+/// `local_override` rule list (2026-09).
 ///
-/// 内置规则**可修改不可删除**（见 `local_override` store 迁移与保存守卫）：物化后用户可
-/// 调整 `enabled` / 出站动作与排序位置，`match_type` / `target` 由本规格在保存时归一化。
-/// id 稳定（写入 local_override.json），勿改。
+/// A built-in rule **is an ordinary rule**: once materialized the user may rename it, change
+/// the match / action, reorder it or delete it, and restore it from this spec with the
+/// "restore built-in rule" action. `enabled` / `action` / `sort_order` / `note` follow user
+/// edits; retired built-in IDs are removed during the load migration. IDs are stable
+/// (persisted in `local_override.json`) — never change them.
 pub struct BuiltinRouteRuleSpec {
-    /// 稳定规则 ID（物化进 local_override 的 `LocalRule.id`）。
+    /// Stable rule ID (materialized as `LocalRule.id`).
     pub id: &'static str,
-    /// 展示名（列表标题；内置规则名称不可改）。
+    /// Display name (list title).
     pub name: &'static str,
-    /// 逗号分隔的规则集 tag（渲染为 sing-box `rule_set` 数组）。
+    /// Comma-separated rule set tags (rendered as a sing-box `rule_set` array).
     pub target: &'static str,
-    /// 默认动作：`true` = direct，`false` = 主 selector（proxy）。
+    /// Default action: `true` = direct, `false` = main selector (proxy).
     pub direct: bool,
 }
 
-/// 内置路由规则（顺序 = 物化默认排序：CN 直连在前，非 CN 代理兜底在后）。
-pub const BUILTIN_ROUTE_RULES: [BuiltinRouteRuleSpec; 2] = [
-    BuiltinRouteRuleSpec {
-        id: "builtin-cn-direct",
-        name: "内置：私有与国内直连",
-        target: "geosite-private,geoip-private,geosite-cn,geoip-cn",
-        direct: true,
-    },
-    BuiltinRouteRuleSpec {
-        id: "builtin-non-cn-proxy",
-        name: "内置：非中国大陆代理",
-        target: "geolocation-!cn",
-        direct: false,
-    },
-];
+/// Built-in route rules (order = default materialized order: built-ins first, user rules after).
+///
+/// Only **private domain + private IP → direct** remains: LAN / loopback traffic must bypass
+/// the proxy, the one split that actually breaks when missing. Everything else (CN / non-CN
+/// split, …) is left to user-added rule sets and rules.
+pub const BUILTIN_ROUTE_RULES: [BuiltinRouteRuleSpec; 1] = [BuiltinRouteRuleSpec {
+    id: "builtin-private-direct",
+    name: "内置：私有域名与私有 IP 直连",
+    target: "geosite-private,geoip-private",
+    direct: true,
+}];
 
-/// CN-split baseline route rules (GUI.for.SingBox default profile): private / CN destinations
-/// go `direct`, `geolocation-!cn` (non-CN) goes through the main selector.
+/// Retired built-in route rule IDs (for legacy-file cleanup; do not add more).
 ///
-/// 2026-09 起合并为 2 条：4 个直连规则集塞进同一条规则（sing-box `rule_set` 数组为 OR
-/// 语义，与拆分四条等价），非 CN 一条。内置规则物化进 local_override 后，本函数仍作为
-/// 物化默认值与 BaselineView 的真值源。
+/// `builtin-cn-direct` (private + domestic direct) and `builtin-non-cn-proxy` (non-CN proxy)
+/// were removed together with the country rule sets. Legacy entries flagged `builtin` that are
+/// absent from the current spec are deleted on load, so no dead rule keeps referencing a
+/// retired rule set.
+pub const RETIRED_BUILTIN_ROUTE_RULE_IDS: [&str; 2] = ["builtin-cn-direct", "builtin-non-cn-proxy"];
+
+/// CN-split baseline route rules: private destinations go `direct`; everything else falls
+/// through to `route.final` (the main selector).
 ///
-/// `proxy_tag` is the main selector outbound tag, read from the generated outbounds rather than
-/// hardcoded so the rules follow the template's actual group tag.
-pub fn cn_baseline_route_rules(proxy_tag: &str) -> Vec<Value> {
-    vec![
-        json!({
-            "rule_set": ["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"],
-            "outbound": "direct"
-        }),
-        json!({ "rule_set": ["geolocation-!cn"], "outbound": proxy_tag }),
-    ]
+/// Since 2026-09 only the single private-direct rule remains. Built-in rules are materialized
+/// into `local_override`, so this function only backs legacy callers (tests / previews).
+///
+/// `proxy_tag` is the main selector outbound tag; it is unused now that no baseline rule
+/// targets the proxy group, but is kept so call sites keep working unchanged.
+pub fn cn_baseline_route_rules(_proxy_tag: &str) -> Vec<Value> {
+    vec![json!({
+        "rule_set": ["geosite-private", "geoip-private"],
+        "outbound": "direct"
+    })]
 }
 
 /// Register the CN-split remote rule sets under `route.rule_set` (idempotent by tag).

@@ -162,8 +162,8 @@ fn default_builtin_group_protocol(
 ) -> crate::config_slices::OutboundProtocol {
     if spec.selector {
         crate::config_slices::OutboundProtocol::Selector(crate::config_slices::SelectorOutbound {
-            outbounds: vec![crate::core_config::OUTBOUND_TAG_AUTO.to_string()],
-            default: crate::core_config::OUTBOUND_TAG_AUTO.to_string(),
+            outbounds: spec.members.iter().map(|m| (*m).to_string()).collect(),
+            default: spec.default.to_string(),
             interrupt_exist_connections: false,
         })
     } else {

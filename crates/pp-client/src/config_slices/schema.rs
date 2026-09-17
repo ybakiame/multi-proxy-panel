@@ -253,19 +253,51 @@ impl OutboundsSlice {
 
         // First pass: reserve every enabled tag and classify groups vs. nodes.
         for item in self.items.iter().filter(|i| i.enabled) {
-            // 内置分组条目（2026-09 物化模型）：name 限 proxy/auto 且协议类型须匹配，
-            // 不参与 tag 预留与成员校验（渲染时做模板字段覆写，不产生新出站）。
+            // 内置分组条目（2026-09 物化模型）：按规格校验保留名与协议类型，不参与 tag
+            // 预留与（动态成员分组的）成员校验（渲染时做模板字段覆写，不产生新出站）。
             if item.builtin {
-                let kind_ok = matches!(
-                    (item.name.as_str(), &item.protocol),
-                    ("proxy", OutboundProtocol::Selector(_))
-                        | ("auto", OutboundProtocol::UrlTest(_))
-                );
-                if !kind_ok {
+                let spec = crate::core_config::BUILTIN_OUTBOUND_GROUPS
+                    .iter()
+                    .find(|spec| spec.id == item.id);
+                let Some(spec) = spec else {
                     return Err(validation(format!(
-                        "builtin outbound group `{}` must keep its reserved name (proxy/auto) and protocol kind",
+                        "unknown builtin outbound group `{}`",
                         item.id
                     )));
+                };
+                let kind_ok = matches!(
+                    (spec.selector, &item.protocol),
+                    (true, OutboundProtocol::Selector(_)) | (false, OutboundProtocol::UrlTest(_))
+                );
+                if !kind_ok || item.name != spec.name {
+                    return Err(validation(format!(
+                        "builtin outbound group `{}` must keep its reserved name ({}) and protocol kind",
+                        item.id, spec.name
+                    )));
+                }
+                // 静态成员分组（global/final）：成员非空、不含自身、final 不含 global
+                // （防 global→final→global 循环引用）。
+                if !spec.dynamic_members
+                    && let OutboundProtocol::Selector(sel) = &item.protocol
+                {
+                    if sel.outbounds.is_empty() {
+                        return Err(validation(format!(
+                            "builtin outbound group `{}` requires at least one member",
+                            spec.name
+                        )));
+                    }
+                    if sel.outbounds.iter().any(|m| m == spec.name) {
+                        return Err(validation(format!(
+                            "builtin outbound group `{}` must not reference itself",
+                            spec.name
+                        )));
+                    }
+                    if spec.name == "final" && sel.outbounds.iter().any(|m| m == "global") {
+                        return Err(validation(
+                            "builtin outbound group `final` must not reference `global` (cycle)"
+                                .to_string(),
+                        ));
+                    }
                 }
                 continue;
             }

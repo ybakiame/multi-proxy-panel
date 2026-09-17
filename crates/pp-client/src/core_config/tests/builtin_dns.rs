@@ -31,7 +31,8 @@ fn builtin_dns_slice_ipv6_off() {
     assert_eq!(servers[1].detour, "proxy");
 
     let rules = &slice.rules;
-    assert_eq!(rules.len(), 4);
+    // drop + clash_mode direct/global; the country rule set rule was retired (user opt-in).
+    assert_eq!(rules.len(), 3);
     assert_eq!(rules[0].id, "builtin-drop");
     assert_eq!(rules[0].match_type, DnsMatchType::QueryType);
     assert_eq!(rules[0].target, "HTTPS,SVCB,AAAA");
@@ -43,9 +44,6 @@ fn builtin_dns_slice_ipv6_off() {
     assert_eq!(rules[2].match_type, DnsMatchType::ClashMode);
     assert_eq!(rules[2].target, "global");
     assert_eq!(rules[2].server_tag, "remote");
-    assert_eq!(rules[3].match_type, DnsMatchType::RuleSet);
-    assert_eq!(rules[3].target, "geosite-cn");
-    assert_eq!(rules[3].server_tag, "local");
 
     assert_eq!(slice.final_tag, "remote");
     assert_eq!(slice.strategy, DnsStrategy::Ipv4Only);
@@ -69,8 +67,8 @@ fn builtin_dns_slice_passes_schema_validation() {
 }
 
 /// Rendering the builtin slice reproduces the exact runtime DNS shape: drop rule head with
-/// query_type array, clash_mode rules as **string** match values, geosite-cn rule set array,
-/// final/strategy/reverse_mapping.
+/// query_type array, clash_mode rules as **string** match values, final/strategy/reverse_mapping.
+/// No built-in rule set rule remains (country lists are user opt-in).
 #[test]
 fn builtin_dns_slice_renders_runtime_shape() {
     let rendered = render_dns(&builtin_dns_slice(false));
@@ -83,8 +81,7 @@ fn builtin_dns_slice_renders_runtime_shape() {
                 "rcode": "NOERROR"
             },
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" },
-            { "rule_set": ["geosite-cn"], "action": "route", "server": "local" }
+            { "clash_mode": "global", "action": "route", "server": "remote" }
         ]),
         "clash_mode must render as a string (not an array), drop rule at the head"
     );

@@ -337,7 +337,8 @@ fn inject_mode_baseline_rules(obj: &mut serde_json::Map<String, Value>) {
     }
     let baseline = [
         json!({ "clash_mode": "direct", "outbound": "direct" }),
-        json!({ "clash_mode": "global", "outbound": "proxy" }),
+        // Clash GLOBAL 语义：全局模式走 global 分组（含全部内置出站，可在出站管理调整）。
+        json!({ "clash_mode": "global", "outbound": "global" }),
     ];
     for (i, rule) in baseline.into_iter().enumerate() {
         rules_arr.insert(i, rule);

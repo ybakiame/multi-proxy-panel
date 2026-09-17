@@ -238,8 +238,8 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     let status = state.status().await;
     assert_eq!(status.rule_mode, "global");
     assert_eq!(
-        status.rule_count, 9,
-        "2 sniff/dns-hijack + 1 realip resolve + 1 IPv6 reject + 2 baseline clash_mode mode rules + 1 MITM whitelist + 2 CN-split baseline rules (merged)"
+        status.rule_count, 8,
+        "2 sniff/dns-hijack + 1 realip resolve + 1 IPv6 reject + 2 baseline clash_mode mode rules + 1 MITM whitelist + 1 built-in private-direct rule (merged)"
     );
     assert_eq!(
         status.clash_api_url,
@@ -493,8 +493,8 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
     let rules = core_config["route"]["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        7,
-        "2 sniff/dns-hijack + 1 realip resolve + 1 IPv6 reject head rules + 1 MITM whitelist rule + 2 merged CN-split baseline rules"
+        6,
+        "2 sniff/dns-hijack + 1 realip resolve + 1 IPv6 reject head rules + 1 built-in private-direct rule + 1 MITM whitelist rule"
     );
     assert_eq!(rules[0], serde_json::json!({ "action": "sniff" }));
     assert_eq!(
@@ -509,26 +509,25 @@ async fn start_with_mitm_chain_runs_mitm_before_core_and_proxy_points_at_main_po
         rules[3],
         serde_json::json!({ "ip_version": 6, "action": "reject" })
     );
-    // 内置 CN 分流规则经 local_override 物化注入（统一规则列表，默认在用户规则之后、
+    // 内置私有直连规则经 local_override 物化注入（统一规则列表，默认置顶、在用户规则与
     // MITM 白名单之前——本地规则块整体前插的既有语义）。
     assert_eq!(
         rules[4]["rule_set"],
-        serde_json::json!(["geosite-private", "geoip-private", "geosite-cn", "geoip-cn"])
+        serde_json::json!(["geosite-private", "geoip-private"])
     );
     assert_eq!(rules[4]["outbound"], "direct");
-    assert_eq!(rules[5]["rule_set"], serde_json::json!("geolocation-!cn"));
-    assert_eq!(rules[5]["outbound"], "proxy");
-    assert_eq!(rules[6]["inbound"], serde_json::json!(["main-in"]));
+    assert_eq!(rules[5]["inbound"], serde_json::json!(["main-in"]));
     assert_eq!(
-        rules[6]["domain_suffix"],
+        rules[5]["domain_suffix"],
         serde_json::json!(["example.com"])
     );
-    assert_eq!(rules[6]["domain"], serde_json::json!(["api.example2.com"]));
-    assert_eq!(rules[6]["outbound"], "pp-mitm");
+    assert_eq!(rules[5]["domain"], serde_json::json!(["api.example2.com"]));
+    assert_eq!(rules[5]["outbound"], "pp-mitm");
 
-    // Running status extension: composed config contains sniff + hijack-dns + realip resolve + IPv6 reject + 1 MITM whitelist rule + 2 merged CN-split baseline rules.
+    // Running status extension: composed config contains sniff + hijack-dns + realip resolve +
+    // IPv6 reject + 1 built-in private-direct rule + 1 MITM whitelist rule.
     let status = state.status().await;
-    assert_eq!(status.rule_count, 7);
+    assert_eq!(status.rule_count, 6);
 
     state.stop().await;
     let status = state.status().await;
@@ -631,7 +630,7 @@ async fn start_with_profile_applies_template_groups_and_js_override() {
     // Template replaces subscription's own log/route, JS override takes effect.
     assert_eq!(core_config["log"]["level"], "info");
     assert_eq!(core_config["dns"]["strategy"], "ipv4_only");
-    assert_eq!(core_config["route"]["final"], "proxy");
+    assert_eq!(core_config["route"]["final"], "final");
 
     // compose injects inbounds and MITM chain.
     let inbounds = core_config["inbounds"].as_array().unwrap();

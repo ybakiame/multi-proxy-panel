@@ -40,16 +40,15 @@ use serde_json::Value;
 const MIRROR_JSDELIVR: &str = "jsdelivr";
 const MIRROR_GITHUB: &str = "github";
 
-/// 内置 CN 分流规则集目录（tag → 镜像 URL 模板）。
+/// Built-in rule set directory (tag → mirror URL template).
 ///
-/// 与 [`crate::core_config::CN_RULE_SETS`] 同源的 5 个 tag；URL 有两族：jsDelivr（`@sing`
-/// ref）与 GitHub raw（`sing` 分支路径），按 `geo/geosite|geoip/<name>.srs` 拼。
-const BUILTIN_RULE_SETS: [(&str, &str); 5] = [
+/// Same source family as [`crate::core_config::CN_RULE_SETS`]; since 2026-09 only the private
+/// domain / private IP tags remain (country lists are user opt-in from the market). URLs come
+/// in two flavours — jsDelivr (`@sing` ref) and GitHub raw (`sing` branch) — composed as
+/// `geo/geosite|geoip/<name>.srs`.
+const BUILTIN_RULE_SETS: [(&str, &str); 2] = [
     ("geosite-private", "geosite/private"),
     ("geoip-private", "geoip/private"),
-    ("geosite-cn", "geosite/cn"),
-    ("geoip-cn", "geoip/cn"),
-    ("geolocation-!cn", "geosite/geolocation-!cn"),
 ];
 
 /// 单个镜像的超时（下载 + 连接）。
@@ -238,7 +237,9 @@ pub fn materialize_rule_sets(
         .collect();
     report.missing_tags = missing.clone();
 
-    // route.rule_set：改写 / 移除内置条目。
+    // route.rule_set：把 remote 内置条目改写为本地文件；仍不可用的 remote 条目移除。
+    // 已经是 `type: local` 的条目（例如用户自行下载、与内置 tag 同名的自定义规则集）保持
+    // 原样，避免覆盖用户数据。
     if let Some(arr) = config
         .pointer_mut("/route/rule_set")
         .and_then(Value::as_array_mut)
@@ -247,6 +248,9 @@ pub fn materialize_rule_sets(
             let Some(tag) = entry.get("tag").and_then(Value::as_str) else {
                 continue;
             };
+            if !is_remote_entry(entry) {
+                continue;
+            }
             if let Some(path) = available.get(tag) {
                 *entry = serde_json::json!({
                     "type": "local",
@@ -260,7 +264,9 @@ pub fn materialize_rule_sets(
             let Some(tag) = entry.get("tag").and_then(Value::as_str) else {
                 return true;
             };
-            !(builtin.iter().any(|b| b == tag) && !available.contains_key(tag))
+            !(is_remote_entry(entry)
+                && builtin.iter().any(|b| b == tag)
+                && !available.contains_key(tag))
         });
     }
 
@@ -268,8 +274,63 @@ pub fn materialize_rule_sets(
     report.stripped_route_rules =
         strip_rules_referencing(config.pointer_mut("/route/rules"), &missing);
     report.stripped_dns_rules = strip_rules_referencing(config.pointer_mut("/dns/rules"), &missing);
+
+    // 兜底：任何引用「route.rule_set 中不存在」的 tag 的规则都会被 sing-box 拒绝启动
+    // （规则集可被用户删除、或尚未下载），这里统一剥离，核心仍然可起。
+    let undefined = undefined_rule_set_tags(config);
+    report.stripped_route_rules +=
+        strip_rules_referencing(config.pointer_mut("/route/rules"), &undefined);
+    report.stripped_dns_rules +=
+        strip_rules_referencing(config.pointer_mut("/dns/rules"), &undefined);
     let _ = data_dir; // 路径已包含在 available 中；保留参数以稳定 API 语义
     report
+}
+
+/// 是否为 `type: remote` 的规则集条目（只有它需要被本地化物化）。
+fn is_remote_entry(entry: &Value) -> bool {
+    entry.get("type").and_then(Value::as_str) == Some("remote")
+}
+
+/// 收集 `route.rules` / `dns.rules` 中引用了「`route.rule_set` 未定义 tag」的规则集 tag。
+fn undefined_rule_set_tags(config: &Value) -> Vec<String> {
+    let defined: std::collections::HashSet<String> = config
+        .pointer("/route/rule_set")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|entry| entry.get("tag").and_then(Value::as_str))
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut tags: Vec<String> = Vec::new();
+    for pointer in ["/route/rules", "/dns/rules"] {
+        let Some(arr) = config.pointer(pointer).and_then(Value::as_array) else {
+            continue;
+        };
+        for rule in arr {
+            for tag in rule_set_tag_refs(rule) {
+                if !defined.contains(&tag) && !tags.contains(&tag) {
+                    tags.push(tag);
+                }
+            }
+        }
+    }
+    tags
+}
+
+/// 单条规则的 `rule_set` 字段引用的全部 tag（字符串或数组）。
+fn rule_set_tag_refs(rule: &Value) -> Vec<String> {
+    match rule.get("rule_set") {
+        Some(Value::String(tag)) => vec![tag.clone()],
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(Value::as_str)
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// 移除 `rules` 数组中引用任一缺失 tag 的规则，返回移除条数。

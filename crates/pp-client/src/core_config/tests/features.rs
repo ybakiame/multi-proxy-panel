@@ -210,10 +210,9 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
         cfg["dns"]["rules"],
         json!([
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" },
-            { "rule_set": ["geosite-cn"], "action": "route", "server": "local" }
+            { "clash_mode": "global", "action": "route", "server": "remote" }
         ]),
-        "Android DNS injection reproduces the CN-split baseline rules"
+        "Android DNS injection reproduces the built-in baseline rules"
     );
     assert_eq!(cfg["dns"]["final"], "remote");
     assert_eq!(
@@ -663,7 +662,7 @@ fn apply_singbox_panel_features_injects_mode_baseline_rules_at_head() {
     );
     assert_eq!(
         rules[5],
-        json!({ "clash_mode": "global", "outbound": "proxy" })
+        json!({ "clash_mode": "global", "outbound": "global" })
     );
     // Original subscription rule preserved after them (mode wins over it).
     assert_eq!(
@@ -720,7 +719,7 @@ fn apply_singbox_panel_features_keeps_cn_baseline_after_user_rules() {
     );
     assert_eq!(
         rules[5],
-        json!({ "clash_mode": "global", "outbound": "proxy" })
+        json!({ "clash_mode": "global", "outbound": "global" })
     );
     assert_eq!(
         rules[6],

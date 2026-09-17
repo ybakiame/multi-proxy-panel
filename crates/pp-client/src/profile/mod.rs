@@ -38,7 +38,8 @@ use uuid::Uuid;
 use crate::config_slices::{ConfigSlices, apply_config_slices};
 use crate::core_config::{
     OUTBOUND_KIND_BLOCK, OUTBOUND_KIND_DIRECT, OUTBOUND_KIND_SELECTOR, OUTBOUND_KIND_URLTEST,
-    OUTBOUND_TAG_AUTO, OUTBOUND_TAG_BLOCK, OUTBOUND_TAG_DIRECT, OUTBOUND_TAG_PROXY,
+    OUTBOUND_TAG_AUTO, OUTBOUND_TAG_BLOCK, OUTBOUND_TAG_DIRECT, OUTBOUND_TAG_FINAL,
+    OUTBOUND_TAG_GLOBAL, OUTBOUND_TAG_PROXY,
 };
 
 /// Profile override config: empty string = disabled.
@@ -238,6 +239,26 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
     }));
     outbounds.push(json!({ "type": OUTBOUND_KIND_DIRECT, "tag": OUTBOUND_TAG_DIRECT }));
     outbounds.push(json!({ "type": OUTBOUND_KIND_BLOCK, "tag": OUTBOUND_TAG_BLOCK }));
+    // 内置 global / final 分组（2026-09）：global = Clash GLOBAL 语义（全局模式出站，含
+    // 其它内置分组），final = 兜底分组（节点选择 + 直连），`route.final` 指向 final。
+    outbounds.push(json!({
+        "type": OUTBOUND_KIND_SELECTOR,
+        "tag": OUTBOUND_TAG_FINAL,
+        "outbounds": [OUTBOUND_TAG_PROXY, OUTBOUND_TAG_DIRECT],
+        "default": OUTBOUND_TAG_PROXY
+    }));
+    outbounds.push(json!({
+        "type": OUTBOUND_KIND_SELECTOR,
+        "tag": OUTBOUND_TAG_GLOBAL,
+        "outbounds": [
+            OUTBOUND_TAG_PROXY,
+            OUTBOUND_TAG_AUTO,
+            OUTBOUND_TAG_FINAL,
+            OUTBOUND_TAG_DIRECT,
+            OUTBOUND_TAG_BLOCK
+        ],
+        "default": OUTBOUND_TAG_PROXY
+    }));
 
     // Main selector tag: read from the generated outbounds (never hardcoded) so the CN-split
     // baseline and the remote DNS detour follow the template's actual group tag.
@@ -271,7 +292,8 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
         },
         "route": {
             "rules": [],
-            "final": proxy_tag,
+            // 兜底走内置 final 分组（节点选择 + 直连），用户可在出站管理调整。
+            "final": OUTBOUND_TAG_FINAL,
             "auto_detect_interface": true,
             "default_domain_resolver": { "server": "local" }
         }

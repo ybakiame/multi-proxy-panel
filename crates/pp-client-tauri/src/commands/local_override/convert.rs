@@ -1,6 +1,6 @@
 //! Conversion and validation helpers for local override commands.
 
-use pp_client::local_override::{CoreLocalOverride, LocalOverride, LocalRule, parse_rule_set_tags};
+use pp_client::local_override::{CoreLocalOverride, LocalOverride, LocalRule};
 
 use super::views::*;
 
@@ -9,11 +9,13 @@ use super::views::*;
 /// Checks:
 /// - Rule IDs are unique.
 /// - Targets are non-empty for non-Final rules.
-/// - RuleSet references resolve to an existing custom rule set tag
-///   （内置社区订阅已废弃，规则集引用统一指向用户自控的 custom set；纯资源语义，
-///   无 enabled 概念）。
+/// - RuleSet targets carry no empty segment (e.g. `a,,b` / trailing comma).
 /// - Custom rule set IDs/tags are unique; Remote URLs / Manual contents are
 ///   non-empty.
+///
+/// A `rule_set` reference to a tag that no custom rule set provides is **not** rejected:
+/// built-in rule sets are ordinary (deletable) custom entries, so a dangling reference is a
+/// legitimate state — config injection drops the rule instead of breaking core startup.
 pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String> {
     // 注：内置规则「不可删除」由 LocalOverrideStore::save 的播种/归一化兜底
     // （缺失自动补回），不在此处报错打断保存。
@@ -38,16 +40,16 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
         }
     }
 
-    // Check RuleSet references resolve to an existing custom rule set tag.
-    // （内置社区订阅已废弃；规则集是纯资源、无 enabled 概念——引用目标存在即可）。
-    // target 允许逗号分隔多 tag：每段 trim 后必须非空，且每个 tag 都必须存在。
+    // Check RuleSet targets: comma-separated tags, no empty segment. Existence is
+    // deliberately **not** checked — a rule set can be deleted (or not downloaded yet) and the
+    // injection layer degrades by dropping the rule instead of failing core startup.
     for rule in &core_ovr.rules {
         if matches!(
             rule.match_type,
             pp_client::local_override::RuleMatchType::RuleSet
         ) {
-            // 空段（`a,,b` / 尾随逗号）视为非法输入，不静默丢弃——与 DNS
-            // `query_type` 校验保持一致。
+            // Empty segments (`a,,b` / trailing comma) are invalid input and are not silently
+            // dropped — keeps parity with the DNS `query_type` validation.
             if rule
                 .target
                 .split(',')
@@ -57,16 +59,6 @@ pub(super) fn validate_local_override(ovr: &LocalOverride) -> Result<(), String>
                     "rule '{}' has an empty rule set tag in '{}'",
                     rule.id, rule.target
                 ));
-            }
-            for tag in parse_rule_set_tags(&rule.target) {
-                let custom_exists = ovr.custom_rule_sets.iter().any(|rs| rs.tag == tag);
-                if !custom_exists {
-                    return Err(format!(
-                        "rule '{}' references unavailable rule set '{}' \
-                         (need a custom rule set with this tag)",
-                        rule.id, tag
-                    ));
-                }
             }
         }
     }
@@ -126,6 +118,9 @@ pub(super) fn convert_input_to_model(
         applied_templates: Vec::new(),
         custom_rule_sets: input.custom_rule_sets,
         custom_templates: Vec::new(),
+        // The seeding marker is not part of the save contract; the command layer backfills it
+        // from the on-disk value (see `run_save`) so a deleted built-in rule set stays deleted.
+        builtins_seeded: false,
     })
 }
 

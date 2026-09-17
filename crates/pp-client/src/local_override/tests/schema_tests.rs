@@ -60,6 +60,7 @@ fn local_override_serde_roundtrip() {
                 },
                 last_updated: 1234567890,
                 remote_updated_at: 0,
+                builtin: false,
             },
             CustomRuleSet {
                 id: "c2".to_string(),
@@ -70,9 +71,11 @@ fn local_override_serde_roundtrip() {
                 },
                 last_updated: 0,
                 remote_updated_at: 0,
+                builtin: false,
             },
         ],
         custom_templates: Vec::new(),
+        builtins_seeded: true,
     };
 
     let json = serde_json::to_string(&orig).unwrap();
@@ -185,6 +188,7 @@ fn custom_rule_sets_default_empty_for_legacy_file() {
         },
         last_updated: 0,
         remote_updated_at: 0,
+        builtin: false,
     });
     let saved = serde_json::to_string(&ovr).unwrap();
     let back: LocalOverride = serde_json::from_str(&saved).unwrap();
@@ -268,6 +272,7 @@ fn custom_rule_set_file_format_matches_source() {
         },
         last_updated: 0,
         remote_updated_at: 0,
+        builtin: false,
     };
     assert_eq!(remote_bin.file_format(), RuleSetFormat::Binary);
 

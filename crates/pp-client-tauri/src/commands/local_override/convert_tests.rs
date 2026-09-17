@@ -15,6 +15,7 @@ fn custom_set(id: &str, tag: &str) -> CustomRuleSet {
         },
         last_updated: 0,
         remote_updated_at: 0,
+        builtin: false,
     }
 }
 
@@ -43,10 +44,11 @@ fn override_with(sets: Vec<CustomRuleSet>, rules: Vec<LocalRule>) -> LocalOverri
         applied_templates: Vec::new(),
         custom_rule_sets: sets,
         custom_templates: Vec::new(),
+        builtins_seeded: true,
     }
 }
 
-/// 多 tag（含空白、重复）均存在时通过；去重不报错。
+/// A multi-tag target (with whitespace and duplicates) is accepted; dedup is not an error.
 #[test]
 fn accepts_multi_tag_and_duplicates() {
     let ovr = override_with(
@@ -56,18 +58,18 @@ fn accepts_multi_tag_and_duplicates() {
     assert!(validate_local_override(&ovr).is_ok());
 }
 
-/// 多 tag 中任一 tag 不存在即失败，错误信息包含缺失 tag。
+/// 引用不存在的规则集 tag **不再**拦截保存：规则集可被用户删除（或尚未下载），
+/// 悬空引用由注入层降级剥离，核心仍可启动。
 #[test]
-fn rejects_unknown_tag_in_multi_tag_target() {
+fn accepts_unknown_tag_in_multi_tag_target() {
     let ovr = override_with(
         vec![custom_set("c1", "a")],
         vec![rule_set_rule("r1", "a, missing")],
     );
-    let err = validate_local_override(&ovr).unwrap_err();
-    assert!(err.contains("missing"), "{err}");
+    assert!(validate_local_override(&ovr).is_ok());
 }
 
-/// 空段（`a,,b`）视为非法输入。
+/// An empty segment (`a,,b`) is invalid input.
 #[test]
 fn rejects_empty_segment() {
     let ovr = override_with(
@@ -78,14 +80,14 @@ fn rejects_empty_segment() {
     assert!(err.contains("empty rule set tag"), "{err}");
 }
 
-/// 全空段（`,`）同样非法。
+/// An all-empty target (`,`) is invalid too.
 #[test]
 fn rejects_all_empty_segments() {
     let ovr = override_with(vec![], vec![rule_set_rule("r1", ",")]);
     assert!(validate_local_override(&ovr).is_err());
 }
 
-/// 单值存量数据仍按原行为校验通过。
+/// Legacy single-value targets keep validating as before.
 #[test]
 fn accepts_legacy_single_tag() {
     let ovr = override_with(vec![custom_set("c1", "a")], vec![rule_set_rule("r1", "a")]);

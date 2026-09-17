@@ -48,7 +48,7 @@ fn apply_singbox_panel_features_injects_ipv6_reject_after_hijack_dns() {
     );
     assert_eq!(
         rules[5],
-        json!({ "clash_mode": "global", "outbound": "proxy" })
+        json!({ "clash_mode": "global", "outbound": "global" })
     );
     assert_eq!(
         rules[6],
