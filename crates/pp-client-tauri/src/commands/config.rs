@@ -32,7 +32,8 @@ pub struct ClientConfigView {
     pub system_proxy_enabled: bool,
     /// Whether TUN virtual interface is enabled (requires root / admin).
     pub tun_enabled: bool,
-    /// TUN stack: `gvisor` / `system` / `mixed`.
+    /// TUN stack: `go` (sing-tun own stack, mobile default) / `mixed` / `system`
+    /// (desktop additionally offers `gvisor`).
     pub tun_stack: String,
     /// TUN auto route.
     pub tun_auto_route: bool,

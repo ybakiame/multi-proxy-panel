@@ -35,7 +35,7 @@ export interface ClientConfig {
   system_proxy_enabled: boolean;
   /** Whether TUN virtual network card is enabled (requires admin/root privileges). */
   tun_enabled: boolean;
-  /** TUN protocol stack: `mixed` / `gvisor` / `system`. */
+  /** TUN protocol stack: `go` (sing-tun own stack, mobile default) / `mixed` / `system`; desktop additionally offers `gvisor`. */
   tun_stack: string;
   /** TUN auto route. */
   tun_auto_route: boolean;

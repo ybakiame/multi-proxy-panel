@@ -59,7 +59,7 @@ export interface UseSettingsConfigReturn {
   onToggleVpnSelection: (next: boolean) => Promise<void>;
   ipv6Enabled: boolean;
   onToggleIpv6: (next: boolean) => Promise<void>;
-  /** TUN 入站协议栈草稿（`gvisor` / `system` / `mixed`）。 */
+  /** TUN 入站协议栈草稿（`go` / `mixed` / `system`）。 */
   tunStack: string;
   onTunStackChange: (value: string) => Promise<void>;
   /** TUN 入站 auto_route 开关。 */

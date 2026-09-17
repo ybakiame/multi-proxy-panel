@@ -7,6 +7,9 @@ use pp_common::PanelResult;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[cfg(test)]
+mod tests;
+
 /// MITM 代理的客户端视图配置。
 ///
 /// 对应 `pp_mitm::MitmConfig`，仅保留桌面客户端需要持久化的字段。
@@ -63,7 +66,8 @@ pub struct ClientConfig {
     pub system_proxy_enabled: bool,
     /// 是否启用 TUN 虚拟网卡（需要 root/管理员权限）。
     pub tun_enabled: bool,
-    /// TUN 协议栈：`gvisor` / `system` / `mixed`。
+    /// TUN 协议栈：mobile `go`（默认，sing-tun 自研栈）/ `mixed` / `system`；
+    /// desktop 另保留 `gvisor`（官方核心二进制编入 gVisor，设置页仍提供）。
     pub tun_stack: String,
     /// TUN 自动路由（默认开启）。
     pub tun_auto_route: bool,
@@ -133,6 +137,20 @@ fn default_true() -> bool {
     true
 }
 
+/// gVisor 选项清理（Android）后的存量迁移映射：`gvisor` → `go`。
+///
+/// gVisor 选项已从移动端 UI 移除，sing-tun 自研栈（`go` / `stack` 缺省，纯用户态）
+/// 接替其「无 system 栈设备兼容问题」的回退角色。`is_android` 参数化以便在宿主机
+/// 测试 Android 分支（[`ClientConfig::load`] 传 `cfg!(target_os = "android")`）；
+/// desktop 仍提供 gVisor 选项（官方核心二进制编入 gVisor），不迁移。
+fn migrated_tun_stack(is_android: bool, stack: &str) -> Option<&'static str> {
+    if is_android && stack == "gvisor" {
+        Some("go")
+    } else {
+        None
+    }
+}
+
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
@@ -146,11 +164,11 @@ impl Default for ClientConfig {
             mitm: MitmClientConfig::default(),
             system_proxy_enabled: false,
             tun_enabled: false,
-            // Android 默认 gVisor（纯用户态栈，兼容性最好）：system/mixed 的 system TCP
-            // 栈在部分设备上收不到任何 TCP 连接（实测：UDP 正常、TCP 全灭，gVisor 恢复）；
-            // 桌面保持 mixed。存量 client.json 中已持久化的值不受影响。
+            // Android 默认 go（sing-tun 自研栈）：panelcore 升级 sing-box 1.15 后
+            // `stack` 缺省即自研栈（纯用户态，无 system 栈在部分 Android 设备上
+            // TCP 全灭的兼容问题，也无 gVisor 的性能损耗）；桌面保持 mixed。
             tun_stack: if cfg!(target_os = "android") {
-                "gvisor"
+                "go"
             } else {
                 "mixed"
             }
@@ -213,9 +231,12 @@ impl ClientConfig {
 
     /// 从 `data_dir/client.json` 加载配置。
     ///
-    /// 一次性归一化（存量数据迁移）：旧版配置 `core_type: "mihomo"` 时，客户端已仅支持
-    /// sing-box——忽略该字段；若 `core_binary` 指向 mihomo 二进制则重置为空（交由核心管理
-    /// 自动选择），并将归一化结果写回磁盘（同时剔除 `core_type` 字段）。
+    /// 一次性归一化（存量数据迁移，结果写回磁盘）：
+    /// - 旧版配置 `core_type: "mihomo"` 时，客户端已仅支持 sing-box——忽略该字段；
+    ///   若 `core_binary` 指向 mihomo 二进制则重置为空（交由核心管理自动选择），
+    ///   同时剔除 `core_type` 字段；
+    /// - Android 端 `tun_stack: "gvisor"`（gVisor 选项清理前的存量值）迁移为 `go`
+    ///   （见 [`migrated_tun_stack`]）。
     pub fn load(data_dir: &Path) -> PanelResult<Self> {
         let path = data_dir.join("client.json");
         let text = std::fs::read_to_string(&path)?;
@@ -236,6 +257,14 @@ impl ClientConfig {
             std::fs::write(&path, serde_json::to_string_pretty(&raw)?)?;
             tracing::info!("旧版 mihomo 配置已归一化为 sing-box 并写回 client.json");
         }
+        if let Some(stack) = raw.get("tun_stack").and_then(|v| v.as_str())
+            && let Some(next) = migrated_tun_stack(cfg!(target_os = "android"), stack)
+        {
+            raw["tun_stack"] = serde_json::Value::String(next.to_string());
+            // 写回读取路径（不能用 `Self::save`：其目标取自配置内的 data_dir 字段）。
+            std::fs::write(&path, serde_json::to_string_pretty(&raw)?)?;
+            tracing::info!("存量 tun_stack=gvisor 已迁移为 go 并写回 client.json");
+        }
         Ok(serde_json::from_value(raw)?)
     }
 
@@ -248,239 +277,5 @@ impl ClientConfig {
         let text = serde_json::to_string_pretty(self)?;
         std::fs::write(&path, text)?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_config_has_sane_defaults() {
-        let cfg = ClientConfig::default();
-        assert_eq!(cfg.mixed_port, 17890);
-        assert!(cfg.mitm_enabled);
-        assert!(!cfg.system_proxy_enabled);
-        assert!(cfg.mitm.hostnames.is_empty());
-        assert!(cfg.active_subscription_id.is_none(), "默认不选中订阅");
-        assert!(matches!(
-            cfg.mitm.script_dialect,
-            pp_script::ScriptDialect::Surge
-        ));
-        // TUN 默认关闭；Clash API 默认开启（流量统计与出站模式即时切换依赖它，
-        // 用户可在设置页显式关闭并持久化）。
-        assert!(!cfg.tun_enabled);
-        assert_eq!(cfg.tun_stack, "mixed");
-        assert!(cfg.tun_auto_route);
-        // IPv6 默认关闭：DNS 策略 ipv4_only。
-        assert!(!cfg.ipv6_enabled);
-        // FakeIP 默认关闭（opt-in）。
-        assert!(!cfg.dns_fakeip_enabled);
-        assert!(cfg.clash_api_enabled);
-        assert_eq!(cfg.clash_api_port, 9090);
-        assert!(cfg.clash_api_secret.is_empty());
-        assert_eq!(cfg.clash_api_ui, "zashboard");
-        // GitHub 访问默认直连：无代理前缀、不走本地代理。
-        assert!(cfg.github_proxy_prefix.is_empty());
-        assert!(!cfg.fetch_via_local_proxy);
-        // 规则模式默认 rule。
-        assert_eq!(cfg.rule_mode, "rule");
-        assert_eq!(cfg.normalized_rule_mode(), "rule");
-        // VPN notification defaults.
-        assert!(cfg.vpn_notify_show_traffic);
-        assert!(cfg.vpn_notify_show_selection);
-    }
-
-    #[test]
-    fn new_config_wires_ca_dir_to_data_dir() {
-        let cfg = ClientConfig::new(
-            PathBuf::from("/tmp/pp-client-test"),
-            "http://127.0.0.1:50052",
-            "abc123",
-            PathBuf::from("/usr/local/bin/sing-box"),
-        );
-        assert_eq!(cfg.mitm.ca_dir, PathBuf::from("/tmp/pp-client-test/certs"));
-    }
-
-    #[test]
-    fn serde_roundtrip() {
-        let mut cfg = ClientConfig::new(
-            PathBuf::from("/tmp/pp-client-test"),
-            "http://127.0.0.1:50052",
-            "abc123",
-            PathBuf::from("/usr/local/bin/sing-box"),
-        );
-        cfg.tun_enabled = true;
-        cfg.tun_stack = "system".to_string();
-        cfg.tun_auto_route = false;
-        cfg.ipv6_enabled = true;
-        cfg.dns_fakeip_enabled = true;
-        cfg.clash_api_enabled = true;
-        cfg.clash_api_port = 9091;
-        cfg.clash_api_secret = "sekret".to_string();
-        cfg.clash_api_ui = "metacubexd".to_string();
-        cfg.github_proxy_prefix = "https://gh-proxy.com".to_string();
-        cfg.fetch_via_local_proxy = true;
-        cfg.rule_mode = "global".to_string();
-        cfg.active_subscription_id = Some(uuid::Uuid::new_v4());
-        let json = serde_json::to_string(&cfg).unwrap();
-        let back: ClientConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(cfg, back);
-    }
-
-    #[test]
-    fn serde_missing_new_fields_defaults() {
-        // 旧版 client.json 缺失 TUN / Clash 字段时按默认值解析（serde default 全兼容；
-        // Clash API 默认开启，同 ClientConfig::default）。
-        let json = r#"{
-            "data_dir": "/tmp/pp-client-test",
-            "hub_url": "http://127.0.0.1:50052",
-            "sub_token": "tok",
-            "core_type": "singbox",
-            "core_binary": "/usr/local/bin/sing-box",
-            "mixed_port": 17890,
-            "mitm_enabled": true,
-            "mitm": { "ca_dir": "/tmp/pp-client-test/certs", "hostnames": [], "script_dialect": "Surge" },
-            "system_proxy_enabled": false
-        }"#;
-        let cfg: ClientConfig = serde_json::from_str(json).unwrap();
-        assert!(!cfg.tun_enabled);
-        assert_eq!(cfg.tun_stack, "mixed");
-        assert!(cfg.tun_auto_route);
-        // Old client.json missing ipv6_enabled should parse with default false.
-        assert!(!cfg.ipv6_enabled);
-        // Old client.json missing dns_fakeip_enabled should parse with default false.
-        assert!(!cfg.dns_fakeip_enabled);
-        assert!(cfg.clash_api_enabled);
-        assert_eq!(cfg.clash_api_port, 9090);
-        assert!(cfg.clash_api_secret.is_empty());
-        assert_eq!(cfg.clash_api_ui, "zashboard");
-        // 旧 client.json 缺失 GitHub 访问字段时按默认值解析（直连、不代理）。
-        assert!(cfg.github_proxy_prefix.is_empty());
-        assert!(!cfg.fetch_via_local_proxy);
-        // 旧 client.json 缺失 active_subscription_id 时按默认值解析（未选中订阅）。
-        assert_eq!(cfg.active_subscription_id, None);
-        // Old client.json missing group_selections should parse with default empty map.
-        assert!(cfg.group_selections.is_empty());
-        // Old client.json missing rule_mode should parse with default `rule`.
-        assert_eq!(cfg.rule_mode, "rule");
-        assert_eq!(cfg.normalized_rule_mode(), "rule");
-        // Old client.json missing VPN notification fields should parse with default true.
-        assert!(cfg.vpn_notify_show_traffic);
-        assert!(cfg.vpn_notify_show_selection);
-    }
-
-    #[test]
-    fn normalized_rule_mode_falls_back_for_invalid_values() {
-        let cfg = ClientConfig {
-            rule_mode: "direct".to_string(),
-            ..ClientConfig::default()
-        };
-        assert_eq!(cfg.normalized_rule_mode(), "direct");
-
-        for invalid in ["", "bogus", "Rule", "全局", "proxy"] {
-            let cfg = ClientConfig {
-                rule_mode: invalid.to_string(),
-                ..ClientConfig::default()
-            };
-            assert_eq!(
-                cfg.normalized_rule_mode(),
-                "rule",
-                "非法值 {invalid:?} 应回退 rule"
-            );
-        }
-    }
-
-    #[test]
-    fn load_save_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cfg = ClientConfig::new(
-            dir.path().to_path_buf(),
-            "http://127.0.0.1:50052",
-            "tok",
-            PathBuf::from("/usr/local/bin/sing-box"),
-        );
-        cfg.hub_url = "http://localhost:50052".to_string();
-        cfg.mixed_port = 20000;
-        cfg.system_proxy_enabled = true;
-
-        cfg.save().unwrap();
-        assert!(dir.path().join("client.json").exists());
-
-        let loaded = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(cfg, loaded);
-    }
-
-    /// 存量归一化：旧版 `core_type: "mihomo"` 的 client.json 加载时归一化——`core_type`
-    /// 字段被忽略；`core_binary` 指向 mihomo 二进制时重置为空并写回磁盘。
-    #[test]
-    fn load_normalizes_legacy_mihomo_config_and_writes_back() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("client.json"),
-            r#"{
-                "data_dir": "",
-                "core_type": "mihomo",
-                "core_binary": "/home/u/.proxy-panel-client/cores/mihomo/1.19.29/mihomo",
-                "mixed_port": 17890
-            }"#,
-        )
-        .unwrap();
-
-        let loaded = ClientConfig::load(dir.path()).unwrap();
-        assert!(
-            loaded.core_binary.as_os_str().is_empty(),
-            "mihomo 二进制应重置为自动选择"
-        );
-
-        // 已写回：再次读取磁盘文件，core_type 字段被剔除、core_binary 为空。
-        let text = std::fs::read_to_string(dir.path().join("client.json")).unwrap();
-        let raw: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert!(raw.get("core_type").is_none());
-        assert_eq!(raw["core_binary"], "");
-
-        // 再次加载幂等（不报错）。
-        let again = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(again, loaded);
-    }
-
-    /// 存量归一化：旧版 `core_type: "mihomo"` 但 core_binary 指向非 mihomo 路径时，
-    /// 保留 core_binary 原值。
-    #[test]
-    fn load_normalizes_legacy_mihomo_keeps_non_mihomo_binary() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("client.json"),
-            r#"{
-                "data_dir": "",
-                "core_type": "mihomo",
-                "core_binary": "/usr/local/bin/sing-box"
-            }"#,
-        )
-        .unwrap();
-
-        let loaded = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(loaded.core_binary, PathBuf::from("/usr/local/bin/sing-box"));
-    }
-
-    /// 旧版 `core_type: "singbox"` 配置正常加载，字段被忽略、core_binary 不受影响。
-    #[test]
-    fn load_tolerates_legacy_singbox_core_type_field() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("client.json"),
-            r#"{
-                "data_dir": "",
-                "core_type": "singbox",
-                "core_binary": "/usr/local/bin/sing-box"
-            }"#,
-        )
-        .unwrap();
-
-        let loaded = ClientConfig::load(dir.path()).unwrap();
-        assert_eq!(loaded.core_binary, PathBuf::from("/usr/local/bin/sing-box"));
-        // 非 mihomo 存量不回写（core_type 字段在下次 save 时自然剔除）。
-        let text = std::fs::read_to_string(dir.path().join("client.json")).unwrap();
-        assert!(text.contains("core_type"));
     }
 }

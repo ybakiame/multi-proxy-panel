@@ -9,14 +9,13 @@ import { useSettingsConfig } from "../Settings/useSettingsConfig";
  * 选项标签只留栈名。 */
 const TUN_STACK_OPTIONS = [
   { value: "go", label: "go" },
-  { value: "gvisor", label: "gVisor" },
   { value: "mixed", label: "mixed" },
   { value: "system", label: "system" },
 ];
 
 /** 各栈说明（选择器上方的小字段落）。 */
 const TUN_STACK_HINT =
-  "go：sing-tun 纯 Go 栈（推荐，上游 1.15 起统一方向）；gVisor：用户态栈，兼容性最好的回退项；mixed：TCP 系统栈 + UDP gVisor；system：系统栈，性能最佳但部分设备不兼容";
+  "go：sing-tun 自研栈（推荐，sing-box 1.15 起的默认栈，纯用户态无设备兼容问题）；mixed：TCP 系统栈 + UDP gVisor（部分设备 TCP 不可用）；system：系统栈，性能最佳但部分设备不兼容";
 
 /**
  * 入站管理子页（路由 `/config/inbounds`；前身为「网络」页 `/config/network`，2026-09 更名

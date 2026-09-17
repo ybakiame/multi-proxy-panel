@@ -46,7 +46,8 @@ pub struct MitmChain {
 pub struct PanelFeatures {
     /// Whether to enable TUN virtual network card (requires root/admin privileges).
     pub tun_enabled: bool,
-    /// TUN protocol stack: `gvisor` / `system` / `mixed`.
+    /// TUN protocol stack: `go` (sing-tun own stack, mobile default) / `mixed` /
+    /// `system`; desktop additionally keeps `gvisor`.
     pub tun_stack: String,
     /// TUN auto route.
     pub tun_auto_route: bool,
