@@ -14,7 +14,7 @@ import {
   useSaveConfig,
 } from "@pp/client-core";
 import type { CacheFileSlice, ClientConfig, ConfigSlices, ExperimentalSlice } from "@pp/client-core";
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 import { useSettingsConfig, randomClashApiSecret } from "../Settings/useSettingsConfig";
 import { ClashApiCard } from "./ClashApiCard";
 import { isConfigSlices } from "./Dns/dnsUtils";
@@ -132,114 +132,105 @@ export default function ExperimentalPage() {
     setDraft((current) => (current ? { ...current, cache_file: { ...current.cache_file, ...patch } } : current));
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="实验性配置"
-        action={
-          <Button
-            variant="primary"
-            className="h-11 shrink-0 px-4"
-            isDisabled={!valid || !dirty || saving}
-            isPending={saving}
-            onPress={() => void handleSave()}
-          >
-            保存
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && !slices && (
+    <SubPageShell
+      title="实验性配置"
+      action={
+        <Button
+          variant="primary"
+          className="h-11 shrink-0 px-4"
+          isDisabled={!valid || !dirty || saving}
+          isPending={saving}
+          onPress={() => void handleSave()}
+        >
+          {dirty ? "保存" : "已保存"}
+        </Button>
+      }
+    >
+      {isLoading && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载 Experimental 配置…</span>
+          </Card.Content>
+        </Card>
+      )}
+
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
+
+      {!isLoading && !queryError && !draft && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">Experimental 配置不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
+              重新加载
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
+
+      <Alert status="accent">
+        <Alert.Indicator />
+        <Alert.Content>
+          <Alert.Description>实验性功能，可能会存在不稳定现象。</Alert.Description>
+        </Alert.Content>
+      </Alert>
+
+      {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
+      <ClashApiCard settings={settings} />
+
+      {draft && (
+        <>
           <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载 Experimental 配置…</span>
+            <Card.Header>
+              <Card.Title>Cache File</Card.Title>
+              <Card.Description>持久化缓存文件（experimental.cache_file）</Card.Description>
+            </Card.Header>
+            <Card.Content className="flex flex-col gap-4">
+              <ToggleRow
+                label="启用缓存文件"
+                ariaLabel="启用缓存文件"
+                isSelected={draft.cache_file.enabled}
+                onChange={(next) => updateCacheFile({ enabled: next })}
+              />
+              <Field
+                id="experimental-cache-path"
+                label="路径"
+                value={draft.cache_file.path}
+                onChange={(path) => updateCacheFile({ path })}
+                placeholder="默认 cache.db"
+                error={pathError}
+              />
+              <Field
+                id="experimental-cache-id"
+                label="Cache ID"
+                value={draft.cache_file.cache_id}
+                onChange={(cache_id) => updateCacheFile({ cache_id })}
+                placeholder="留空则不使用独立 store"
+              />
+              <ToggleRow
+                label="缓存 fakeip 映射"
+                ariaLabel="缓存 fakeip 映射"
+                description="缓存 fakeip 映射，重启后保留"
+                isSelected={draft.cache_file.store_fakeip}
+                onChange={(next) => updateCacheFile({ store_fakeip: next })}
+              />
             </Card.Content>
           </Card>
-        )}
-
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
-
-        {!isLoading && !queryError && !draft && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">Experimental 配置不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
-
-        <Alert status="accent">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Description>实验性功能，可能会存在不稳定现象。</Alert.Description>
-          </Alert.Content>
-        </Alert>
-
-        {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
-        <ClashApiCard settings={settings} />
-
-        {draft && (
-          <>
-            <Card>
-              <Card.Header>
-                <Card.Title>Cache File</Card.Title>
-                <Card.Description>持久化缓存文件（experimental.cache_file）</Card.Description>
-              </Card.Header>
-              <Card.Content className="flex flex-col gap-4">
-                <ToggleRow
-                  label="启用缓存文件"
-                  ariaLabel="启用缓存文件"
-                  isSelected={draft.cache_file.enabled}
-                  onChange={(next) => updateCacheFile({ enabled: next })}
-                />
-                <Field
-                  id="experimental-cache-path"
-                  label="路径"
-                  value={draft.cache_file.path}
-                  onChange={(path) => updateCacheFile({ path })}
-                  placeholder="默认 cache.db"
-                  error={pathError}
-                />
-                <Field
-                  id="experimental-cache-id"
-                  label="Cache ID"
-                  value={draft.cache_file.cache_id}
-                  onChange={(cache_id) => updateCacheFile({ cache_id })}
-                  placeholder="留空则不使用独立 store"
-                />
-                <ToggleRow
-                  label="缓存 fakeip 映射"
-                  ariaLabel="缓存 fakeip 映射"
-                  description="缓存 fakeip 映射，重启后保留"
-                  isSelected={draft.cache_file.store_fakeip}
-                  onChange={(next) => updateCacheFile({ store_fakeip: next })}
-                />
-              </Card.Content>
-            </Card>
-          </>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </SubPageShell>
   );
 }
 

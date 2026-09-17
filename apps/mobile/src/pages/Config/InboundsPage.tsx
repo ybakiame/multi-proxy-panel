@@ -1,6 +1,6 @@
 import { Alert, Card } from "@heroui/react";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 import { SettingsInput, SwitchRow } from "../Settings/fields";
 import { useSettingsConfig } from "../Settings/useSettingsConfig";
 
@@ -33,82 +33,73 @@ export default function InboundsPage() {
   const settings = useSettingsConfig();
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="入站管理" />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        <Alert status="accent">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>始终启用</Alert.Title>
-            <Alert.Description>
-              两条入站对应核心的 inbounds 顶级字段，始终启用；此处调整其监听与协议栈参数。
-            </Alert.Description>
-          </Alert.Content>
-        </Alert>
+    <SubPageShell title="入站管理">
+      <Alert status="accent">
+        <Alert.Indicator />
+        <Alert.Content>
+          <Alert.Title>始终启用</Alert.Title>
+          <Alert.Description>
+            两条入站对应核心的 inbounds 顶级字段，始终启用；此处调整其监听与协议栈参数。
+          </Alert.Description>
+        </Alert.Content>
+      </Alert>
 
-        {/* 混合入站（mixed-in）：listen 固定 127.0.0.1，仅 listen_port 可调 */}
-        <Card>
-          <Card.Header>
-            <Card.Title>混合入站（mixed-in）</Card.Title>
-            <Card.Description>HTTP / SOCKS 混合代理入站，监听 127.0.0.1</Card.Description>
-          </Card.Header>
-          <Card.Content className="flex flex-col gap-4">
-            <SettingsInput
-              id="settings-mixed-port"
-              label="监听端口（listen_port）"
-              value={settings.mixedPortDraft}
-              onChange={settings.onMixedPortChange}
-              placeholder="1080"
-              disabled={!settings.ready}
-              inputMode="numeric"
-              error={settings.mixedPortError}
-              hint="其他 App 手动配置代理（HTTP / SOCKS）时使用的本地端口"
-            />
-          </Card.Content>
-        </Card>
+      {/* 混合入站（mixed-in）：listen 固定 127.0.0.1，仅 listen_port 可调 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>混合入站（mixed-in）</Card.Title>
+          <Card.Description>HTTP / SOCKS 混合代理入站，监听 127.0.0.1</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <SettingsInput
+            id="settings-mixed-port"
+            label="监听端口（listen_port）"
+            value={settings.mixedPortDraft}
+            onChange={settings.onMixedPortChange}
+            placeholder="1080"
+            disabled={!settings.ready}
+            inputMode="numeric"
+            error={settings.mixedPortError}
+            hint="其他 App 手动配置代理（HTTP / SOCKS）时使用的本地端口"
+          />
+        </Card.Content>
+      </Card>
 
-        {/* TUN 入站（tun-in）：stack / auto_route 可调，strict_route / 双栈地址 / MTU 内置固定 */}
-        <Card>
-          <Card.Header>
-            <Card.Title>TUN 入站（tun-in）</Card.Title>
-            <Card.Description>虚拟网卡全流量接管（Android VpnService）</Card.Description>
-          </Card.Header>
-          <Card.Content className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">协议栈（stack）</span>
-                <span className="text-xs text-muted">{TUN_STACK_HINT}</span>
-              </div>
-              <MobileSelectSheet
-                label="协议栈"
-                value={settings.tunStack}
-                onChange={(value) => void settings.onTunStackChange(value)}
-                options={TUN_STACK_OPTIONS}
-              />
+      {/* TUN 入站（tun-in）：stack / auto_route 可调，strict_route / 双栈地址 / MTU 内置固定 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>TUN 入站（tun-in）</Card.Title>
+          <Card.Description>虚拟网卡全流量接管（Android VpnService）</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-foreground">协议栈（stack）</span>
+              <span className="text-xs text-muted">{TUN_STACK_HINT}</span>
             </div>
-            <SwitchRow
-              label="自动路由（auto_route）"
-              description="自动配置系统路由表接管流量；Android VpnService 下保持开启"
-              selected={settings.tunAutoRoute}
-              disabled={!settings.ready}
-              onChange={(next) => void settings.onToggleTunAutoRoute(next)}
+            <MobileSelectSheet
+              label="协议栈"
+              value={settings.tunStack}
+              onChange={(value) => void settings.onTunStackChange(value)}
+              options={TUN_STACK_OPTIONS}
             />
-            <SwitchRow
-              label="IPv6"
-              description="关闭时 DNS 不返回 AAAA 记录（推荐，节点不支持 IPv6 时最稳定）；开启后双栈，IPv6 流量经隧道按规则分流"
-              selected={settings.ipv6Enabled}
-              disabled={!settings.ready}
-              onChange={(next) => void settings.onToggleIpv6(next)}
-            />
-          </Card.Content>
-        </Card>
-      </div>
-    </div>
+          </div>
+          <SwitchRow
+            label="自动路由（auto_route）"
+            description="自动配置系统路由表接管流量；Android VpnService 下保持开启"
+            selected={settings.tunAutoRoute}
+            disabled={!settings.ready}
+            onChange={(next) => void settings.onToggleTunAutoRoute(next)}
+          />
+          <SwitchRow
+            label="IPv6"
+            description="关闭时 DNS 不返回 AAAA 记录（推荐，节点不支持 IPv6 时最稳定）；开启后双栈，IPv6 流量经隧道按规则分流"
+            selected={settings.ipv6Enabled}
+            disabled={!settings.ready}
+            onChange={(next) => void settings.onToggleIpv6(next)}
+          />
+        </Card.Content>
+      </Card>
+    </SubPageShell>
   );
 }

@@ -24,7 +24,7 @@ import type {
   DnsStrategy,
   LocalOverrideView,
 } from "@pp/client-core";
-import { BackHeader } from "../../../components/BackHeader";
+import { SubPageShell } from "../../../components/SubPageShell";
 import { isLocalOverrideView } from "../localOverrideGuards";
 import { buildRuleSetOptions } from "../ruleSetOptions";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
@@ -304,122 +304,113 @@ export default function DnsPage() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="DNS 管理"
-        action={
-          <Button
-            variant="primary"
-            className="h-11 shrink-0 px-4"
-            isDisabled={!valid || !dirty || saving}
-            isPending={saving}
-            onPress={() => void handleSave()}
-          >
-            保存
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && !slices && (
+    <SubPageShell
+      title="DNS 管理"
+      action={
+        <Button
+          variant="primary"
+          className="h-11 shrink-0 px-4"
+          isDisabled={!valid || !dirty || saving}
+          isPending={saving}
+          onPress={() => void handleSave()}
+        >
+          {dirty ? "保存" : "已保存"}
+        </Button>
+      }
+    >
+      {isLoading && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载 DNS 配置…</span>
+          </Card.Content>
+        </Card>
+      )}
+
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
+
+      {!isLoading && !queryError && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">DNS 配置不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
+              重新加载
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
+
+      {draft && (
+        <>
+          {/* 配置来源状态卡：内置默认（跟随系统）/ 自定义（接管），接管时可一键恢复内置默认 */}
           <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载 DNS 配置…</span>
-            </Card.Content>
+            <Card.Header>
+              <Card.Title>配置来源</Card.Title>
+              <Card.Description>
+                {willTakeover
+                  ? "自定义 DNS：保存后取代内置默认生效"
+                  : "内置默认 DNS：可直接编辑下方配置，保存后自动接管生效"}
+              </Card.Description>
+            </Card.Header>
+            {willTakeover && (
+              <Card.Content>
+                <Button
+                  variant="secondary"
+                  className="min-h-11 w-full"
+                  onPress={handleRestoreBuiltin}
+                  isDisabled={builtin === undefined}
+                >
+                  恢复内置默认
+                </Button>
+              </Card.Content>
+            )}
           </Card>
-        )}
 
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
+          {/* FakeIP（W2，ClientConfig）仅在内置默认（跟随系统）生效时可见：接管后由切片正文全权接管 */}
+          {!willTakeover && <DnsFakeipCard />}
 
-        {!isLoading && !queryError && !slices && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">DNS 配置不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
+          <DnsServerListSection
+            servers={draft.servers}
+            probes={probes}
+            probing={probing}
+            onToggle={handleToggleServer}
+            onProbe={() => void handleProbeServers(draft)}
+            onEdit={openEditServer}
+            onAdd={openAddServer}
+            onRolePick={setRolePick}
+          />
 
-        {draft && (
-          <>
-            {/* 配置来源状态卡：内置默认（跟随系统）/ 自定义（接管），接管时可一键恢复内置默认 */}
-            <Card>
-              <Card.Header>
-                <Card.Title>配置来源</Card.Title>
-                <Card.Description>
-                  {willTakeover
-                    ? "自定义 DNS：保存后取代内置默认生效"
-                    : "内置默认 DNS：可直接编辑下方配置，保存后自动接管生效"}
-                </Card.Description>
-              </Card.Header>
-              {willTakeover && (
-                <Card.Content>
-                  <Button
-                    variant="secondary"
-                    className="min-h-11 w-full"
-                    onPress={handleRestoreBuiltin}
-                    isDisabled={builtin === undefined}
-                  >
-                    恢复内置默认
-                  </Button>
-                </Card.Content>
-              )}
-            </Card>
+          <DnsRuleListSection
+            rules={draft.rules}
+            onToggle={handleToggleRule}
+            onEdit={openEditRule}
+            onAdd={openAddRule}
+          />
 
-            {/* FakeIP（W2，ClientConfig）仅在内置默认（跟随系统）生效时可见：接管后由切片正文全权接管 */}
-            {!willTakeover && <DnsFakeipCard />}
-
-            <DnsServerListSection
-              servers={draft.servers}
-              probes={probes}
-              probing={probing}
-              onToggle={handleToggleServer}
-              onProbe={() => void handleProbeServers(draft)}
-              onEdit={openEditServer}
-              onAdd={openAddServer}
-              onRolePick={setRolePick}
-            />
-
-            <DnsRuleListSection
-              rules={draft.rules}
-              onToggle={handleToggleRule}
-              onEdit={openEditRule}
-              onAdd={openAddRule}
-            />
-
-            <DnsRoutingCard
-              finalTag={draft.final_tag}
-              strategy={draft.strategy}
-              reverseMapping={draft.reverse_mapping}
-              serverTagOptions={serverTagOptions}
-              finalTagError={errors?.finalTag ?? null}
-              onChangeFinalTag={handleChangeFinalTag}
-              onChangeStrategy={handleChangeStrategy}
-              onChangeReverseMapping={handleChangeReverseMapping}
-            />
-          </>
-        )}
-      </div>
+          <DnsRoutingCard
+            finalTag={draft.final_tag}
+            strategy={draft.strategy}
+            reverseMapping={draft.reverse_mapping}
+            serverTagOptions={serverTagOptions}
+            finalTagError={errors?.finalTag ?? null}
+            onChangeFinalTag={handleChangeFinalTag}
+            onChangeStrategy={handleChangeStrategy}
+            onChangeReverseMapping={handleChangeReverseMapping}
+          />
+        </>
+      )}
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
       <DnsServerPresetSheet
@@ -471,6 +462,6 @@ export default function DnsPage() {
         onClose={() => setPendingRuleDelete(null)}
         onConfirm={handleRuleDeleteConfirm}
       />
-    </div>
+    </SubPageShell>
   );
 }

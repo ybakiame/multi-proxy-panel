@@ -1,4 +1,4 @@
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 import { AboutCard } from "./AboutCard";
 
 /**
@@ -8,17 +8,8 @@ import { AboutCard } from "./AboutCard";
  */
 export default function AboutPage() {
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="关于" />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        <AboutCard />
-      </div>
-    </div>
+    <SubPageShell title="关于">
+      <AboutCard />
+    </SubPageShell>
   );
 }

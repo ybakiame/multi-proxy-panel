@@ -9,7 +9,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { diagnoseConnectivityRun, toErrorMessage, toastError } from "@pp/client-core";
 import type { DiagReport, DiagStatus } from "@pp/client-core";
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none " +
@@ -65,107 +65,98 @@ export default function DiagnosePage() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="连通性诊断" backTo="/settings/dev-tools" />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {/* 目标输入 + 运行 */}
+    <SubPageShell title="连通性诊断" backTo="/settings/dev-tools">
+      {/* 目标输入 + 运行 */}
+      <Card>
+        <Card.Content className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">目标域名</span>
+            <input
+              value={domain}
+              onChange={(event) => setDomain(event.target.value)}
+              placeholder="google.com"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="url"
+              disabled={running}
+              aria-label="目标域名"
+              className={inputClass}
+            />
+            <span className="text-xs text-muted">
+              沿流量路径分步检查：DNS 解析 → 直连 → 各 DNS 服务器 → 核心全链路 → 代理出站
+            </span>
+          </label>
+          <Button
+            variant="primary"
+            className="min-h-12 w-full"
+            isDisabled={!canRun}
+            isPending={running}
+            onPress={() => void handleRun()}
+          >
+            <PlayIcon className="size-4" aria-hidden="true" />
+            {running ? "诊断中…" : "开始诊断"}
+          </Button>
+        </Card.Content>
+      </Card>
+
+      {/* 汇总 */}
+      {report && (
         <Card>
-          <Card.Content className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">目标域名</span>
-              <input
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
-                placeholder="google.com"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                inputMode="url"
-                disabled={running}
-                aria-label="目标域名"
-                className={inputClass}
-              />
-              <span className="text-xs text-muted">
-                沿流量路径分步检查：DNS 解析 → 直连 → 各 DNS 服务器 → 核心全链路 → 代理出站
-              </span>
-            </label>
-            <Button
-              variant="primary"
-              className="min-h-12 w-full"
-              isDisabled={!canRun}
-              isPending={running}
-              onPress={() => void handleRun()}
-            >
-              <PlayIcon className="size-4" aria-hidden="true" />
-              {running ? "诊断中…" : "开始诊断"}
-            </Button>
+          <Card.Content className="flex items-center justify-between gap-3 py-3">
+            <span className="text-sm text-foreground">诊断完成：{report.domain}</span>
+            <Chip size="sm" variant="soft" color={report.failed_steps === 0 ? "success" : "danger"}>
+              {report.failed_steps === 0 ? "全部通过" : `${report.failed_steps} 项失败`}
+            </Chip>
           </Card.Content>
         </Card>
+      )}
 
-        {/* 汇总 */}
-        {report && (
-          <Card>
-            <Card.Content className="flex items-center justify-between gap-3 py-3">
-              <span className="text-sm text-foreground">诊断完成：{report.domain}</span>
-              <Chip size="sm" variant="soft" color={report.failed_steps === 0 ? "success" : "danger"}>
-                {report.failed_steps === 0 ? "全部通过" : `${report.failed_steps} 项失败`}
-              </Chip>
+      {/* 分步结果 */}
+      {report?.steps.map((step) => {
+        const meta = STATUS_META[step.status];
+        return (
+          <Card key={step.key}>
+            <Card.Content className="flex flex-col gap-2 py-3">
+              <div className="flex items-center gap-2">
+                <StatusIcon status={step.status} />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{step.name}</span>
+                <Chip size="sm" variant="soft" color={meta.color} className="shrink-0">
+                  {meta.label}
+                </Chip>
+                {step.duration_ms > 0 && <span className="shrink-0 text-xs text-muted">{step.duration_ms}ms</span>}
+              </div>
+              <span className="text-xs text-foreground/90">{step.summary}</span>
+              {step.detail !== "" && (
+                <pre className="overflow-x-auto rounded-lg bg-surface-secondary/60 p-2 font-mono text-xs whitespace-pre-wrap text-muted">
+                  {step.detail}
+                </pre>
+              )}
             </Card.Content>
           </Card>
-        )}
+        );
+      })}
 
-        {/* 分步结果 */}
-        {report?.steps.map((step) => {
-          const meta = STATUS_META[step.status];
-          return (
-            <Card key={step.key}>
-              <Card.Content className="flex flex-col gap-2 py-3">
-                <div className="flex items-center gap-2">
-                  <StatusIcon status={step.status} />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{step.name}</span>
-                  <Chip size="sm" variant="soft" color={meta.color} className="shrink-0">
-                    {meta.label}
-                  </Chip>
-                  {step.duration_ms > 0 && <span className="shrink-0 text-xs text-muted">{step.duration_ms}ms</span>}
-                </div>
-                <span className="text-xs text-foreground/90">{step.summary}</span>
-                {step.detail !== "" && (
-                  <pre className="overflow-x-auto rounded-lg bg-surface-secondary/60 p-2 font-mono text-xs whitespace-pre-wrap text-muted">
-                    {step.detail}
-                  </pre>
-                )}
-              </Card.Content>
-            </Card>
-          );
-        })}
+      {/* 初始空态 */}
+      {!report && !running && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-10 text-center">
+            <span className="text-sm text-muted">输入目标域名后点击「开始诊断」</span>
+            <span className="text-xs text-muted/80">
+              推荐对照：google.com（境外，预期直连失败、代理成功）与一个境内域名（预期直连成功）
+            </span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {/* 初始空态 */}
-        {!report && !running && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-10 text-center">
-              <span className="text-sm text-muted">输入目标域名后点击「开始诊断」</span>
-              <span className="text-xs text-muted/80">
-                推荐对照：google.com（境外，预期直连失败、代理成功）与一个境内域名（预期直连成功）
-              </span>
-            </Card.Content>
-          </Card>
-        )}
-
-        {running && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在分步诊断，弱网下最长约一分钟…</span>
-            </Card.Content>
-          </Card>
-        )}
-      </div>
-    </div>
+      {running && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在分步诊断，弱网下最长约一分钟…</span>
+          </Card.Content>
+        </Card>
+      )}
+    </SubPageShell>
   );
 }

@@ -12,7 +12,7 @@ import {
   toastSuccess,
   toErrorMessage,
 } from "@pp/client-core";
-import { BackHeader } from "../components/BackHeader";
+import { SubPageShell } from "../components/SubPageShell";
 
 /** 每次读取的尾部行数（后端默认/上限 1000）。 */
 const TAIL_LINES = 1000;
@@ -130,136 +130,127 @@ export default function Logs() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="日志"
-        action={
-          <Button
-            variant="tertiary"
-            isIconOnly
-            aria-label="刷新日志"
-            isPending={refreshing}
-            className="size-11"
-            onPress={() => void handleRefresh()}
-          >
-            {!refreshing && <ArrowPathIcon className="size-5" aria-hidden="true" />}
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {/* 日志文件列表 */}
-        <Card>
-          <Card.Header>
-            <Card.Title>日志文件</Card.Title>
-            <Card.Description>`data_dir/logs` 下的滚动与内核日志文件</Card.Description>
-          </Card.Header>
-          <Card.Content className="flex flex-col gap-2">
-            {filesLoading && logFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-                <Spinner aria-hidden="true" />
-                <span className="text-sm text-muted">正在读取日志目录…</span>
-              </div>
-            ) : logFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-                <span className="text-sm text-muted">暂无日志文件</span>
-                <span className="text-xs text-muted/80">产生运行日志后会自动生成滚动文件，可点击右上角刷新重试</span>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {logFiles.map((name) => {
-                  const selected = name === selectedFile;
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => void handleSelectFile(name)}
-                      className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80 ${
-                        selected
-                          ? "border-accent/60 bg-accent/10"
-                          : "border-border/60 bg-surface hover:bg-surface-secondary/60"
-                      }`}
-                    >
-                      <span className="w-full truncate font-mono text-sm font-medium text-foreground" title={name}>
-                        {name}
-                      </span>
-                      <span className="truncate text-xs text-muted">{describeLogFile(name)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </Card.Content>
-        </Card>
-
-        {/* 尾部内容查看 */}
-        <Card>
-          <Card.Header>
-            <Card.Title>{selectedFile ? "日志内容" : "文件预览"}</Card.Title>
-            <Card.Description>
-              {selectedFile ? `最多显示末尾 ${TAIL_LINES} 行 · 自动滚动到底部` : "点击上方文件查看其尾部内容"}
-            </Card.Description>
-          </Card.Header>
-          <Card.Content className="flex flex-col gap-2">
-            {reading && fileContent === null ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-                <Spinner aria-hidden="true" />
-                <span className="text-sm text-muted">正在读取日志…</span>
-              </div>
-            ) : readError ? (
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>日志读取失败</Alert.Title>
-                  <Alert.Description className="break-all">{readError}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : fileContent === null ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                <span className="text-sm text-muted">未选择文件</span>
-                <span className="text-xs text-muted/80">从上方列表选择一个日志文件开始查看</span>
-              </div>
-            ) : (
-              <div
-                ref={tailBoxRef}
-                className="max-h-[55vh] overflow-auto rounded-lg border border-border bg-surface-secondary/60 p-3"
-              >
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
-                  {fileContent || "(空文件)"}
-                </pre>
-              </div>
-            )}
-          </Card.Content>
-          <Card.Footer className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                className="min-h-11 flex-1"
-                isPending={exporting}
-                onPress={() => void handleExport()}
-              >
-                {!exporting && <ArrowUpTrayIcon className="size-4" aria-hidden="true" />}
-                导出日志
-              </Button>
-              <Button variant="tertiary" className="min-h-11 flex-1" onPress={() => setPendingClear(true)}>
-                <TrashIcon className="size-4" aria-hidden="true" />
-                清空
-              </Button>
+    <SubPageShell
+      title="日志"
+      action={
+        <Button
+          variant="tertiary"
+          isIconOnly
+          aria-label="刷新日志"
+          isPending={refreshing}
+          className="size-11"
+          onPress={() => void handleRefresh()}
+        >
+          {!refreshing && <ArrowPathIcon className="size-5" aria-hidden="true" />}
+        </Button>
+      }
+    >
+      {/* 日志文件列表 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>日志文件</Card.Title>
+          <Card.Description>`data_dir/logs` 下的滚动与内核日志文件</Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-2">
+          {filesLoading && logFiles.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <Spinner aria-hidden="true" />
+              <span className="text-sm text-muted">正在读取日志目录…</span>
             </div>
-            {exportPath && (
-              <p className="w-full break-all font-mono text-xs text-muted" title={exportPath}>
-                已导出：{exportPath}
-              </p>
-            )}
-          </Card.Footer>
-        </Card>
-      </div>
+          ) : logFiles.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <span className="text-sm text-muted">暂无日志文件</span>
+              <span className="text-xs text-muted/80">产生运行日志后会自动生成滚动文件，可点击右上角刷新重试</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {logFiles.map((name) => {
+                const selected = name === selectedFile;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => void handleSelectFile(name)}
+                    className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80 ${
+                      selected
+                        ? "border-accent/60 bg-accent/10"
+                        : "border-border/60 bg-surface hover:bg-surface-secondary/60"
+                    }`}
+                  >
+                    <span className="w-full truncate font-mono text-sm font-medium text-foreground" title={name}>
+                      {name}
+                    </span>
+                    <span className="truncate text-xs text-muted">{describeLogFile(name)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card.Content>
+      </Card>
+
+      {/* 尾部内容查看 */}
+      <Card>
+        <Card.Header>
+          <Card.Title>{selectedFile ? "日志内容" : "文件预览"}</Card.Title>
+          <Card.Description>
+            {selectedFile ? `最多显示末尾 ${TAIL_LINES} 行 · 自动滚动到底部` : "点击上方文件查看其尾部内容"}
+          </Card.Description>
+        </Card.Header>
+        <Card.Content className="flex flex-col gap-2">
+          {reading && fileContent === null ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <Spinner aria-hidden="true" />
+              <span className="text-sm text-muted">正在读取日志…</span>
+            </div>
+          ) : readError ? (
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>日志读取失败</Alert.Title>
+                <Alert.Description className="break-all">{readError}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : fileContent === null ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="text-sm text-muted">未选择文件</span>
+              <span className="text-xs text-muted/80">从上方列表选择一个日志文件开始查看</span>
+            </div>
+          ) : (
+            <div
+              ref={tailBoxRef}
+              className="max-h-[55vh] overflow-auto rounded-lg border border-border bg-surface-secondary/60 p-3"
+            >
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+                {fileContent || "(空文件)"}
+              </pre>
+            </div>
+          )}
+        </Card.Content>
+        <Card.Footer className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              className="min-h-11 flex-1"
+              isPending={exporting}
+              onPress={() => void handleExport()}
+            >
+              {!exporting && <ArrowUpTrayIcon className="size-4" aria-hidden="true" />}
+              导出日志
+            </Button>
+            <Button variant="tertiary" className="min-h-11 flex-1" onPress={() => setPendingClear(true)}>
+              <TrashIcon className="size-4" aria-hidden="true" />
+              清空
+            </Button>
+          </div>
+          {exportPath && (
+            <p className="w-full break-all font-mono text-xs text-muted" title={exportPath}>
+              已导出：{exportPath}
+            </p>
+          )}
+        </Card.Footer>
+      </Card>
 
       {/* 清空确认：clearLogs 仅清内存缓冲，不删磁盘文件 */}
       <AlertDialog.Backdrop
@@ -289,6 +280,6 @@ export default function Logs() {
           </AlertDialog.Dialog>
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
-    </div>
+    </SubPageShell>
   );
 }

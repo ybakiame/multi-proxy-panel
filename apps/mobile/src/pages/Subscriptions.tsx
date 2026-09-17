@@ -19,7 +19,7 @@ import {
   useClientConfig,
 } from "@pp/client-core";
 import type { SubscriptionView } from "@pp/client-core";
-import { BackHeader } from "../components/BackHeader";
+import { SubPageShell } from "../components/SubPageShell";
 import { SubscriptionDeleteConfirm } from "../components/SubscriptionDeleteConfirm";
 import { SubscriptionFormSheet } from "../components/SubscriptionFormSheet";
 import type { SubscriptionDraft } from "../components/SubscriptionFormSheet";
@@ -227,86 +227,77 @@ export default function Subscriptions() {
   const showList = !isLoading && !queryError && subscriptions.length > 0;
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="订阅管理"
-        action={
-          <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
-            <PlusIcon className="size-4" aria-hidden="true" />
-            添加
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-3 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载订阅…</span>
-            </Card.Content>
-          </Card>
-        )}
+    <SubPageShell
+      title="订阅管理"
+      action={
+        <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
+          <PlusIcon className="size-4" aria-hidden="true" />
+          添加
+        </Button>
+      }
+    >
+      {isLoading && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载订阅…</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <span className="text-sm text-muted">订阅列表加载失败</span>
-              <span className="text-xs text-muted/80">{toErrorMessage(queryError)}</span>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <span className="text-sm text-muted">订阅列表加载失败</span>
+            <span className="text-xs text-muted/80">{toErrorMessage(queryError)}</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && !queryError && subscriptions.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-5 pb-16 text-center">
-            <div className="flex flex-col gap-1">
-              <span className="text-base font-medium text-foreground">添加你的第一个订阅</span>
-              <span className="text-sm text-muted">粘贴机场订阅链接，拉取节点并用于首页启动代理</span>
-            </div>
-            <Button variant="primary" size="lg" className="min-h-12 px-8" onPress={openAdd}>
-              添加订阅
-            </Button>
+      {!isLoading && !queryError && subscriptions.length === 0 && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 pb-16 text-center">
+          <div className="flex flex-col gap-1">
+            <span className="text-base font-medium text-foreground">添加你的第一个订阅</span>
+            <span className="text-sm text-muted">粘贴机场订阅链接，拉取节点并用于首页启动代理</span>
           </div>
-        )}
+          <Button variant="primary" size="lg" className="min-h-12 px-8" onPress={openAdd}>
+            添加订阅
+          </Button>
+        </div>
+      )}
 
-        {showList && (
-          <>
-            <div className="flex items-center justify-between">
-              <span className="pl-1 text-xs text-muted">共 {subscriptions.length} 个订阅源</span>
-              <button
-                type="button"
-                aria-label="刷新全部订阅"
-                disabled={refreshAllDisabled}
-                onClick={() => void handleRefreshAll()}
-                className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-40"
-              >
-                <ArrowPathIcon className={`size-5 ${refreshingAll ? "animate-spin" : ""}`} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="flex flex-col gap-2">
-              {subscriptions.map((sub) => (
-                <SubscriptionRow
-                  key={sub.id}
-                  sub={sub}
-                  isActive={sub.id === activeId}
-                  busy={savingId === sub.id || refreshingAll}
-                  refreshing={refreshingIds.has(sub.id)}
-                  onActivate={() => void handleActivate(sub)}
-                  onToggle={() => void handleToggle(sub)}
-                  onRefresh={() => void handleRefresh(sub)}
-                  onEdit={() => openEdit(sub)}
-                  onDelete={() => setPendingDelete(sub)}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      {showList && (
+        <>
+          <div className="flex items-center justify-between">
+            <span className="pl-1 text-xs text-muted">共 {subscriptions.length} 个订阅源</span>
+            <button
+              type="button"
+              aria-label="刷新全部订阅"
+              disabled={refreshAllDisabled}
+              onClick={() => void handleRefreshAll()}
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-40"
+            >
+              <ArrowPathIcon className={`size-5 ${refreshingAll ? "animate-spin" : ""}`} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {subscriptions.map((sub) => (
+              <SubscriptionRow
+                key={sub.id}
+                sub={sub}
+                isActive={sub.id === activeId}
+                busy={savingId === sub.id || refreshingAll}
+                refreshing={refreshingIds.has(sub.id)}
+                onActivate={() => void handleActivate(sub)}
+                onToggle={() => void handleToggle(sub)}
+                onRefresh={() => void handleRefresh(sub)}
+                onEdit={() => openEdit(sub)}
+                onDelete={() => setPendingDelete(sub)}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <SubscriptionFormSheet
         isOpen={formOpen}
@@ -322,6 +313,6 @@ export default function Subscriptions() {
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void handleDeleteConfirm()}
       />
-    </div>
+    </SubPageShell>
   );
 }

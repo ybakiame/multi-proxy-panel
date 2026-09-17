@@ -19,7 +19,7 @@ import {
 } from "@pp/client-core";
 import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
@@ -267,114 +267,105 @@ export default function RuleSetsPage() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="规则集管理" />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {overrideLoading && !overrideData && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载规则集…</span>
-            </Card.Content>
-          </Card>
-        )}
+    <SubPageShell title="规则集管理">
+      {overrideLoading && !overrideData && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载规则集…</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!overrideData && !overrideLoading && overrideError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(overrideError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
+      {!overrideData && !overrideLoading && overrideError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(overrideError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!overrideData && !overrideLoading && !overrideError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">规则集数据不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
+      {!overrideData && !overrideLoading && !overrideError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">规则集数据不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
+              重新加载
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
 
-        {overrideData && (
-          <div className="flex flex-col gap-4">
-            {/* 顶部说明 */}
-            <span className="text-xs text-muted">
-              远程 URL（社区）规则集需「立即更新」下载后才会被注入；手动 JSON（自定义）保存即写入本地文件
-            </span>
+      {overrideData && (
+        <div className="flex flex-col gap-4">
+          {/* 顶部说明 */}
+          <span className="text-xs text-muted">
+            远程 URL（社区）规则集需「立即更新」下载后才会被注入；手动 JSON（自定义）保存即写入本地文件
+          </span>
 
-            {/* 顶部统一操作：添加（单一入口）+ 立即更新 */}
-            <div className="flex items-center gap-2">
-              <Button variant="primary" className="h-11 min-w-0 flex-1 px-4" onPress={openAdd}>
-                <PlusIcon className="size-4" aria-hidden="true" />
-                添加
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-11 min-w-0 flex-1 px-4"
-                isDisabled={updating || updatingIds.size > 0}
-                isPending={updating}
-                onPress={() => void handleUpdateNow()}
-              >
-                <ArrowPathIcon className="size-4" aria-hidden="true" />
-                立即更新
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-11 shrink-0 px-3"
-                onPress={() => navigate("/config/route/rulesets/market")}
-              >
-                <SparklesIcon className="size-4" aria-hidden="true" />
-                市场
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-11 shrink-0 px-3"
-                isDisabled={!baseline}
-                onPress={() => void handleRestoreBuiltin()}
-              >
-                恢复内置默认
-              </Button>
-            </div>
-
-            {/* 社区规则集：远程 URL（remote） */}
-            <RuleSetSection
-              title="社区规则集"
-              emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
-              sets={remoteSets}
-              updatingIds={updatingIds}
-              onEdit={openEdit}
-              onDelete={setPendingDelete}
-              onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
-            />
-
-            {/* 自定义规则集：手动 JSON（manual） */}
-            <RuleSetSection
-              title="自定义规则集"
-              emptyCopy="手动输入 JSON 规则内容"
-              sets={manualSets}
-              updatingIds={updatingIds}
-              onEdit={openEdit}
-              onDelete={setPendingDelete}
-              onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
-            />
+          {/* 顶部统一操作：添加（单一入口）+ 立即更新 */}
+          <div className="flex items-center gap-2">
+            <Button variant="primary" className="h-11 min-w-0 flex-1 px-4" onPress={openAdd}>
+              <PlusIcon className="size-4" aria-hidden="true" />
+              添加
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-11 min-w-0 flex-1 px-4"
+              isDisabled={updating || updatingIds.size > 0}
+              isPending={updating}
+              onPress={() => void handleUpdateNow()}
+            >
+              <ArrowPathIcon className="size-4" aria-hidden="true" />
+              立即更新
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-11 shrink-0 px-3"
+              onPress={() => navigate("/config/route/rulesets/market")}
+            >
+              <SparklesIcon className="size-4" aria-hidden="true" />
+              市场
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-11 shrink-0 px-3"
+              isDisabled={!baseline}
+              onPress={() => void handleRestoreBuiltin()}
+            >
+              恢复内置默认
+            </Button>
           </div>
-        )}
-      </div>
+
+          {/* 社区规则集：远程 URL（remote） */}
+          <RuleSetSection
+            title="社区规则集"
+            emptyCopy="添加远程 URL 规则集，如 geoip/geosite 社区资源"
+            sets={remoteSets}
+            updatingIds={updatingIds}
+            onEdit={openEdit}
+            onDelete={setPendingDelete}
+            onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
+          />
+
+          {/* 自定义规则集：手动 JSON（manual） */}
+          <RuleSetSection
+            title="自定义规则集"
+            emptyCopy="手动输入 JSON 规则内容"
+            sets={manualSets}
+            updatingIds={updatingIds}
+            onEdit={openEdit}
+            onDelete={setPendingDelete}
+            onUpdate={(ruleSet) => void handleUpdateOne(ruleSet)}
+          />
+        </div>
+      )}
 
       <RuleSetFormSheet
         isOpen={formOpen}
@@ -412,6 +403,6 @@ export default function RuleSetsPage() {
           </AlertDialog.Dialog>
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
-    </div>
+    </SubPageShell>
   );
 }

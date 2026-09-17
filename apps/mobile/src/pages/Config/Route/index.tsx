@@ -17,7 +17,7 @@ import {
 } from "@pp/client-core";
 import type { ConfigSlices, DnsStrategy, NodeTagView, RouteSlice } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
-import { BackHeader } from "../../../components/BackHeader";
+import { SubPageShell } from "../../../components/SubPageShell";
 import { EntryLinkCard } from "../../../components/EntryLinkCard";
 import { isConfigSlices } from "../Dns/dnsUtils";
 import { RouteSettingsCard } from "./RouteSettingsCard";
@@ -118,92 +118,83 @@ export default function RoutePage() {
     setDraft((current) => (current ? { ...current, resolver: { ...current.resolver, strategy } } : current));
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="路由管理"
-        action={
-          <Button
-            variant="primary"
-            className="h-11 shrink-0 px-4"
-            isDisabled={!valid || !dirty || saving}
-            isPending={saving}
-            onPress={() => void handleSave()}
-          >
-            保存
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && !slices && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载路由配置…</span>
-            </Card.Content>
-          </Card>
-        )}
+    <SubPageShell
+      title="路由管理"
+      action={
+        <Button
+          variant="primary"
+          className="h-11 shrink-0 px-4"
+          isDisabled={!valid || !dirty || saving}
+          isPending={saving}
+          onPress={() => void handleSave()}
+        >
+          {dirty ? "保存" : "已保存"}
+        </Button>
+      }
+    >
+      {isLoading && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载路由配置…</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && !queryError && !draft && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">路由配置不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && !queryError && !draft && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">路由配置不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
+              重新加载
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
 
-        {draft && errors && (
-          <>
-            <RouteSettingsCard
-              finalTag={draft.final_tag}
-              resolverServer={draft.resolver.server}
-              resolverStrategy={draft.resolver.strategy}
-              finalTagOptions={finalTagOptions}
-              resolverServerOptions={resolverServerOptions}
-              finalTagError={errors.finalTag}
-              resolverServerError={errors.resolverServer}
-              onChangeFinalTag={handleChangeFinalTag}
-              onChangeResolverServer={handleChangeResolverServer}
-              onChangeResolverStrategy={handleChangeResolverStrategy}
-            />
+      {draft && errors && (
+        <>
+          <RouteSettingsCard
+            finalTag={draft.final_tag}
+            resolverServer={draft.resolver.server}
+            resolverStrategy={draft.resolver.strategy}
+            finalTagOptions={finalTagOptions}
+            resolverServerOptions={resolverServerOptions}
+            finalTagError={errors.finalTag}
+            resolverServerError={errors.resolverServer}
+            onChangeFinalTag={handleChangeFinalTag}
+            onChangeResolverServer={handleChangeResolverServer}
+            onChangeResolverStrategy={handleChangeResolverStrategy}
+          />
 
-            <EntryLinkCard
-              icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
-              title="规则管理"
-              description="添加与管理你的分流规则"
-              onPress={() => navigate("/config/route/rules")}
-            />
-            <EntryLinkCard
-              icon={<SwatchIcon className="size-6" aria-hidden="true" />}
-              title="规则集管理"
-              description="社区与自定义规则集的增删与更新"
-              onPress={() => navigate("/config/route/rulesets")}
-            />
-          </>
-        )}
-      </div>
-    </div>
+          <EntryLinkCard
+            icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
+            title="规则管理"
+            description="添加与管理你的分流规则"
+            onPress={() => navigate("/config/route/rules")}
+          />
+          <EntryLinkCard
+            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
+            title="规则集管理"
+            description="社区与自定义规则集的增删与更新"
+            onPress={() => navigate("/config/route/rulesets")}
+          />
+        </>
+      )}
+    </SubPageShell>
   );
 }

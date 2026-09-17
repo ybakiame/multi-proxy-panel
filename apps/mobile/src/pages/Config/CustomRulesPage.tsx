@@ -32,7 +32,7 @@ import type {
 } from "@pp/client-core";
 import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
 import type { BaselineView } from "@pp/client-core";
-import { BackHeader } from "../../components/BackHeader";
+import { SubPageShell } from "../../components/SubPageShell";
 import { isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
@@ -252,70 +252,61 @@ export default function CustomRulesPage() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader title="规则管理" />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-3 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && !overrideData && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载规则…</span>
-            </Card.Content>
-          </Card>
-        )}
+    <SubPageShell title="规则管理">
+      {isLoading && !overrideData && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载规则…</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && !queryError && !overrideData && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">规则数据不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
-
-        {overrideData &&
-          currentCore &&
-          baseline &&
-          baseline.route_rules.some((tpl) => !currentCore.rules.some((rule) => rule.id === tpl.id)) && (
-            <Button variant="secondary" className="min-h-11 w-full" onPress={() => void handleRestoreBuiltinRules()}>
-              还原内置规则（置顶）
+      {!isLoading && !queryError && !overrideData && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">规则数据不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
+              重新加载
             </Button>
-          )}
+          </Card.Content>
+        </Card>
+      )}
 
-        {overrideData && currentCore && (
-          <RuleListSection
-            rules={currentCore.rules}
-            onToggle={(rule, next) => void handleToggleRule(rule, next)}
-            onMove={(index, dir) => void handleMoveRule(index, dir)}
-            onEdit={(rule) => openEdit(rule)}
-            onAdd={openAdd}
-          />
+      {overrideData &&
+        currentCore &&
+        baseline &&
+        baseline.route_rules.some((tpl) => !currentCore.rules.some((rule) => rule.id === tpl.id)) && (
+          <Button variant="secondary" className="min-h-11 w-full" onPress={() => void handleRestoreBuiltinRules()}>
+            还原内置规则（置顶）
+          </Button>
         )}
 
-        {/* 内置基线路由规则：置底只读，用户规则先于基线生效 */}
-      </div>
+      {overrideData && currentCore && (
+        <RuleListSection
+          rules={currentCore.rules}
+          onToggle={(rule, next) => void handleToggleRule(rule, next)}
+          onMove={(index, dir) => void handleMoveRule(index, dir)}
+          onEdit={(rule) => openEdit(rule)}
+          onAdd={openAdd}
+        />
+      )}
+
+      {/* 内置基线路由规则：置底只读，用户规则先于基线生效 */}
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / rule 控制显隐） */}
       <RuleEditSheet
@@ -333,6 +324,6 @@ export default function CustomRulesPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void handleDeleteConfirm()}
       />
-    </div>
+    </SubPageShell>
   );
 }

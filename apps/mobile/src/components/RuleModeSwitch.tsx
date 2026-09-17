@@ -56,6 +56,7 @@ export function RuleModeSwitch({ value, running, clashApiEnabled }: RuleModeSwit
 
   return (
     <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium text-foreground">出站模式</span>
       <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
         <legend className="sr-only">出站模式</legend>
         {RULE_MODES.map((mode) => (

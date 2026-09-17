@@ -16,7 +16,7 @@ import {
   useProxyStatus,
 } from "@pp/client-core";
 import type { ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
-import { BackHeader } from "../../../components/BackHeader";
+import { SubPageShell } from "../../../components/SubPageShell";
 import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
 import { OutboundFormSheet } from "./OutboundFormSheet";
 import { OutboundListSection } from "./OutboundListSection";
@@ -201,75 +201,66 @@ export default function OutboundsPage() {
   };
 
   return (
-    <div className="flex min-h-full flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <BackHeader
-        title="出站管理"
-        action={
-          <Button
-            variant="primary"
-            className="h-11 shrink-0 px-4"
-            isDisabled={!valid || !dirty || saving}
-            isPending={saving}
-            onPress={() => void handleSave()}
-          >
-            保存
-          </Button>
-        }
-      />
-      <div
-        className="flex min-h-full flex-1 flex-col gap-4 pt-3"
-        style={{
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        {isLoading && !slices && (
-          <Card>
-            <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在加载自定义出站配置…</span>
-            </Card.Content>
-          </Card>
-        )}
+    <SubPageShell
+      title="出站管理"
+      action={
+        <Button
+          variant="primary"
+          className="h-11 shrink-0 px-4"
+          isDisabled={!valid || !dirty || saving}
+          isPending={saving}
+          onPress={() => void handleSave()}
+        >
+          {dirty ? "保存" : "已保存"}
+        </Button>
+      }
+    >
+      {isLoading && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Spinner aria-hidden="true" />
+            <span className="text-sm text-muted">正在加载自定义出站配置…</span>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && queryError && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>加载失败</Alert.Title>
-                  <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && queryError && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>加载失败</Alert.Title>
+                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          </Card.Content>
+        </Card>
+      )}
 
-        {!isLoading && !queryError && !slices && (
-          <Card>
-            <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-              <span className="text-sm text-muted">自定义出站配置不可用</span>
-              <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
-                重新加载
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
+      {!isLoading && !queryError && !slices && (
+        <Card>
+          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
+            <span className="text-sm text-muted">自定义出站配置不可用</span>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
+              重新加载
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
 
-        {draft && (
-          <OutboundListSection
-            items={draft.items}
-            itemErrors={errors?.itemErrors ?? []}
-            onToggle={handleToggleItem}
-            onEdit={openEdit}
-            onAddGroup={() => openAdd("selector")}
-            onAddNode={() => openAdd("vless")}
-          />
-        )}
+      {draft && (
+        <OutboundListSection
+          items={draft.items}
+          itemErrors={errors?.itemErrors ?? []}
+          onToggle={handleToggleItem}
+          onEdit={openEdit}
+          onAddGroup={() => openAdd("selector")}
+          onAddNode={() => openAdd("vless")}
+        />
+      )}
 
-        {/* 内置出站：置底只读 */}
-      </div>
+      {/* 内置出站：置底只读 */}
 
       {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
       <OutboundFormSheet
@@ -297,6 +288,6 @@ export default function OutboundsPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={handleDeleteConfirm}
       />
-    </div>
+    </SubPageShell>
   );
 }
