@@ -56,10 +56,14 @@ pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
                 ..Default::default()
             },
             DnsServer {
-                tag: "remote".to_string(),
+                // 境外解析器：Google 公共 DNS 的 UDP（经代理 UDP 转发）；Google 的 DoH 端点
+                // 默认不可通（tls/https 型 8.8.8.8 在国内直连与部分节点落地均被拦），
+                // UDP:53 走代理 UDP 中继反而最稳。tag = proxy（2026-09 由 remote 更名，
+                // 表达"经代理的解析器"语义）。
+                tag: "proxy".to_string(),
                 server: "8.8.8.8".to_string(),
-                server_type: DnsServerType::Https,
-                server_port: Some(443),
+                server_type: DnsServerType::Udp,
+                server_port: Some(53),
                 detour: OUTBOUND_TAG_PROXY.to_string(),
                 ..Default::default()
             },
@@ -88,10 +92,10 @@ pub fn builtin_dns_slice(ipv6_enabled: bool) -> DnsSlice {
                 "builtin-mode-global",
                 DnsMatchType::ClashMode,
                 "global",
-                "remote",
+                "proxy",
             ),
         ],
-        final_tag: "remote".to_string(),
+        final_tag: "proxy".to_string(),
         strategy: if ipv6_enabled {
             DnsStrategy::PreferIpv4
         } else {
@@ -181,7 +185,7 @@ pub const OUTBOUND_KIND_DIRECT: &str = "direct";
 /// See [`OUTBOUND_KIND_SELECTOR`].
 pub const OUTBOUND_KIND_BLOCK: &str = "block";
 
-/// CN-split baseline DNS rules: `clash_mode direct → local`, `clash_mode global → remote`;
+/// CN-split baseline DNS rules: `clash_mode direct → local`, `clash_mode global → proxy`;
 /// `dns.final = remote` handles the rest.
 ///
 /// The clash_mode rules make DNS follow the outbound mode switch (direct mode resolves
@@ -194,7 +198,7 @@ pub const OUTBOUND_KIND_BLOCK: &str = "block";
 pub fn cn_baseline_dns_rules() -> Vec<Value> {
     vec![
         json!({ "clash_mode": "direct", "action": "route", "server": "local" }),
-        json!({ "clash_mode": "global", "action": "route", "server": "remote" }),
+        json!({ "clash_mode": "global", "action": "route", "server": "proxy" }),
     ]
 }
 

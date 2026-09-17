@@ -199,22 +199,22 @@ fn inject_android_dns_sets_explicit_dns_with_actual_selector_detour() {
     assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
     assert_eq!(cfg["dns"]["servers"][0]["type"], "https");
     assert!(cfg["dns"]["servers"][0].get("detour").is_none());
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "proxy");
     assert_eq!(
-        cfg["dns"]["servers"][1]["type"], "https",
-        "remote resolver is DoH on 443 (not DoT on 853), sharing the HTTPS path through the proxy"
+        cfg["dns"]["servers"][1]["type"], "udp",
+        "proxy resolver is Google public DNS over UDP (UDP relay through the proxy; Google DoH is unreachable by default)"
     );
-    assert_eq!(cfg["dns"]["servers"][1]["server_port"], 443);
+    assert_eq!(cfg["dns"]["servers"][1]["server_port"], 53);
     assert_eq!(cfg["dns"]["servers"][1]["detour"], "proxy");
     assert_eq!(
         cfg["dns"]["rules"],
         json!([
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" }
+            { "clash_mode": "global", "action": "route", "server": "proxy" }
         ]),
         "Android DNS injection reproduces the built-in baseline rules"
     );
-    assert_eq!(cfg["dns"]["final"], "remote");
+    assert_eq!(cfg["dns"]["final"], "proxy");
     assert_eq!(
         cfg["dns"]["reverse_mapping"], true,
         "reverse mapping must stay on so hijacked-DNS IPs map back to domains for connection records"
@@ -297,7 +297,7 @@ fn inject_android_dns_falls_back_to_route_final_when_no_selector() {
     inject_android_dns(&mut cfg);
 
     assert_eq!(cfg["dns"]["servers"][0]["tag"], "local");
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "proxy");
     assert!(
         cfg["dns"]["servers"][1].get("detour").is_none(),
         "remote should omit detour when route.final points to empty direct outbound"
@@ -374,7 +374,7 @@ fn inject_android_dns_keeps_detour_for_non_empty_direct() {
     let mut cfg = compose_singbox_config(&sub, 17890, None).unwrap();
     inject_android_dns(&mut cfg);
 
-    assert_eq!(cfg["dns"]["servers"][1]["tag"], "remote");
+    assert_eq!(cfg["dns"]["servers"][1]["tag"], "proxy");
     assert_eq!(
         cfg["dns"]["servers"][1]["detour"], "direct",
         "direct outbound with extra config keys is a valid detour target, detour should be kept"

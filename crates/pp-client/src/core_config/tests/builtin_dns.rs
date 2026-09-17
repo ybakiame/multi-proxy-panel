@@ -25,8 +25,8 @@ fn builtin_dns_slice_ipv6_off() {
         servers[0].detour.is_empty(),
         "local must stay detour-less (direct dial)"
     );
-    assert_eq!(servers[1].tag, "remote");
-    assert_eq!(servers[1].server_type, DnsServerType::Https);
+    assert_eq!(servers[1].tag, "proxy");
+    assert_eq!(servers[1].server_type, DnsServerType::Udp);
     assert_eq!(servers[1].server, "8.8.8.8");
     assert_eq!(servers[1].detour, "proxy");
 
@@ -43,9 +43,9 @@ fn builtin_dns_slice_ipv6_off() {
     assert_eq!(rules[1].server_tag, "local");
     assert_eq!(rules[2].match_type, DnsMatchType::ClashMode);
     assert_eq!(rules[2].target, "global");
-    assert_eq!(rules[2].server_tag, "remote");
+    assert_eq!(rules[2].server_tag, "proxy");
 
-    assert_eq!(slice.final_tag, "remote");
+    assert_eq!(slice.final_tag, "proxy");
     assert_eq!(slice.strategy, DnsStrategy::Ipv4Only);
     assert!(slice.reverse_mapping);
 }
@@ -81,11 +81,11 @@ fn builtin_dns_slice_renders_runtime_shape() {
                 "rcode": "NOERROR"
             },
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" }
+            { "clash_mode": "global", "action": "route", "server": "proxy" }
         ]),
         "clash_mode must render as a string (not an array), drop rule at the head"
     );
-    assert_eq!(rendered["final"], "remote");
+    assert_eq!(rendered["final"], "proxy");
     assert_eq!(rendered["strategy"], "ipv4_only");
     assert_eq!(rendered["reverse_mapping"], true);
     assert_eq!(
@@ -93,10 +93,10 @@ fn builtin_dns_slice_renders_runtime_shape() {
         json!([
             { "tag": "local", "type": "https", "server": "223.5.5.5", "server_port": 443 },
             {
-                "tag": "remote",
-                "type": "https",
+                "tag": "proxy",
+                "type": "udp",
                 "server": "8.8.8.8",
-                "server_port": 443,
+                "server_port": 53,
                 "detour": "proxy"
             }
         ])

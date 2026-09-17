@@ -164,27 +164,27 @@ fn singbox_template_builds_groups_and_route() {
         local.get("detour").is_none(),
         "local must stay detour-less (default direct dial)"
     );
-    let remote = dns_servers.iter().find(|s| s["tag"] == "remote").unwrap();
+    let remote = dns_servers.iter().find(|s| s["tag"] == "proxy").unwrap();
     assert_eq!(
-        remote["type"], "https",
-        "remote resolver is DoH on 443 (not DoT on 853), sharing the HTTPS path through the proxy"
+        remote["type"], "udp",
+        "proxy resolver is Google public DNS over UDP (UDP relay through the proxy; Google DoH is unreachable by default)"
     );
     assert_eq!(remote["server"], "8.8.8.8");
-    assert_eq!(remote["server_port"], 443);
+    assert_eq!(remote["server_port"], 53);
     assert_eq!(
         remote["detour"], "proxy",
-        "remote DNS must be dialed through the main selector to avoid pollution"
+        "proxy DNS must be dialed through the main selector to avoid pollution"
     );
     assert_eq!(
         cfg["dns"]["rules"],
         json!([
             { "clash_mode": "direct", "action": "route", "server": "local" },
-            { "clash_mode": "global", "action": "route", "server": "remote" }
+            { "clash_mode": "global", "action": "route", "server": "proxy" }
         ]),
         "built-in baseline DNS rules (country lists are user opt-in)"
     );
     assert_eq!(
-        cfg["dns"]["final"], "remote",
+        cfg["dns"]["final"], "proxy",
         "final must pin remote; new-format DNS servers do not follow route.final"
     );
     assert_eq!(cfg["dns"]["reverse_mapping"], true);

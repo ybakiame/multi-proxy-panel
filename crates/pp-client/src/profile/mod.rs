@@ -278,15 +278,17 @@ pub fn singbox_template(nodes: &[Value]) -> Value {
             "servers": [
                 { "tag": "local", "type": "https", "server": "223.5.5.5", "server_port": 443 },
                 {
-                    "tag": "remote",
-                    "type": "https",
+                    // 境外解析器：Google 公共 DNS UDP（经代理 UDP 中继；Google DoH 端点默认
+                    // 不可通）。tag = proxy（2026-09 由 remote 更名）。
+                    "tag": "proxy",
+                    "type": "udp",
                     "server": "8.8.8.8",
-                    "server_port": 443,
+                    "server_port": 53,
                     "detour": proxy_tag.clone()
                 }
             ],
             "rules": crate::core_config::cn_baseline_dns_rules(),
-            "final": "remote",
+            "final": "proxy",
             "reverse_mapping": true,
             "strategy": "prefer_ipv4"
         },

@@ -284,7 +284,8 @@ fn clash_mode_label(mode: &str) -> &'static str {
 fn dns_server_label(server: &str) -> &'static str {
     match server {
         "local" => "本地",
-        "remote" => "远程",
+        "proxy" => "代理",
+        "remote" => "远程", // 兼容存量 takeover 配置里的旧 tag
         "fakeip" => "FakeIP",
         _ => "默认",
     }

@@ -80,11 +80,13 @@ pub fn inject_android_dns(composed: &mut Value) {
     };
     // remote server conditionally includes detour: omit when target is empty direct outbound
     // (sing-box rejects at startup phase).
+    // 境外解析器：Google 公共 DNS 的 UDP（经代理 UDP 中继）；Google DoH 端点默认不可通，
+    // UDP:53 走代理反而最稳。tag = proxy（2026-09 由 remote 更名）。
     let mut remote = serde_json::Map::new();
-    remote.insert("tag".to_string(), json!("remote"));
-    remote.insert("type".to_string(), json!("https"));
+    remote.insert("tag".to_string(), json!("proxy"));
+    remote.insert("type".to_string(), json!("udp"));
     remote.insert("server".to_string(), json!("8.8.8.8"));
-    remote.insert("server_port".to_string(), json!(443));
+    remote.insert("server_port".to_string(), json!(53));
     if !is_empty_direct_outbound(obj, &detour) {
         remote.insert("detour".to_string(), json!(detour));
     }
@@ -96,7 +98,7 @@ pub fn inject_android_dns(composed: &mut Value) {
                 Value::Object(remote)
             ],
             "rules": super::cn_baseline_dns_rules(),
-            "final": "remote",
+            "final": "proxy",
             "reverse_mapping": true,
             "strategy": "prefer_ipv4"
         }),

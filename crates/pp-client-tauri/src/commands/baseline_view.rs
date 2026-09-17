@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(off.rules[0].target, "HTTPS,SVCB,AAAA");
         assert_eq!(off.strategy.as_str(), "ipv4_only");
         assert!(off.reverse_mapping);
-        assert_eq!(off.final_tag, "remote");
+        assert_eq!(off.final_tag, "proxy");
 
         let on = builtin_dns_slice(true);
         assert_eq!(on.rules[0].target, "HTTPS,SVCB");
@@ -133,7 +133,7 @@ mod tests {
 
         let value = serde_json::to_value(&off).unwrap();
         assert_eq!(value["servers"][0]["tag"], "local");
-        assert_eq!(value["servers"][1]["server_type"], "https");
+        assert_eq!(value["servers"][1]["server_type"], "udp");
         assert_eq!(value["servers"][1]["detour"], "proxy");
         assert_eq!(value["rules"][1]["match_type"], "clash_mode");
         assert_eq!(value["rules"][1]["target"], "direct");

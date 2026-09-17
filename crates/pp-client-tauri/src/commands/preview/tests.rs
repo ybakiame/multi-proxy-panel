@@ -246,9 +246,9 @@ async fn preview_core_config_injects_active_local_override_rules() {
         .as_array()
         .expect("preview should contain route.rules");
     assert!(
-        rules.iter().any(|r| {
-            r["domain_suffix"] == "preview-local.example" && r["outbound"] == "reject"
-        }),
+        rules
+            .iter()
+            .any(|r| { r["domain_suffix"] == "preview-local.example" && r["action"] == "reject" }),
         "preview should inject the active local override rule: {rules:?}"
     );
 }
