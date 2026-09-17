@@ -411,7 +411,7 @@ export function MyPage() {
 
 ## Android 客户端构建
 
-`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/mobile/panel-core`（Go 模块，gomobile 合并 sing-box libbox + mihomo 为单一 `panelcore.aar`）提供。
+`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/mobile/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供。
 
 ### 构建链路总览
 
@@ -425,21 +425,21 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 
 | 工具 | 版本要求 | 说明 |
 |------|----------|------|
-| Go | **1.25.5+**（脚本优先探测 `~/go-sdk/go`） | sing-box 1.14.0 要求 `go >= 1.25.5`；脚本由 `GOTOOLCHAIN=auto` 自动切换到满足要求的工具链（gomobile 同步升级到 **v0.1.12**，对齐 sing-box 1.14.0 `go.mod`） |
+| Go | **1.25.5+**（脚本优先探测 `~/go-sdk/go`） | sing-box 1.15.0-alpha.5 要求 `go >= 1.25.5`；脚本由 `GOTOOLCHAIN=auto` 自动切换到满足要求的工具链（gomobile 同步升级到 **v0.1.12**，SagerNet fork，规避上游 x/mobile 在 go1.24+ 的 `os.checkPidfdOnce` 链接错误） |
 | JDK | 17 或 21（`JAVA_HOME`） | gomobile 生成 Java 绑定 + Gradle |
-| Android SDK + NDK | **NDK 28.0.13004108**（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 官方 sing-box 1.14 固定版本；`with_naive_outbound` 的 cronet 预编译库在 NDK 27 下 arm64 链接会报 `unknown relocation (315)`，必须 NDK 28 |
+| Android SDK + NDK | **NDK 28.0.13004108**（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 官方 sing-box 构建固定版本；`with_naive_outbound` 的 cronet 预编译库在 NDK 27 下 arm64 链接会报 `unknown relocation (315)`，必须 NDK 28 |
 | gh CLI | 已登录 | GEO 脚本读取 MetaCubeX/meta-rules-dat 的 latest release 元数据 |
 | Bun | 1.3+ | 前端与 tauri CLI |
 
 ### 完整步骤
 
 ```bash
-export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 1.14 固定 NDK 28；按本机实际路径
+export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 构建固定 NDK 28；按本机实际路径
 
-# 1. GEO 数据（mihomo 启动必需；APK 内置避免首启无代理下载失败）
+# 1. GEO 数据（APK 内置避免首启无代理下载失败）
 ./apps/mobile/scripts/update-android-geodata.sh
 
-# 2. 构建 panelcore.aar（libbox + mihomocore 一次 bind 合并，避免双 AAR 的 go.* 运行时冲突）
+# 2. 构建 panelcore.aar（gomobile bind sing-box libbox）
 ./apps/mobile/scripts/build-panel-core.sh
 
 # 3. 打包 APK（debug）

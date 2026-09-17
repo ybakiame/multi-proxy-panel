@@ -21,6 +21,8 @@ import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.proxypanel.core.libbox.AutoRedirectHandler
+import com.proxypanel.core.libbox.AutoRedirectSession
 import com.proxypanel.core.libbox.BridgeOptions
 import com.proxypanel.core.libbox.BridgeSession
 import com.proxypanel.core.libbox.CommandClient
@@ -468,7 +470,7 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
       // panelcore 未使用核心通知通道（通知由本服务的 NotificationCompat 管理）。
     }
 
-    // --- 以下为 sing-box 1.14 PlatformInterface 新增能力，panelcore 均未启用，
+    // --- 以下为 sing-box 1.14/1.15 PlatformInterface 新增能力，panelcore 均未启用，
     //     保持最小 stub（返回「不支持/空值」），避免核心调用到未实现逻辑。 ---
 
     override fun startNeighborMonitor(listener: NeighborUpdateListener?) {
@@ -518,6 +520,16 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
 
     override fun createBridge(options: BridgeOptions?): BridgeSession {
       throw UnsupportedOperationException("android: bridge not supported")
+    }
+
+    /** sing-box 1.15 新增（Linux 桌面 auto_redirect 平台能力）：Android 不适用，恒不启用。 */
+    override fun usePlatformAutoRedirect(): Boolean = false
+
+    override fun createAutoRedirect(
+      options: ByteArray?,
+      handler: AutoRedirectHandler?,
+    ): AutoRedirectSession {
+      throw UnsupportedOperationException("android: auto redirect not supported")
     }
 
     override fun localDNSTransport(): LocalDNSTransport? = null

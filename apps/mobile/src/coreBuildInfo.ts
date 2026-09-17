@@ -8,6 +8,10 @@
  *
  * 同步提醒：升级 sing-box 或调整构建 tags 后，请同步更新本常量与
  * `apps/mobile/scripts/build-panel-core.sh` 的 `-tags`（两者必须一致）。
+ *
+ * 注：上游 1.15 起 sing-tun 自研栈为默认栈（`stack` 字段废弃），官方
+ * build_libbox 已把 `with_gvisor` 移出 tags；本项目有意保留该 tag——mixed 栈
+ * 的 UDP 半边与 desktop 遗留 `stack: "gvisor"` 序列化依赖 gVisor 编入。
  */
 export const SING_BOX_BUILD_TAGS = [
   "with_gvisor",

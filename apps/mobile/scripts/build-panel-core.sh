@@ -10,8 +10,8 @@ set -euo pipefail
 #   ./apps/mobile/scripts/build-panel-core.sh [OUTPUT_AAR]
 #
 # 环境要求:
-#   - Go 工具链（sing-box 1.14.0 要求 go >= 1.25.5；脚本优先探测
-#     ~/go-sdk/go（go1.24.5），由 GOTOOLCHAIN=auto 自动切换到满足要求的
+#   - Go 工具链（sing-box 1.15.0-alpha.5 要求 go >= 1.25.5；脚本优先探测
+#     ~/go-sdk/go（go1.25.5），由 GOTOOLCHAIN=auto 自动切换到满足要求的
 #     工具链；gomobile fork 已同步升级到 v0.1.12）
 #   - JDK 17 或 21（javac/jar，gomobile 生成 Java 绑定）
 #   - Android SDK + NDK（含 clang 交叉编译工具链）
@@ -23,15 +23,19 @@ set -euo pipefail
 #       ANDROID_NDK_HOME    NDK 根目录
 #
 # 构建说明:
-#   - 使用 SagerNet 维护的 gomobile fork（v0.1.12，对齐 sing-box 1.14.0
-#     go.mod 的 require）：
+#   - 使用 SagerNet 维护的 gomobile fork（v0.1.12，对齐 sing-box 1.15.0-alpha.5
+#     同代工具链要求）：
 #     上游 golang.org/x/mobile 以 go1.24/1.25/1.26 构建时会出现
 #     `invalid reference to os.checkPidfdOnce` 链接错误。
-#   - bind 参数逐项对齐 sing-box 官方 cmd/internal/build_libbox（v1.14.0）：
+#   - bind 参数逐项对齐 sing-box 官方 cmd/internal/build_libbox（v1.15.0-alpha.5）：
 #     -tags = libbox 主变体 release tags
-#     （with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,
-#     with_clash_api,with_usbip,with_openvpn,with_openconnect,badlinkname,
+#     （with_quic,with_wireguard,with_utls,with_naive_outbound,with_clash_api,
+#     with_usbip,with_openvpn,with_openconnect,badlinkname,
 #     tfogo_checklinkname0,with_tailscale,ts_omit_*）
+#     偏差：额外保留 with_gvisor——上游 1.15 起自研栈为默认栈、已把 with_gvisor
+#     移出 sharedTags，但 mixed 栈的 UDP 半边与遗留 `stack: "gvisor"` 序列化
+#     （desktop 仍提供该选项）依赖 gVisor 编入，缺失时运行时报
+#     "gVisor is not included in this build"。
 #     -ldflags 含 `-checklinkname=0`、`-X runtime.godebugDefault=...`
 #     （官方 release 构建同款）、-X sing-box constant.Version、-s -w -buildid=
 #     差异：-androidapi 33（对齐 App minSdk）、-javapkg com.proxypanel.core
@@ -59,7 +63,7 @@ OUTPUT_AAR="${1:-$REPO_ROOT/apps/mobile/src-tauri/gen/android/app/libs/panelcore
 GOPATH="${GOPATH:-$HOME/go-work}"
 GOMOBILE_TAG="v0.1.12"
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-SING_BOX_VERSION="v1.14.0"
+SING_BOX_VERSION="v1.15.0-alpha.5"
 SING_BOX_VERSION_NUM="${SING_BOX_VERSION#v}"
 
 # 探测 Go 工具链（GO_ROOT 优先，其次 ~/go-sdk，最后 PATH）
