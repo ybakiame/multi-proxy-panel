@@ -20,11 +20,12 @@ export interface RuleSetOption {
 /**
  * 构建规则集选择器候选。
  *
- * 可引用集合 = **启用中的内置规则集引用**（`singbox.rule_sets`，注入时 enabled
- * 即注册进 `route.rule_set`，天然可引用）∪ **全部自定义规则集**
- * （`custom_rule_sets`，被规则/DNS 规则引用时才注入）。
+ * 可引用集合 = **全部自定义规则集**（`custom_rule_sets`：社区 remote / 手动 manual，
+ * 以及已物化为普通条目的内置规则集）∪ **启用中的存量规则集引用**
+ * （`singbox.rule_sets`，旧版遗留机制，注入时 enabled 即注册进 `route.rule_set`）。
  *
- * 去重：tag 相同者以自定义规则集优先（其友好名更贴近用户命名）。
+ * 规则集是纯资源、无启停概念，是否被注入只由引用它的规则决定；去重时以自定义
+ * 规则集优先（其友好名更贴近用户命名）。
  */
 export function buildRuleSetOptions(overrideData: LocalOverrideView | null | undefined): RuleSetOption[] {
   if (!overrideData) return [];

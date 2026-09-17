@@ -142,10 +142,11 @@ function validateBuiltinGroupFields(fields: OutboundFormFields): GroupFormErrors
  * 表示使用核心默认值，合法。
  */
 export function validateGroupFields(fields: OutboundFormFields): GroupFormErrors {
-  // 内置分组：成员由模板动态计算，仅可调字段参与校验；default 的悬空由后端 apply 兜底。
-  if (fields.builtin) {
-    const base = validateBuiltinGroupFields(fields);
-    return base;
+  // 内置动态分组（proxy/auto）：成员模板计算，仅可调字段参与校验；default 悬空由后端
+  // apply 兜底。内置静态分组（global/final）走完整校验（成员可编辑、非空、防循环由
+  // 后端把关）。
+  if (fields.builtin && !fields.builtinMembersEditable) {
+    return validateBuiltinGroupFields(fields);
   }
   const membersError = fields.members.length === 0 ? "请至少选择一个成员" : null;
 

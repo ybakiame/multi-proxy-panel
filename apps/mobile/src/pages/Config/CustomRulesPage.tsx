@@ -30,6 +30,8 @@ import type {
   NodeTagView,
   ProxyList,
 } from "@pp/client-core";
+import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
+import type { BaselineView } from "@pp/client-core";
 import { BackHeader } from "../../components/BackHeader";
 import { isLocalOverrideView } from "./localOverrideGuards";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
@@ -79,6 +81,13 @@ export default function CustomRulesPage() {
     queryKey: PROXIES_KEY,
     queryFn: proxiesList,
     enabled: coreRunning,
+    retry: false,
+  });
+  // 内置基线视图（还原模板数据源：缺失的内置规则按它补回）。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
     retry: false,
   });
   // 生效订阅存在但缓存为空（从未同步 / 缓存丢失）：给「先同步订阅」引导文案。
@@ -172,6 +181,37 @@ export default function CustomRulesPage() {
   };
 
   /** 新增/编辑共用：已存在替换，否则追加并赋予末尾 sort_order。 */
+  /** 一键还原内置规则：按基线模板补回缺失的内置规则（置顶），已存在的不动。 */
+  const handleRestoreBuiltinRules = async () => {
+    if (!currentCore || !baseline) return;
+    const existing = new Set(currentCore.rules.map((rule) => rule.id));
+    const missing = baseline.route_rules.filter((tpl) => !existing.has(tpl.id));
+    if (missing.length === 0) {
+      toastSuccess("内置规则已完整");
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const minSort = Math.min(0, ...currentCore.rules.map((rule) => rule.sort_order));
+    const restored: LocalRuleInput[] = missing.map((tpl, i) => ({
+      id: tpl.id,
+      name: tpl.name,
+      enabled: true,
+      match_type: "rule_set",
+      target: tpl.rule_set_tags.join(","),
+      action: tpl.outbound,
+      no_resolve: false,
+      invert: false,
+      note: "",
+      created_at: now,
+      sort_order: minSort - missing.length + i,
+      builtin: true,
+    }));
+    const input = viewToInput(currentCore);
+    if (await persist({ ...input, rules: [...restored, ...input.rules] })) {
+      toastSuccess("已还原内置规则（置顶）");
+    }
+  };
+
   const handleSaveRule = async (rule: LocalRuleInput): Promise<boolean> => {
     if (!currentCore) return false;
     const exists = currentCore.rules.some((r) => r.id === rule.id);
@@ -254,6 +294,15 @@ export default function CustomRulesPage() {
             </Card.Content>
           </Card>
         )}
+
+        {overrideData &&
+          currentCore &&
+          baseline &&
+          baseline.route_rules.some((tpl) => !currentCore.rules.some((rule) => rule.id === tpl.id)) && (
+            <Button variant="secondary" className="min-h-11 w-full" onPress={() => void handleRestoreBuiltinRules()}>
+              还原内置规则（置顶）
+            </Button>
+          )}
 
         {overrideData && currentCore && (
           <RuleListSection

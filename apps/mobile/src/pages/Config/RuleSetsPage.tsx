@@ -20,7 +20,6 @@ import {
 import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { BackHeader } from "../../components/BackHeader";
-import { BaselineRuleSetSection } from "./BaselineSections";
 import { asArray, isLocalOverrideView } from "./localOverrideGuards";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
@@ -235,6 +234,28 @@ export default function RuleSetsPage() {
     return ok;
   };
 
+  /** 恢复内置规则集：按基线模板补回缺失的内置条目（已存在的用户条目不动）。 */
+  const handleRestoreBuiltin = async () => {
+    if (!overrideData || !baseline) return;
+    const existing = new Set(overrideData.custom_rule_sets.map((rs) => rs.id));
+    const missing = baseline.rule_sets.filter((rs) => !existing.has(rs.id));
+    if (missing.length === 0) {
+      toastSuccess("内置规则集已完整");
+      return;
+    }
+    const restored: CustomRuleSetInput[] = missing.map((rs) => ({
+      id: rs.id,
+      name: rs.name,
+      tag: rs.tag,
+      source: { kind: "remote", url: rs.url, format: "binary" },
+      last_updated: 0,
+      builtin: true,
+    }));
+    if (await persistCustom([...overrideData.custom_rule_sets, ...restored])) {
+      toastSuccess(`已恢复 ${missing.length} 个内置规则集，点击「立即更新」下载内容`);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     const target = pendingDelete;
     if (!target || !overrideData) return;
@@ -320,6 +341,14 @@ export default function RuleSetsPage() {
                 <SparklesIcon className="size-4" aria-hidden="true" />
                 市场
               </Button>
+              <Button
+                variant="secondary"
+                className="h-11 shrink-0 px-3"
+                isDisabled={!baseline}
+                onPress={() => void handleRestoreBuiltin()}
+              >
+                恢复内置默认
+              </Button>
             </div>
 
             {/* 社区规则集：远程 URL（remote） */}
@@ -345,9 +374,6 @@ export default function RuleSetsPage() {
             />
           </div>
         )}
-
-        {/* 内置规则集：置底只读 */}
-        {baseline && <BaselineRuleSetSection ruleSets={baseline.rule_sets} />}
       </div>
 
       <RuleSetFormSheet

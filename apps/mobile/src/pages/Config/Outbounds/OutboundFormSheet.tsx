@@ -33,6 +33,8 @@ interface OutboundFormSheetProps {
   defaultProtocol: OutboundProtocolType;
   /** 分组成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组）。 */
   memberCandidates: GroupMemberCandidate[];
+  /** 内置静态成员分组（global/final）为 true：成员可编辑。 */
+  builtinMembersEditable?: boolean;
   /** 生效订阅是否存在节点缓存（决定成员候选提示文案）。 */
   subscriptionCacheAvailable: boolean;
   onClose: () => void;
@@ -55,6 +57,7 @@ export function OutboundFormSheet({
   otherNames,
   defaultProtocol,
   memberCandidates,
+  builtinMembersEditable = false,
   subscriptionCacheAvailable,
   onClose,
   onSave,
@@ -168,6 +171,7 @@ export function OutboundFormSheet({
                 errors={groupErrors}
                 candidates={memberCandidates}
                 subscriptionCacheAvailable={subscriptionCacheAvailable}
+                builtinMembersEditable={builtinMembersEditable}
                 onChange={patch}
               />
             ) : (

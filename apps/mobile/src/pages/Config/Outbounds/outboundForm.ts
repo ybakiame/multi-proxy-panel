@@ -44,6 +44,8 @@ export function isConfigSlices(value: unknown): value is ConfigSlices {
 export interface OutboundFormFields {
   /** 内置分组条目（编辑时只读名称/协议，成员不可编辑；后端做模板字段覆写）。 */
   builtin: boolean;
+  /** 内置静态成员分组（global/final）：成员可编辑（表单态，不持久化）。 */
+  builtinMembersEditable: boolean;
   name: string;
   enabled: boolean;
   protocol: OutboundProtocolType;
@@ -94,6 +96,7 @@ function defaultTlsEnabled(type: OutboundProtocolType): boolean {
 export function defaultOutboundForm(type: OutboundProtocolType = "vless"): OutboundFormFields {
   return {
     builtin: false,
+    builtinMembersEditable: false,
     name: "",
     enabled: true,
     protocol: type,
@@ -420,6 +423,12 @@ export function validateOutboundsSlice(slice: OutboundsSlice): OutboundsSliceErr
 
   const tags = new Set<string>();
   const itemErrors = slice.items.map((item) => {
+    // 内置分组条目：名称/协议由规格固定，成员由模板动态计算（proxy/auto）或静态校验
+    // （global/final 由后端把关），不参与切片级校验——否则播种的 auto（成员为空）会让
+    // 保存按钮恒不可用。
+    if (item.builtin === true) {
+      return null;
+    }
     if (item.name.trim() === "") {
       return "名称不能为空";
     }

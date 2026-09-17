@@ -6,7 +6,6 @@ import {
   RULE_ACTIONS,
   buildOutboundAction,
   isOutboundAction,
-  matchTypeLabel,
   outboundTagFromAction,
   parseRuleSetTags,
 } from "@pp/client-core";
@@ -152,8 +151,8 @@ export function RuleEditSheet({
 
   const isFinal = matchType === "final";
   const isOutbound = isOutboundAction(action);
-  // 内置规则（CN 分流基线物化）：匹配类型/目标/名称/高级选项只读，仅出站动作可改，
-  // 无删除入口（后端 store 保存时会复活并归一化内置条目，双保险）。
+  // 内置规则（2026-09 起为普通规则：可完整编辑、调整顺序或删除，规则管理页支持一键
+  // 还原）。isBuiltin 仅用于标题展示。
   const isBuiltin = editing?.builtin === true;
   const selectedOutboundTag = outboundTagFromAction(action);
   const targetOk = isFinal ? true : matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0;
@@ -198,19 +197,12 @@ export function RuleEditSheet({
     const now = Math.floor(Date.now() / 1000);
     const rule: LocalRuleInput = {
       id: editing?.id ?? crypto.randomUUID(),
-      // 内置规则：匹配字段与名称保持原值（后端 store 也会归一化，双保险）。
-      name: isBuiltin && editing ? editing.name : name.trim(),
+      name: name.trim(),
       enabled: editing?.enabled ?? true,
       builtin: editing?.builtin,
       match_type: matchType,
       // rule_set 多选序列化为逗号分隔 target（对齐 Rust parse_rule_set_tags）。
-      target: isFinal
-        ? ""
-        : isBuiltin && editing
-          ? editing.target
-          : matchType === "rule_set"
-            ? ruleSetTags.join(",")
-            : target.trim(),
+      target: isFinal ? "" : matchType === "rule_set" ? ruleSetTags.join(",") : target.trim(),
       action: isOutbound ? buildOutboundAction(selectedOutboundTag) : action,
       no_resolve: noResolve,
       invert,
@@ -237,41 +229,29 @@ export function RuleEditSheet({
         <Modal.Dialog>
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading>{isBuiltin ? "编辑内置规则" : editing ? "编辑规则" : "添加规则"}</Modal.Heading>
+            <Modal.Heading>
+              {isBuiltin ? "编辑内置规则（可修改或删除）" : editing ? "编辑规则" : "添加规则"}
+            </Modal.Heading>
           </Modal.Header>
           <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 匹配类型（内置规则只读） */}
+            {/* 匹配类型 */}
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-foreground">匹配类型</span>
-              {isBuiltin ? (
-                <span className="text-sm text-foreground">{matchTypeLabel(matchType)}（内置规则不可改）</span>
-              ) : (
-                <MobileSelectSheet
-                  label="匹配类型"
-                  value={matchType}
-                  onChange={setMatchType}
-                  disabled={saving}
-                  options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
-                />
-              )}
-              {!isBuiltin && matchType === "app_package" && (
+              <MobileSelectSheet
+                label="匹配类型"
+                value={matchType}
+                onChange={setMatchType}
+                disabled={saving}
+                options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+              />
+              {matchType === "app_package" && (
                 <span className="text-xs text-muted">应用包名匹配为 Android 专属能力</span>
               )}
             </div>
 
-            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入；内置规则只读） */}
+            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入） */}
             {!isFinal &&
-              (isBuiltin ? (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">
-                    {matchType === "rule_set" ? "规则集" : "匹配目标"}
-                  </span>
-                  <span className="font-mono text-sm text-foreground">
-                    {matchType === "rule_set" ? ruleSetTags.join(" + ") : target}
-                  </span>
-                  <span className="text-xs text-muted">内置规则的匹配内容不可修改</span>
-                </div>
-              ) : matchType === "rule_set" ? (
+              (matchType === "rule_set" ? (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-sm font-medium text-foreground">规则集</span>
                   {effectiveRuleSetOptions.length === 0 ? (
@@ -389,8 +369,8 @@ export function RuleEditSheet({
               </div>
             )}
 
-            {/* 高级折叠段（默认收起；内置规则隐藏） */}
-            {!isBuiltin && (
+            {/* 高级折叠段（默认收起） */}
+            {
               <div className="flex flex-col gap-3 rounded-xl border border-border/40 p-3">
                 <button
                   type="button"
@@ -446,7 +426,7 @@ export function RuleEditSheet({
                   </div>
                 )}
               </div>
-            )}
+            }
 
             {/* 编辑模式删除入口（内置规则不可删除） */}
             {editing && !isBuiltin && (

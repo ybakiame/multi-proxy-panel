@@ -6,9 +6,11 @@ import { DEFAULT_URLTEST_URL, type GroupFormErrors, type GroupMemberCandidate } 
 interface GroupFieldsProps {
   fields: OutboundFormFields;
   errors: GroupFormErrors;
-  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组；内置分组编辑时作为
-   *  默认成员的完整候选——成员本身由模板动态计算、不可编辑）。 */
+  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组；内置动态分组的默认成员
+   *  用全候选；内置静态分组成员可编辑，候选由页面收窄防循环）。 */
   candidates: GroupMemberCandidate[];
+  /** 内置静态成员分组（global/final）：成员可编辑；内置动态分组（proxy/auto）隐藏成员。 */
+  builtinMembersEditable?: boolean;
   /** 生效订阅是否存在节点缓存：false 时顶部引导先同步订阅。 */
   subscriptionCacheAvailable: boolean;
   /** 局部字段补丁更新（父层持有完整草稿）。 */
@@ -22,7 +24,14 @@ interface GroupFieldsProps {
  * selector 额外提供默认成员选择器，urltest 额外提供 url / interval / tolerance；
  * 两者共用 interrupt_exist_connections 开关。
  */
-export function GroupFields({ fields, errors, candidates, subscriptionCacheAvailable, onChange }: GroupFieldsProps) {
+export function GroupFields({
+  fields,
+  errors,
+  candidates,
+  subscriptionCacheAvailable,
+  builtinMembersEditable = false,
+  onChange,
+}: GroupFieldsProps) {
   const builtin = fields.builtin;
   /** 切换成员选中态；取消选中默认成员时同步清空 default（避免悬空）。 */
   const toggleMember = (tag: string) => {
@@ -35,13 +44,15 @@ export function GroupFields({ fields, errors, candidates, subscriptionCacheAvail
     onChange(patch);
   };
 
-  // 内置分组：成员不可编辑，默认成员候选直接用全候选（成员由模板动态计算）。
-  const memberOptions = builtin
-    ? candidates.map((candidate) => ({ value: candidate.value, label: candidate.label }))
-    : fields.members.map((tag) => {
-        const found = candidates.find((candidate) => candidate.value === tag);
-        return { value: tag, label: found?.label ?? tag };
-      });
+  // 内置动态分组（proxy/auto）：成员不可编辑，默认成员候选直接用全候选（成员由模板
+  // 动态计算）；其余（自定义 / 内置静态）默认成员候选 = 已选成员。
+  const memberOptions =
+    builtin && !builtinMembersEditable
+      ? candidates.map((candidate) => ({ value: candidate.value, label: candidate.label }))
+      : fields.members.map((tag) => {
+          const found = candidates.find((candidate) => candidate.value === tag);
+          return { value: tag, label: found?.label ?? tag };
+        });
 
   return (
     <>

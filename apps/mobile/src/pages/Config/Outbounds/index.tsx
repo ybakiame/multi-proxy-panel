@@ -109,6 +109,24 @@ export default function OutboundsPage() {
     return options;
   }, [subscriptionNodes]);
 
+  // 内置静态分组（global/final）的成员候选：内置 tag（排除自身；final 额外排除 global
+  // 防循环）+ 订阅节点 + 切片节点。
+  const builtinStaticMemberCandidates = useMemo<GroupMemberCandidate[]>(() => {
+    const name = editing?.name ?? "";
+    const builtinTags = ["proxy", "auto", "final", "global", "direct", "block"]
+      .filter((tag) => tag !== name && !(name === "final" && tag === "global"))
+      .map((tag) => ({ value: tag, label: tag, hint: "内置出站" }));
+    const nodes = (subscriptionNodes ?? []).map((node) => ({
+      value: node.tag,
+      label: node.name,
+      hint: "订阅节点",
+    }));
+    const sliceNodes = (draft?.items ?? [])
+      .filter((item) => item.builtin !== true && item.enabled && !isGroupOutbound(item))
+      .map((item) => ({ value: outboundTag(item.name), label: item.name, hint: "自定义出站" }));
+    return [...builtinTags, ...nodes, ...sliceNodes];
+  }, [editing?.name, subscriptionNodes, draft]);
+
   const memberCandidates = useMemo<GroupMemberCandidate[]>(() => {
     const sliceNodes = (draft?.items ?? [])
       .filter((item) => item.enabled && !isGroupOutbound(item))
@@ -259,7 +277,14 @@ export default function OutboundsPage() {
         editing={editing}
         otherNames={otherNames}
         defaultProtocol={newProtocol}
-        memberCandidates={editing?.builtin === true ? builtinDefaultCandidates : memberCandidates}
+        memberCandidates={
+          editing?.builtin === true
+            ? editing.name === "global" || editing.name === "final"
+              ? builtinStaticMemberCandidates
+              : builtinDefaultCandidates
+            : memberCandidates
+        }
+        builtinMembersEditable={editing?.builtin === true && (editing.name === "global" || editing.name === "final")}
         subscriptionCacheAvailable={subscriptionCacheAvailable}
         onClose={() => setSheetOpen(false)}
         onSave={handleSaveItem}

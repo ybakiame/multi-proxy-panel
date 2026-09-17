@@ -52,6 +52,11 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
             <Chip size="sm" variant="soft" color="accent" className="shrink-0">
               {sourceLabel(ruleSet)}
             </Chip>
+            {ruleSet.builtin && (
+              <Chip size="sm" variant="soft" color="default" className="shrink-0">
+                内置
+              </Chip>
+            )}
             {hasUpdate && (
               <Chip size="sm" variant="soft" color="warning" className="shrink-0">
                 有更新
