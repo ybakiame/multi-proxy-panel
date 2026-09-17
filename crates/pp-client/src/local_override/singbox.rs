@@ -16,8 +16,8 @@ use std::collections::HashSet;
 use serde_json::{Value, json};
 
 use super::{
-    CoreLocalOverride, CustomRuleSet, LocalRule, RuleMatchType, RuleSetFormat, RuleSetManager,
-    parse_rule_set_tags,
+    CoreLocalOverride, CustomRuleSet, LocalRule, RuleAction, RuleMatchType, RuleSetFormat,
+    RuleSetManager, parse_rule_set_tags,
 };
 
 /// Apply local override to a composed sing-box config.
@@ -386,10 +386,17 @@ fn build_singbox_rule_entry(rule: &LocalRule) -> Value {
         }
     }
 
-    map.insert(
-        "outbound".to_string(),
-        Value::String(rule.action.outbound_tag().to_string()),
-    );
+    // `reject` 是 sing-box 规则**动作**而非出站（配置里没有名为 reject 的出站，
+    // 渲染成 outbound 会在运行时逐连接报 `outbound not found: reject`）；
+    // proxy/direct/block/自定义 tag 才是出站。
+    if matches!(rule.action, RuleAction::Reject) {
+        map.insert("action".to_string(), Value::String("reject".to_string()));
+    } else {
+        map.insert(
+            "outbound".to_string(),
+            Value::String(rule.action.outbound_tag().to_string()),
+        );
+    }
 
     if rule.advanced.invert {
         map.insert("invert".to_string(), Value::Bool(true));
@@ -417,10 +424,12 @@ fn inject_singbox_final(obj: &mut serde_json::Map<String, Value>, ovr: &CoreLoca
     let Some(route_obj) = route.as_object_mut() else {
         return;
     };
-    route_obj.insert(
-        "final".to_string(),
-        Value::String(final_rule.action.outbound_tag().to_string()),
-    );
+    // route.final 必须是出站；reject 动作用内置 block 出站表达（黑洞）。
+    let tag = match &final_rule.action {
+        RuleAction::Reject => "block",
+        other => other.outbound_tag(),
+    };
+    route_obj.insert("final".to_string(), Value::String(tag.to_string()));
 }
 
 #[cfg(test)]
