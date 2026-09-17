@@ -5,10 +5,14 @@
  * 转换。不含任何 UI / 平台依赖，双端页面只消费本模块。
  */
 
+import type { BaselineRuleSetView, BaselineRuleView } from "./api/baseline";
 import type {
   CoreLocalOverrideInput,
   CoreLocalOverrideView,
+  CustomRuleSetInput,
+  CustomRuleSetView,
   LocalOverrideView,
+  LocalRuleInput,
   LocalRuleView,
 } from "./api/localOverride";
 
@@ -141,6 +145,121 @@ export function viewToInput(view: CoreLocalOverrideView): CoreLocalOverrideInput
   };
 }
 
+/**
+ * 按基线还原**内置规则集**（「重置内置规则集」）。
+ *
+ * 内置规则集是普通条目（可编辑 / 删除），还原即按规格重建：缺失项追加到末尾，
+ * 已存在项按 id 覆写 name / tag / URL（缓存时间戳 `last_updated` /
+ * `remote_updated_at` 保留，避免无谓重下）。用户自建条目不受影响。
+ */
+export function restoreBuiltinRuleSets(
+  view: LocalOverrideView,
+  specs: readonly Pick<BaselineRuleSetView, "id" | "name" | "tag" | "url">[],
+): CustomRuleSetInput[] {
+  const next: CustomRuleSetInput[] = view.custom_rule_sets.map((rs) => ({
+    id: rs.id,
+    name: rs.name,
+    tag: rs.tag,
+    source: rs.source,
+    last_updated: rs.last_updated,
+    remote_updated_at: rs.remote_updated_at,
+    builtin: rs.builtin === true,
+  }));
+
+  for (const spec of specs) {
+    const rebuilt: CustomRuleSetInput = {
+      id: spec.id,
+      name: spec.name,
+      tag: spec.tag,
+      source: { kind: "remote", url: spec.url, format: "binary" },
+      last_updated: 0,
+      remote_updated_at: 0,
+      builtin: true,
+    };
+    const index = next.findIndex((rs) => rs.id === spec.id);
+    if (index >= 0) {
+      const existing = next[index]!;
+      next[index] = {
+        ...rebuilt,
+        // 已下载过的缓存不必重下：保留本地 / 远端时间戳。
+        last_updated: existing.last_updated,
+        remote_updated_at: existing.remote_updated_at ?? 0,
+      };
+    } else {
+      next.push(rebuilt);
+    }
+  }
+  return next;
+}
+
+/**
+ * 按基线还原**内置规则**（「恢复内置规则」）。
+ *
+ * 与规则集同理：内置规则是普通规则（可编辑 / 删除）。还原时缺失项**置顶插入**
+ * （`sort_order` 低于现有最小值），已存在项按 id 覆写名称 / 匹配 / 动作，
+ * 保留用户的启停与排序位置。
+ */
+export function restoreBuiltinRules(
+  view: CoreLocalOverrideView,
+  specs: readonly Pick<BaselineRuleView, "id" | "name" | "rule_set_tags" | "outbound">[],
+): LocalRuleInput[] {
+  const next: LocalRuleInput[] = view.rules.map((r) => ({
+    id: r.id,
+    name: r.name,
+    enabled: r.enabled,
+    match_type: r.match_type,
+    target: r.target,
+    action: r.action,
+    no_resolve: r.no_resolve,
+    invert: r.invert,
+    note: r.note,
+    created_at: r.created_at,
+    sort_order: r.sort_order,
+    builtin: r.builtin,
+  }));
+
+  for (const spec of specs) {
+    const target = spec.rule_set_tags.join(",");
+    const index = next.findIndex((r) => r.id === spec.id);
+    if (index >= 0) {
+      next[index] = {
+        ...next[index]!,
+        name: spec.name,
+        match_type: "rule_set",
+        target,
+        action: spec.outbound,
+        builtin: true,
+      };
+      continue;
+    }
+    // 置顶：比当前最小 sort_order 还小（无规则时为 0）。
+    const topSort = next.reduce((min, r) => Math.min(min, r.sort_order), 1) - 1;
+    next.unshift({
+      id: spec.id,
+      name: spec.name,
+      enabled: true,
+      match_type: "rule_set",
+      target,
+      action: spec.outbound,
+      no_resolve: false,
+      invert: false,
+      note: "内置规则：可修改、调整顺序或删除，支持一键还原",
+      created_at: Math.floor(Date.now() / 1000),
+      sort_order: topSort,
+      builtin: true,
+    });
+  }
+  return next;
+}
+
+/** 内置规则集是否齐全（用于「重置内置规则集」入口的显隐 / 提示）。 */
+export function hasAllBuiltinRuleSets(
+  sets: readonly CustomRuleSetView[],
+  specs: readonly Pick<BaselineRuleSetView, "id">[],
+): boolean {
+  return specs.every((spec) => sets.some((rs) => rs.id === spec.id));
+}
+
 export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOverrideInput) {
   return {
     singbox: patchCore ?? viewToInput(view.singbox),
@@ -153,6 +272,8 @@ export function buildSaveInput(view: LocalOverrideView, patchCore?: CoreLocalOve
       last_updated: rs.last_updated,
       // 后端对已存在 id 会按磁盘现值回填；新条目（市场一键添加）据此携带远端时间。
       remote_updated_at: rs.remote_updated_at,
+      // 内置条目透传标记：后端按 id 归一化，用户删除后不会被重新播种。
+      builtin: rs.builtin === true,
     })),
   };
 }

@@ -1,26 +1,34 @@
 /**
- * 内置 CN 分流基线只读视图 API。
+ * 内置基线只读视图 API。
  *
  * Aligned with Rust-side `BaselineView`
- * (crates/pp-client/src/core_config/view.rs)。纯静态、无参、不读盘：
- * 前端把基线与各配置列表只读合并展示，所有项不可编辑 / 删除。
+ * (crates/pp-client/src/core_config/view.rs)。纯静态、无参、不读盘。
+ *
+ * 规则集 / 路由规则已物化为用户可编辑的条目，本视图退化为**还原模板**
+ * （「重置内置规则集」/「恢复内置规则」按 `id` 重建条目）；出站仍为只读。
  */
 
 import { invoke } from "@tauri-apps/api/core";
 
-/** 内置规则集视图项（只读）。 */
+/** 内置规则集还原模板（私有域名 / 私有 IP）。 */
 export interface BaselineRuleSetView {
-  /** 规则集 tag（如 `geosite-cn`）。 */
+  /** 稳定条目 ID（物化进 `custom_rule_sets` 的 `id`）。 */
+  id: string;
+  /** 规则集 tag（如 `geosite-private`）。 */
   tag: string;
   /** 远程规则集 URL。 */
   url: string;
-  /** 中文友好名（如「国内域名」）。 */
-  description: string;
+  /** 展示名（如「私有域名」）。 */
+  name: string;
 }
 
-/** 内置路由规则视图项（只读）。 */
+/** 内置路由规则还原模板（私有域名 + 私有 IP → 直连）。 */
 export interface BaselineRuleView {
-  /** 中文描述（如「国内域名 → 直连」）。 */
+  /** 稳定规则 ID（物化进统一规则列表的 `id`）。 */
+  id: string;
+  /** 规则名称（如「内置：私有域名与私有 IP 直连」）。 */
+  name: string;
+  /** 中文描述（如「私有域名、私有 IP → 直连」）。 */
   description: string;
   /** 命中的规则集 tag 列表。 */
   rule_set_tags: string[];
@@ -50,11 +58,11 @@ export interface BaselineOutboundView {
   description: string;
 }
 
-/** 内置 CN 分流基线只读视图。 */
+/** 内置基线只读视图。 */
 export interface BaselineView {
-  /** 5 个 CN 规则集。 */
+  /** 内置规则集还原模板（私有域名 / 私有 IP）。 */
   rule_sets: BaselineRuleSetView[];
-  /** 5 条基线路由规则。 */
+  /** 内置路由规则还原模板（私有域名 + 私有 IP → 直连）。 */
   route_rules: BaselineRuleView[];
   /** 基线 DNS 规则摘要。 */
   dns_rules: BaselineDnsRuleView[];
@@ -64,7 +72,7 @@ export interface BaselineView {
   route_final: string;
 }
 
-/** 拉取内置 CN 分流基线只读视图（无参、纯静态、不读盘）。 */
+/** 拉取内置基线只读视图（无参、纯静态、不读盘）。 */
 export function baselineViewGet(): Promise<BaselineView> {
   return invoke<BaselineView>("baseline_view_get");
 }

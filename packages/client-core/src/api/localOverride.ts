@@ -61,6 +61,13 @@ export interface CustomRuleSetView {
   remote_updated_at: number;
   /** Whether the backing file (manual 落盘 / remote cache) exists on disk. */
   cached: boolean;
+  /**
+   * Whether the entry was materialized from a built-in rule set spec.
+   *
+   * Built-in entries behave exactly like user entries (editable / deletable); the flag only
+   * drives the 「内置」badge and the "reset built-in rule sets" restore target (matched by `id`).
+   */
+  builtin: boolean;
 }
 
 /**
@@ -98,6 +105,8 @@ export interface CustomRuleSetInput {
    * for new IDs and backfills existing IDs from disk.
    */
   remote_updated_at?: number;
+  /** 内置规则集标记透传（后端按 id 归一化；删除后不会被自动重建）。 */
+  builtin?: boolean;
 }
 
 export interface CoreLocalOverrideInput {
