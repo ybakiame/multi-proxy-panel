@@ -6,9 +6,10 @@ import { useSettingsConfig } from "../Settings/useSettingsConfig";
 
 /** TUN 协议栈选项（对齐 sing-box tun inbound `stack` 字段）。 */
 const TUN_STACK_OPTIONS = [
-  { value: "mixed", label: "mixed（TCP 系统栈 + UDP gVisor，推荐）" },
-  { value: "system", label: "system（系统栈，性能最佳，UDP 支持取决于平台）" },
-  { value: "gvisor", label: "gVisor（用户态网络栈，兼容性最好）" },
+  { value: "go", label: "go（sing-tun 纯 Go 栈，推荐；上游 1.15 起统一方向）" },
+  { value: "gvisor", label: "gVisor（用户态网络栈，兼容性最好的回退项）" },
+  { value: "mixed", label: "mixed（TCP 系统栈 + UDP gVisor，部分设备 TCP 不可用）" },
+  { value: "system", label: "system（系统栈，性能最佳，部分设备不兼容）" },
 ];
 
 /**
