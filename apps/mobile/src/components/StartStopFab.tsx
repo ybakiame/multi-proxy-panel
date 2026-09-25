@@ -1,5 +1,6 @@
 import { PlayIcon, StopIcon } from "@heroicons/react/24/solid";
-import { Button, Spinner } from "./ui";
+import { Fab } from "konsta/react";
+import { Spinner } from "./ui";
 
 interface StartStopFabProps {
   /** 核心是否运行中：决定形态（未运行主色启动 / 运行中 danger 停止）。 */
@@ -33,23 +34,23 @@ export function StartStopFab({ running, starting, stopping, canStart, onStart, o
   const disabled = running ? starting : !canStart || starting || stopping;
 
   return (
-    <Button
-      isIconOnly
-      variant={running ? "danger" : "primary"}
+    <Fab
       aria-label={running ? "停止代理" : "启动代理"}
-      isPending={pending}
-      isDisabled={disabled}
-      onPress={() => void (running ? onStop() : onStart())}
-      className="fixed right-4 z-20 size-14 rounded-full shadow-lg shadow-black/25"
+      onClick={() => {
+        if (!disabled) void (running ? onStop() : onStart());
+      }}
+      colors={running ? { bgIos: "bg-red-500", bgMaterial: "bg-red-500" } : undefined}
+      className={`fixed right-4 z-20 shadow-lg shadow-black/25 ${disabled ? "pointer-events-none opacity-50" : ""}`}
       style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
-    >
-      {pending ? (
-        <Spinner size="sm" color="white" aria-hidden="true" />
-      ) : running ? (
-        <StopIcon className="size-6" aria-hidden="true" />
-      ) : (
-        <PlayIcon className="size-6" aria-hidden="true" />
-      )}
-    </Button>
+      icon={
+        pending ? (
+          <Spinner size="sm" color="white" aria-hidden="true" />
+        ) : running ? (
+          <StopIcon className="size-6" aria-hidden="true" />
+        ) : (
+          <PlayIcon className="size-6" aria-hidden="true" />
+        )
+      }
+    />
   );
 }

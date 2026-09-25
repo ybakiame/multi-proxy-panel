@@ -1,5 +1,6 @@
 import { AdjustmentsHorizontalIcon, Cog6ToothIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
-import { NavLink } from "react-router-dom";
+import { Tabbar, TabbarLink } from "konsta/react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 /** 底部导航 Tab（`end` 仅用于根路径：`/` 精确匹配，避免「/config」「/settings」前缀命中）。 */
 export const TABS = [
@@ -8,36 +9,33 @@ export const TABS = [
   { to: "/settings", label: "设置", icon: Cog6ToothIcon, end: false },
 ] as const;
 
+/** 路径是否属于该 Tab（end 精确匹配；否则前缀匹配）。 */
+function isTabActive(pathname: string, to: string, end: boolean): boolean {
+  if (end) return pathname === to;
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
 /**
- * 移动端底部固定 TabBar（ADR-0003 M5）。
+ * 移动端底部固定 TabBar（Konsta UI `Tabbar`，随 iOS/Material 主题切换观感）。
  *
- * - 3 个 Tab：首页（仪表盘）/ 配置管理 / 设置（后两者本任务为占位页）；
- * - `NavLink` 激活态高亮（text-primary）；
- * - 触达区整块 ≥56px（min-h-14），底部 `env(safe-area-inset-bottom)` 适配系统手势条。
+ * - 3 个 Tab：首页（仪表盘）/ 配置管理 / 设置；
+ * - 激活态由 `TabbarLink active` 呈现（主题主色）；点击经 `useNavigate` 路由跳转；
+ * - 底部 safe-area 内边距由 Konsta Toolbar/Tabbar 内置 `--k-safe-area-bottom` 处理。
  */
 export function TabBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
   return (
-    <nav
-      className="flex shrink-0 border-t border-black/10 bg-white pb-[env(safe-area-inset-bottom)] dark:border-white/10 dark:bg-zinc-900"
-      aria-label="底部导航"
-    >
+    <Tabbar labels icons className="shrink-0" aria-label="底部导航">
       {TABS.map(({ to, label, icon: Icon, end }) => (
-        <NavLink
+        <TabbarLink
           key={to}
-          to={to}
-          end={end}
-          className={({ isActive }) =>
-            `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-xs transition-colors ${
-              isActive
-                ? "text-primary"
-                : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-            }`
-          }
-        >
-          <Icon className="size-6" aria-hidden="true" />
-          <span className="leading-none">{label}</span>
-        </NavLink>
+          active={isTabActive(location.pathname, to, end)}
+          icon={<Icon className="size-6" aria-hidden="true" />}
+          label={label}
+          linkProps={{ onClick: () => navigate(to), "aria-label": label }}
+        />
       ))}
-    </nav>
+    </Tabbar>
   );
 }

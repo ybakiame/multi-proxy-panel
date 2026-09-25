@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Card } from "../../components/ui";
 import { CodeBracketIcon, DocumentTextIcon, SignalIcon } from "@heroicons/react/24/outline";
+import { BlockTitle } from "konsta/react";
 import { useNavigate } from "react-router-dom";
 import { useClientConfig } from "@pp/client-core";
 import { ConfigPreviewModal } from "../../components/ConfigPreviewModal";
-import { EntryLinkCard } from "../../components/EntryLinkCard";
+import { EntryLinkList } from "../../components/EntryLinkCard";
 
 /**
  * 开发者工具分组（设置页「关于」分组上方）。
@@ -22,32 +22,31 @@ export function DeveloperToolsCard() {
 
   return (
     <>
-      <Card>
-        <Card.Header>
-          <Card.Title>开发者工具</Card.Title>
-          <Card.Description>开发与排障辅助</Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-3">
-          <EntryLinkCard
-            icon={<DocumentTextIcon className="size-6" aria-hidden="true" />}
-            title="日志"
-            description="查看运行与内核日志，支持导出与清空"
-            onPress={() => navigate("/logs")}
-          />
-          <EntryLinkCard
-            icon={<SignalIcon className="size-6" aria-hidden="true" />}
-            title="连通性诊断"
-            description="对目标域名分步检查 DNS / 直连 / 核心链路 / 代理出站"
-            onPress={() => navigate("/settings/dev-tools/diagnose")}
-          />
-          <EntryLinkCard
-            icon={<CodeBracketIcon className="size-6" aria-hidden="true" />}
-            title="当前配置"
-            description="预览当前生效订阅合成的核心配置"
-            onPress={() => setPreviewOpen(true)}
-          />
-        </Card.Content>
-      </Card>
+      {/* Konsta 分组列表：块标题 + inset strong 列表（iOS 设置页风格），不再套卡片 */}
+      <BlockTitle className="!mb-0 !mt-0">开发者工具</BlockTitle>
+      <p className="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">开发与排障辅助</p>
+      <EntryLinkList
+        entries={[
+          {
+            icon: <DocumentTextIcon className="size-5" aria-hidden="true" />,
+            title: "日志",
+            description: "查看运行与内核日志，支持导出与清空",
+            onPress: () => navigate("/logs"),
+          },
+          {
+            icon: <SignalIcon className="size-5" aria-hidden="true" />,
+            title: "连通性诊断",
+            description: "对目标域名分步检查 DNS / 直连 / 核心链路 / 代理出站",
+            onPress: () => navigate("/settings/dev-tools/diagnose"),
+          },
+          {
+            icon: <CodeBracketIcon className="size-5" aria-hidden="true" />,
+            title: "当前配置",
+            description: "预览当前生效订阅合成的核心配置",
+            onPress: () => setPreviewOpen(true),
+          },
+        ]}
+      />
       <ConfigPreviewModal
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}

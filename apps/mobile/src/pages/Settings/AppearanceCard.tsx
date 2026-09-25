@@ -4,11 +4,11 @@ import { Card } from "../../components/ui";
 import { DEFAULT_THEME, DEFAULT_UI_STYLE, useThemePreference } from "../../theme";
 import type { ThemePreference, UiStylePreference } from "../../theme";
 
-/** 主题选项（顺序即展示顺序；深色为无记录时的默认值）。 */
+/** 主题选项（顺序即展示顺序；跟随系统为无记录时的默认值）。 */
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof SunIcon }[] = [
-  { value: "system", label: "跟随系统", icon: ComputerDesktopIcon },
+  { value: "system", label: `跟随系统${DEFAULT_THEME === "system" ? "（默认）" : ""}`, icon: ComputerDesktopIcon },
   { value: "light", label: "浅色", icon: SunIcon },
-  { value: "dark", label: `深色${DEFAULT_THEME === "dark" ? "（默认）" : ""}`, icon: MoonIcon },
+  { value: "dark", label: "深色", icon: MoonIcon },
 ];
 
 /** UI 风格选项（Konsta UI 双主题；iOS 为无记录时的默认值）。 */

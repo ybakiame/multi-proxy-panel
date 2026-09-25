@@ -9,26 +9,32 @@ export type ThemePreference = "system" | "light" | "dark";
  */
 export type UiStylePreference = "ios" | "material";
 
-/** 无记录时的默认主题：深色（历史版本固定深色，行为不变，index.html 预置脚本同值）。 */
-export const DEFAULT_THEME: ThemePreference = "dark";
+/** 无记录时的默认主题：跟随系统（index.html 预置脚本同值）。 */
+export const DEFAULT_THEME: ThemePreference = "system";
 
 /** 无记录时的默认 UI 风格：iOS。 */
 export const DEFAULT_UI_STYLE: UiStylePreference = "ios";
 
 /**
- * localStorage 存储键：沿用历史键名 `heroui-theme`——index.html 首帧预置脚本
- * 读取同一键，改名会导致存量用户主题偏好丢失且需同步改脚本。
+ * localStorage 存储键：与 UI 库无关（`pp-ui-theme`），index.html 首帧预置脚本读取同一键。
+ * 存量迁移：历史键 `heroui-theme`（HeroUI 时代）在读取时回退命中并惰性改写为新键。
  */
-const STORAGE_KEY = "heroui-theme";
+const STORAGE_KEY = "pp-ui-theme";
+const LEGACY_STORAGE_KEY = "heroui-theme";
 
 /** UI 风格（iOS/Material）存储键：新功能，无历史兼容负担，用项目前缀。 */
 const UI_STYLE_STORAGE_KEY = "pp-ui-style";
 
-/** 读取持久化的主题偏好（非法值/存储不可用时回落默认）。 */
+/** 读取持久化的主题偏好（非法值/存储不可用时回落默认；历史键惰性迁移）。 */
 function readStoredPreference(): ThemePreference {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
+      // 惰性迁移：命中历史键时改写为新键并清除旧键。
+      if (localStorage.getItem(STORAGE_KEY) === null) {
+        localStorage.setItem(STORAGE_KEY, stored);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
       return stored;
     }
   } catch {
@@ -69,7 +75,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: DEFAULT_THEME,
-  resolvedTheme: "dark",
+  resolvedTheme: "light",
   setTheme: () => undefined,
   uiStyle: DEFAULT_UI_STYLE,
   setUiStyle: () => undefined,

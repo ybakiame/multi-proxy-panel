@@ -1,38 +1,42 @@
 import type { ReactNode } from "react";
-import { Card } from "./ui";
-import { ChevronRightIcon } from "@heroicons/react/24/outline";
+import { List, ListItem } from "konsta/react";
 
-interface EntryLinkCardProps {
-  /** 卡片图标（HeroUI 图标节点，父层自选语义图标）。 */
+/** 二级页入口项定义。 */
+export interface EntryLinkItem {
+  /** 卡片图标（Heroicons 节点，父层自选语义图标）。 */
   icon: ReactNode;
   title: string;
   description: string;
   onPress: () => void;
 }
 
+interface EntryLinkListProps {
+  entries: EntryLinkItem[];
+}
+
 /**
- * 二级页入口卡（自 Config 目录提取共用）。
+ * 二级页入口列表（Konsta UI `List strong inset` 分组列表，iOS 设置页风格；
+ * Material 主题下由 Konsta 自动呈现对应观感）。
  *
- * 大触达列表项：图标（浅色圆角底）+ 标题 + 描述 + chevron，整卡可点跳转子页。
+ * 整行可点跳转子页（`ListItem link`，iOS 自带 chevron）；图标为主色圆角方块。
  */
-export function EntryLinkCard({ icon, title, description, onPress }: EntryLinkCardProps) {
+export function EntryLinkList({ entries }: EntryLinkListProps) {
   return (
-    <Card>
-      <button
-        type="button"
-        onClick={onPress}
-        aria-label={title}
-        className="flex w-full items-center gap-3 rounded-xl py-1 pl-1 pr-2 text-left active:opacity-80"
-      >
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          {icon}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</span>
-          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{description}</span>
-        </span>
-        <ChevronRightIcon className="size-5 shrink-0 text-zinc-400" aria-hidden="true" />
-      </button>
-    </Card>
+    <List strong inset className="m-0">
+      {entries.map(({ icon, title, description, onPress }) => (
+        <ListItem
+          key={title}
+          link
+          title={title}
+          text={description}
+          onClick={onPress}
+          media={
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              {icon}
+            </span>
+          }
+        />
+      ))}
+    </List>
   );
 }

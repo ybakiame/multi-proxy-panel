@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { Navbar, NavbarBackLink } from "konsta/react";
 import { useNavigate } from "react-router-dom";
 
 interface BackHeaderProps {
   /** 页面标题。 */
   title: string;
-  /** 右侧动作区（如「添加」按钮），高度与返回键一致（≥48px）；缺省时用等宽占位保持标题居中。 */
+  /** 右侧动作区（如「添加」按钮）。 */
   action?: ReactNode;
   /**
    * 显式返回目标路径（replace 跳转）；缺省 `navigate(-1)`。
@@ -18,43 +18,28 @@ interface BackHeaderProps {
 }
 
 /**
- * 二级页返回头（ADR-0003 M5）。
+ * 二级页返回头（Konsta UI `Navbar`，随 iOS/Material 主题切换观感）。
  *
- * - 左返回箭头（默认 `navigate(-1)`；含 iframe 的页面经 `backTo` 显式指定目标，触达区
- *   ≥48px）+ 居中标题 + 可选右侧动作区；
- * - `sticky top-0` 相对 App 的滚动 `<main>` 吸顶；顶部 `env(safe-area-inset-top)` 适配状态栏，
- *   左右 safe-area 内边距；底部留 1px 分隔线。
- * - 订阅管理页复用（右侧「添加」动作）。
+ * - 左侧返回（`NavbarBackLink` 图标形态；含 iframe 的页面经 `backTo` 显式指定目标）；
+ * - 标题居中（iOS 惯例；Material 主题由 Konsta 自动左对齐）；
+ * - `sticky top-0` 相对 App 的滚动 `<main>` 吸顶，顶部状态栏 safe-area 由 Konsta
+ *   Navbar 内置 `--k-safe-area-top` 处理；iOS 自带毛玻璃背景与底部分隔线。
  */
 export function BackHeader({ title, action, backTo }: BackHeaderProps) {
   const navigate = useNavigate();
   return (
-    <header
-      className="sticky top-0 z-10 border-b border-black/10 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-md dark:border-white/10 dark:bg-black/95"
-      style={{
-        paddingLeft: "max(0.5rem, env(safe-area-inset-left))",
-        paddingRight: "max(0.5rem, env(safe-area-inset-right))",
-      }}
-    >
-      <div className="relative flex items-center">
-        <button
-          type="button"
-          onClick={() => (backTo ? navigate(backTo, { replace: true }) : navigate(-1))}
+    <Navbar
+      title={title}
+      centerTitle
+      left={
+        <NavbarBackLink
+          text="返回"
+          showText={false}
           aria-label="返回"
-          className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-zinc-900 active:opacity-70 dark:text-zinc-100"
-        >
-          <ArrowLeftIcon className="size-6" aria-hidden="true" />
-        </button>
-        {/* 标题绝对居中于整个头部，避免左右两侧宽度不对称造成偏移 */}
-        <h1 className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 truncate px-16 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          {title}
-        </h1>
-        {action ? (
-          <div className="relative z-10 ml-auto flex h-12 shrink-0 items-center gap-1 pl-2">{action}</div>
-        ) : (
-          <div className="w-12 shrink-0" aria-hidden="true" />
-        )}
-      </div>
-    </header>
+          onClick={() => (backTo ? navigate(backTo, { replace: true }) : navigate(-1))}
+        />
+      }
+      right={action}
+    />
   );
 }

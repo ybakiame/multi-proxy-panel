@@ -11,7 +11,15 @@
  * - `inputClassName`：原生 input 的统一样式（表单沿用原生 input）。
  */
 import type { CSSProperties, ReactNode } from "react";
-import { Button as KonstaButton, Dialog, DialogButton, Preloader, Sheet, Toggle } from "konsta/react";
+import {
+  Button as KonstaButton,
+  Card as KonstaCard,
+  Dialog,
+  DialogButton,
+  Preloader,
+  Sheet,
+  Toggle,
+} from "konsta/react";
 
 // ---------- Button ----------
 
@@ -97,12 +105,12 @@ interface CardSectionProps {
 }
 
 function CardRoot({ className = "", children }: CardSectionProps) {
+  // 卡片本体委托 Konsta Card（iOS 圆角浅色卡 / Material 海拔阴影随主题切换），
+  // contentWrap 关闭：内边距由下方复合分区（Header/Content/Footer）自行控制。
   return (
-    <div
-      className={`rounded-2xl bg-white shadow-sm ring-1 ring-black/5 dark:bg-zinc-900 dark:ring-white/10 ${className}`}
-    >
+    <KonstaCard contentWrap={false} className={`m-0 ${className}`}>
       {children}
-    </div>
+    </KonstaCard>
   );
 }
 
@@ -126,7 +134,7 @@ function CardFooter({ className = "", children }: CardSectionProps) {
   return <div className={`px-4 pb-4 ${className}`}>{children}</div>;
 }
 
-/** 卡片容器（对齐原 HeroUI `Card` 复合用法：`Card.Header/Title/Description/Content/Footer`）。 */
+/** 卡片容器（对齐原 HeroUI `Card` 复合用法；本体为 Konsta `Card`）。 */
 export const Card = Object.assign(CardRoot, {
   Header: CardHeader,
   Title: CardTitle,

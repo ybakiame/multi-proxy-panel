@@ -19,7 +19,7 @@ import {
 import type { ConfigSlices, DnsStrategy, NodeTagView, RouteSlice } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { SubPageShell } from "../../../components/SubPageShell";
-import { EntryLinkCard } from "../../../components/EntryLinkCard";
+import { EntryLinkList } from "../../../components/EntryLinkCard";
 import { isConfigSlices } from "../Dns/dnsUtils";
 import { RouteSettingsCard } from "./RouteSettingsCard";
 import { buildFinalTagOptions, buildResolverServerOptions, isRouteSliceValid, validateRouteSlice } from "./routeUtils";
@@ -178,17 +178,21 @@ export default function RoutePage() {
             onChangeResolverStrategy={handleChangeResolverStrategy}
           />
 
-          <EntryLinkCard
-            icon={<ListBulletIcon className="size-6" aria-hidden="true" />}
-            title="规则管理"
-            description="添加与管理你的分流规则"
-            onPress={() => navigate("/config/route/rules")}
-          />
-          <EntryLinkCard
-            icon={<SwatchIcon className="size-6" aria-hidden="true" />}
-            title="规则集管理"
-            description="社区与自定义规则集的增删与更新"
-            onPress={() => navigate("/config/route/rulesets")}
+          <EntryLinkList
+            entries={[
+              {
+                icon: <ListBulletIcon className="size-5" aria-hidden="true" />,
+                title: "规则管理",
+                description: "添加与管理你的分流规则",
+                onPress: () => navigate("/config/route/rules"),
+              },
+              {
+                icon: <SwatchIcon className="size-5" aria-hidden="true" />,
+                title: "规则集管理",
+                description: "社区与自定义规则集的增删与更新",
+                onPress: () => navigate("/config/route/rulesets"),
+              },
+            ]}
           />
         </>
       )}
