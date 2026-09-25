@@ -17,24 +17,41 @@ export const DEFAULT_UI_STYLE: UiStylePreference = "ios";
 
 /**
  * localStorage 存储键：与 UI 库无关（`pp-ui-theme`），index.html 首帧预置脚本读取同一键。
- * 存量迁移：历史键 `heroui-theme`（HeroUI 时代）在读取时回退命中并惰性改写为新键。
  */
 const STORAGE_KEY = "pp-ui-theme";
+/** 历史键（HeroUI 时代，2026-03 引入 `pp-ui-theme`）：仅由启动时一次性迁移读取。 */
 const LEGACY_STORAGE_KEY = "heroui-theme";
+
+/**
+ * 存量主题键一次性迁移（幂等）：`heroui-theme` → `pp-ui-theme`。
+ *
+ * 模块加载即执行一次（早于首帧渲染），此后读写只面向新键——遵守
+ * `.agents/rules/data-migration.md`：迁移是一次性动作，不做常驻双键回退。
+ * （index.html 预置脚本因无法复用模块代码，保留只读回退兜底，属规则允许的例外。）
+ */
+function migrateLegacyStorageKeys(): void {
+  try {
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy !== null && localStorage.getItem(STORAGE_KEY) === null) {
+      localStorage.setItem(STORAGE_KEY, legacy);
+    }
+    if (legacy !== null) {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+  } catch {
+    /* 存储不可用（如 WebView 私密模式）：跳过，本次会话用默认值 */
+  }
+}
+migrateLegacyStorageKeys();
 
 /** UI 风格（iOS/Material）存储键：新功能，无历史兼容负担，用项目前缀。 */
 const UI_STYLE_STORAGE_KEY = "pp-ui-style";
 
-/** 读取持久化的主题偏好（非法值/存储不可用时回落默认；历史键惰性迁移）。 */
+/** 读取持久化的主题偏好（非法值/存储不可用时回落默认）。 */
 function readStoredPreference(): ThemePreference {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
-      // 惰性迁移：命中历史键时改写为新键并清除旧键。
-      if (localStorage.getItem(STORAGE_KEY) === null) {
-        localStorage.setItem(STORAGE_KEY, stored);
-        localStorage.removeItem(LEGACY_STORAGE_KEY);
-      }
       return stored;
     }
   } catch {
