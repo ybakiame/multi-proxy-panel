@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { Button, Card, Spinner } from "@heroui/react";
+import { Button, Card, Spinner } from "../components/ui";
 import {
   CONFIG_KEY,
   SUBSCRIPTIONS_KEY,
@@ -240,7 +240,7 @@ export default function Subscriptions() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载订阅…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载订阅…</span>
           </Card.Content>
         </Card>
       )}
@@ -248,8 +248,8 @@ export default function Subscriptions() {
       {!isLoading && queryError && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <span className="text-sm text-muted">订阅列表加载失败</span>
-            <span className="text-xs text-muted/80">{toErrorMessage(queryError)}</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">订阅列表加载失败</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">{toErrorMessage(queryError)}</span>
           </Card.Content>
         </Card>
       )}
@@ -257,8 +257,10 @@ export default function Subscriptions() {
       {!isLoading && !queryError && subscriptions.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center gap-5 pb-16 text-center">
           <div className="flex flex-col gap-1">
-            <span className="text-base font-medium text-foreground">添加你的第一个订阅</span>
-            <span className="text-sm text-muted">粘贴机场订阅链接，拉取节点并用于首页启动代理</span>
+            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100">添加你的第一个订阅</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">
+              粘贴机场订阅链接，拉取节点并用于首页启动代理
+            </span>
           </div>
           <Button variant="primary" size="lg" className="min-h-12 px-8" onPress={openAdd}>
             添加订阅
@@ -269,13 +271,13 @@ export default function Subscriptions() {
       {showList && (
         <>
           <div className="flex items-center justify-between">
-            <span className="pl-1 text-xs text-muted">共 {subscriptions.length} 个订阅源</span>
+            <span className="pl-1 text-xs text-zinc-500 dark:text-zinc-400">共 {subscriptions.length} 个订阅源</span>
             <button
               type="button"
               aria-label="刷新全部订阅"
               disabled={refreshAllDisabled}
               onClick={() => void handleRefreshAll()}
-              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-40"
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400"
             >
               <ArrowPathIcon className={`size-5 ${refreshingAll ? "animate-spin" : ""}`} aria-hidden="true" />
             </button>

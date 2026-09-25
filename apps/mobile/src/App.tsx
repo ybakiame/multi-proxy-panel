@@ -116,13 +116,17 @@ function AppContent() {
   const location = useLocation();
   const mainRef = useRef<HTMLElement | null>(null);
   const showTabBar = TABS.some((tab) => tab.to === location.pathname);
+  // 根节点主题类随 UI 风格切换（Konsta `ios:`/`material:` 主题变体依赖该类）。
+  const { uiStyle } = useThemePreference();
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [location.pathname]);
 
   return (
-    <div className="k-ios flex h-full min-h-0 flex-col bg-ios-light-surface text-black dark:bg-ios-dark-surface dark:text-white">
+    <div
+      className={`${uiStyle === "material" ? "k-material" : "k-ios"} flex h-full min-h-0 flex-col bg-ios-light-surface text-black dark:bg-ios-dark-surface dark:text-white`}
+    >
       <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -187,11 +191,11 @@ export default function App() {
   );
 }
 
-/** Konsta 全局 Provider（iOS 主题）：dark 随主题偏好联动，包裹路由内容与 toast 出口。 */
+/** Konsta 全局 Provider：主题风格（iOS/Material）与暗色随用户偏好动态切换，包裹路由内容与 toast 出口。 */
 function KonstaRoot() {
-  const { resolvedTheme } = useThemePreference();
+  const { resolvedTheme, uiStyle } = useThemePreference();
   return (
-    <KonstaProvider theme="ios" dark={resolvedTheme === "dark"}>
+    <KonstaProvider theme={uiStyle} dark={resolvedTheme === "dark"}>
       <MobileToaster />
       <AppContent />
     </KonstaProvider>

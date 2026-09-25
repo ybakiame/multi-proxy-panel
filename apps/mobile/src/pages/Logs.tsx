@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, ArrowUpTrayIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { Alert, AlertDialog, Button, Card, Spinner } from "@heroui/react";
+import { InlineAlert } from "../components/InlineAlert";
+import { Button, Card, ConfirmDialog, Spinner } from "../components/ui";
 import {
   LOG_FILES_KEY,
   clearLogs,
@@ -155,12 +156,14 @@ export default function Logs() {
           {filesLoading && logFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
               <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在读取日志目录…</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">正在读取日志目录…</span>
             </div>
           ) : logFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-              <span className="text-sm text-muted">暂无日志文件</span>
-              <span className="text-xs text-muted/80">产生运行日志后会自动生成滚动文件，可点击右上角刷新重试</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">暂无日志文件</span>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                产生运行日志后会自动生成滚动文件，可点击右上角刷新重试
+              </span>
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
@@ -174,14 +177,17 @@ export default function Logs() {
                     onClick={() => void handleSelectFile(name)}
                     className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80 ${
                       selected
-                        ? "border-accent/60 bg-accent/10"
-                        : "border-border/60 bg-surface hover:bg-surface-secondary/60"
+                        ? "border-primary/60 bg-primary/10"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
                     }`}
                   >
-                    <span className="w-full truncate font-mono text-sm font-medium text-foreground" title={name}>
+                    <span
+                      className="w-full truncate font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                      title={name}
+                    >
                       {name}
                     </span>
-                    <span className="truncate text-xs text-muted">{describeLogFile(name)}</span>
+                    <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{describeLogFile(name)}</span>
                   </button>
                 );
               })}
@@ -202,27 +208,23 @@ export default function Logs() {
           {reading && fileContent === null ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
               <Spinner aria-hidden="true" />
-              <span className="text-sm text-muted">正在读取日志…</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">正在读取日志…</span>
             </div>
           ) : readError ? (
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>日志读取失败</Alert.Title>
-                <Alert.Description className="break-all">{readError}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <InlineAlert kind="danger" title="日志读取失败">
+              <span className="break-all">{readError}</span>
+            </InlineAlert>
           ) : fileContent === null ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-              <span className="text-sm text-muted">未选择文件</span>
-              <span className="text-xs text-muted/80">从上方列表选择一个日志文件开始查看</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">未选择文件</span>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">从上方列表选择一个日志文件开始查看</span>
             </div>
           ) : (
             <div
               ref={tailBoxRef}
-              className="max-h-[55vh] overflow-auto rounded-lg border border-border bg-surface-secondary/60 p-3"
+              className="max-h-[55vh] overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800"
             >
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-zinc-900 dark:text-zinc-100">
                 {fileContent || "(空文件)"}
               </pre>
             </div>
@@ -245,7 +247,7 @@ export default function Logs() {
             </Button>
           </div>
           {exportPath && (
-            <p className="w-full break-all font-mono text-xs text-muted" title={exportPath}>
+            <p className="w-full break-all font-mono text-xs text-zinc-500 dark:text-zinc-400" title={exportPath}>
               已导出：{exportPath}
             </p>
           )}
@@ -253,33 +255,16 @@ export default function Logs() {
       </Card>
 
       {/* 清空确认：clearLogs 仅清内存缓冲，不删磁盘文件 */}
-      <AlertDialog.Backdrop
-        isOpen={pendingClear}
-        onOpenChange={(open) => {
-          if (!open) setPendingClear(false);
-        }}
+      <ConfirmDialog
+        opened={pendingClear}
+        title="清空日志"
+        danger
+        confirmText="清空"
+        onConfirm={() => void handleClearConfirm()}
+        onClose={() => setPendingClear(false)}
       >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog>
-            <AlertDialog.CloseTrigger />
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>清空日志</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p className="break-words">将清空内存中的日志缓冲（不影响磁盘上的日志文件），确定继续吗？</p>
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button slot="close" variant="tertiary" onPress={() => setPendingClear(false)}>
-                取消
-              </Button>
-              <Button slot="close" variant="danger" onPress={() => void handleClearConfirm()}>
-                清空
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
+        <p className="break-words">将清空内存中的日志缓冲（不影响磁盘上的日志文件），确定继续吗？</p>
+      </ConfirmDialog>
     </SubPageShell>
   );
 }

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
-import { Alert, Button } from "@heroui/react";
+import { InlineAlert } from "../components/InlineAlert";
+import { Button } from "../components/ui";
 import {
   PROXY_STATUS_KEY,
   SUBSCRIPTIONS_KEY,
@@ -40,7 +41,7 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 4. 主操作：右下角悬浮启停按钮（StartStopFab，无生效订阅时禁用并提示选择）；点「启动代理」
  *    即完成「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
- * 5. VPN 授权引导与启动失败错误：均为独立 Alert 卡片，不再包裹启停按钮。
+ * 5. VPN 授权引导与启动失败错误：均为独立 InlineAlert 卡片，不再包裹启停按钮。
  *
  * 配置预览等开发者入口已迁移至设置页「开发者工具」分组。
  */
@@ -178,22 +179,22 @@ export default function Dashboard() {
       <header className="flex flex-col gap-3">
         <div>
           <h1 className="text-xl font-semibold">ProxyPanel</h1>
-          <p className="text-sm text-muted">仪表盘 · 核心启停与运行状态</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">仪表盘 · 核心启停与运行状态</p>
         </div>
         <Button
           variant="secondary"
           className="h-12 w-full justify-between px-4 font-normal"
           onPress={() => setSheetOpen(true)}
         >
-          <span className="text-sm text-muted">生效订阅</span>
-          <span className="flex min-w-0 items-center gap-1 text-sm font-medium text-foreground">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400">生效订阅</span>
+          <span className="flex min-w-0 items-center gap-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">
             <span className="truncate">
               {activeSub ? `${activeSub.name} · ${activeSub.node_count} 节点` : "请选择订阅"}
             </span>
-            <ChevronDownIcon className="size-4 shrink-0 text-muted" aria-hidden="true" />
+            <ChevronDownIcon className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />
           </span>
         </Button>
-        {!running && !canStart && <p className="text-xs text-warning">请先选择要使用的订阅</p>}
+        {!running && !canStart && <p className="text-xs text-amber-500">请先选择要使用的订阅</p>}
       </header>
 
       {/* 2. 状态卡（运行中内嵌出站模式分段切换） */}
@@ -218,39 +219,29 @@ export default function Dashboard() {
       {/* 5. VPN 授权引导 / 启动失败：独立条件卡片，不再包裹启停按钮 */}
       {/* 授权被拒 / 重试仍遇未授权：显示引导 + 「去授权」兜底按钮；授权链路进行中隐藏避免与系统弹窗重叠 */}
       {vpnAuthRequired && !startingPending && (
-        <Alert status="warning">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>需要 VPN 授权</Alert.Title>
-            <Alert.Description>
-              启动代理需要 Android 系统授权创建
-              VPN。授权被拒绝或取消时无法启动，点击「去授权」重新发起，授权成功后将在同一链路内自动启动代理。
-            </Alert.Description>
-            <div className="mt-3">
-              <Button
-                variant="secondary"
-                size="lg"
-                className="min-h-11"
-                isPending={vpnAuthMutation.isPending}
-                onPress={() => void authorizeAndStart()}
-              >
-                去授权
-              </Button>
-            </div>
-          </Alert.Content>
-        </Alert>
+        <InlineAlert kind="warning" title="需要 VPN 授权">
+          启动代理需要 Android 系统授权创建
+          VPN。授权被拒绝或取消时无法启动，点击「去授权」重新发起，授权成功后将在同一链路内自动启动代理。
+          <div className="mt-3">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="min-h-11"
+              isPending={vpnAuthMutation.isPending}
+              onPress={() => void authorizeAndStart()}
+            >
+              去授权
+            </Button>
+          </div>
+        </InlineAlert>
       )}
 
       {/* 启动失败：同步错误文本 + vpn_last_error（若有） */}
       {(showActionError || showVpnError) && !startingPending && (
-        <Alert status="danger">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>启动失败</Alert.Title>
-            {showActionError && <Alert.Description className="break-all">{actionError}</Alert.Description>}
-            {showVpnError && <Alert.Description className="break-all">{vpnError}</Alert.Description>}
-          </Alert.Content>
-        </Alert>
+        <InlineAlert kind="danger" title="启动失败">
+          {showActionError && <div className="break-all">{actionError}</div>}
+          {showVpnError && <div className="break-all">{vpnError}</div>}
+        </InlineAlert>
       )}
 
       {/* 底部留白：为悬浮启停按钮（FAB）让出空间，避免遮挡最后一张卡片 */}

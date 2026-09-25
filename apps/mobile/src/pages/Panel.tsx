@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Button, Card } from "@heroui/react";
+import { Button, Card } from "../components/ui";
 import { toastError, useClientConfig, useProxyStatus } from "@pp/client-core";
 import { BackHeader } from "../components/BackHeader";
 
@@ -8,8 +8,14 @@ import { BackHeader } from "../components/BackHeader";
  * hash setup 段（zashboard / metacubexd 风格 `#/setup?...`），三种可选面板 UI 都能自动
  * 读取，无需用户在面板内重复输入密钥。
  */
-export function buildPanelUrl(clashApiUrl: string, secret: string): string {
-  const parsed = new URL(clashApiUrl);
+export function buildPanelUrl(clashApiUrl: string, secret: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(clashApiUrl);
+  } catch {
+    // 运行状态上报的 API 地址异常（极端情况）：按不可用处理，避免渲染期抛错。
+    return null;
+  }
   const params = `hostname=${encodeURIComponent(parsed.hostname)}&port=${encodeURIComponent(parsed.port)}&secret=${encodeURIComponent(secret)}`;
   return `${parsed.origin}/ui/?${params}#/setup?${params}`;
 }
@@ -38,20 +44,18 @@ export default function Panel() {
   const available = running && clashApiUrl !== null && clashApiUrl !== "";
   // 密钥必填：为空不允许进入面板（引导到 Experimental 页设置/生成）。
   const missingSecret = available && secret === "";
+  // 面板地址：URL 异常时为 null（按不可用处理，渲染空态）。
+  const panelUrl = available && !missingSecret ? buildPanelUrl(clashApiUrl, secret) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* iframe 内 zashboard 的 hash 路由会污染联合会话历史，navigate(-1) 无法离开本页，
           显式 replace 回首页（见 BackHeader `backTo` 说明） */}
       <BackHeader title="面板" backTo="/" />
-      {available && !missingSecret ? (
+      {panelUrl !== null ? (
         <>
-          <iframe
-            title="Clash 面板"
-            src={buildPanelUrl(clashApiUrl, secret)}
-            className="min-h-0 w-full flex-1 border-0 bg-background"
-          />
-          <p className="shrink-0 px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-xs text-muted">
+          <iframe title="Clash 面板" src={panelUrl} className="min-h-0 w-full flex-1 border-0 bg-white dark:bg-black" />
+          <p className="shrink-0 px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-xs text-zinc-500 dark:text-zinc-400">
             面板由内核内置服务提供，已自动携带密钥鉴权
           </p>
         </>
@@ -68,8 +72,10 @@ export default function Panel() {
             <Card.Content className="flex flex-col items-center justify-center gap-2 py-12 text-center">
               {missingSecret ? (
                 <>
-                  <span className="text-sm text-muted">尚未设置 Clash API 密钥</span>
-                  <span className="text-xs text-muted/80">面板访问需携带密钥鉴权，请先设置或随机生成</span>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">尚未设置 Clash API 密钥</span>
+                  <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                    面板访问需携带密钥鉴权，请先设置或随机生成
+                  </span>
                   <Button
                     variant="primary"
                     className="mt-2 min-h-11 px-4"
@@ -83,8 +89,10 @@ export default function Panel() {
                 </>
               ) : (
                 <>
-                  <span className="text-sm text-muted">{running ? "面板暂不可用" : "启动代理后可使用面板"}</span>
-                  <span className="text-xs text-muted/80">
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {running ? "面板暂不可用" : "启动代理后可使用面板"}
+                  </span>
+                  <span className="text-xs text-zinc-400 dark:text-zinc-500">
                     {running ? "Clash API 未就绪，请检查设置" : "面板依赖内核内置的 Clash API，运行中自动加载"}
                   </span>
                 </>
