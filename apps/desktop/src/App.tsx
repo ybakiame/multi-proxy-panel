@@ -1,10 +1,10 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
-import { ToastProvider, useTheme } from "@heroui/react";
+import { ToastProvider, useTheme, toast as heroToast } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { toastModeOverride } from "@pp/client-core";
 import { Toaster } from "./components/Toaster";
 import { isTauriEnv } from "@pp/client-core";
-import { setToastMode } from "@pp/client-core";
+import { setToastHandler } from "@pp/client-core";
 import { DesktopSidebar } from "./layout/desktop/DesktopSidebar";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
@@ -83,14 +83,15 @@ function ThemeBootstrap() {
 }
 
 /**
- * Toast 双态实现（详见 `./toast.ts`）：
+ * Toast 双态实现（详见 `@pp/client-core` 的 toast.ts 适配器模式）：
  *
- * - 默认 HeroUI 原生 toast：`ToastProvider` 渲染 toast 时调用
- *   `document.startViewTransition()`，在 GPU 正常的桌面环境无问题。
- * - `PP_TOAST_MODE=static`（兼容 `safe`）环境变量强制保持自实现静态
- *   `<Toaster />`：仅供 WSL/WebKitGTK 等特殊环境使用——HeroUI 3.2.2 的
- *   view-transition 在 WebKitGTK 2.52.5 WSL 软渲染下会 SIGSEGV 直接退出进程
- *   （`startViewTransition` 风险详见 toast.ts 背景注释）。
+ * - 默认 HeroUI 原生 toast：启动时经 `setToastHandler` 注册 `heroToast` 接管全部
+ *   toast 输出；`ToastProvider` 渲染 toast 时调用 `document.startViewTransition()`，
+ *   在 GPU 正常的桌面环境无问题。
+ * - `PP_TOAST_MODE=static`（兼容 `safe`）环境变量下不注册 handler，toast 落入
+ *   client-core 的 zustand 静态 store，由自实现 `<Toaster />` 消费：仅供
+ *   WSL/WebKitGTK 等特殊环境使用——HeroUI 3.2.2 的 view-transition 在 WebKitGTK
+ *   2.52.5 WSL 软渲染下会 SIGSEGV 直接退出进程（背景详见 client-core toast.ts）。
  *
  * 命令返回前 / 命令失败 / 值非 `static`/`safe` 均保持默认（HeroUI 原生路径）。
  * `ToastProvider` 独立挂载（不带 children）——HeroUI 3.2.2 会把 children 当作
@@ -144,10 +145,14 @@ export default function App() {
         const staticMode =
           (mode ?? "").trim().toLowerCase() === "static" || (mode ?? "").trim().toLowerCase() === "safe";
         setHeroToastEnabled(!staticMode);
-        setToastMode(!staticMode);
+        // 静态模式不注册 handler，toast 落入 client-core 静态 store 由 <Toaster /> 消费。
+        setToastHandler(staticMode ? null : (kind, message) => heroToast[kind](message));
       })
       .catch(() => {
-        // 命令失败保持默认：heroToastEnabled=true + heroMode=true（HeroUI 原生路径）。
+        // 命令失败保持默认：heroToastEnabled=true + 注册 HeroUI 适配器（原生路径）。
+        if (!cancelled) {
+          setToastHandler((kind, message) => heroToast[kind](message));
+        }
       });
     return () => {
       cancelled = true;
