@@ -1,9 +1,10 @@
 import { Component, useEffect, useRef, type ErrorInfo, type ReactNode } from "react";
-import { ToastProvider } from "@heroui/react";
+import { KonstaProvider } from "konsta/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { isTauriEnv } from "@pp/client-core";
+import { MobileToaster } from "./components/MobileToaster";
 import { TABS, TabBar } from "./components/TabBar";
-import { ThemeProvider } from "./theme";
+import { ThemeProvider, useThemePreference } from "./theme";
 import Dashboard from "./pages/Dashboard";
 import Logs from "./pages/Logs";
 import Panel from "./pages/Panel";
@@ -28,8 +29,8 @@ import Subscriptions from "./pages/Subscriptions";
  * 渲染期错误兜底：捕获子组件渲染时的未处理异常，展示错误信息与
  * 「重新加载」按钮，避免页面异常后整页黑屏无法恢复（对齐 desktop App.tsx）。
  *
- * 错误路径刻意不依赖 HeroUI 组件（若异常来自 HeroUI 本身会二次崩溃），
- * 使用原生 button + Tailwind 类渲染；深色背景直接取 `bg-background`/`text-foreground`。
+ * 错误路径刻意不依赖 UI 库组件（若异常来自组件库本身会二次崩溃），
+ * 使用原生 button + Tailwind 类渲染。
  */
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -57,12 +58,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
+        <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-white p-6 text-zinc-900 dark:bg-black dark:text-zinc-100">
           <h1 className="text-xl font-semibold">页面渲染出错</h1>
-          <p className="max-w-md break-all text-center text-sm text-muted">{this.state.error.message}</p>
+          <p className="max-w-md break-all text-center text-sm text-zinc-500 dark:text-zinc-400">
+            {this.state.error.message}
+          </p>
           <button
             type="button"
-            className="min-h-11 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             onClick={this.handleReload}
           >
             重新加载
@@ -77,12 +80,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 /** 非 Tauri 环境拦截：浏览器打开 devUrl 无 IPC 桥，任何 invoke 都失败；用原生元素渲染避免轮询失败刷屏（与 desktop 同理）。 */
 function TauriRequired() {
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
+    <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-white p-6 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <h1 className="text-xl font-semibold">请在客户端内运行</h1>
-      <p className="max-w-md text-center text-sm text-muted">
+      <p className="max-w-md text-center text-sm text-zinc-500 dark:text-zinc-400">
         当前页面通过浏览器直接访问，缺少 Tauri 运行环境，所有本地命令不可用。 请使用{" "}
-        <code className="rounded bg-default px-1 py-0.5">bun run tauri android dev</code> 启动移动客户端（端口
-        1430），或运行已构建的 ProxyPanel 应用。
+        <code className="rounded bg-black/5 px-1 py-0.5 dark:bg-white/10">bun run tauri android dev</code>{" "}
+        启动移动客户端（端口 1430），或运行已构建的 ProxyPanel 应用。
       </p>
     </div>
   );
@@ -105,10 +108,8 @@ function TauriRequired() {
  *   旧 `/proxies`、`/connections` 路径重定向到 `/panel`（原生页面已由内嵌面板取代，
  *   HashRouter 存量书签兼容）。
  * - 路由切换时滚动区复位到顶部，避免二级页承接首页的滚动位置。
- * - Toast：HeroUI 原生 toast（Android WebView 无 desktop WSL 的 view-transition 限制）。
- *   edge-to-edge 下状态栏透明，toast region（`placement="top"` 定位于 `top-4`）需额外让出
- *   `env(safe-area-inset-top)`：通过 `ToastProvider` 的 `className`（透传至 region 并参与
- *   slots.region 合并）追加 utilities 层任意值类覆盖其 `top`。
+ * - Toast：Konsta UI Toast（`MobileToaster`，消费 client-core 静态 toast store），
+ *   单条形态展示最新消息。
  * `QueryClientProvider` 保持挂在 main.tsx（不动）。
  */
 function AppContent() {
@@ -121,7 +122,7 @@ function AppContent() {
   }, [location.pathname]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
+    <div className="k-ios flex h-full min-h-0 flex-col bg-ios-light-surface text-black dark:bg-ios-dark-surface dark:text-white">
       <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -179,10 +180,20 @@ export default function App() {
       <ErrorBoundary>
         {/* 主题能力（浅色/深色/跟随系统）：根部常驻挂载，保证「跟随系统」时持续监听系统切换 */}
         <ThemeProvider>
-          <ToastProvider placement="top" maxVisibleToasts={3} className="top-[max(1rem,env(safe-area-inset-top))]" />
-          <AppContent />
+          <KonstaRoot />
         </ThemeProvider>
       </ErrorBoundary>
     </HashRouter>
+  );
+}
+
+/** Konsta 全局 Provider（iOS 主题）：dark 随主题偏好联动，包裹路由内容与 toast 出口。 */
+function KonstaRoot() {
+  const { resolvedTheme } = useThemePreference();
+  return (
+    <KonstaProvider theme="ios" dark={resolvedTheme === "dark"}>
+      <MobileToaster />
+      <AppContent />
+    </KonstaProvider>
   );
 }
