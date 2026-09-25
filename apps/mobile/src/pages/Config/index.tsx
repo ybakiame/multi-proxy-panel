@@ -23,8 +23,8 @@ export default function Config() {
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">配置管理</h1>
-        <p className="text-sm text-muted">管理 DNS、出站、路由、入站与实验性参数</p>
-        <p className="mt-1 text-xs text-muted">内置 CN 分流基线始终生效，自定义配置逐项启用</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">管理 DNS、出站、路由、入站与实验性参数</p>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">内置 CN 分流基线始终生效，自定义配置逐项启用</p>
       </div>
 
       <div className="flex flex-col gap-4">

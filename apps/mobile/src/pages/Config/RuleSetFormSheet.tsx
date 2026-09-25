@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Button, Modal, Radio, RadioGroup } from "@heroui/react";
+import { Radio } from "konsta/react";
 import type { CustomRuleSetInput, CustomRuleSetSource, CustomRuleSetView } from "@pp/client-core";
+import { BottomSheet, Button, inputClassName, textareaClassName } from "../../components/ui";
 
 type SourceKind = "remote" | "manual";
 /** 远程文件格式：binary = .srs，source = .json（对齐 CustomRuleSetSource.format）。 */
@@ -23,24 +24,36 @@ interface RuleSetFormSheetProps {
   onSave: (ruleSet: CustomRuleSetInput) => Promise<boolean>;
 }
 
-const inputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+const inputClass = inputClassName;
 
 /** 手动 JSON 占位骨架（sing-box rule_set source 格式）。 */
 const MANUAL_PLACEHOLDER = `{\n  "version": 1,\n  "rules": [\n    { "domain_suffix": [".ads.example.com"] }\n  ]\n}`;
 
-/** Radio 选项行（触达 ≥48px：Control 组行高 min-h-11）。 */
-function RadioOption({ value, label, disabled }: { value: string; label: string; disabled: boolean }) {
+/** Radio 选项行（触达 ≥48px，Konsta `Radio` + 整行 label）。 */
+function RadioOption({
+  value,
+  label,
+  checked,
+  disabled,
+  onSelect,
+}: {
+  value: string;
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onSelect: (value: string) => void;
+}) {
   return (
-    <Radio value={value} isDisabled={disabled} className="w-full">
-      <Radio.Content className="min-h-11 w-full py-1">
-        <Radio.Control>
-          <Radio.Indicator />
-        </Radio.Control>
-        <span className="text-sm font-medium text-foreground">{label}</span>
-      </Radio.Content>
-    </Radio>
+    <label className="flex min-h-11 w-full items-center gap-3 py-1">
+      <Radio
+        name="ruleset-source-kind"
+        value={value}
+        checked={checked}
+        disabled={disabled}
+        onChange={() => onSelect(value)}
+      />
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
+    </label>
   );
 }
 
@@ -107,147 +120,153 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
   };
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
+    <BottomSheet
+      opened={isOpen}
+      onClose={onClose}
+      title={editing ? "编辑规则集" : "添加规则集"}
+      footer={
+        <div className="flex gap-2">
+          <Button variant="tertiary" className="min-h-12 flex-1" isDisabled={saving} onPress={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            className="min-h-12 flex-1"
+            isDisabled={!canSave || saving}
+            isPending={saving}
+            onPress={() => void handleSave()}
+          >
+            保存
+          </Button>
+        </div>
+      }
     >
-      <Modal.Container placement="bottom">
-        <Modal.Dialog>
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>{editing ? "编辑规则集" : "添加规则集"}</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 来源类型 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">类型</span>
-              <RadioGroup value={kind} onChange={(value) => setKind(String(value) === "manual" ? "manual" : "remote")}>
-                <RadioOption value="remote" label="远程 URL" disabled={saving} />
-                <RadioOption value="manual" label="手动输入 JSON" disabled={saving} />
-              </RadioGroup>
-            </div>
+      <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
+        {/* 来源类型 */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">类型</span>
+          <RadioOption
+            value="remote"
+            label="远程 URL"
+            checked={kind === "remote"}
+            disabled={saving}
+            onSelect={() => setKind("remote")}
+          />
+          <RadioOption
+            value="manual"
+            label="手动输入 JSON"
+            checked={kind === "manual"}
+            disabled={saving}
+            onSelect={() => setKind("manual")}
+          />
+        </div>
 
-            {/* 公共字段 */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="rs-name" className="text-sm font-medium text-foreground">
-                名称
-              </label>
-              <input
-                id="rs-name"
-                aria-label="规则集名称"
-                aria-required="true"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="例如：我的广告过滤"
-                disabled={saving}
-                className={inputClass}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="rs-tag" className="text-sm font-medium text-foreground">
-                引用 tag
-              </label>
-              <input
-                id="rs-tag"
-                aria-label="规则集 tag"
-                aria-required="true"
-                value={tag}
-                onChange={(event) => setTag(event.target.value)}
-                placeholder="my-ads"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={saving}
-                className={`${inputClass} font-mono`}
-              />
-              <span className="text-xs text-muted">规则卡「规则集」匹配目标按此 tag 引用；须唯一且非空</span>
-            </div>
+        {/* 公共字段 */}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="rs-name" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            名称
+          </label>
+          <input
+            id="rs-name"
+            aria-label="规则集名称"
+            aria-required="true"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="例如：我的广告过滤"
+            disabled={saving}
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="rs-tag" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            引用 tag
+          </label>
+          <input
+            id="rs-tag"
+            aria-label="规则集 tag"
+            aria-required="true"
+            value={tag}
+            onChange={(event) => setTag(event.target.value)}
+            placeholder="my-ads"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={saving}
+            className={`${inputClass} font-mono`}
+          />
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            规则卡「规则集」匹配目标按此 tag 引用；须唯一且非空
+          </span>
+        </div>
 
-            {/* 远程：URL（格式按后缀自动识别） */}
-            {!isManual && (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="rs-url" className="text-sm font-medium text-foreground">
-                    URL
-                  </label>
-                  <input
-                    id="rs-url"
-                    type="url"
-                    aria-label="规则集 URL"
-                    aria-required="true"
-                    value={url}
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      setUrl(next);
-                      // 格式不再手选：URL 每次变化都按后缀自动识别（`.json` → source，其余 → binary）。
-                      setRemoteFormat(detectRemoteFormat(next));
-                    }}
-                    placeholder="https://example.com/ads.srs"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    inputMode="url"
-                    disabled={saving}
-                    className={`${inputClass} font-mono`}
-                  />
-                  {url.trim() !== "" && (
-                    <span
-                      aria-live="polite"
-                      className="inline-flex self-start items-center gap-1.5 rounded-full border border-border/60 bg-surface-secondary/60 px-3 py-1 text-xs text-muted"
-                    >
-                      {detectRemoteFormat(url) === "source"
-                        ? "URL 以 .json 结尾：将识别为 json 源码（source）"
-                        : "URL 非 .json 结尾：将识别为 srs 二进制（binary）"}
-                    </span>
-                  )}
-                  <span className="text-xs text-muted">保存后点击「立即更新」下载；下载成功前不会被注入</span>
-                </div>
-              </>
+        {/* 远程：URL（格式按后缀自动识别） */}
+        {!isManual && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="rs-url" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              URL
+            </label>
+            <input
+              id="rs-url"
+              type="url"
+              aria-label="规则集 URL"
+              aria-required="true"
+              value={url}
+              onChange={(event) => {
+                const next = event.target.value;
+                setUrl(next);
+                // 格式不再手选：URL 每次变化都按后缀自动识别（`.json` → source，其余 → binary）。
+                setRemoteFormat(detectRemoteFormat(next));
+              }}
+              placeholder="https://example.com/ads.srs"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="url"
+              disabled={saving}
+              className={`${inputClass} font-mono`}
+            />
+            {url.trim() !== "" && (
+              <span
+                aria-live="polite"
+                className="inline-flex items-center gap-1.5 self-start rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+              >
+                {detectRemoteFormat(url) === "source"
+                  ? "URL 以 .json 结尾：将识别为 json 源码（source）"
+                  : "URL 非 .json 结尾：将识别为 srs 二进制（binary）"}
+              </span>
             )}
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              保存后点击「立即更新」下载；下载成功前不会被注入
+            </span>
+          </div>
+        )}
 
-            {/* 手动：JSON 内容 */}
-            {isManual && (
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="rs-content" className="text-sm font-medium text-foreground">
-                  JSON 内容
-                </label>
-                <textarea
-                  id="rs-content"
-                  aria-label="规则集 JSON 内容"
-                  aria-required="true"
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  placeholder={MANUAL_PLACEHOLDER}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  disabled={saving}
-                  rows={8}
-                  className="w-full resize-y rounded-lg border border-border/70 bg-surface px-3 py-2 font-mono text-sm leading-6 text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60"
-                />
-                <span className="text-xs text-muted">sing-box rule_set source JSON（保存即写入本地文件）</span>
-              </div>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="tertiary" className="min-h-12 flex-1" isDisabled={saving} onPress={onClose}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              className="min-h-12 flex-1"
-              isDisabled={!canSave || saving}
-              isPending={saving}
-              onPress={() => void handleSave()}
-            >
-              保存
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+        {/* 手动：JSON 内容 */}
+        {isManual && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="rs-content" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              JSON 内容
+            </label>
+            <textarea
+              id="rs-content"
+              aria-label="规则集 JSON 内容"
+              aria-required="true"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder={MANUAL_PLACEHOLDER}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              disabled={saving}
+              rows={8}
+              className={`${textareaClassName} resize-y font-mono leading-6`}
+            />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              sing-box rule_set source JSON（保存即写入本地文件）
+            </span>
+          </div>
+        )}
+      </div>
+    </BottomSheet>
   );
 }

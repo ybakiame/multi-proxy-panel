@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { TrashIcon } from "@heroicons/react/24/outline";
-import { Button, Modal, Switch } from "@heroui/react";
 import { outboundTag } from "@pp/client-core";
 import type { CustomOutbound } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
+import { BottomSheet, Button, Switch, inputClassName } from "../../../components/ui";
 import { GroupFields } from "./GroupFields";
 import { OutboundProtocolFields } from "./OutboundProtocolFields";
 import { OutboundTlsFields } from "./OutboundTlsFields";
@@ -19,9 +19,7 @@ import {
 import { isGroupFormValid, validateGroupFields, type GroupMemberCandidate } from "./groupForm";
 import { OUTBOUND_PROTOCOL_OPTIONS, isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
 
-const inputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+const inputClass = inputClassName;
 
 interface OutboundFormSheetProps {
   isOpen: boolean;
@@ -98,127 +96,106 @@ export function OutboundFormSheet({
   };
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
+    <BottomSheet
+      opened={isOpen}
+      onClose={onClose}
+      title={editing?.builtin ? "编辑内置分组" : editing ? "编辑自定义出站" : "添加自定义出站"}
+      footer={
+        <div className="flex gap-2">
+          <Button variant="tertiary" className="min-h-12 flex-1" onPress={onClose}>
+            取消
+          </Button>
+          <Button variant="primary" className="min-h-12 flex-1" isDisabled={!canSave} onPress={handleSave}>
+            保存
+          </Button>
+        </div>
+      }
     >
-      <Modal.Container placement="bottom">
-        <Modal.Dialog>
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>
-              {editing?.builtin ? "编辑内置分组" : editing ? "编辑自定义出站" : "添加自定义出站"}
-            </Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 名称（内置分组只读） */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="outbound-name" className="text-sm font-medium text-foreground">
-                名称
-              </label>
-              {fields.builtin ? (
-                <>
-                  <span className="font-mono text-sm text-foreground">{fields.name}</span>
-                  <span className="text-xs text-muted">内置分组名称不可修改</span>
-                </>
-              ) : (
-                <>
-                  <input
-                    id="outbound-name"
-                    aria-label="出站名称"
-                    aria-required="true"
-                    value={fields.name}
-                    onChange={(event) => patch({ name: event.target.value })}
-                    placeholder="例如：my-node"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    className={inputClass}
-                  />
-                  {errors.name ? (
-                    <span className="text-xs text-warning">{errors.name}</span>
-                  ) : (
-                    <span className="text-xs text-muted">
-                      渲染 tag：
-                      <code className="font-mono text-foreground">{outboundTag(fields.name)}</code>
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* 协议类型（内置分组只读） */}
-            {!fields.builtin && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-foreground">协议类型</span>
-                <MobileSelectSheet
-                  label="协议类型"
-                  value={fields.protocol}
-                  onChange={handleProtocolChange}
-                  options={OUTBOUND_PROTOCOL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                />
-                <span className="text-xs text-muted">切换协议会重置该出站的协议字段</span>
-              </div>
-            )}
-
-            {/* 协议字段：分组出站渲染成员/分组字段，节点出站渲染协议字段 */}
-            {isGroup ? (
-              <GroupFields
-                fields={fields}
-                errors={groupErrors}
-                candidates={memberCandidates}
-                subscriptionCacheAvailable={subscriptionCacheAvailable}
-                builtinMembersEditable={builtinMembersEditable}
-                onChange={patch}
+      <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
+        {/* 名称（内置分组只读） */}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="outbound-name" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            名称
+          </label>
+          {fields.builtin ? (
+            <>
+              <span className="font-mono text-sm text-zinc-900 dark:text-zinc-100">{fields.name}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">内置分组名称不可修改</span>
+            </>
+          ) : (
+            <>
+              <input
+                id="outbound-name"
+                aria-label="出站名称"
+                aria-required="true"
+                value={fields.name}
+                onChange={(event) => patch({ name: event.target.value })}
+                placeholder="例如：my-node"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={inputClass}
               />
-            ) : (
-              <OutboundProtocolFields fields={fields} errors={errors} onChange={patch} />
-            )}
+              {errors.name ? (
+                <span className="text-xs text-amber-500">{errors.name}</span>
+              ) : (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  渲染 tag：
+                  <code className="font-mono text-zinc-900 dark:text-zinc-100">{outboundTag(fields.name)}</code>
+                </span>
+              )}
+            </>
+          )}
+        </div>
 
-            {/* TLS（shadowsocks 无 TLS） */}
-            {showTls && <OutboundTlsFields fields={fields} onChange={patch} />}
+        {/* 协议类型（内置分组只读） */}
+        {!fields.builtin && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">协议类型</span>
+            <MobileSelectSheet
+              label="协议类型"
+              value={fields.protocol}
+              onChange={handleProtocolChange}
+              options={OUTBOUND_PROTOCOL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">切换协议会重置该出站的协议字段</span>
+          </div>
+        )}
 
-            {/* 传输方式（仅 vless / vmess / trojan） */}
-            {showTransport && <OutboundTransportFields fields={fields} onChange={patch} />}
+        {/* 协议字段：分组出站渲染成员/分组字段，节点出站渲染协议字段 */}
+        {isGroup ? (
+          <GroupFields
+            fields={fields}
+            errors={groupErrors}
+            candidates={memberCandidates}
+            subscriptionCacheAvailable={subscriptionCacheAvailable}
+            builtinMembersEditable={builtinMembersEditable}
+            onChange={patch}
+          />
+        ) : (
+          <OutboundProtocolFields fields={fields} errors={errors} onChange={patch} />
+        )}
 
-            {/* 启用开关 */}
-            <div className="flex min-h-11 items-center justify-between gap-3">
-              <span className="text-sm text-foreground">启用该出站</span>
-              <Switch
-                aria-label="启用该出站"
-                isSelected={fields.enabled}
-                onChange={(enabled) => patch({ enabled })}
-                className="shrink-0"
-              >
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
-            </div>
+        {/* TLS（shadowsocks 无 TLS） */}
+        {showTls && <OutboundTlsFields fields={fields} onChange={patch} />}
 
-            {/* 编辑模式删除入口（内置分组不可删除） */}
-            {editing && !editing.builtin && (
-              <Button variant="danger" className="min-h-12 w-full" onPress={() => onDeleteRequest(editing)}>
-                <TrashIcon className="size-4" aria-hidden="true" />
-                删除出站
-              </Button>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="tertiary" className="min-h-12 flex-1" onPress={onClose}>
-              取消
-            </Button>
-            <Button variant="primary" className="min-h-12 flex-1" isDisabled={!canSave} onPress={handleSave}>
-              保存
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+        {/* 传输方式（仅 vless / vmess / trojan） */}
+        {showTransport && <OutboundTransportFields fields={fields} onChange={patch} />}
+
+        {/* 启用开关 */}
+        <div className="flex min-h-11 items-center justify-between gap-3">
+          <span className="text-sm text-zinc-900 dark:text-zinc-100">启用该出站</span>
+          <Switch aria-label="启用该出站" isSelected={fields.enabled} onValueChange={(enabled) => patch({ enabled })} />
+        </div>
+
+        {/* 编辑模式删除入口（内置分组不可删除） */}
+        {editing && !editing.builtin && (
+          <Button variant="danger" className="min-h-12 w-full" onPress={() => onDeleteRequest(editing)}>
+            <TrashIcon className="size-4" aria-hidden="true" />
+            删除出站
+          </Button>
+        )}
+      </div>
+    </BottomSheet>
   );
 }

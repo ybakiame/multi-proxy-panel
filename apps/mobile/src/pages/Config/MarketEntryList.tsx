@@ -1,5 +1,5 @@
 import { CheckIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { Button, Card, Chip } from "@heroui/react";
+import { Button, Card, Chip } from "../../components/ui";
 import type { MetaCubeEntry } from "@pp/client-core";
 
 interface MarketEntryListProps {
@@ -24,8 +24,8 @@ export function MarketEntryList({ entries, addedUrls, addingKey, onAdd }: Market
           <Card key={entry.id}>
             <Card.Content className="flex items-center justify-between gap-3 p-3">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-sm font-medium text-foreground">{entry.name}</span>
-                <Chip size="sm" variant="soft" color={entry.group === "ip" ? "accent" : "default"} className="shrink-0">
+                <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{entry.name}</span>
+                <Chip color={entry.group === "ip" ? "accent" : "default"} className="shrink-0">
                   {entry.group === "ip" ? "IP" : "Site"}
                 </Chip>
               </div>

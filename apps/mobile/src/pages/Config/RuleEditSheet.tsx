@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { CheckIcon, ChevronDownIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { Button, Modal, Switch } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import {
   RULE_ACTIONS,
@@ -10,6 +9,7 @@ import {
   parseRuleSetTags,
 } from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
+import { BottomSheet, Button, Switch, inputClassName } from "../../components/ui";
 import type { RuleSetOption } from "./ruleSetOptions";
 
 export type { RuleSetOption } from "./ruleSetOptions";
@@ -54,9 +54,7 @@ const TARGET_HINT: Record<string, string> = {
   port: "匹配目标端口；也支持端口段如 1000:2000",
 };
 
-const inputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+const inputClass = inputClassName;
 
 interface RuleEditSheetProps {
   isOpen: boolean;
@@ -89,14 +87,8 @@ function SheetSwitchRow({
 }) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
-      <span className="min-w-0 flex-1 text-sm text-foreground">{label}</span>
-      <Switch aria-label={label} isSelected={checked} isDisabled={disabled} onChange={(next) => onChange(next)}>
-        <Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
+      <span className="min-w-0 flex-1 text-sm text-zinc-900 dark:text-zinc-100">{label}</span>
+      <Switch aria-label={label} isSelected={checked} isDisabled={disabled} onValueChange={(next) => onChange(next)} />
     </div>
   );
 }
@@ -218,245 +210,243 @@ export function RuleEditSheet({
   };
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
+    <BottomSheet
+      opened={isOpen}
+      onClose={onClose}
+      title={isBuiltin ? "编辑内置规则（可修改或删除）" : editing ? "编辑规则" : "添加规则"}
+      footer={
+        <div className="flex gap-2">
+          <Button variant="tertiary" className="min-h-12 flex-1" isDisabled={saving} onPress={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            className="min-h-12 flex-1"
+            isDisabled={!canSave || saving}
+            isPending={saving}
+            onPress={() => void handleSave()}
+          >
+            保存
+          </Button>
+        </div>
+      }
     >
-      <Modal.Container placement="bottom">
-        <Modal.Dialog>
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>
-              {isBuiltin ? "编辑内置规则（可修改或删除）" : editing ? "编辑规则" : "添加规则"}
-            </Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {/* 匹配类型 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">匹配类型</span>
-              <MobileSelectSheet
-                label="匹配类型"
-                value={matchType}
-                onChange={setMatchType}
-                disabled={saving}
-                options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
-              />
-              {matchType === "app_package" && (
-                <span className="text-xs text-muted">应用包名匹配为 Android 专属能力</span>
-              )}
-            </div>
+      <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
+        {/* 匹配类型 */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">匹配类型</span>
+          <MobileSelectSheet
+            label="匹配类型"
+            value={matchType}
+            onChange={setMatchType}
+            disabled={saving}
+            options={MATCH_TYPE_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+          />
+          {matchType === "app_package" && (
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">应用包名匹配为 Android 专属能力</span>
+          )}
+        </div>
 
-            {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入） */}
-            {!isFinal &&
-              (matchType === "rule_set" ? (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">规则集</span>
-                  {effectiveRuleSetOptions.length === 0 ? (
-                    <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      {effectiveRuleSetOptions.map((opt) => {
-                        const selected = ruleSetTags.includes(opt.value);
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            aria-pressed={selected}
-                            disabled={saving}
-                            onClick={() => toggleRuleSetTag(opt.value)}
-                            className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors disabled:opacity-60 ${
-                              selected
-                                ? "border-accent/50 bg-accent/5"
-                                : "border-border/70 active:bg-surface-secondary/60"
-                            }`}
-                          >
-                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                              <span className="truncate text-sm font-medium text-foreground">{opt.label}</span>
-                              {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
-                            </span>
-                            {selected && <CheckIcon className="size-5 shrink-0 text-accent" aria-hidden="true" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {effectiveRuleSetOptions.length === 0 ? null : ruleSetTags.length === 0 ? (
-                    <span className="text-xs text-warning">请至少选择一个规则集</span>
-                  ) : (
-                    <span className="text-xs text-muted">可多选；规则集随引用它的规则一同注入</span>
-                  )}
-                </div>
+        {/* 匹配目标（final 隐藏；rule_set 走规则集选择器，其余类型文本框输入） */}
+        {!isFinal &&
+          (matchType === "rule_set" ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">规则集</span>
+              {effectiveRuleSetOptions.length === 0 ? (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  当前没有可用规则集，请先在「规则集管理」中添加
+                </span>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="rule-target" className="text-sm font-medium text-foreground">
-                    匹配目标
-                  </label>
+                  {effectiveRuleSetOptions.map((opt) => {
+                    const selected = ruleSetTags.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={selected}
+                        disabled={saving}
+                        onClick={() => toggleRuleSetTag(opt.value)}
+                        className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors disabled:opacity-60 ${
+                          selected
+                            ? "border-primary/50 bg-primary/5"
+                            : "border-zinc-200 dark:border-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-700"
+                        }`}
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            {opt.label}
+                          </span>
+                          {opt.hint && (
+                            <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{opt.hint}</span>
+                          )}
+                        </span>
+                        {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {effectiveRuleSetOptions.length === 0 ? null : ruleSetTags.length === 0 ? (
+                <span className="text-xs text-amber-500">请至少选择一个规则集</span>
+              ) : (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">可多选；规则集随引用它的规则一同注入</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="rule-target" className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                匹配目标
+              </label>
+              <input
+                id="rule-target"
+                aria-required="true"
+                aria-label="匹配目标"
+                value={target}
+                onChange={(event) => setTarget(event.target.value)}
+                placeholder={TARGET_PLACEHOLDER[matchType] ?? "请输入目标值"}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={saving}
+                className={inputClass}
+              />
+              {TARGET_HINT[matchType] && (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">{TARGET_HINT[matchType]}</span>
+              )}
+            </div>
+          ))}
+
+        {/* 路由动作分段控件 */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">路由动作</span>
+          <fieldset className="flex min-w-0 gap-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-1">
+            <legend className="sr-only">路由动作</legend>
+            {RULE_ACTIONS.map((opt) => {
+              const selected = opt.id === "outbound" ? isOutbound : action === opt.id;
+              return (
+                <Button
+                  key={opt.id}
+                  variant={selected ? "primary" : "secondary"}
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  isDisabled={saving}
+                  onPress={() => {
+                    // 切到「指定出站」保留已选 tag（重新切回不丢选择）；其余动作直接写入 id。
+                    if (opt.id === "outbound") {
+                      if (!isOutbound) setAction(buildOutboundAction(""));
+                    } else {
+                      setAction(opt.id);
+                    }
+                  }}
+                >
+                  {opt.label}
+                </Button>
+              );
+            })}
+          </fieldset>
+        </div>
+
+        {/* 指定出站 tag 选择器（仅 outbound 动作显示） */}
+        {isOutbound && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">出站</span>
+            <MobileSelectSheet
+              label="出站"
+              value={selectedOutboundTag}
+              onChange={(tag) => setAction(buildOutboundAction(tag))}
+              disabled={saving}
+              placeholder="请选择出站"
+              options={effectiveOutboundOptions.map((opt) => ({
+                value: opt.value,
+                label: opt.label,
+                description: opt.hint,
+              }))}
+            />
+            {effectiveOutboundOptions.length === 0 ? (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {subscriptionCacheAvailable
+                  ? "暂无可用出站，可先在 配置→自定义出站 添加"
+                  : "未找到订阅节点缓存，请先同步订阅"}
+              </span>
+            ) : (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">命中该规则的流量将转发到所选出站</span>
+            )}
+          </div>
+        )}
+
+        {/* 高级折叠段（默认收起） */}
+        {
+          <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 p-3">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              disabled={saving}
+              onClick={() => setAdvancedOpen((open) => !open)}
+              className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
+            >
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">高级选项</span>
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={`size-5 text-zinc-500 dark:text-zinc-400 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {advancedOpen && (
+              <div className="flex flex-col gap-3">
+                <label htmlFor="rule-name" className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">规则名称（可选）</span>
                   <input
-                    id="rule-target"
-                    aria-required="true"
-                    aria-label="匹配目标"
-                    value={target}
-                    onChange={(event) => setTarget(event.target.value)}
-                    placeholder={TARGET_PLACEHOLDER[matchType] ?? "请输入目标值"}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
+                    id="rule-name"
+                    aria-label="规则名称"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="留空则自动生成摘要"
                     disabled={saving}
                     className={inputClass}
                   />
-                  {TARGET_HINT[matchType] && <span className="text-xs text-muted">{TARGET_HINT[matchType]}</span>}
-                </div>
-              ))}
-
-            {/* 路由动作分段控件 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">路由动作</span>
-              <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
-                <legend className="sr-only">路由动作</legend>
-                {RULE_ACTIONS.map((opt) => {
-                  const selected = opt.id === "outbound" ? isOutbound : action === opt.id;
-                  return (
-                    <Button
-                      key={opt.id}
-                      variant={selected ? "primary" : "secondary"}
-                      size="sm"
-                      className="min-h-11 flex-1"
-                      isDisabled={saving}
-                      onPress={() => {
-                        // 切到「指定出站」保留已选 tag（重新切回不丢选择）；其余动作直接写入 id。
-                        if (opt.id === "outbound") {
-                          if (!isOutbound) setAction(buildOutboundAction(""));
-                        } else {
-                          setAction(opt.id);
-                        }
-                      }}
-                    >
-                      {opt.label}
-                    </Button>
-                  );
-                })}
-              </fieldset>
-            </div>
-
-            {/* 指定出站 tag 选择器（仅 outbound 动作显示） */}
-            {isOutbound && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-foreground">出站</span>
-                <MobileSelectSheet
-                  label="出站"
-                  value={selectedOutboundTag}
-                  onChange={(tag) => setAction(buildOutboundAction(tag))}
+                </label>
+                <SheetSwitchRow
+                  label="跳过 DNS 解析 (no-resolve)"
+                  checked={noResolve}
                   disabled={saving}
-                  placeholder="请选择出站"
-                  options={effectiveOutboundOptions.map((opt) => ({
-                    value: opt.value,
-                    label: opt.label,
-                    description: opt.hint,
-                  }))}
+                  onChange={(next) => setNoResolve(next)}
                 />
-                {effectiveOutboundOptions.length === 0 ? (
-                  <span className="text-xs text-muted">
-                    {subscriptionCacheAvailable
-                      ? "暂无可用出站，可先在 配置→自定义出站 添加"
-                      : "未找到订阅节点缓存，请先同步订阅"}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted">命中该规则的流量将转发到所选出站</span>
-                )}
-              </div>
-            )}
-
-            {/* 高级折叠段（默认收起） */}
-            {
-              <div className="flex flex-col gap-3 rounded-xl border border-border/40 p-3">
-                <button
-                  type="button"
-                  aria-expanded={advancedOpen}
+                <SheetSwitchRow
+                  label="反选 (invert)"
+                  checked={invert}
                   disabled={saving}
-                  onClick={() => setAdvancedOpen((open) => !open)}
-                  className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
-                >
-                  <span className="text-sm font-medium text-foreground">高级选项</span>
-                  <ChevronDownIcon
-                    aria-hidden="true"
-                    className={`size-5 text-muted transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                  onChange={(next) => setInvert(next)}
+                />
+                <label htmlFor="rule-note" className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">备注</span>
+                  <input
+                    id="rule-note"
+                    aria-label="备注"
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="可选备注"
+                    disabled={saving}
+                    className={inputClass}
                   />
-                </button>
-                {advancedOpen && (
-                  <div className="flex flex-col gap-3">
-                    <label htmlFor="rule-name" className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium text-foreground">规则名称（可选）</span>
-                      <input
-                        id="rule-name"
-                        aria-label="规则名称"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                        placeholder="留空则自动生成摘要"
-                        disabled={saving}
-                        className={inputClass}
-                      />
-                    </label>
-                    <SheetSwitchRow
-                      label="跳过 DNS 解析 (no-resolve)"
-                      checked={noResolve}
-                      disabled={saving}
-                      onChange={(next) => setNoResolve(next)}
-                    />
-                    <SheetSwitchRow
-                      label="反选 (invert)"
-                      checked={invert}
-                      disabled={saving}
-                      onChange={(next) => setInvert(next)}
-                    />
-                    <label htmlFor="rule-note" className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium text-foreground">备注</span>
-                      <input
-                        id="rule-note"
-                        aria-label="备注"
-                        value={note}
-                        onChange={(event) => setNote(event.target.value)}
-                        placeholder="可选备注"
-                        disabled={saving}
-                        className={inputClass}
-                      />
-                    </label>
-                  </div>
-                )}
+                </label>
               </div>
-            }
-
-            {/* 编辑模式删除入口（内置规则不可删除） */}
-            {editing && !isBuiltin && (
-              <Button
-                variant="danger"
-                className="min-h-12 w-full"
-                isDisabled={saving}
-                onPress={() => onDeleteRequest(editing)}
-              >
-                <TrashIcon className="size-4" aria-hidden="true" />
-                删除规则
-              </Button>
             )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="tertiary" className="min-h-12 flex-1" isDisabled={saving} onPress={onClose}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              className="min-h-12 flex-1"
-              isDisabled={!canSave || saving}
-              isPending={saving}
-              onPress={() => void handleSave()}
-            >
-              保存
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+          </div>
+        }
+
+        {/* 编辑模式删除入口（内置规则不可删除） */}
+        {editing && !isBuiltin && (
+          <Button
+            variant="danger"
+            className="min-h-12 w-full"
+            isDisabled={saving}
+            onPress={() => onDeleteRequest(editing)}
+          >
+            <TrashIcon className="size-4" aria-hidden="true" />
+            删除规则
+          </Button>
+        )}
+      </div>
+    </BottomSheet>
   );
 }

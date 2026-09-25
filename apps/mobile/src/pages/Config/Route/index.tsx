@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListBulletIcon, SwatchIcon } from "@heroicons/react/24/outline";
-import { Alert, Button, Card, Spinner } from "@heroui/react";
+import { InlineAlert } from "../../../components/InlineAlert";
+import { Button, Card, Spinner } from "../../../components/ui";
 import {
   CONFIG_SLICES_KEY,
   configSlicesGet,
@@ -136,7 +137,7 @@ export default function RoutePage() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载路由配置…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载路由配置…</span>
           </Card.Content>
         </Card>
       )}
@@ -144,13 +145,9 @@ export default function RoutePage() {
       {!isLoading && queryError && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>加载失败</Alert.Title>
-                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <InlineAlert kind="danger" title="加载失败">
+              {toErrorMessage(queryError)}
+            </InlineAlert>
           </Card.Content>
         </Card>
       )}
@@ -158,7 +155,7 @@ export default function RoutePage() {
       {!isLoading && !queryError && !draft && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-            <span className="text-sm text-muted">路由配置不可用</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">路由配置不可用</span>
             <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
               重新加载
             </Button>

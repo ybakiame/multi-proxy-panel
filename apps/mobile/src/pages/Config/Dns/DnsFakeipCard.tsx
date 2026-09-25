@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, Switch } from "@heroui/react";
+import { Card, Switch } from "../../../components/ui";
 import {
   CONFIG_KEY,
   toErrorMessage,
@@ -61,15 +61,8 @@ export function DnsFakeipCard() {
               aria-label="启用 FakeIP 模式"
               isSelected={enabled}
               isDisabled={!config || saving}
-              onChange={(next) => void handleToggle(next)}
-              className="shrink-0"
-            >
-              <Switch.Content>
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
-              </Switch.Content>
-            </Switch>
+              onValueChange={(next) => void handleToggle(next)}
+            />
           </div>
         </Card.Description>
       </Card.Header>

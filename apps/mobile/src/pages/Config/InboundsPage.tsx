@@ -1,4 +1,5 @@
-import { Alert, Card } from "@heroui/react";
+import { InlineAlert } from "../../components/InlineAlert";
+import { Card } from "../../components/ui";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 import { SubPageShell } from "../../components/SubPageShell";
 import { SettingsInput, SwitchRow } from "../Settings/fields";
@@ -34,15 +35,9 @@ export default function InboundsPage() {
 
   return (
     <SubPageShell title="入站管理">
-      <Alert status="accent">
-        <Alert.Indicator />
-        <Alert.Content>
-          <Alert.Title>始终启用</Alert.Title>
-          <Alert.Description>
-            两条入站对应核心的 inbounds 顶级字段，始终启用；此处调整其监听与协议栈参数。
-          </Alert.Description>
-        </Alert.Content>
-      </Alert>
+      <InlineAlert kind="info" title="始终启用">
+        两条入站对应核心的 inbounds 顶级字段，始终启用；此处调整其监听与协议栈参数。
+      </InlineAlert>
 
       {/* 混合入站（mixed-in）：listen 固定 127.0.0.1，仅 listen_port 可调 */}
       <Card>
@@ -74,8 +69,8 @@ export default function InboundsPage() {
         <Card.Content className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">协议栈（stack）</span>
-              <span className="text-xs text-muted">{TUN_STACK_HINT}</span>
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">协议栈（stack）</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{TUN_STACK_HINT}</span>
             </div>
             <MobileSelectSheet
               label="协议栈"

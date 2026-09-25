@@ -1,5 +1,5 @@
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { Button, Card } from "@heroui/react";
+import { Button, Card } from "../../components/ui";
 import type { LocalRuleView } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 
@@ -22,8 +22,8 @@ export function RuleListSection({ rules, onToggle, onMove, onEdit, onAdd }: Rule
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">规则管理</span>
-          <span className="text-xs text-muted">启用的规则会注入启动配置；自上而下顺序匹配</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">规则管理</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">启用的规则会注入启动配置；自上而下顺序匹配</span>
         </div>
         <Button variant="primary" className="h-11 shrink-0 px-4" onPress={onAdd}>
           <PlusIcon className="size-4" aria-hidden="true" />
@@ -34,8 +34,10 @@ export function RuleListSection({ rules, onToggle, onMove, onEdit, onAdd }: Rule
       {rules.length === 0 ? (
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-            <span className="text-sm text-muted">暂无规则</span>
-            <span className="text-xs text-muted/80">点击「添加规则」创建；建议以「最终规则」兜底或先分流域名</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">暂无规则</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+              点击「添加规则」创建；建议以「最终规则」兜底或先分流域名
+            </span>
           </Card.Content>
         </Card>
       ) : (

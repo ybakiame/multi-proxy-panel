@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, PlusIcon, SparklesIcon } from "@heroicons/react/24/outline";
-import { Alert, AlertDialog, Button, Card, Chip, Spinner } from "@heroui/react";
+import { InlineAlert } from "../../components/InlineAlert";
+import { Button, Card, Chip, ConfirmDialog, Spinner } from "../../components/ui";
 import {
   BASELINE_VIEW_KEY,
   LOCAL_OVERRIDE_KEY,
@@ -49,15 +50,15 @@ function RuleSetSection({ title, emptyCopy, sets, updatingIds, onEdit, onDelete,
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
-        <Chip size="sm" variant="soft" color="default" className="shrink-0">
+        <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{title}</span>
+        <Chip color="default" className="shrink-0">
           {sets.length}
         </Chip>
       </div>
       {sets.length === 0 ? (
         <Card>
           <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
-            <span className="text-sm text-muted">{emptyCopy}</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">{emptyCopy}</span>
           </Card.Content>
         </Card>
       ) : (
@@ -272,7 +273,7 @@ export default function RuleSetsPage() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载规则集…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载规则集…</span>
           </Card.Content>
         </Card>
       )}
@@ -280,13 +281,9 @@ export default function RuleSetsPage() {
       {!overrideData && !overrideLoading && overrideError && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>加载失败</Alert.Title>
-                <Alert.Description>{toErrorMessage(overrideError)}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <InlineAlert kind="danger" title="加载失败">
+              {toErrorMessage(overrideError)}
+            </InlineAlert>
           </Card.Content>
         </Card>
       )}
@@ -294,7 +291,7 @@ export default function RuleSetsPage() {
       {!overrideData && !overrideLoading && !overrideError && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-            <span className="text-sm text-muted">规则集数据不可用</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">规则集数据不可用</span>
             <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
               重新加载
             </Button>
@@ -305,7 +302,7 @@ export default function RuleSetsPage() {
       {overrideData && (
         <div className="flex flex-col gap-4">
           {/* 顶部说明 */}
-          <span className="text-xs text-muted">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
             远程 URL（社区）规则集需「立即更新」下载后才会被注入；手动 JSON（自定义）保存即写入本地文件
           </span>
 
@@ -373,36 +370,19 @@ export default function RuleSetsPage() {
         onClose={() => setFormOpen(false)}
         onSave={(ruleSet) => handleSaveCustom(ruleSet)}
       />
-      <AlertDialog.Backdrop
-        isOpen={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
-        }}
+      <ConfirmDialog
+        opened={pendingDelete !== null}
+        title="删除规则集"
+        danger
+        confirmText="删除"
+        onConfirm={() => void handleDeleteConfirm()}
+        onClose={() => setPendingDelete(null)}
       >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog>
-            <AlertDialog.CloseTrigger />
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>删除规则集</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p className="break-words">
-                确定删除规则集「{pendingDelete ? pendingDelete.name.trim() || pendingDelete.tag : ""}」吗？
-                将同时清理其缓存文件；引用该 tag 的规则需一并调整。
-              </p>
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button slot="close" variant="tertiary" onPress={() => setPendingDelete(null)}>
-                取消
-              </Button>
-              <Button slot="close" variant="danger" onPress={() => void handleDeleteConfirm()}>
-                删除
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
+        <p className="break-words">
+          确定删除规则集「{pendingDelete ? pendingDelete.name.trim() || pendingDelete.tag : ""}」吗？
+          将同时清理其缓存文件；引用该 tag 的规则需一并调整。
+        </p>
+      </ConfirmDialog>
     </SubPageShell>
   );
 }

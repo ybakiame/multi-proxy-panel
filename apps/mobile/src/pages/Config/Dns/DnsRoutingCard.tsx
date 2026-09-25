@@ -1,4 +1,4 @@
-import { Card, Switch } from "@heroui/react";
+import { Card, Switch } from "../../../components/ui";
 import type { DnsStrategy } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import { DNS_STRATEGY_OPTIONS } from "./dnsUtils";
@@ -40,7 +40,7 @@ export function DnsRoutingCard({
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">final 服务器</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">final 服务器</span>
           <MobileSelectSheet
             label="final 服务器"
             value={finalTag}
@@ -49,14 +49,14 @@ export function DnsRoutingCard({
             options={serverTagOptions}
           />
           {finalTagError ? (
-            <span className="text-xs text-warning">{finalTagError}</span>
+            <span className="text-xs text-amber-500">{finalTagError}</span>
           ) : (
-            <span className="text-xs text-muted">未匹配任何分流规则时使用的兜底 DNS 服务器</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">未匹配任何分流规则时使用的兜底 DNS 服务器</span>
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">全局解析策略</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">全局解析策略</span>
           <MobileSelectSheet
             label="全局解析策略"
             value={strategy}
@@ -67,21 +67,12 @@ export function DnsRoutingCard({
 
         <div className="flex min-h-11 items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm text-foreground">反向映射（reverse_mapping）</span>
-            <span className="text-xs text-muted">解析后把 IP 反查回域名，供路由规则与连接记录使用</span>
+            <span className="text-sm text-zinc-900 dark:text-zinc-100">反向映射（reverse_mapping）</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              解析后把 IP 反查回域名，供路由规则与连接记录使用
+            </span>
           </div>
-          <Switch
-            aria-label="反向映射"
-            isSelected={reverseMapping}
-            onChange={onChangeReverseMapping}
-            className="shrink-0"
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-            </Switch.Content>
-          </Switch>
+          <Switch aria-label="反向映射" isSelected={reverseMapping} onValueChange={onChangeReverseMapping} />
         </div>
       </Card.Content>
     </Card>

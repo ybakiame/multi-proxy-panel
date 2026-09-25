@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card } from "../../../components/ui";
 import type { DnsStrategy } from "@pp/client-core";
 import { MobileSelectSheet, type MobileSelectOption } from "../../../components/MobileSelectSheet";
 import { ROUTE_STRATEGY_OPTIONS } from "./routeUtils";
@@ -46,17 +46,17 @@ export function RouteSettingsCard({
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">默认出站（final）</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">默认出站（final）</span>
           <MobileSelectSheet label="默认出站" value={finalTag} onChange={onChangeFinalTag} options={finalTagOptions} />
           {finalTagError ? (
-            <span className="text-xs text-warning">{finalTagError}</span>
+            <span className="text-xs text-amber-500">{finalTagError}</span>
           ) : (
-            <span className="text-xs text-muted">未匹配任何规则时使用的兜底出站</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">未匹配任何规则时使用的兜底出站</span>
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">默认域名解析服务器</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">默认域名解析服务器</span>
           <MobileSelectSheet
             label="默认域名解析服务器"
             value={resolverServer}
@@ -64,21 +64,23 @@ export function RouteSettingsCard({
             options={resolverServerOptions}
           />
           {resolverServerError ? (
-            <span className="text-xs text-warning">{resolverServerError}</span>
+            <span className="text-xs text-amber-500">{resolverServerError}</span>
           ) : (
-            <span className="text-xs text-muted">出站域名使用的 DNS 服务器（default_domain_resolver）</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              出站域名使用的 DNS 服务器（default_domain_resolver）
+            </span>
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">解析策略</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">解析策略</span>
           <MobileSelectSheet
             label="解析策略"
             value={resolverStrategy ?? ""}
             onChange={(value) => onChangeResolverStrategy(value === "" ? null : (value as DnsStrategy))}
             options={ROUTE_STRATEGY_OPTIONS}
           />
-          <span className="text-xs text-muted">出站域名解析策略，留空则跟随全局 DNS 策略</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">出站域名解析策略，留空则跟随全局 DNS 策略</span>
         </div>
       </Card.Content>
     </Card>

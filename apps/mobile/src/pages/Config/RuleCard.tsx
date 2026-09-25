@@ -1,5 +1,5 @@
 import { ArrowDownIcon, ArrowUpIcon } from "@heroicons/react/24/outline";
-import { Card, Chip, Switch } from "@heroui/react";
+import { Card, Chip, Switch } from "../../components/ui";
 import type { LocalRuleView } from "@pp/client-core";
 import {
   actionLabel,
@@ -21,9 +21,9 @@ interface RuleCardProps {
 
 /** 动作 badge 配色：proxy ≈ 品牌主色 / direct = 成功 / reject = 危险（HeroUI token 无 primary，用 accent 等价表达）。 */
 const ACTION_BADGE_CLASS: Record<string, string> = {
-  proxy: "bg-accent/10 text-accent",
-  direct: "bg-success/10 text-success",
-  reject: "bg-danger/10 text-danger",
+  proxy: "bg-primary/10 text-primary",
+  direct: "bg-green-500/10 text-green-500",
+  reject: "bg-red-500/10 text-red-500",
 };
 
 function OrderButton({
@@ -44,7 +44,7 @@ function OrderButton({
       aria-label={label}
       disabled={disabled}
       onClick={disabled ? undefined : onPress}
-      className="flex size-12 shrink-0 items-center justify-center rounded-lg text-muted transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-35"
+      className="flex size-12 shrink-0 items-center justify-center rounded-lg text-zinc-500 dark:text-zinc-400 transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-35"
     >
       <Icon className="size-5" aria-hidden="true" />
     </button>
@@ -63,8 +63,8 @@ function OrderButton({
 export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleCardProps) {
   const isOutbound = isOutboundAction(rule.action);
   const badgeClass = isOutbound
-    ? "bg-accent/10 text-accent"
-    : (ACTION_BADGE_CLASS[rule.action] ?? "bg-default-soft text-muted");
+    ? "bg-primary/10 text-primary"
+    : (ACTION_BADGE_CLASS[rule.action] ?? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400");
   // 指定出站动作在详情行补充目标 tag（actionLabel 仅给「指定出站」短标签）。
   const outboundTag = isOutbound ? outboundTagFromAction(rule.action) : "";
   const actionText = outboundTag ? `${actionLabel(rule.action)}: ${outboundTag}` : actionLabel(rule.action);
@@ -81,33 +81,28 @@ export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleC
       <div className="flex items-center gap-1 px-1 py-1 pl-0">
         <button type="button" onClick={onEdit} className="flex min-w-0 flex-1 flex-col gap-1 p-2.5 pl-2 text-left">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{ruleSummary(rule)}</span>
+            <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              {ruleSummary(rule)}
+            </span>
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium leading-5 ${badgeClass}`}>
               {actionLabel(rule.action)}
             </span>
             {rule.builtin && (
-              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+              <Chip color="accent" className="shrink-0">
                 内置
               </Chip>
             )}
           </span>
-          <span className="truncate text-xs text-muted">{metaDetail}</span>
+          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{metaDetail}</span>
         </button>
         <Switch
           aria-label={`启用规则 ${ruleSummary(rule)}`}
           isSelected={rule.enabled}
-          onChange={(next) => onToggle(next)}
-          className="shrink-0 px-1"
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-          </Switch.Content>
-        </Switch>
+          onValueChange={(next) => onToggle(next)}
+        />
       </div>
-      <div className="flex items-center gap-1 border-t border-border/40 pl-3">
-        <span className="mr-auto py-1 text-xs text-muted">
+      <div className="flex items-center gap-1 border-t border-zinc-200 dark:border-zinc-700 pl-3">
+        <span className="mr-auto py-1 text-xs text-zinc-500 dark:text-zinc-400">
           顺序 {index + 1} / {total}
         </span>
         <OrderButton label="上移规则" direction="up" disabled={index === 0} onPress={() => onMove(-1)} />

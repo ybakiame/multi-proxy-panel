@@ -1,6 +1,6 @@
-import { AlertDialog, Button } from "@heroui/react";
 import type { LocalRuleView } from "@pp/client-core";
 import { ruleSummary } from "@pp/client-core";
+import { ConfirmDialog } from "../../components/ui";
 
 interface RuleDeleteConfirmProps {
   /** 待删除规则；`null` = 关闭。 */
@@ -16,32 +16,15 @@ interface RuleDeleteConfirmProps {
  */
 export function RuleDeleteConfirm({ rule, onClose, onConfirm }: RuleDeleteConfirmProps) {
   return (
-    <AlertDialog.Backdrop
-      isOpen={rule !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <ConfirmDialog
+      opened={rule !== null}
+      title="删除规则"
+      danger
+      confirmText="删除"
+      onConfirm={onConfirm}
+      onClose={onClose}
     >
-      <AlertDialog.Container size="sm">
-        <AlertDialog.Dialog>
-          <AlertDialog.CloseTrigger />
-          <AlertDialog.Header>
-            <AlertDialog.Icon status="danger" />
-            <AlertDialog.Heading>删除规则</AlertDialog.Heading>
-          </AlertDialog.Header>
-          <AlertDialog.Body>
-            <p className="break-words">确定删除规则「{rule ? ruleSummary(rule) : ""}」吗？该操作不可撤销。</p>
-          </AlertDialog.Body>
-          <AlertDialog.Footer>
-            <Button slot="close" variant="tertiary" onPress={onClose}>
-              取消
-            </Button>
-            <Button slot="close" variant="danger" onPress={onConfirm}>
-              删除
-            </Button>
-          </AlertDialog.Footer>
-        </AlertDialog.Dialog>
-      </AlertDialog.Container>
-    </AlertDialog.Backdrop>
+      <p className="break-words">确定删除规则「{rule ? ruleSummary(rule) : ""}」吗？该操作不可撤销。</p>
+    </ConfirmDialog>
   );
 }

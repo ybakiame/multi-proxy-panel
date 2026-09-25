@@ -1,4 +1,4 @@
-import { AlertDialog, Button } from "@heroui/react";
+import { ConfirmDialog } from "../../../components/ui";
 
 interface DnsDeleteConfirmProps {
   isOpen: boolean;
@@ -15,32 +15,8 @@ interface DnsDeleteConfirmProps {
  */
 export function DnsDeleteConfirm({ isOpen, title, description, onClose, onConfirm }: DnsDeleteConfirmProps) {
   return (
-    <AlertDialog.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <AlertDialog.Container size="sm">
-        <AlertDialog.Dialog>
-          <AlertDialog.CloseTrigger />
-          <AlertDialog.Header>
-            <AlertDialog.Icon status="danger" />
-            <AlertDialog.Heading>{title}</AlertDialog.Heading>
-          </AlertDialog.Header>
-          <AlertDialog.Body>
-            <p className="break-words">{description}</p>
-          </AlertDialog.Body>
-          <AlertDialog.Footer>
-            <Button slot="close" variant="tertiary" onPress={onClose}>
-              取消
-            </Button>
-            <Button slot="close" variant="danger" onPress={onConfirm}>
-              删除
-            </Button>
-          </AlertDialog.Footer>
-        </AlertDialog.Dialog>
-      </AlertDialog.Container>
-    </AlertDialog.Backdrop>
+    <ConfirmDialog opened={isOpen} title={title} danger confirmText="删除" onConfirm={onConfirm} onClose={onClose}>
+      <p className="break-words">{description}</p>
+    </ConfirmDialog>
   );
 }

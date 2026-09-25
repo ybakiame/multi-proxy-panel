@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MagnifyingGlassIcon, SparklesIcon } from "@heroicons/react/24/outline";
-import { Alert, Button, Card, Spinner } from "@heroui/react";
+import { InlineAlert } from "../../components/InlineAlert";
+import { Button, Card, Spinner, inputClassName } from "../../components/ui";
 import {
   LOCAL_OVERRIDE_KEY,
   META_CUBE_SOURCE,
@@ -30,9 +31,7 @@ const CATEGORY_FILTERS = [
 
 type CategoryFilter = (typeof CATEGORY_FILTERS)[number]["id"];
 
-const inputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface pl-10 pr-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+const inputClass = `${inputClassName} pl-10`;
 
 /**
  * 规则集市场页（路由 `/config/route/rulesets/market`）。
@@ -115,7 +114,7 @@ export default function RuleSetMarket() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载市场…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载市场…</span>
           </Card.Content>
         </Card>
       )}
@@ -123,13 +122,9 @@ export default function RuleSetMarket() {
       {!overrideData && !isLoading && error && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>加载失败</Alert.Title>
-                <Alert.Description>{toErrorMessage(error)}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <InlineAlert kind="danger" title="加载失败">
+              {toErrorMessage(error)}
+            </InlineAlert>
           </Card.Content>
         </Card>
       )}
@@ -137,7 +132,7 @@ export default function RuleSetMarket() {
       {!overrideData && !isLoading && !error && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-            <span className="text-sm text-muted">规则集数据不可用</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">规则集数据不可用</span>
             <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
               重新加载
             </Button>
@@ -151,18 +146,22 @@ export default function RuleSetMarket() {
           <Card>
             <Card.Content className="flex flex-col gap-2 p-4">
               <div className="flex items-center gap-2">
-                <SparklesIcon className="size-5 shrink-0 text-accent" aria-hidden="true" />
-                <span className="min-w-0 truncate text-sm font-medium text-foreground">{META_CUBE_SOURCE.name}</span>
+                <SparklesIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />
+                <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  {META_CUBE_SOURCE.name}
+                </span>
               </div>
-              <span className="text-xs text-muted">{META_CUBE_SOURCE.description}</span>
-              <span className="text-xs text-muted">更新频率：{META_CUBE_SOURCE.updateFrequency}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{META_CUBE_SOURCE.description}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                更新频率：{META_CUBE_SOURCE.updateFrequency}
+              </span>
             </Card.Content>
           </Card>
 
           {/* 检索框 */}
           <div className="relative">
             <MagnifyingGlassIcon
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500 dark:text-zinc-400"
               aria-hidden="true"
             />
             <input
@@ -178,7 +177,7 @@ export default function RuleSetMarket() {
           </div>
 
           {/* 分类过滤：全部 / GeoIP / GeoSite，与文本检索叠加生效 */}
-          <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
+          <fieldset className="flex min-w-0 gap-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-1">
             <legend className="sr-only">规则集分类过滤</legend>
             {CATEGORY_FILTERS.map((item) => (
               <Button
@@ -197,14 +196,14 @@ export default function RuleSetMarket() {
             results.length === 0 ? (
               <Card>
                 <Card.Content className="flex flex-col items-center justify-center px-6 py-8 text-center">
-                  <span className="text-sm text-muted">
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
                     没有匹配「{keyword.trim()}」的{filterPrefix}规则集
                   </span>
                 </Card.Content>
               </Card>
             ) : (
               <>
-                <span className="text-xs text-muted">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   共 {results.length} 个结果；添加后需在规则集管理页点击「立即更新」下载
                 </span>
                 <MarketEntryList
@@ -217,16 +216,18 @@ export default function RuleSetMarket() {
             )
           ) : (
             <>
-              <span className="text-sm text-muted">输入关键词检索规则集（如 netflix / cn / google）</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                输入关键词检索规则集（如 netflix / cn / google）
+              </span>
               <section className="flex flex-col gap-2">
-                <span className="text-xs text-muted">常用关键词</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">常用关键词</span>
                 <div className="flex flex-wrap gap-2">
                   {POPULAR_KEYWORDS.map((item) => (
                     <button
                       key={item}
                       type="button"
                       onClick={() => setKeyword(item)}
-                      className="min-h-11 shrink-0 rounded-full border border-border/60 bg-surface px-4 text-sm font-medium text-foreground transition-colors active:opacity-70"
+                      className="min-h-11 shrink-0 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 text-sm font-medium text-zinc-900 dark:text-zinc-100 transition-colors active:opacity-70"
                     >
                       {item}
                     </button>

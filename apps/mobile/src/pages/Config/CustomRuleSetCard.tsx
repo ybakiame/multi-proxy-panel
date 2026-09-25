@@ -1,4 +1,4 @@
-import { Chip, Card, ProgressBar } from "@heroui/react";
+import { Chip, Card } from "../../components/ui";
 import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import type { CustomRuleSetView } from "@pp/client-core";
 
@@ -48,58 +48,62 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
       <div className="flex items-center gap-1 px-2 py-1 pl-0">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-2 pl-1">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{name.trim() || tag}</span>
-            <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+            <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              {name.trim() || tag}
+            </span>
+            <Chip color="accent" className="shrink-0">
               {sourceLabel(ruleSet)}
             </Chip>
             {ruleSet.builtin && (
-              <Chip size="sm" variant="soft" color="default" className="shrink-0">
+              <Chip color="default" className="shrink-0">
                 内置
               </Chip>
             )}
             {hasUpdate && (
-              <Chip size="sm" variant="soft" color="warning" className="shrink-0">
+              <Chip color="warning" className="shrink-0">
                 有更新
               </Chip>
             )}
           </span>
-          <span className="truncate text-xs text-muted">
-            规则集引用名：<span className="font-mono text-foreground/80">{tag}</span>
+          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+            规则集引用名：<span className="font-mono text-zinc-700 dark:text-zinc-300">{tag}</span>
           </span>
-          <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
             {cached ? (
-              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+              <Chip color="accent" className="shrink-0">
                 已缓存
               </Chip>
             ) : (
-              <Chip size="sm" variant="soft" color="default" className="shrink-0">
+              <Chip color="default" className="shrink-0">
                 未缓存
               </Chip>
             )}
             <span className="shrink-0">本地更新于 {formatUpdated(lastUpdated)}</span>
           </span>
           {isRemote && (
-            <span className="truncate text-xs text-muted">
-              远程更新于 <span className="text-foreground/80">{formatRemote(remoteUpdatedAt)}</span>
+            <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+              远程更新于 <span className="text-zinc-700 dark:text-zinc-300">{formatRemote(remoteUpdatedAt)}</span>
             </span>
           )}
           {updating && (
-            <ProgressBar isIndeterminate size="sm" aria-label={`正在更新规则集 ${name.trim() || tag}`} className="mt-1">
-              <ProgressBar.Track>
-                <ProgressBar.Fill />
-              </ProgressBar.Track>
-            </ProgressBar>
+            /* 不确定进度条（Konsta Progressbar 无 indeterminate，纯 CSS 实现） */
+            <div
+              aria-label={`正在更新规则集 ${name.trim() || tag}`}
+              className="mt-1 h-0.5 w-full overflow-hidden rounded-full bg-primary/20"
+            >
+              <div className="h-full w-full animate-pulse rounded-full bg-primary" />
+            </div>
           )}
         </div>
       </div>
-      <div className="flex items-center justify-end gap-1 border-t border-border/40 py-0.5 pr-1">
+      <div className="flex items-center justify-end gap-1 border-t border-zinc-200 dark:border-zinc-700 py-0.5 pr-1">
         {isRemote && (
           <button
             type="button"
             onClick={onUpdate}
             disabled={updating}
             aria-label={`更新规则集 ${name.trim() || tag}`}
-            className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-foreground active:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-zinc-900 dark:text-zinc-100 active:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ArrowPathIcon className={`size-4 ${updating ? "animate-spin" : ""}`} aria-hidden="true" />
             {updating ? "更新中…" : "更新"}
@@ -108,7 +112,7 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
         <button
           type="button"
           onClick={onEdit}
-          className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-foreground active:opacity-70"
+          className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-zinc-900 dark:text-zinc-100 active:opacity-70"
         >
           <PencilSquareIcon className="size-4" aria-hidden="true" />
           编辑
@@ -116,7 +120,7 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
         <button
           type="button"
           onClick={onDelete}
-          className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-danger active:opacity-70"
+          className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-red-500 active:opacity-70"
         >
           <TrashIcon className="size-4" aria-hidden="true" />
           删除

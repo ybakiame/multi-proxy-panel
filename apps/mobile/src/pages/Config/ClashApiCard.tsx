@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowPathIcon, Square2StackIcon } from "@heroicons/react/24/outline";
-import { Button, Card } from "@heroui/react";
+import { Button, Card } from "../../components/ui";
 import { toastError, toastSuccess, toErrorMessage } from "@pp/client-core";
 import { SettingsInput, settingsInputClass, settingsLabelClass } from "../Settings/fields";
 import type { UseSettingsConfigReturn } from "../Settings/useSettingsConfig";
@@ -81,7 +81,7 @@ export function ClashApiCard({ settings }: ClashApiCardProps) {
               aria-label="复制密钥"
               onPress={() => void handleCopySecret()}
             >
-              <Square2StackIcon className={copied ? "size-5 text-success" : "size-5"} aria-hidden="true" />
+              <Square2StackIcon className={copied ? "size-5 text-green-500" : "size-5"} aria-hidden="true" />
             </Button>
             <Button
               variant="secondary"
@@ -94,9 +94,9 @@ export function ClashApiCard({ settings }: ClashApiCardProps) {
             </Button>
           </div>
           {settings.clashApiSecretError ? (
-            <span className="text-xs text-warning">{settings.clashApiSecretError}</span>
+            <span className="text-xs text-amber-500">{settings.clashApiSecretError}</span>
           ) : (
-            <span className="text-xs text-muted">面板访问需携带该密钥鉴权</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">面板访问需携带该密钥鉴权</span>
           )}
         </div>
       </Card.Content>

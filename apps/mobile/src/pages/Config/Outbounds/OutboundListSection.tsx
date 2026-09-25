@@ -1,7 +1,7 @@
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { Button, Card, Chip, Switch } from "@heroui/react";
 import { isGroupOutbound, outboundTag } from "@pp/client-core";
 import type { CustomOutbound } from "@pp/client-core";
+import { Button, Card, Chip, Switch } from "../../../components/ui";
 import { outboundSummary } from "./outboundForm";
 import { groupSummary } from "./groupForm";
 import { outboundProtocolLabel } from "./outboundOptions";
@@ -44,36 +44,31 @@ function OutboundCard({
           className="flex min-w-0 flex-1 flex-col gap-1 p-2.5 pl-3 text-left active:opacity-80"
         >
           <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.name || "未命名"}</span>
-            <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium leading-5 text-accent">
+            <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              {item.name || "未命名"}
+            </span>
+            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium leading-5 text-primary">
               {outboundProtocolLabel(item.type)}
             </span>
             {item.builtin === true && (
-              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+              <Chip color="accent" className="shrink-0">
                 内置
               </Chip>
             )}
           </span>
-          <span className="truncate text-xs text-muted">
+          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
             {isGroupOutbound(item) ? groupSummary(item) : outboundSummary(item)}
           </span>
-          <span className="truncate font-mono text-xs text-muted/80">
+          <span className="truncate font-mono text-xs text-zinc-400 dark:text-zinc-500">
             {item.builtin === true ? item.name : outboundTag(item.name)}
           </span>
-          {error && <span className="truncate text-xs text-warning">{error}</span>}
+          {error && <span className="truncate text-xs text-amber-500">{error}</span>}
         </button>
         <Switch
           aria-label={`启用出站 ${item.name || item.id}`}
           isSelected={item.enabled}
-          onChange={(next) => onToggle(item, next)}
-          className="shrink-0 px-1"
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-          </Switch.Content>
-        </Switch>
+          onValueChange={(next) => onToggle(item, next)}
+        />
       </div>
     </Card>
   );
@@ -105,8 +100,8 @@ function OutboundSection({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">{title}</span>
-          <span className="truncate text-xs text-muted">{subtitle}</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{title}</span>
+          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</span>
         </div>
         <Button variant="primary" className="h-11 shrink-0 px-4" onPress={onAdd}>
           <PlusIcon className="size-4" aria-hidden="true" />
@@ -117,8 +112,8 @@ function OutboundSection({
       {rows.length === 0 ? (
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-            <span className="text-sm text-muted">{emptyTitle}</span>
-            <span className="text-xs text-muted/80">{emptyHint}</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">{emptyTitle}</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">{emptyHint}</span>
           </Card.Content>
         </Card>
       ) : (

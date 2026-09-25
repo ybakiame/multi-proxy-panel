@@ -1,4 +1,4 @@
-import { Switch } from "@heroui/react";
+import { Switch, inputClassName } from "../../../components/ui";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 
 /**
@@ -9,10 +9,8 @@ import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
  * 避免逐字段重复（输入框样式对齐 `DnsServerFormSheet` 的 `inputClass`）。
  */
 
-/** 文本输入样式（对齐 DnsServerFormSheet 的 inputClass）。 */
-export const OUTBOUND_INPUT_CLASS =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+/** 文本输入样式（复用 ui.tsx 的 `inputClassName`）。 */
+export const OUTBOUND_INPUT_CLASS = inputClassName;
 
 interface TextFieldProps {
   id: string;
@@ -43,7 +41,7 @@ export function TextField({
 }: TextFieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-foreground">
+      <label htmlFor={id} className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
         {label}
       </label>
       <input
@@ -60,9 +58,9 @@ export function TextField({
         className={`${OUTBOUND_INPUT_CLASS}${mono ? " font-mono" : ""}`}
       />
       {error ? (
-        <span className="text-xs text-warning">{error}</span>
+        <span className="text-xs text-amber-500">{error}</span>
       ) : hint ? (
-        <span className="text-xs text-muted">{hint}</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">{hint}</span>
       ) : null}
     </div>
   );
@@ -83,12 +81,12 @@ interface SelectFieldProps {
 export function SelectField({ label, value, onChange, options, placeholder, error, hint }: SelectFieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
       <MobileSelectSheet label={label} value={value} onChange={onChange} options={options} placeholder={placeholder} />
       {error ? (
-        <span className="text-xs text-warning">{error}</span>
+        <span className="text-xs text-amber-500">{error}</span>
       ) : hint ? (
-        <span className="text-xs text-muted">{hint}</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">{hint}</span>
       ) : null}
     </div>
   );
@@ -105,19 +103,17 @@ interface SwitchRowProps {
 export function SwitchRow({ label, ariaLabel, isSelected, onChange }: SwitchRowProps) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
-      <span className="text-sm text-foreground">{label}</span>
-      <Switch aria-label={ariaLabel} isSelected={isSelected} onChange={onChange} className="shrink-0">
-        <Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
+      <span className="text-sm text-zinc-900 dark:text-zinc-100">{label}</span>
+      <Switch aria-label={ariaLabel} isSelected={isSelected} onValueChange={onChange} />
     </div>
   );
 }
 
 /** 嵌套区块分区标题（TLS / 传输方式）。 */
 export function SectionTitle({ children }: { children: string }) {
-  return <span className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted">{children}</span>;
+  return (
+    <span className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      {children}
+    </span>
+  );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Card, Spinner, Switch } from "@heroui/react";
+import { InlineAlert } from "../../components/InlineAlert";
+import { Button, Card, Spinner, Switch, inputClassName } from "../../components/ui";
 import {
   CONFIG_KEY,
   CONFIG_SLICES_KEY,
@@ -19,10 +20,8 @@ import { useSettingsConfig, randomClashApiSecret } from "../Settings/useSettings
 import { ClashApiCard } from "./ClashApiCard";
 import { isConfigSlices } from "./Dns/dnsUtils";
 
-/** 文本输入样式（对齐 DnsServerFormSheet / OutboundField 的 inputClass）。 */
-const INPUT_CLASS =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+/** 文本输入样式（复用 ui.tsx 的 `inputClassName`）。 */
+const INPUT_CLASS = inputClassName;
 
 /**
  * 实验性配置子页（ADR-0005 P2-E3b，路由 `/config/experimental`；2026-09 起并入
@@ -150,7 +149,7 @@ export default function ExperimentalPage() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在加载 Experimental 配置…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载 Experimental 配置…</span>
           </Card.Content>
         </Card>
       )}
@@ -158,13 +157,9 @@ export default function ExperimentalPage() {
       {!isLoading && queryError && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>加载失败</Alert.Title>
-                <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <InlineAlert kind="danger" title="加载失败">
+              {toErrorMessage(queryError)}
+            </InlineAlert>
           </Card.Content>
         </Card>
       )}
@@ -172,7 +167,7 @@ export default function ExperimentalPage() {
       {!isLoading && !queryError && !draft && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-            <span className="text-sm text-muted">Experimental 配置不可用</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">Experimental 配置不可用</span>
             <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
               重新加载
             </Button>
@@ -180,12 +175,7 @@ export default function ExperimentalPage() {
         </Card>
       )}
 
-      <Alert status="accent">
-        <Alert.Indicator />
-        <Alert.Content>
-          <Alert.Description>实验性功能，可能会存在不稳定现象。</Alert.Description>
-        </Alert.Content>
-      </Alert>
+      <InlineAlert kind="info">实验性功能，可能会存在不稳定现象。</InlineAlert>
 
       {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
       <ClashApiCard settings={settings} />
@@ -247,7 +237,7 @@ interface FieldProps {
 function Field({ id, label, value, onChange, placeholder, error }: FieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-foreground">
+      <label htmlFor={id} className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
         {label}
       </label>
       <input
@@ -261,7 +251,7 @@ function Field({ id, label, value, onChange, placeholder, error }: FieldProps) {
         spellCheck={false}
         className={INPUT_CLASS}
       />
-      {error ? <span className="text-xs text-warning">{error}</span> : null}
+      {error ? <span className="text-xs text-amber-500">{error}</span> : null}
     </div>
   );
 }
@@ -279,16 +269,10 @@ function ToggleRow({ label, ariaLabel, description, isSelected, onChange }: Togg
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-sm text-foreground">{label}</span>
-        {description && <span className="text-xs text-muted">{description}</span>}
+        <span className="text-sm text-zinc-900 dark:text-zinc-100">{label}</span>
+        {description && <span className="text-xs text-zinc-500 dark:text-zinc-400">{description}</span>}
       </div>
-      <Switch aria-label={ariaLabel} isSelected={isSelected} onChange={onChange} className="shrink-0">
-        <Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
+      <Switch aria-label={ariaLabel} isSelected={isSelected} onValueChange={onChange} />
     </div>
   );
 }

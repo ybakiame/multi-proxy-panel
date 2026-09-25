@@ -12,7 +12,7 @@ export const TABS = [
  * 移动端底部固定 TabBar（ADR-0003 M5）。
  *
  * - 3 个 Tab：首页（仪表盘）/ 配置管理 / 设置（后两者本任务为占位页）；
- * - `NavLink` 激活态高亮（text-accent）；
+ * - `NavLink` 激活态高亮（text-primary）；
  * - 触达区整块 ≥56px（min-h-14），底部 `env(safe-area-inset-bottom)` 适配系统手势条。
  */
 export function TabBar() {

@@ -1,7 +1,7 @@
 import { ChevronRightIcon, PlusIcon, SignalIcon } from "@heroicons/react/24/outline";
-import { Button, Card, Chip, Switch } from "@heroui/react";
 import type { DnsServer } from "@pp/client-core";
 import { delayColor } from "../../../components/proxyFormat";
+import { Button, Card, Chip, Switch } from "../../../components/ui";
 import { DNS_ROLE_LABELS, dnsRoleTag, dnsServerSummary, dnsServerTypeLabel } from "./dnsUtils";
 
 /** 单个服务器的探测结果（无键 = 未探测）。 */
@@ -60,8 +60,10 @@ export function DnsServerListSection({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">DNS 服务器</span>
-          <span className="text-xs text-muted">local / proxy 为内置角色服务器，点击更换；其余点击编辑</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">DNS 服务器</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            local / proxy 为内置角色服务器，点击更换；其余点击编辑
+          </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button
@@ -84,8 +86,8 @@ export function DnsServerListSection({
       {servers.length === 0 ? (
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-1 py-8 text-center">
-            <span className="text-sm text-muted">暂无 DNS 服务器</span>
-            <span className="text-xs text-muted/80">点击「添加」从常用目录或自定义创建</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">暂无 DNS 服务器</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">点击「添加」从常用目录或自定义创建</span>
           </Card.Content>
         </Card>
       ) : (
@@ -105,39 +107,36 @@ export function DnsServerListSection({
                     className="flex min-w-0 flex-1 flex-col gap-1 text-left active:opacity-80"
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                      <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                         {server.name.trim() !== "" ? server.name.trim() : server.tag}
                       </span>
                       {role && (
-                        <Chip size="sm" variant="soft" color="default" className="shrink-0">
+                        <Chip color="default" className="shrink-0">
                           {DNS_ROLE_LABELS[role]}
                         </Chip>
                       )}
-                      <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium leading-5 text-accent">
+                      <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium leading-5 text-primary">
                         {dnsServerTypeLabel(server.server_type)}
                       </span>
                       {server.name.trim() !== "" && (
-                        <span className="shrink-0 font-mono text-xs text-muted">{server.tag}</span>
+                        <span className="shrink-0 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                          {server.tag}
+                        </span>
                       )}
                     </span>
-                    <span className="truncate text-xs text-muted">{dnsServerSummary(server)}</span>
+                    <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {dnsServerSummary(server)}
+                    </span>
                   </button>
                   <ProbeChip server={server} probe={probe} />
                   {role ? (
-                    <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden="true" />
+                    <ChevronRightIcon className="size-5 shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
                   ) : (
                     <Switch
                       aria-label={`${server.enabled ? "弃用" : "启用"}服务器 ${server.tag}`}
                       isSelected={server.enabled}
-                      onChange={(next) => onToggle(server, next)}
-                      className="shrink-0"
-                    >
-                      <Switch.Content>
-                        <Switch.Control>
-                          <Switch.Thumb />
-                        </Switch.Control>
-                      </Switch.Content>
-                    </Switch>
+                      onValueChange={(next) => onToggle(server, next)}
+                    />
                   )}
                 </div>
               </Card>
@@ -153,42 +152,42 @@ export function DnsServerListSection({
 function ProbeChip({ server, probe }: { server: DnsServer; probe?: DnsProbeState }) {
   if (!PROBEABLE_TYPES.has(server.server_type)) {
     return (
-      <Chip size="sm" variant="soft" color="default" className="shrink-0">
+      <Chip color="default" className="shrink-0">
         —
       </Chip>
     );
   }
   if (!probe) {
     return (
-      <Chip size="sm" variant="soft" color="default" className="shrink-0">
+      <Chip color="default" className="shrink-0">
         未探测
       </Chip>
     );
   }
   if (probe.pending) {
     return (
-      <Chip size="sm" variant="soft" color="default" className="shrink-0">
+      <Chip color="default" className="shrink-0">
         …
       </Chip>
     );
   }
   if (probe.unsupported) {
     return (
-      <Chip size="sm" variant="soft" color="default" className="shrink-0">
+      <Chip color="default" className="shrink-0">
         —
       </Chip>
     );
   }
   if (probe.error !== null) {
     return (
-      <Chip size="sm" variant="soft" color="danger" className="shrink-0">
+      <Chip color="danger" className="shrink-0">
         失败
       </Chip>
     );
   }
   if (probe.latency !== null) {
     return (
-      <Chip size="sm" variant="soft" color={delayColor(probe.latency)} className="shrink-0">
+      <Chip color={delayColor(probe.latency)} className="shrink-0">
         {probe.latency}ms
       </Chip>
     );

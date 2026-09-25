@@ -1,7 +1,7 @@
 import { GlobeAltIcon, HomeModernIcon, PencilSquareIcon, Square2StackIcon } from "@heroicons/react/24/outline";
-import { Button, Modal } from "@heroui/react";
 import type { DnsServerPreset } from "@pp/client-core";
 import { DNS_SERVER_PRESETS } from "@pp/client-core";
+import { BottomSheet, Button } from "../../../components/ui";
 import { dnsServerTypeLabel } from "./dnsUtils";
 
 interface DnsServerPresetSheetProps {
@@ -30,62 +30,50 @@ export function DnsServerPresetSheet({ isOpen, existingTags, onClose, onPick, on
   ];
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
-    >
-      <Modal.Container placement="bottom">
-        <Modal.Dialog>
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>添加 DNS 服务器</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
-            {groups.map(({ key, label, icon: Icon }) => (
-              <div key={key} className="flex flex-col gap-2">
-                <span className="flex items-center gap-1.5 text-xs font-medium text-muted">
-                  <Icon className="size-4" aria-hidden="true" />
-                  {label}
-                </span>
-                {DNS_SERVER_PRESETS.filter((preset) => preset.group === key).map((preset) => {
-                  const added = existingTags.includes(preset.tag);
-                  return (
-                    <button
-                      key={`${preset.tag}-${preset.server}`}
-                      type="button"
-                      onClick={() => onPick(preset)}
-                      aria-label={`添加 ${preset.isp} ${preset.server}`}
-                      className="flex min-h-12 items-center gap-3 rounded-xl border border-border/60 px-3 text-left active:opacity-70"
-                    >
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate text-sm font-medium text-foreground">{preset.isp}</span>
-                          <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium leading-5 text-accent">
-                            {dnsServerTypeLabel(preset.serverType)}
-                          </span>
-                          {added && <span className="shrink-0 text-xs text-muted">已添加</span>}
-                        </span>
-                        <span className="truncate font-mono text-xs text-muted">
-                          {preset.server}
-                          {preset.serverPort !== null ? `:${preset.serverPort}` : ""}
-                        </span>
+    <BottomSheet opened={isOpen} onClose={onClose} title="添加 DNS 服务器">
+      <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto">
+        {groups.map(({ key, label, icon: Icon }) => (
+          <div key={key} className="flex flex-col gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <Icon className="size-4" aria-hidden="true" />
+              {label}
+            </span>
+            {DNS_SERVER_PRESETS.filter((preset) => preset.group === key).map((preset) => {
+              const added = existingTags.includes(preset.tag);
+              return (
+                <button
+                  key={`${preset.tag}-${preset.server}`}
+                  type="button"
+                  onClick={() => onPick(preset)}
+                  aria-label={`添加 ${preset.isp} ${preset.server}`}
+                  className="flex min-h-12 items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 text-left active:opacity-70"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        {preset.isp}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+                      <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium leading-5 text-primary">
+                        {dnsServerTypeLabel(preset.serverType)}
+                      </span>
+                      {added && <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">已添加</span>}
+                    </span>
+                    <span className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                      {preset.server}
+                      {preset.serverPort !== null ? `:${preset.serverPort}` : ""}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
 
-            <Button variant="secondary" className="min-h-12 w-full gap-1.5" onPress={onCustom}>
-              <PencilSquareIcon className="size-4" aria-hidden="true" />
-              自定义添加
-            </Button>
-          </Modal.Body>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+        <Button variant="secondary" className="min-h-12 w-full gap-1.5" onPress={onCustom}>
+          <PencilSquareIcon className="size-4" aria-hidden="true" />
+          自定义添加
+        </Button>
+      </div>
+    </BottomSheet>
   );
 }
