@@ -30,7 +30,7 @@ export function BackHeader({ title, action, backTo }: BackHeaderProps) {
   const navigate = useNavigate();
   return (
     <header
-      className="sticky top-0 z-10 border-b border-border/60 bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur-md"
+      className="sticky top-0 z-10 border-b border-black/10 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-md dark:border-white/10 dark:bg-black/95"
       style={{
         paddingLeft: "max(0.5rem, env(safe-area-inset-left))",
         paddingRight: "max(0.5rem, env(safe-area-inset-right))",
@@ -41,12 +41,12 @@ export function BackHeader({ title, action, backTo }: BackHeaderProps) {
           type="button"
           onClick={() => (backTo ? navigate(backTo, { replace: true }) : navigate(-1))}
           aria-label="返回"
-          className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-foreground active:opacity-70"
+          className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-zinc-900 active:opacity-70 dark:text-zinc-100"
         >
           <ArrowLeftIcon className="size-6" aria-hidden="true" />
         </button>
         {/* 标题绝对居中于整个头部，避免左右两侧宽度不对称造成偏移 */}
-        <h1 className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 truncate px-16 text-center text-base font-semibold text-foreground">
+        <h1 className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 truncate px-16 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100">
           {title}
         </h1>
         {action ? (

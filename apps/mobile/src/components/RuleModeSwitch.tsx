@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@heroui/react";
+import { Segmented, SegmentedButton } from "konsta/react";
 import {
   CONFIG_KEY,
   PROXY_STATUS_KEY,
@@ -56,23 +56,21 @@ export function RuleModeSwitch({ value, running, clashApiEnabled }: RuleModeSwit
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-foreground">出站模式</span>
-      <fieldset className="flex min-w-0 gap-1 rounded-xl border border-border/60 bg-surface-secondary/40 p-1">
-        <legend className="sr-only">出站模式</legend>
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">出站模式</span>
+      <Segmented strong>
         {RULE_MODES.map((mode) => (
-          <Button
+          <SegmentedButton
             key={mode.id}
-            variant={value === mode.id ? "primary" : "secondary"}
-            size="sm"
-            className="min-h-11 flex-1"
-            isDisabled={busy}
-            onPress={() => void handleSelect(mode.id)}
+            active={value === mode.id}
+            disabled={busy}
+            onClick={() => void handleSelect(mode.id)}
+            className="min-h-11"
           >
             {mode.label}
-          </Button>
+          </SegmentedButton>
         ))}
-      </fieldset>
-      <span className="text-xs text-muted">
+      </Segmented>
+      <span className="text-xs text-zinc-500 dark:text-zinc-400">
         {running && clashApiEnabled ? "即时生效（依赖 Clash API）" : "将在下次启动生效"}
       </span>
     </div>

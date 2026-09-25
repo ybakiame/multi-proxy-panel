@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card } from "@heroui/react";
+import { Card } from "./ui";
 import { CLOSED_CONNECTIONS_KEY, CONNECTIONS_KEY, connectionsActive, connectionsClosed } from "@pp/client-core";
 import type { ActiveConnections, ConnectionView } from "@pp/client-core";
 
@@ -111,14 +111,16 @@ export function TrafficCard({ running, clashApiUrl }: TrafficCardProps) {
       <Card.Content>
         {!available ? (
           <div className="flex flex-col items-center justify-center gap-1.5 py-8 text-center">
-            <span className="text-sm text-muted">在设置中开启 Clash API 后可查看流量统计</span>
-            {!running && <span className="text-xs text-muted/80">启动代理后流量统计才会开始记录</span>}
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">在设置中开启 Clash API 后可查看流量统计</span>
+            {!running && (
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">启动代理后流量统计才会开始记录</span>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {metrics.map(([label, value]) => (
               <div key={label} className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted">{label}</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">{label}</span>
                 <span className="text-base font-semibold tabular-nums">{value}</span>
               </div>
             ))}

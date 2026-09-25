@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Modal } from "@heroui/react";
+import { Button, BottomSheet } from "./ui";
 import {
   CONFIG_KEY,
   SUBSCRIPTIONS_KEY,
@@ -64,64 +64,52 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
   };
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
+    <BottomSheet
+      opened={isOpen}
+      onClose={onClose}
+      title="选择生效订阅"
+      footer={
+        <Button
+          variant="secondary"
+          className="min-h-11 w-full"
+          onPress={() => {
+            onClose();
+            navigate("/subscriptions");
+          }}
+        >
+          管理订阅
+        </Button>
+      }
     >
-      <Modal.Container placement="bottom">
-        <Modal.Dialog>
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>选择生效订阅</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="max-h-[62vh] overflow-y-auto">
-            <div className="flex flex-col gap-2">
-              {enabledSubs.length === 0 ? (
-                <div className="flex flex-col gap-1 py-8 text-center">
-                  <span className="text-sm text-muted">暂无已启用的订阅</span>
-                  <span className="text-xs text-muted/80">请到「管理订阅」添加订阅源并保持启用</span>
-                </div>
-              ) : (
-                enabledSubs.map((sub) => {
-                  const isCurrent = sub.id === activeSubscriptionId;
-                  return (
-                    <button
-                      key={sub.id}
-                      type="button"
-                      disabled={selecting}
-                      onClick={() => void selectSubscription(sub.id)}
-                      className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
-                        isCurrent ? "border-accent/50 bg-accent/5" : "border-border/70"
-                      }`}
-                    >
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">{sub.name}</span>
-                        <span className="text-xs text-muted">{sub.node_count} 个节点</span>
-                      </span>
-                      {isCurrent && <span className="shrink-0 text-xs font-medium text-accent">使用中</span>}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button
-              variant="secondary"
-              className="min-h-11 w-full"
-              onPress={() => {
-                onClose();
-                navigate("/subscriptions");
-              }}
-            >
-              管理订阅
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+      <div className="flex max-h-[62vh] flex-col gap-2 overflow-y-auto">
+        {enabledSubs.length === 0 ? (
+          <div className="flex flex-col gap-1 py-8 text-center">
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">暂无已启用的订阅</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">请到「管理订阅」添加订阅源并保持启用</span>
+          </div>
+        ) : (
+          enabledSubs.map((sub) => {
+            const isCurrent = sub.id === activeSubscriptionId;
+            return (
+              <button
+                key={sub.id}
+                type="button"
+                disabled={selecting}
+                onClick={() => void selectSubscription(sub.id)}
+                className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
+                  isCurrent ? "border-primary/50 bg-primary/5" : "border-zinc-200 dark:border-zinc-700"
+                }`}
+              >
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{sub.name}</span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">{sub.node_count} 个节点</span>
+                </span>
+                {isCurrent && <span className="shrink-0 text-xs font-medium text-primary">使用中</span>}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </BottomSheet>
   );
 }

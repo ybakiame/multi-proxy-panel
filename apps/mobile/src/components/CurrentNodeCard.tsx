@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Chip } from "@heroui/react";
+import { Card, Chip } from "./ui";
 import { ChevronRightIcon } from "@heroicons/react/24/outline";
 import { PROXIES_KEY, proxiesList, toastError, useClientConfig } from "@pp/client-core";
 import type { ProxyList } from "@pp/client-core";
@@ -73,31 +73,33 @@ export function CurrentNodeCard({ running, subscriptionName }: CurrentNodeCardPr
         {group ? (
           <>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              {subscriptionName && <span className="truncate text-xs text-muted">{subscriptionName}</span>}
+              {subscriptionName && (
+                <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{subscriptionName}</span>
+              )}
               <span className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 text-xs text-muted">{group.name}</span>
-                <span className="truncate text-base font-semibold text-foreground">{group.now}</span>
+                <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">{group.name}</span>
+                <span className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{group.now}</span>
                 {auto && (
-                  <Chip size="sm" variant="soft" color="default" className="shrink-0">
+                  <Chip color="default" className="shrink-0">
                     自动选择
                   </Chip>
                 )}
               </span>
             </span>
-            <Chip size="sm" variant="soft" color={delayColor(node?.delay_ms)} className="shrink-0">
+            <Chip color={delayColor(node?.delay_ms)} className="shrink-0">
               {delayText(node?.delay_ms)}
             </Chip>
-            <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden="true" />
+            <ChevronRightIcon className="size-5 shrink-0 text-zinc-400" aria-hidden="true" />
           </>
         ) : (
           <>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">代理节点</span>
-              <span className="text-xs text-muted">
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">代理节点</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {!running ? "启动代理后可使用面板" : isLoading ? "正在获取节点…" : "暂无节点数据"}
               </span>
             </span>
-            <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden="true" />
+            <ChevronRightIcon className="size-5 shrink-0 text-zinc-400" aria-hidden="true" />
           </>
         )}
       </button>

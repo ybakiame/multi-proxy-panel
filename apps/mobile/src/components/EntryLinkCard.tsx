@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Card } from "@heroui/react";
+import { Card } from "./ui";
 import { ChevronRightIcon } from "@heroicons/react/24/outline";
 
 interface EntryLinkCardProps {
@@ -24,14 +24,14 @@ export function EntryLinkCard({ icon, title, description, onPress }: EntryLinkCa
         aria-label={title}
         className="flex w-full items-center gap-3 rounded-xl py-1 pl-1 pr-2 text-left active:opacity-80"
       >
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           {icon}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-sm font-semibold text-foreground">{title}</span>
-          <span className="truncate text-xs text-muted">{description}</span>
+          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</span>
+          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{description}</span>
         </span>
-        <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden="true" />
+        <ChevronRightIcon className="size-5 shrink-0 text-zinc-400" aria-hidden="true" />
       </button>
     </Card>
   );

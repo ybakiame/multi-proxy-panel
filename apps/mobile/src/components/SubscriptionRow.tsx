@@ -1,6 +1,6 @@
 import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { Chip, Spinner, Switch } from "@heroui/react";
 import type { ReactNode } from "react";
+import { Chip, Spinner, Switch } from "./ui";
 import type { SubscriptionView } from "@pp/client-core";
 
 interface SubscriptionRowProps {
@@ -39,7 +39,7 @@ function IconButton({
       disabled={disabled}
       onClick={disabled ? undefined : onPress}
       className={`flex size-11 shrink-0 items-center justify-center rounded-lg transition-opacity active:opacity-70 disabled:cursor-default disabled:opacity-40 ${
-        danger ? "text-danger" : "text-muted"
+        danger ? "text-red-500" : "text-zinc-500 dark:text-zinc-400"
       }`}
     >
       {children}
@@ -70,7 +70,7 @@ export function SubscriptionRow({
   return (
     <div
       className={`flex flex-col overflow-hidden rounded-xl border transition-colors ${
-        isActive ? "border-accent/60 bg-accent/5" : "border-border/60 bg-surface"
+        isActive ? "border-primary/60 bg-primary/5" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
       }`}
     >
       <div className="flex items-center gap-1 px-2">
@@ -81,34 +81,27 @@ export function SubscriptionRow({
           className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5 pl-1.5 pr-1 text-left disabled:cursor-default"
         >
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{sub.name}</span>
+            <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{sub.name}</span>
             {isActive && (
-              <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+              <Chip color="accent" className="shrink-0">
                 生效中
               </Chip>
             )}
           </span>
-          <span className="truncate font-mono text-xs text-muted" title={sub.url}>
+          <span className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400" title={sub.url}>
             {sub.url}
           </span>
-          {sub.error && <span className="line-clamp-2 text-xs text-warning">{sub.error}</span>}
+          {sub.error && <span className="line-clamp-2 text-xs text-amber-500">{sub.error}</span>}
         </button>
         <Switch
           aria-label={`启用 ${sub.name}`}
           isSelected={sub.enabled}
           isDisabled={controlsDisabled}
-          onChange={() => onToggle()}
-          className="shrink-0 px-1.5"
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-          </Switch.Content>
-        </Switch>
+          onValueChange={() => onToggle()}
+        />
       </div>
-      <div className="flex items-center gap-1 border-t border-border/40 pl-3">
-        <span className="mr-auto py-1 text-xs text-muted">{sub.node_count} 个节点</span>
+      <div className="flex items-center gap-1 border-t border-zinc-100 pl-3 dark:border-zinc-800">
+        <span className="mr-auto py-1 text-xs text-zinc-500 dark:text-zinc-400">{sub.node_count} 个节点</span>
         <IconButton label={`刷新 ${sub.name}`} disabled={controlsDisabled} onPress={onRefresh}>
           {refreshing ? (
             <Spinner size="sm" color="accent" aria-hidden="true" />

@@ -1,5 +1,5 @@
-import { AlertDialog, Button } from "@heroui/react";
 import type { SubscriptionView } from "@pp/client-core";
+import { ConfirmDialog } from "./ui";
 
 interface SubscriptionDeleteConfirmProps {
   /** 待删除订阅；`null` = 关闭。 */
@@ -20,33 +20,17 @@ interface SubscriptionDeleteConfirmProps {
  */
 export function SubscriptionDeleteConfirm({ sub, isActive, busy, onClose, onConfirm }: SubscriptionDeleteConfirmProps) {
   return (
-    <AlertDialog.Backdrop
-      isOpen={sub !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <ConfirmDialog
+      opened={sub !== null}
+      title="删除订阅"
+      danger
+      busy={busy}
+      confirmText="删除"
+      onConfirm={onConfirm}
+      onClose={onClose}
     >
-      <AlertDialog.Container size="sm">
-        <AlertDialog.Dialog>
-          <AlertDialog.CloseTrigger />
-          <AlertDialog.Header>
-            <AlertDialog.Icon status="danger" />
-            <AlertDialog.Heading>删除订阅</AlertDialog.Heading>
-          </AlertDialog.Header>
-          <AlertDialog.Body>
-            <p className="break-words">确定删除订阅「{sub ? sub.name : ""}」吗？该操作不可撤销。</p>
-            {isActive && <p className="mt-1 text-sm text-warning">该订阅为当前生效订阅，删除后请重新选择生效订阅。</p>}
-          </AlertDialog.Body>
-          <AlertDialog.Footer>
-            <Button slot="close" variant="tertiary" isDisabled={busy} onPress={onClose}>
-              取消
-            </Button>
-            <Button slot="close" variant="danger" isPending={busy} onPress={onConfirm}>
-              删除
-            </Button>
-          </AlertDialog.Footer>
-        </AlertDialog.Dialog>
-      </AlertDialog.Container>
-    </AlertDialog.Backdrop>
+      <p className="break-words">确定删除订阅「{sub ? sub.name : ""}」吗？该操作不可撤销。</p>
+      {isActive && <p className="mt-1 text-sm text-amber-500">该订阅为当前生效订阅，删除后请重新选择生效订阅。</p>}
+    </ConfirmDialog>
   );
 }

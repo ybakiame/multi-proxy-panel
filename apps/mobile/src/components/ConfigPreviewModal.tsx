@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Modal } from "@heroui/react";
 import { CONFIG_PREVIEW_KEY, previewCoreConfig, toErrorMessage } from "@pp/client-core";
+import { InlineAlert } from "./InlineAlert";
+import { BottomSheet, Button } from "./ui";
 
 interface ConfigPreviewModalProps {
   isOpen: boolean;
@@ -10,7 +11,7 @@ interface ConfigPreviewModalProps {
 }
 
 /**
- * 配置预览弹窗（ADR-0003 M5）：打开时按指定订阅（或当前生效订阅）生成合成核心配置，
+ * 配置预览底部弹层（ADR-0003 M5）：打开时按指定订阅（或当前生效订阅）生成合成核心配置，
  * 以只读等宽字体滚动区展示。刻意不复制 desktop 的 ConfigPreviewModal（无编辑器/复制能力）。
  */
 export function ConfigPreviewModal({ isOpen, onClose, subscriptionId }: ConfigPreviewModalProps) {
@@ -26,46 +27,32 @@ export function ConfigPreviewModal({ isOpen, onClose, subscriptionId }: ConfigPr
   });
 
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable
+    <BottomSheet
+      opened={isOpen}
+      onClose={onClose}
+      title="配置预览"
+      footer={
+        <Button variant="secondary" className="min-h-11 w-full" onPress={onClose}>
+          关闭
+        </Button>
+      }
     >
-      <Modal.Container>
-        <Modal.Dialog className="sm:max-w-[640px]">
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Heading>配置预览</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="flex flex-col gap-4">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                <span className="text-sm text-muted">正在生成配置预览…</span>
-                <span className="text-xs text-muted/80">拉取订阅节点并合成最终运行配置（只读）</span>
-              </div>
-            ) : error ? (
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>生成预览失败</Alert.Title>
-                  <Alert.Description className="break-all">{toErrorMessage(error)}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : (
-              <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface-secondary/40 p-3 font-mono text-xs leading-relaxed text-foreground">
-                {content}
-              </pre>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button slot="close" variant="secondary" onPress={onClose}>
-              关闭
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+      <div className="flex flex-col gap-4">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在生成配置预览…</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">拉取订阅节点并合成最终运行配置（只读）</span>
+          </div>
+        ) : error ? (
+          <InlineAlert kind="danger" title="生成预览失败">
+            <span className="break-all">{toErrorMessage(error)}</span>
+          </InlineAlert>
+        ) : (
+          <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
+            {content}
+          </pre>
+        )}
+      </div>
+    </BottomSheet>
   );
 }

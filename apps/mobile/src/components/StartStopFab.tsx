@@ -1,5 +1,5 @@
 import { PlayIcon, StopIcon } from "@heroicons/react/24/solid";
-import { Button, Spinner } from "@heroui/react";
+import { Button, Spinner } from "./ui";
 
 interface StartStopFabProps {
   /** 核心是否运行中：决定形态（未运行主色启动 / 运行中 danger 停止）。 */
@@ -44,7 +44,7 @@ export function StartStopFab({ running, starting, stopping, canStart, onStart, o
       style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
     >
       {pending ? (
-        <Spinner size="sm" color="current" aria-hidden="true" />
+        <Spinner size="sm" color="white" aria-hidden="true" />
       ) : running ? (
         <StopIcon className="size-6" aria-hidden="true" />
       ) : (

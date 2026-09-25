@@ -18,7 +18,7 @@ export const TABS = [
 export function TabBar() {
   return (
     <nav
-      className="flex shrink-0 border-t border-border/60 bg-surface pb-[env(safe-area-inset-bottom)]"
+      className="flex shrink-0 border-t border-black/10 bg-white pb-[env(safe-area-inset-bottom)] dark:border-white/10 dark:bg-zinc-900"
       aria-label="底部导航"
     >
       {TABS.map(({ to, label, icon: Icon, end }) => (
@@ -28,7 +28,9 @@ export function TabBar() {
           end={end}
           className={({ isActive }) =>
             `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-xs transition-colors ${
-              isActive ? "text-accent" : "text-muted hover:text-foreground"
+              isActive
+                ? "text-primary"
+                : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
             }`
           }
         >

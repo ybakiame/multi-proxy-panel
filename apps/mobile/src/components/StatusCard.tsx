@@ -1,4 +1,4 @@
-import { Card, Chip } from "@heroui/react";
+import { Card, Chip } from "./ui";
 import { RULE_MODE_LABELS } from "./ruleModes";
 import { RuleModeSwitch } from "./RuleModeSwitch";
 
@@ -31,19 +31,19 @@ export function StatusCard({ running, ruleMode, clashApiEnabled, missingRuleSets
         <Card.Description>{running ? "代理运行中，流量经系统 VPN 转发" : "代理当前未运行"}</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
-        <span className={`text-2xl font-bold ${running ? "text-success" : "text-danger"}`}>
+        <span className={`text-2xl font-bold ${running ? "text-green-500" : "text-red-500"}`}>
           {running ? "已连接" : "已停止"}
         </span>
         {running ? (
           <RuleModeSwitch value={ruleMode} running={running} clashApiEnabled={clashApiEnabled} />
         ) : (
           <div className="flex min-h-11 items-center justify-between gap-3">
-            <span className="text-sm font-medium text-foreground">出站模式</span>
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">出站模式</span>
             <Chip>{RULE_MODE_LABELS[ruleMode] ?? ruleMode}</Chip>
           </div>
         )}
         {running && missingRuleSets.length > 0 && (
-          <span className="text-xs text-warning">
+          <span className="text-xs text-amber-500">
             分流规则集未全部就绪（{missingRuleSets.join("、")}），已降级运行；后台重试补齐后将自动恢复完整分流
           </span>
         )}
