@@ -1,10 +1,9 @@
-import { Switch } from "@heroui/react";
+import { Switch, inputClassName } from "../../components/ui";
 
-/** 移动设置页输入框统一样式（对齐 SubscriptionFormSheet 的输入外观）。 */
-export const settingsInputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+/** 移动设置页输入框统一样式（复用 ui.tsx 的 `inputClassName`，等宽字体变体）。 */
+export const settingsInputClass = `${inputClassName} font-mono`;
 
-export const settingsLabelClass = "text-sm font-medium text-foreground";
+export const settingsLabelClass = "text-sm font-medium text-zinc-900 dark:text-zinc-100";
 
 interface SwitchRowProps {
   label: string;
@@ -20,21 +19,9 @@ export function SwitchRow({ label, description, selected, disabled, onChange }: 
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className={settingsLabelClass}>{label}</span>
-        {description && <span className="text-xs text-muted">{description}</span>}
+        {description && <span className="text-xs text-zinc-500 dark:text-zinc-400">{description}</span>}
       </div>
-      <Switch
-        aria-label={label}
-        isSelected={selected}
-        isDisabled={disabled}
-        onChange={(next) => onChange(next)}
-        className="shrink-0"
-      >
-        <Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
+      <Switch aria-label={label} isSelected={selected} isDisabled={disabled} onValueChange={(next) => onChange(next)} />
     </div>
   );
 }
@@ -89,9 +76,9 @@ export function SettingsInput({
         className={settingsInputClass}
       />
       {error ? (
-        <span className="text-xs text-warning">{error}</span>
+        <span className="text-xs text-amber-500">{error}</span>
       ) : hint ? (
-        <span className="text-xs text-muted">{hint}</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">{hint}</span>
       ) : null}
     </div>
   );

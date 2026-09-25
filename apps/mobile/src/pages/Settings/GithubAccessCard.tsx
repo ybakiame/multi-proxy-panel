@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card } from "../../components/ui";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { SettingsInput } from "./fields";
 

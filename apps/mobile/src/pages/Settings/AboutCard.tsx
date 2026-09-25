@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card } from "../../components/ui";
 import { useCoreVersion } from "@pp/client-core";
 import { SING_BOX_BUILD_TAGS } from "../../coreBuildInfo";
 
@@ -19,20 +19,22 @@ export function AboutCard() {
         <Card.Description>关于应用</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
-        <p className="text-sm leading-relaxed text-muted">
+        <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
           基于 sing-box 内核的 Android 代理客户端：同步 ProxyPanel Hub 订阅并本地合成配置， 经系统 VPN 转发流量。
         </p>
 
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-foreground">核心引擎</span>
-          <span className="font-mono text-sm text-muted">
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">核心引擎</span>
+          <span className="font-mono text-sm text-zinc-500 dark:text-zinc-400">
             {coreVersion ? `sing-box ${coreVersion}` : versionLoading ? "读取中…" : "sing-box（版本未知）"}
           </span>
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-foreground">编译 tags</span>
-          <p className="font-mono text-xs leading-relaxed break-all text-muted">{SING_BOX_BUILD_TAGS.join(", ")}</p>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">编译 tags</span>
+          <p className="break-all font-mono text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+            {SING_BOX_BUILD_TAGS.join(", ")}
+          </p>
         </div>
       </Card.Content>
     </Card>

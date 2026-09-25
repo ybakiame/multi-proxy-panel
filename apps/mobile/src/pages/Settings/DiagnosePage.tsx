@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button, Card, Chip, Spinner } from "@heroui/react";
 import {
   CheckCircleIcon,
   ExclamationCircleIcon,
@@ -10,12 +9,12 @@ import {
 import { diagnoseConnectivityRun, toErrorMessage, toastError } from "@pp/client-core";
 import type { DiagReport, DiagStatus } from "@pp/client-core";
 import { SubPageShell } from "../../components/SubPageShell";
+import { Button, Card, Chip, Spinner, inputClassName } from "../../components/ui";
+import type { ChipColor } from "../../components/ui";
 
-const inputClass =
-  "h-12 w-full rounded-lg border border-border/70 bg-surface px-3 font-mono text-sm text-foreground outline-none " +
-  "placeholder:text-muted focus:border-accent/60 disabled:opacity-60";
+const inputClass = `${inputClassName} font-mono`;
 
-const STATUS_META: Record<DiagStatus, { label: string; color: "success" | "danger" | "default" | "accent" }> = {
+const STATUS_META: Record<DiagStatus, { label: string; color: ChipColor }> = {
   ok: { label: "正常", color: "success" },
   fail: { label: "失败", color: "danger" },
   skip: { label: "跳过", color: "default" },
@@ -26,13 +25,13 @@ function StatusIcon({ status }: { status: DiagStatus }) {
   const className = "size-5 shrink-0";
   switch (status) {
     case "ok":
-      return <CheckCircleIcon className={`${className} text-success`} aria-hidden="true" />;
+      return <CheckCircleIcon className={`${className} text-green-500`} aria-hidden="true" />;
     case "fail":
-      return <ExclamationCircleIcon className={`${className} text-danger`} aria-hidden="true" />;
+      return <ExclamationCircleIcon className={`${className} text-red-500`} aria-hidden="true" />;
     case "info":
-      return <InformationCircleIcon className={`${className} text-accent`} aria-hidden="true" />;
+      return <InformationCircleIcon className={`${className} text-primary`} aria-hidden="true" />;
     default:
-      return <MinusCircleIcon className={`${className} text-muted`} aria-hidden="true" />;
+      return <MinusCircleIcon className={`${className} text-zinc-400`} aria-hidden="true" />;
   }
 }
 
@@ -70,7 +69,7 @@ export default function DiagnosePage() {
       <Card>
         <Card.Content className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">目标域名</span>
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">目标域名</span>
             <input
               value={domain}
               onChange={(event) => setDomain(event.target.value)}
@@ -83,7 +82,7 @@ export default function DiagnosePage() {
               aria-label="目标域名"
               className={inputClass}
             />
-            <span className="text-xs text-muted">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
               沿流量路径分步检查：DNS 解析 → 直连 → 各 DNS 服务器 → 核心全链路 → 代理出站
             </span>
           </label>
@@ -104,8 +103,8 @@ export default function DiagnosePage() {
       {report && (
         <Card>
           <Card.Content className="flex items-center justify-between gap-3 py-3">
-            <span className="text-sm text-foreground">诊断完成：{report.domain}</span>
-            <Chip size="sm" variant="soft" color={report.failed_steps === 0 ? "success" : "danger"}>
+            <span className="text-sm text-zinc-900 dark:text-zinc-100">诊断完成：{report.domain}</span>
+            <Chip color={report.failed_steps === 0 ? "success" : "danger"}>
               {report.failed_steps === 0 ? "全部通过" : `${report.failed_steps} 项失败`}
             </Chip>
           </Card.Content>
@@ -120,15 +119,19 @@ export default function DiagnosePage() {
             <Card.Content className="flex flex-col gap-2 py-3">
               <div className="flex items-center gap-2">
                 <StatusIcon status={step.status} />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{step.name}</span>
-                <Chip size="sm" variant="soft" color={meta.color} className="shrink-0">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  {step.name}
+                </span>
+                <Chip color={meta.color} className="shrink-0">
                   {meta.label}
                 </Chip>
-                {step.duration_ms > 0 && <span className="shrink-0 text-xs text-muted">{step.duration_ms}ms</span>}
+                {step.duration_ms > 0 && (
+                  <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">{step.duration_ms}ms</span>
+                )}
               </div>
-              <span className="text-xs text-foreground/90">{step.summary}</span>
+              <span className="text-xs text-zinc-700 dark:text-zinc-300">{step.summary}</span>
               {step.detail !== "" && (
-                <pre className="overflow-x-auto rounded-lg bg-surface-secondary/60 p-2 font-mono text-xs whitespace-pre-wrap text-muted">
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 font-mono text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                   {step.detail}
                 </pre>
               )}
@@ -141,8 +144,8 @@ export default function DiagnosePage() {
       {!report && !running && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-10 text-center">
-            <span className="text-sm text-muted">输入目标域名后点击「开始诊断」</span>
-            <span className="text-xs text-muted/80">
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">输入目标域名后点击「开始诊断」</span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">
               推荐对照：google.com（境外，预期直连失败、代理成功）与一个境内域名（预期直连成功）
             </span>
           </Card.Content>
@@ -153,7 +156,7 @@ export default function DiagnosePage() {
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-10 text-center">
             <Spinner aria-hidden="true" />
-            <span className="text-sm text-muted">正在分步诊断，弱网下最长约一分钟…</span>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在分步诊断，弱网下最长约一分钟…</span>
           </Card.Content>
         </Card>
       )}

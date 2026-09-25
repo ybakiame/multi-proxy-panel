@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card } from "../../components/ui";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { SwitchRow } from "./fields";
 
@@ -35,7 +35,9 @@ export function VpnNotificationCard({ settings }: VpnNotificationCardProps) {
           disabled={!settings.ready}
           onChange={(next) => void settings.onToggleVpnSelection(next)}
         />
-        <p className="text-xs text-muted">保存后即时同步运行中的通知栏；核心未运行时将在下次启动生效。</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          保存后即时同步运行中的通知栏；核心未运行时将在下次启动生效。
+        </p>
       </Card.Content>
     </Card>
   );

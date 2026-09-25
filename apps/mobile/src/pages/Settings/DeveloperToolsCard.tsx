@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card } from "@heroui/react";
+import { Card } from "../../components/ui";
 import { CodeBracketIcon, DocumentTextIcon, SignalIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
 import { useClientConfig } from "@pp/client-core";
