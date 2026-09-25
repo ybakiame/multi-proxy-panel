@@ -206,8 +206,8 @@ export default function OutboundsPage() {
       title="出站管理"
       action={
         <Button
-          variant="primary"
-          className="h-11 shrink-0 px-4"
+          variant="tertiary"
+          className="h-11 shrink-0 px-2 font-semibold"
           isDisabled={!valid || !dirty || saving}
           isPending={saving}
           onPress={() => void handleSave()}

@@ -125,9 +125,9 @@ function AppContent() {
 
   return (
     <div
-      className={`${uiStyle === "material" ? "k-material" : "k-ios"} flex h-full min-h-0 flex-col bg-ios-light-surface text-black dark:bg-ios-dark-surface dark:text-white`}
+      className={`safe-areas ${uiStyle === "material" ? "k-material" : "k-ios"} flex h-full min-h-0 flex-col bg-ios-light-surface text-black dark:bg-ios-dark-surface dark:text-white`}
     >
-      <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto">
+      <main ref={mainRef} className={`min-h-0 flex-1 overflow-y-auto ${showTabBar ? "pb-safe-24" : ""}`}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/panel" element={<Panel />} />

@@ -230,8 +230,8 @@ export default function Subscriptions() {
     <SubPageShell
       title="订阅管理"
       action={
-        <Button variant="primary" className="h-11 shrink-0 px-4" onPress={openAdd}>
-          <PlusIcon className="size-4" aria-hidden="true" />
+        <Button variant="tertiary" className="h-11 shrink-0 px-2 font-semibold" onPress={openAdd}>
+          <PlusIcon className="size-5" aria-hidden="true" />
           添加
         </Button>
       }

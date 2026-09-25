@@ -135,8 +135,8 @@ export default function ExperimentalPage() {
       title="实验性配置"
       action={
         <Button
-          variant="primary"
-          className="h-11 shrink-0 px-4"
+          variant="tertiary"
+          className="h-11 shrink-0 px-2 font-semibold"
           isDisabled={!valid || !dirty || saving}
           isPending={saving}
           onPress={() => void handleSave()}

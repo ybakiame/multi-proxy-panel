@@ -41,7 +41,7 @@ export function StartStopFab({ running, starting, stopping, canStart, onStart, o
       }}
       colors={running ? { bgIos: "bg-red-500", bgMaterial: "bg-red-500" } : undefined}
       className={`fixed right-4 z-20 shadow-lg shadow-black/25 ${disabled ? "pointer-events-none opacity-50" : ""}`}
-      style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
+      style={{ bottom: "calc(6rem + env(safe-area-inset-bottom))" }}
       icon={
         pending ? (
           <Spinner size="sm" color="white" aria-hidden="true" />

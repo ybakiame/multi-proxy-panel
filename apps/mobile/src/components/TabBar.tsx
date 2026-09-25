@@ -1,5 +1,5 @@
 import { AdjustmentsHorizontalIcon, Cog6ToothIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
-import { Tabbar, TabbarLink } from "konsta/react";
+import { Tabbar, TabbarLink, ToolbarPane } from "konsta/react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /** 底部导航 Tab（`end` 仅用于根路径：`/` 精确匹配，避免「/config」「/settings」前缀命中）。 */
@@ -16,26 +16,32 @@ function isTabActive(pathname: string, to: string, end: boolean): boolean {
 }
 
 /**
- * 移动端底部固定 TabBar（Konsta UI `Tabbar`，随 iOS/Material 主题切换观感）。
+ * 移动端底部 TabBar（Konsta UI `Tabbar`，官方示例同款结构：fixed 定位 + `ToolbarPane`）。
  *
- * - 3 个 Tab：首页（仪表盘）/ 配置管理 / 设置；
- * - 激活态由 `TabbarLink active` 呈现（主题主色）；点击经 `useNavigate` 路由跳转；
- * - 底部 safe-area 内边距由 Konsta Toolbar/Tabbar 内置 `--k-safe-area-bottom` 处理。
+ * - iOS 主题：`ToolbarPane` 呈现悬浮玻璃药丸（rounded-full + 毛玻璃），激活项
+ *   附带滑动高亮；Material 主题：`ToolbarPane` 为 `contents`，退化为贴底 MD 底栏；
+ * - fixed 悬浮于内容之上（内容滚动可穿透毛玻璃），滚动区底部留白由 AppContent
+ *   的 `pb-safe-24` 承担；safe-area 由 Konsta `--k-safe-area-bottom` 内置处理
+ *   （依赖根部 `.safe-areas` 类）；
+ * - 激活判定：`/` 精确匹配，其余前缀匹配（二级页不渲染本组件，见 App.tsx）。
  */
 export function TabBar() {
   const location = useLocation();
   const navigate = useNavigate();
   return (
-    <Tabbar labels icons className="shrink-0" aria-label="底部导航">
-      {TABS.map(({ to, label, icon: Icon, end }) => (
-        <TabbarLink
-          key={to}
-          active={isTabActive(location.pathname, to, end)}
-          icon={<Icon className="size-6" aria-hidden="true" />}
-          label={label}
-          linkProps={{ onClick: () => navigate(to), "aria-label": label }}
-        />
-      ))}
+    <Tabbar labels icons className="fixed bottom-0 left-0 right-0 z-30" aria-label="底部导航">
+      <ToolbarPane>
+        {TABS.map(({ to, label, icon: Icon, end }) => (
+          <TabbarLink
+            key={to}
+            active={isTabActive(location.pathname, to, end)}
+            icon={<Icon className="size-6" aria-hidden="true" />}
+            label={label}
+            onClick={() => navigate(to)}
+            aria-label={label}
+          />
+        ))}
+      </ToolbarPane>
     </Tabbar>
   );
 }

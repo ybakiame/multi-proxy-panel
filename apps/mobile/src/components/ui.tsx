@@ -73,6 +73,9 @@ export function Button({
 
   return (
     <KonstaButton
+      // Konsta Button 默认 w-full（会撑爆 flex 区头）；inline 使宽度自适应内容，
+      // 需要全宽/弹性宽度的调用点经 className（w-full / flex-1）显式声明。
+      inline
       tonal={tonal}
       clear={clear}
       colors={colors}
@@ -107,8 +110,10 @@ interface CardSectionProps {
 function CardRoot({ className = "", children }: CardSectionProps) {
   // 卡片本体委托 Konsta Card（iOS 圆角浅色卡 / Material 海拔阴影随主题切换），
   // contentWrap 关闭：内边距由下方复合分区（Header/Content/Footer）自行控制。
+  // 注意：Konsta Card 自带 `mx-safe-4` 外边距，twMerge 无法识别 safe 缩放、
+  // 普通 `m-0` 覆盖不掉（会与容器 padding 叠加成双倍边距），必须用 important。
   return (
-    <KonstaCard contentWrap={false} className={`m-0 ${className}`}>
+    <KonstaCard contentWrap={false} className={`m-0! ${className}`}>
       {children}
     </KonstaCard>
   );

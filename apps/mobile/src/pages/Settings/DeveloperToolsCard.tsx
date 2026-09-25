@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { CodeBracketIcon, DocumentTextIcon, SignalIcon } from "@heroicons/react/24/outline";
-import { BlockTitle } from "konsta/react";
 import { useNavigate } from "react-router-dom";
 import { useClientConfig } from "@pp/client-core";
 import { ConfigPreviewModal } from "../../components/ConfigPreviewModal";
@@ -22,9 +21,11 @@ export function DeveloperToolsCard() {
 
   return (
     <>
-      {/* Konsta 分组列表：块标题 + inset strong 列表（iOS 设置页风格），不再套卡片 */}
-      <BlockTitle className="!mb-0 !mt-0">开发者工具</BlockTitle>
-      <p className="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">开发与排障辅助</p>
+      {/* 分组标题 + inset strong 列表（iOS 设置页风格），不再套卡片 */}
+      <div className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">开发者工具</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">开发与排障辅助</span>
+      </div>
       <EntryLinkList
         entries={[
           {
