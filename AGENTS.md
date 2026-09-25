@@ -12,7 +12,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
 - **Desktop** (`apps/desktop`): 桌面客户端（Linux/Windows/macOS，Tauri 壳 + React 前端 + 独立 cargo 项目），含 MITM / 脚本引擎 / 核心管理等桌面专属能力
-- **Mobile** (`apps/mobile`): 移动客户端（Android，Tauri 壳 + 移动 UI + 独立 cargo 项目），核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM（见 ADR-0003）
+- **Mobile** (`apps/mobile`): 移动客户端（Android，Tauri 壳 + 移动 UI（React + **Konsta UI**，iOS/Material 双主题可切换）+ 独立 cargo 项目），核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM（见 ADR-0003）
 - **`packages/client-core`** (`@pp/client-core`): desktop/mobile 共享前端库（api 的 invoke 封装 + hooks + atoms + 纯工具），两端 UI 一律经它调用 Tauri 命令
 
 ---
@@ -268,7 +268,7 @@ Base64 / JSON / Clash YAML / SingBox JSON / V2RayNG
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）、hooks、atoms、纯工具；两端 UI 禁止直接 `invoke()` |
 | `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现，双壳以全路径注册；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
 | `apps/desktop/src-tauri` | 桌面壳 | 注册共享命令 + 桌面专属命令（mitm / core_mgmt / remote 等），含 WSL workaround |
-| `apps/mobile/src-tauri` | 移动壳 | 注册共享命令 + Android 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）；依赖表天然不含 `pp-mitm`，无需 feature hack |
+| `apps/mobile/src-tauri` | 移动壳 | 注册共享命令 + Android 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）；依赖表天然不含 `pp-mitm`，无需 feature hack。移动 UI 组件库为 Konsta UI（iOS/Material 双主题，设置页可切换，默认 iOS），桌面端仍为 HeroUI |
 | `crates/pp-client`（`CoreEngineBridge`） | 核心引擎层 | 桌面侧 spawn sing-box 子进程；Android 侧经 Kotlin 桥由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心 |
 
 `get_capabilities` 的 `is_android` 保留为**运行时功能开关**（desktop UI 已不再消费，UI 分离后平台差异转为编译期事实）。详见 ADR-0003。

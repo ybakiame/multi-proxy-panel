@@ -425,7 +425,7 @@ Desktop/Mobile 壳共享的 Tauri 命令实现与辅助（ADR-0003 §3.2）：
 
 ### apps/mobile — 移动客户端（Android）
 
-- **技术栈**: Tauri 2（Android 目标，`pp-client-mobile-ui`，独立 cargo 项目）+ 移动 UI（React），Bun 作为包管理器
+- **技术栈**: Tauri 2（Android 目标，`pp-client-mobile-ui`，独立 cargo 项目）+ 移动 UI（React 19 / Tailwind CSS 4 / **Konsta UI**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
 - **壳**: 注册共享命令与 Android 专属 `core_bridge` 三命令；数据目录用 Android 应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
 - **核心引擎**: 内置 Go 模块 `panel-core`（`apps/mobile/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
 - **无 MITM**: mobile 壳 `Cargo.toml` 依赖表不含 `pp-mitm`，Android 禁 MITM 由依赖图天然表达（ADR-0003 §3.5）
