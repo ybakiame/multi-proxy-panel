@@ -185,7 +185,7 @@ export default function ExperimentalPage() {
           <Card>
             <Card.Header>
               <Card.Title>Cache File</Card.Title>
-              <Card.Description>持久化缓存文件（experimental.cache_file）</Card.Description>
+              <Card.Description>持久化缓存文件</Card.Description>
             </Card.Header>
             <Card.Content className="flex flex-col gap-4">
               <ToggleRow

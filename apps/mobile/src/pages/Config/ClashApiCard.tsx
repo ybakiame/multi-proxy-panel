@@ -41,7 +41,7 @@ export function ClashApiCard({ settings }: ClashApiCardProps) {
     <Card>
       <Card.Header>
         <Card.Title>Clash API</Card.Title>
-        <Card.Description>仪表盘与面板页的数据源；端口与密钥修改即时保存，重启代理后生效</Card.Description>
+        <Card.Description>使用 Clash Web Dashboard 控制内核</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <SettingsInput
@@ -90,13 +90,10 @@ export function ClashApiCard({ settings }: ClashApiCardProps) {
               onPress={settings.onGenerateClashApiSecret}
             >
               <ArrowPathIcon className="size-4" aria-hidden="true" />
-              随机生成
             </Button>
           </div>
-          {settings.clashApiSecretError ? (
+          {settings.clashApiSecretError ?? (
             <span className="text-xs text-amber-500">{settings.clashApiSecretError}</span>
-          ) : (
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">面板访问需携带该密钥鉴权</span>
           )}
         </div>
       </Card.Content>

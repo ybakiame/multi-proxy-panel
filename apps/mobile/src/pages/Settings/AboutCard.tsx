@@ -16,11 +16,10 @@ export function AboutCard() {
     <Card>
       <Card.Header>
         <Card.Title>ProxyPanel Mobile</Card.Title>
-        <Card.Description>关于应用</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-          基于 sing-box 内核的 Android 代理客户端：同步 ProxyPanel Hub 订阅并本地合成配置， 经系统 VPN 转发流量。
+          基于 sing-box 内核的 Android 代理客户端。
         </p>
 
         <div className="flex flex-col gap-1">

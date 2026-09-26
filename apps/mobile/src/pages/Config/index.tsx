@@ -23,8 +23,6 @@ export default function Config() {
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">配置管理</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">管理 DNS、出站、路由、入站与实验性参数</p>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">内置 CN 分流基线始终生效，自定义配置逐项启用</p>
       </div>
 
       <EntryLinkList
@@ -32,31 +30,31 @@ export default function Config() {
           {
             icon: <GlobeAltIcon className="size-5" aria-hidden="true" />,
             title: "DNS 管理",
-            description: "dns 顶级字段 · DNS 服务器与分流规则",
+            description: "DNS 中的服务器与分流规则",
             onPress: () => navigate("/config/dns"),
           },
           {
             icon: <ArrowsRightLeftIcon className="size-5" aria-hidden="true" />,
             title: "出站管理",
-            description: "outbounds 顶级字段 · 自定义代理节点与分组",
+            description: "Outbounds 中的代理节点与分组",
             onPress: () => navigate("/config/outbounds"),
           },
           {
             icon: <MapIcon className="size-5" aria-hidden="true" />,
             title: "路由管理",
-            description: "route 顶级字段 · 默认出站、域名解析器与规则",
+            description: "Route 中的规则集和路由规则",
             onPress: () => navigate("/config/route"),
           },
           {
             icon: <WifiIcon className="size-5" aria-hidden="true" />,
             title: "入站管理",
-            description: "inbounds 顶级字段 · 混合入站端口与 TUN 参数",
+            description: "Inbounds 中的端口与 TUN 参数",
             onPress: () => navigate("/config/inbounds"),
           },
           {
             icon: <BeakerIcon className="size-5" aria-hidden="true" />,
             title: "实验性配置",
-            description: "experimental 顶级字段 · Clash API（端口 / 密钥）与缓存",
+            description: "Experimental 中的 Clash API 与缓存",
             onPress: () => navigate("/config/experimental"),
           },
         ]}

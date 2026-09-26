@@ -351,29 +351,16 @@ export default function DnsPage() {
 
       {draft && (
         <>
-          {/* 配置来源状态卡：内置默认（跟随系统）/ 自定义（接管），接管时可一键恢复内置默认 */}
-          <Card>
-            <Card.Header>
-              <Card.Title>配置来源</Card.Title>
-              <Card.Description>
-                {willTakeover
-                  ? "自定义 DNS：保存后取代内置默认生效"
-                  : "内置默认 DNS：可直接编辑下方配置，保存后自动接管生效"}
-              </Card.Description>
-            </Card.Header>
-            {willTakeover && (
-              <Card.Content>
-                <Button
-                  variant="secondary"
-                  className="min-h-11 w-full"
-                  onPress={handleRestoreBuiltin}
-                  isDisabled={builtin === undefined}
-                >
-                  恢复内置默认
-                </Button>
-              </Card.Content>
-            )}
-          </Card>
+          {willTakeover && (
+            <Button
+              variant="secondary"
+              className="min-h-11 w-full"
+              onPress={handleRestoreBuiltin}
+              isDisabled={builtin === undefined}
+            >
+              恢复默认配置
+            </Button>
+          )}
 
           {/* FakeIP（W2，ClientConfig）仅在内置默认（跟随系统）生效时可见：接管后由切片正文全权接管 */}
           {!willTakeover && <DnsFakeipCard />}

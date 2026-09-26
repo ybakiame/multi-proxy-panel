@@ -46,7 +46,7 @@ export function RouteSettingsCard({
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">默认出站（final）</span>
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">默认出站</span>
           <MobileSelectSheet label="默认出站" value={finalTag} onChange={onChangeFinalTag} options={finalTagOptions} />
           {finalTagError ? (
             <span className="text-xs text-amber-500">{finalTagError}</span>
@@ -66,9 +66,7 @@ export function RouteSettingsCard({
           {resolverServerError ? (
             <span className="text-xs text-amber-500">{resolverServerError}</span>
           ) : (
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              出站域名使用的 DNS 服务器（default_domain_resolver）
-            </span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">出站域名使用的 DNS 服务器</span>
           )}
         </div>
 
@@ -80,7 +78,7 @@ export function RouteSettingsCard({
             onChange={(value) => onChangeResolverStrategy(value === "" ? null : (value as DnsStrategy))}
             options={ROUTE_STRATEGY_OPTIONS}
           />
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">出站域名解析策略，留空则跟随全局 DNS 策略</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">出站域名解析策略</span>
         </div>
       </Card.Content>
     </Card>

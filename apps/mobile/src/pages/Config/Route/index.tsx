@@ -183,13 +183,13 @@ export default function RoutePage() {
               {
                 icon: <ListBulletIcon className="size-5" aria-hidden="true" />,
                 title: "规则管理",
-                description: "添加与管理你的分流规则",
+                description: "添加与管理路由规则",
                 onPress: () => navigate("/config/route/rules"),
               },
               {
                 icon: <SwatchIcon className="size-5" aria-hidden="true" />,
                 title: "规则集管理",
-                description: "社区与自定义规则集的增删与更新",
+                description: "社区与自定义规则集管理",
                 onPress: () => navigate("/config/route/rulesets"),
               },
             ]}

@@ -310,7 +310,6 @@ export default function RuleSetsPage() {
           <div className="flex items-center gap-2">
             <Button variant="primary" className="h-11 min-w-0 flex-1 px-4" onPress={openAdd}>
               <PlusIcon className="size-4" aria-hidden="true" />
-              添加
             </Button>
             <Button
               variant="secondary"
@@ -320,14 +319,13 @@ export default function RuleSetsPage() {
               onPress={() => void handleUpdateNow()}
             >
               <ArrowPathIcon className="size-4" aria-hidden="true" />
-              立即更新
             </Button>
             <Button
               variant="secondary"
               className="h-11 shrink-0 px-3"
               onPress={() => navigate("/config/route/rulesets/market")}
             >
-              <SparklesIcon className="size-4" aria-hidden="true" />
+              <SparklesIcon className="size-4 pr-1" aria-hidden="true" />
               市场
             </Button>
             <Button
@@ -336,7 +334,7 @@ export default function RuleSetsPage() {
               isDisabled={!baseline}
               onPress={() => void handleRestoreBuiltin()}
             >
-              恢复内置默认
+              恢复默认
             </Button>
           </div>
 

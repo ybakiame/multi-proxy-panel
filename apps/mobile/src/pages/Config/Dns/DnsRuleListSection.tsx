@@ -51,7 +51,7 @@ export function DnsRuleListSection({ rules, onToggle, onEdit, onAdd }: DnsRuleLi
                   <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                     {rule.target}
                   </span>
-                  <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{dnsRuleSummary(rule)}</span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">{dnsRuleSummary(rule)}</span>
                 </button>
                 <Switch
                   aria-label={`启用规则 ${dnsRuleSummary(rule)}`}

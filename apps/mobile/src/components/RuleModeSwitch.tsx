@@ -70,9 +70,7 @@ export function RuleModeSwitch({ value, running, clashApiEnabled }: RuleModeSwit
           </SegmentedButton>
         ))}
       </Segmented>
-      <span className="text-xs text-zinc-500 dark:text-zinc-400">
-        {running && clashApiEnabled ? "即时生效（依赖 Clash API）" : "将在下次启动生效"}
-      </span>
+      <span className="text-xs text-zinc-500 dark:text-zinc-400">{running && clashApiEnabled ? "" : ""}</span>
     </div>
   );
 }

@@ -211,8 +211,8 @@ export function dnsRoleTag(tag: string): DnsRoleTag | null {
 
 /** 角色服务器的行内说明（列表副标题前缀）。 */
 export const DNS_ROLE_LABELS: Record<DnsRoleTag, string> = {
-  local: "境内直连",
-  proxy: "境外经代理",
+  local: "直连 DNS",
+  proxy: "代理 DNS",
 };
 
 /** 角色服务器可更换的预置目录分组：local 取内置 + 境内，proxy 取内置 + 境外。 */

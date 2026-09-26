@@ -4,19 +4,14 @@ import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 import { SubPageShell } from "../../components/SubPageShell";
 import { SettingsInput, SwitchRow } from "../Settings/fields";
 import { useSettingsConfig } from "../Settings/useSettingsConfig";
+import { useMemo } from "react";
 
-/** TUN 协议栈选项（对齐 sing-box tun inbound `stack` 字段；`go` = 不写 stack 字段，
- * 见 sing-box 迁移指南 Migrate TUN Stack）。说明文字提升到选择器外上方（小字），
- * 选项标签只留栈名。 */
+/** TUN 协议栈选项（对齐 sing-box tun inbound `stack` 字段) */
 const TUN_STACK_OPTIONS = [
-  { value: "go", label: "go" },
-  { value: "mixed", label: "mixed" },
-  { value: "system", label: "system" },
+  { value: "go", label: "go", desc: "sing-tun 自研栈（sing-box 1.15 起的默认栈）" },
+  { value: "mixed", label: "mixed", desc: "TCP 系统栈 + UDP gVisor（部分设备 TCP 不可用）" },
+  { value: "system", label: "system", desc: "系统栈，性能最佳但部分设备不兼容" },
 ];
-
-/** 各栈说明（选择器上方的小字段落）。 */
-const TUN_STACK_HINT =
-  "go：sing-tun 自研栈（推荐，sing-box 1.15 起的默认栈，纯用户态无设备兼容问题）；mixed：TCP 系统栈 + UDP gVisor（部分设备 TCP 不可用）；system：系统栈，性能最佳但部分设备不兼容";
 
 /**
  * 入站管理子页（路由 `/config/inbounds`；前身为「网络」页 `/config/network`，2026-09 更名
@@ -32,23 +27,24 @@ const TUN_STACK_HINT =
  */
 export default function InboundsPage() {
   const settings = useSettingsConfig();
+  const stackDesc = useMemo(() => {
+    return TUN_STACK_OPTIONS.find((option) => option.value === settings.tunStack)?.desc;
+  }, [settings.tunStack]);
 
   return (
     <SubPageShell title="入站管理">
-      <InlineAlert kind="info" title="始终启用">
-        两条入站对应核心的 inbounds 顶级字段，始终启用；此处调整其监听与协议栈参数。
-      </InlineAlert>
+      <InlineAlert kind="info">仅支持部分参数调整</InlineAlert>
 
       {/* 混合入站（mixed-in）：listen 固定 127.0.0.1，仅 listen_port 可调 */}
       <Card>
         <Card.Header>
-          <Card.Title>混合入站（mixed-in）</Card.Title>
+          <Card.Title>混合入站</Card.Title>
           <Card.Description>HTTP / SOCKS 混合代理入站，监听 127.0.0.1</Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
           <SettingsInput
             id="settings-mixed-port"
-            label="监听端口（listen_port）"
+            label="监听端口"
             value={settings.mixedPortDraft}
             onChange={settings.onMixedPortChange}
             placeholder="1080"
@@ -64,13 +60,12 @@ export default function InboundsPage() {
       <Card>
         <Card.Header>
           <Card.Title>TUN 入站（tun-in）</Card.Title>
-          <Card.Description>虚拟网卡全流量接管（Android VpnService）</Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">协议栈（stack）</span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">{TUN_STACK_HINT}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{stackDesc}</span>
             </div>
             <MobileSelectSheet
               label="协议栈"
@@ -80,14 +75,14 @@ export default function InboundsPage() {
             />
           </div>
           <SwitchRow
-            label="自动路由（auto_route）"
-            description="自动配置系统路由表接管流量；Android VpnService 下保持开启"
+            label="自动路由"
+            description="自动配置系统路由表接管流量"
             selected={settings.tunAutoRoute}
             disabled={!settings.ready}
             onChange={(next) => void settings.onToggleTunAutoRoute(next)}
           />
           <SwitchRow
-            label="IPv6"
+            label="IPv6 支持"
             description="关闭时 DNS 不返回 AAAA 记录（推荐，节点不支持 IPv6 时最稳定）；开启后双栈，IPv6 流量经隧道按规则分流"
             selected={settings.ipv6Enabled}
             disabled={!settings.ready}

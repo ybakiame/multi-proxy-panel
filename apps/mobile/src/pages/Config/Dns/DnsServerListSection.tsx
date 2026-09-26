@@ -61,9 +61,7 @@ export function DnsServerListSection({
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">DNS 服务器</span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            local / proxy 为内置角色服务器，点击更换；其余点击编辑
-          </span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">local / proxy 为内置服务器</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button

@@ -21,7 +21,6 @@ export default function Settings() {
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">设置</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">客户端全局设置 · 修改即时保存</p>
       </div>
 
       <AppearanceCard />

@@ -73,12 +73,12 @@ export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleC
   const metaDetail =
     `${matchTypeLabel(rule.match_type)}${targetText ? `: ${targetText}` : ""} · ${actionText}` +
     (rule.no_resolve ? " · no-resolve" : "") +
-    (rule.invert ? " · invert" : "") +
-    (rule.note ? ` · ${rule.note}` : "");
+    (rule.invert ? " · invert" : "");
+  const metaNote = `备注: ` + (rule.note ? `${rule.note}` : "");
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex items-center gap-1 px-1 py-1 pl-0">
+      <div className="flex items-center gap-1 p-2">
         <button type="button" onClick={onEdit} className="flex min-w-0 flex-1 flex-col gap-1 p-2.5 pl-2 text-left">
           <span className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -93,7 +93,8 @@ export function RuleCard({ rule, index, total, onToggle, onMove, onEdit }: RuleC
               </Chip>
             )}
           </span>
-          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{metaDetail}</span>
+          <span className="text-xs min-w-0 text-zinc-500 dark:text-zinc-400">{metaDetail}</span>
+          <span className="text-xs min-w-0 text-zinc-500 dark:text-zinc-400">{metaNote}</span>
         </button>
         <Switch
           aria-label={`启用规则 ${ruleSummary(rule)}`}

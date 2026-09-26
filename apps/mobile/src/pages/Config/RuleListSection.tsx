@@ -25,6 +25,9 @@ export function RuleListSection({ rules, onToggle, onMove, onEdit, onAdd }: Rule
           <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">规则管理</span>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">启用的规则会注入启动配置；自上而下顺序匹配</span>
         </div>
+      </div>
+
+      <div>
         <Button variant="primary" className="h-11 shrink-0 px-4" onPress={onAdd}>
           <PlusIcon className="size-4" aria-hidden="true" />
           添加规则

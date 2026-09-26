@@ -225,19 +225,6 @@ export function RuleSetFormSheet({ isOpen, editing, onClose, onSave }: RuleSetFo
               disabled={saving}
               className={`${inputClass} font-mono`}
             />
-            {url.trim() !== "" && (
-              <span
-                aria-live="polite"
-                className="inline-flex items-center gap-1.5 self-start rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
-              >
-                {detectRemoteFormat(url) === "source"
-                  ? "URL 以 .json 结尾：将识别为 json 源码（source）"
-                  : "URL 非 .json 结尾：将识别为 srs 二进制（binary）"}
-              </span>
-            )}
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              保存后点击「立即更新」下载；下载成功前不会被注入
-            </span>
           </div>
         )}
 

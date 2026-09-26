@@ -68,7 +68,7 @@ export function CurrentNodeCard({ running, subscriptionName }: CurrentNodeCardPr
           navigate("/panel");
         }}
         aria-label="打开面板"
-        className="flex min-h-12 w-full items-center gap-3 rounded-xl text-left active:opacity-80"
+        className="flex min-h-12 w-full items-center gap-3 rounded-xl text-left active:opacity-80 p-4"
       >
         {group ? (
           <>

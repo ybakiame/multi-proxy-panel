@@ -22,10 +22,6 @@ export function DeveloperToolsCard() {
   return (
     <>
       {/* 分组标题 + inset strong 列表（iOS 设置页风格），不再套卡片 */}
-      <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">开发者工具</span>
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">开发与排障辅助</span>
-      </div>
       <EntryLinkList
         entries={[
           {

@@ -77,9 +77,9 @@ export function DnsRolePickerSheet({ target, onClose, onPick }: DnsRolePickerShe
                         <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium leading-5 text-primary">
                           {dnsServerTypeLabel(preset.serverType)}
                         </span>
-                        {preset.detour && (
-                          <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">经代理</span>
-                        )}
+                        {/* {preset.detour && (
+                          <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">代理 DNS</span>
+                        )} */}
                         {current && (
                           <Chip color="accent" className="shrink-0">
                             当前使用

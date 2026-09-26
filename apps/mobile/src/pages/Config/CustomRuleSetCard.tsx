@@ -44,7 +44,7 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
   const isRemote = ruleSet.source.kind === "remote";
   const hasUpdate = isRemote && remoteUpdatedAt > lastUpdated;
   return (
-    <Card>
+    <Card className="p-2">
       <div className="flex items-center gap-1 px-2 py-1 pl-0">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-2 pl-1">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -54,6 +54,15 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
             <Chip color="accent" className="shrink-0">
               {sourceLabel(ruleSet)}
             </Chip>
+            {cached ? (
+              <Chip color="accent" className="shrink-0">
+                已缓存
+              </Chip>
+            ) : (
+              <Chip color="default" className="shrink-0">
+                未缓存
+              </Chip>
+            )}
             {ruleSet.builtin && (
               <Chip color="default" className="shrink-0">
                 内置
@@ -69,15 +78,6 @@ export function CustomRuleSetCard({ ruleSet, updating, onEdit, onDelete, onUpdat
             规则集引用名：<span className="font-mono text-zinc-700 dark:text-zinc-300">{tag}</span>
           </span>
           <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            {cached ? (
-              <Chip color="accent" className="shrink-0">
-                已缓存
-              </Chip>
-            ) : (
-              <Chip color="default" className="shrink-0">
-                未缓存
-              </Chip>
-            )}
             <span className="shrink-0">本地更新于 {formatUpdated(lastUpdated)}</span>
           </span>
           {isRemote && (
