@@ -13,7 +13,9 @@
     "format": "oxfmt src/",
     "format:check": "oxfmt --check src/",
     "verify": "bun run build && bun run lint && bun run format:check",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "android:dev": "tauri android dev --target aarch64",
+    "android:build": "tauri android build --target aarch64"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

@@ -28,10 +28,10 @@ android {
     targetSdk = 36
     versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
     versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
-    // ABI 裁剪：仅保留 arm64 真机 + x86_64 模拟器，控制包体。
-    // panelcore.aar 内多余 ABI 的 .so 由 abiFilters 在打包时剔除。
+    // ABI 裁剪：仅保留 arm64 真机，控制包体（Rust 侧也只构建 aarch64，
+    // 见 package.json 的 android:build；x86_64 模拟器如需恢复要连同这里一起改回）。
     ndk {
-      abiFilters += listOf("arm64-v8a", "x86_64")
+      abiFilters += listOf("arm64-v8a")
     }
   }
   buildTypes {
@@ -41,10 +41,9 @@ android {
       isJniDebuggable = true
       isMinifyEnabled = false
       packaging {
-        // ABI 裁剪后仅剩 arm64-v8a / x86_64，原 armeabi-v7a 与 x86 的「保留符号」
-        // 规则已无对应 ABI；保留符号语义延续到主 ABI arm64-v8a 与 x86_64。
+        // ABI 裁剪后仅剩 arm64-v8a，原其余 ABI 的「保留符号」
+        // 规则已无对应 ABI；保留符号语义延续到主 ABI arm64-v8a。
         jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
-        jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
       }
     }
     getByName("release") {
