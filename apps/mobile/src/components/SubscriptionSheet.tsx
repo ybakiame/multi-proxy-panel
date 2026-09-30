@@ -5,10 +5,12 @@ import { Button, BottomSheet } from "./ui";
 import {
   CONFIG_KEY,
   SUBSCRIPTIONS_KEY,
+  markRestartRequired,
   toErrorMessage,
   toastError,
   toastSuccess,
   toastWarning,
+  useProxyStatus,
   useSaveConfig,
 } from "@pp/client-core";
 import type { ClientConfig, SubscriptionView } from "@pp/client-core";
@@ -32,6 +34,8 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const saveConfigMutation = useSaveConfig();
+  const { data: status } = useProxyStatus();
+  const coreRunning = status?.core_running ?? false;
   const [selecting, setSelecting] = useState(false);
   const enabledSubs = subscriptions.filter((sub) => sub.enabled);
 
@@ -45,6 +49,8 @@ export function SubscriptionSheet({ isOpen, onClose, subscriptions, activeSubscr
     setSelecting(true);
     try {
       const { warning } = await saveConfigMutation.mutateAsync({ ...current, active_subscription_id: id });
+      // 核心运行中切换生效订阅：节点集变更需重启核心才生效，上报全局重启提示。
+      markRestartRequired("subscription", coreRunning);
       if (warning) {
         toastWarning(warning);
       } else {

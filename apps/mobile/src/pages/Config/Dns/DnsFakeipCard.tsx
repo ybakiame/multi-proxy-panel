@@ -3,11 +3,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, Switch } from "../../../components/ui";
 import {
   CONFIG_KEY,
+  markRestartRequired,
   toErrorMessage,
   toastError,
   toastSuccess,
   toastWarning,
   useClientConfig,
+  useProxyStatus,
   useSaveConfig,
 } from "@pp/client-core";
 import type { ClientConfig } from "@pp/client-core";
@@ -24,6 +26,8 @@ export function DnsFakeipCard() {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
   const saveConfigMutation = useSaveConfig();
+  const { data: status } = useProxyStatus();
+  const coreRunning = status?.core_running ?? false;
   const [saving, setSaving] = useState(false);
 
   const enabled = config?.dns_fakeip_enabled ?? false;
@@ -36,6 +40,7 @@ export function DnsFakeipCard() {
     setSaving(true);
     try {
       const { warning } = await saveConfigMutation.mutateAsync({ ...current, dns_fakeip_enabled: next });
+      markRestartRequired("dns", coreRunning);
       if (warning) {
         toastWarning(warning);
       } else {

@@ -7,12 +7,13 @@ import {
   configSlicesGet,
   configSlicesSave,
   isGroupOutbound,
+  markRestartRequired,
   outboundTag,
   subscriptionNodeTags,
   subscriptionNodeTagsKey,
-  toErrorMessage,
   toastError,
   toastSuccess,
+  toErrorMessage,
   useClientConfig,
   useProxyStatus,
 } from "@pp/client-core";
@@ -143,6 +144,7 @@ export default function OutboundsPage() {
     setSaving(true);
     try {
       await configSlicesSave({ ...slices, outbounds: draft });
+      markRestartRequired("outbounds", coreRunning);
       toastSuccess(coreRunning ? "自定义出站已保存，重启代理后生效" : "自定义出站已保存");
       await queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
     } catch (err) {

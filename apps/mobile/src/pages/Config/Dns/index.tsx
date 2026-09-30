@@ -4,16 +4,17 @@ import { InlineAlert } from "../../../components/InlineAlert";
 import { Button, Card, Spinner } from "../../../components/ui";
 import {
   BUILTIN_DNS_SLICE_KEY,
-  CONFIG_SLICES_KEY,
-  LOCAL_OVERRIDE_KEY,
   builtinDnsSliceGet,
+  CONFIG_SLICES_KEY,
   configSlicesGet,
   configSlicesSave,
   defaultConfigSlices,
+  LOCAL_OVERRIDE_KEY,
   localOverrideGet,
-  toErrorMessage,
+  markRestartRequired,
   toastError,
   toastSuccess,
+  toErrorMessage,
   useProxyStatus,
 } from "@pp/client-core";
 import type {
@@ -158,6 +159,7 @@ export default function DnsPage() {
       // 编辑即接管：内容与内置默认一致 → 清空正文保持 follow_system；有改动 → takeover 落盘。
       const nextDns: DnsSlice = contentIsBuiltin ? { ...defaultConfigSlices().dns } : { ...draft, mode: "takeover" };
       await configSlicesSave({ ...slices, dns: nextDns });
+      markRestartRequired("dns", coreRunning);
       toastSuccess(coreRunning ? "DNS 配置已保存，重启代理后生效" : "DNS 配置已保存");
       await queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
     } catch (err) {

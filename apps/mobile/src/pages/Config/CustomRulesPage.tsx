@@ -3,21 +3,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineAlert } from "../../components/InlineAlert";
 import { Button, Card, Spinner } from "../../components/ui";
 import {
-  CONFIG_SLICES_KEY,
-  LOCAL_OVERRIDE_KEY,
-  PROXIES_KEY,
   buildSaveInput,
+  CONFIG_SLICES_KEY,
   configSlicesGet,
+  LOCAL_OVERRIDE_KEY,
   localOverrideGet,
   localOverrideSave,
+  markRestartRequired,
   outboundTag,
+  PROXIES_KEY,
   proxiesList,
   ruleSummary,
   subscriptionNodeTags,
   subscriptionNodeTagsKey,
-  toErrorMessage,
   toastError,
   toastSuccess,
+  toErrorMessage,
   useClientConfig,
   useProxyStatus,
   viewToInput,
@@ -140,6 +141,7 @@ export default function CustomRulesPage() {
   }, [subscriptionNodes, proxyList, slices]);
 
   const toastRuleSaved = (base: string) => {
+    markRestartRequired("rules", coreRunning);
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
   };
 

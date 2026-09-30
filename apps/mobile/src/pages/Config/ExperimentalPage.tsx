@@ -7,9 +7,10 @@ import {
   CONFIG_SLICES_KEY,
   configSlicesGet,
   configSlicesSave,
-  toErrorMessage,
+  markRestartRequired,
   toastError,
   toastSuccess,
+  toErrorMessage,
   useClientConfig,
   useProxyStatus,
   useSaveConfig,
@@ -118,6 +119,7 @@ export default function ExperimentalPage() {
     setSaving(true);
     try {
       await configSlicesSave({ ...slices, experimental: draft });
+      markRestartRequired("experimental", coreRunning);
       toastSuccess(coreRunning ? "Experimental 配置已保存，重启代理后生效" : "Experimental 配置已保存");
       await queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
     } catch (err) {

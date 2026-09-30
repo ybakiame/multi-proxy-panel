@@ -5,17 +5,18 @@ import { InlineAlert } from "../../components/InlineAlert";
 import { Button, Card, Chip, ConfirmDialog, Spinner } from "../../components/ui";
 import {
   BASELINE_VIEW_KEY,
-  LOCAL_OVERRIDE_KEY,
   baselineViewGet,
   buildSaveInput,
+  LOCAL_OVERRIDE_KEY,
   localOverrideGet,
   localOverrideSave,
   localOverrideUpdateRuleSet,
   localOverrideUpdateRulesetsNow,
-  toErrorMessage,
+  markRestartRequired,
   toastError,
   toastSuccess,
   toastWarning,
+  toErrorMessage,
   useProxyStatus,
 } from "@pp/client-core";
 import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
@@ -135,6 +136,7 @@ export default function RuleSetsPage() {
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
 
   const toastRuleSaved = (base: string) => {
+    markRestartRequired("rulesets", coreRunning);
     toastSuccess(coreRunning ? `${base}，重启代理后生效` : base);
   };
 

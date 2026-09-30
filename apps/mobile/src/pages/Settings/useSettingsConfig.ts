@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CONFIG_KEY,
+  markRestartRequired,
   notifyPrefsChanged,
   toErrorMessage,
   toastError,
   toastSuccess,
   toastWarning,
   useClientConfig,
+  useProxyStatus,
   useSaveConfig,
 } from "@pp/client-core";
-import type { ClientConfig } from "@pp/client-core";
+import type { ClientConfig, RestartDirtyKey } from "@pp/client-core";
 
 /** 端口越界/非法时展示在输入框下方的提示。 */
 export const PORT_RANGE_ERROR = "端口需在 1-65535 之间";
@@ -93,16 +95,27 @@ export interface UseSettingsConfigReturn {
  *   失败 toast 警告不阻塞）。
  */
 
-/** 某字段待落库的防抖保存：timer 句柄 + 执行时刻最新草稿的补丁工厂。 */
+/** 某字段待落库的防抖保存：timer 句柄 + 执行时刻最新草稿的补丁工厂 + 需重启标记。 */
 interface PendingSave {
   timer: ReturnType<typeof setTimeout>;
   makePatch: () => Partial<ClientConfig>;
+  /** 该字段变更需重启核心时携带（如 inbounds / clash_api），保存成功后上报脏标记。 */
+  restartKey?: RestartDirtyKey;
 }
 
 export function useSettingsConfig(): UseSettingsConfigReturn {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
   const saveConfigMutation = useSaveConfig();
+  // 核心运行状态：需重启的字段保存成功后上报全局脏标记（RestartPrompt 消费）。
+  const { data: proxyStatus } = useProxyStatus();
+  const coreRunning = proxyStatus?.core_running ?? false;
+  // ref 镜像：供卸载 flush（仅在卸载时执行一次，exhaustive-deps 不收 coreRunning）
+  // 读取最新值，避免闭包旧值。
+  const coreRunningRef = useRef(coreRunning);
+  useEffect(() => {
+    coreRunningRef.current = coreRunning;
+  });
 
   // ---- 表单草稿（config 变化时渲染期同步） ----
   const [vpnNotifySelection, setVpnNotifySelection] = useState(false);
@@ -146,7 +159,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
    * （useSaveConfig 的 onSuccess 已用其入参回写 CONFIG_KEY 缓存）再读基底，
    * 保证后一次保存永远叠加在前一次结果之上，不会用旧基底整对象覆盖新修改。
    */
-  const persist = (patch: Partial<ClientConfig>): Promise<boolean> => {
+  const persist = (patch: Partial<ClientConfig>, restartKey?: RestartDirtyKey): Promise<boolean> => {
     const run = persistChainRef.current.then(async () => {
       const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
       if (!current) {
@@ -161,6 +174,9 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
         }
         // useSaveConfig 已用入参回写缓存；失效共享 CONFIG_KEY 让其它消费者重读后端权威值。
         await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+        if (restartKey) {
+          markRestartRequired(restartKey, coreRunning);
+        }
         return true;
       } catch (err) {
         toastError(toErrorMessage(err));
@@ -184,17 +200,18 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     persistRef.current = persist;
   });
 
-  /** 500ms 防抖保存；patch 以工厂形式读取执行时刻的最新草稿。 */
-  const schedulePersist = (key: string, makePatch: () => Partial<ClientConfig>) => {
+  /** 500ms 防抖保存；patch 以工厂形式读取执行时刻的最新草稿；restartKey 见 PendingSave。 */
+  const schedulePersist = (key: string, makePatch: () => Partial<ClientConfig>, restartKey?: RestartDirtyKey) => {
     const pending = pendingRef.current.get(key);
     if (pending) {
       clearTimeout(pending.timer);
     }
     pendingRef.current.set(key, {
       makePatch,
+      restartKey,
       timer: setTimeout(() => {
         pendingRef.current.delete(key);
-        void persistRef.current(makePatch());
+        void persistRef.current(makePatch(), restartKey);
       }, 500),
     });
   };
@@ -219,13 +236,21 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
       }
       pendingRef.current = new Map();
       const patches: Partial<ClientConfig>[] = [];
-      pending.forEach(({ timer, makePatch }) => {
+      const restartKeys = new Set<RestartDirtyKey>();
+      pending.forEach(({ timer, makePatch, restartKey }) => {
         clearTimeout(timer);
         patches.push(makePatch());
+        if (restartKey) {
+          restartKeys.add(restartKey);
+        }
       });
       // 字段补丁互不重叠，合并为单次保存（单一 toast，也避免分次落库互相覆盖）。
       const merged = Object.assign({}, ...patches) as Partial<ClientConfig>;
-      void persistRef.current(merged);
+      void persistRef.current(merged).then((ok) => {
+        if (ok) {
+          restartKeys.forEach((key) => markRestartRequired(key, coreRunningRef.current));
+        }
+      });
     };
   }, []);
 
@@ -248,17 +273,17 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
 
   const onToggleIpv6 = async (next: boolean) => {
     setIpv6Enabled(next);
-    await persist({ ipv6_enabled: next });
+    await persist({ ipv6_enabled: next }, "inbounds");
   };
 
   const onTunStackChange = async (value: string) => {
     setTunStack(value);
-    await persist({ tun_stack: value });
+    await persist({ tun_stack: value }, "inbounds");
   };
 
   const onToggleTunAutoRoute = async (next: boolean) => {
     setTunAutoRoute(next);
-    await persist({ tun_auto_route: next });
+    await persist({ tun_auto_route: next }, "inbounds");
   };
 
   const onMixedPortChange = (raw: string) => {
@@ -267,7 +292,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (!isValidPort(raw)) {
       return;
     }
-    schedulePersist("mixed_port", () => ({ mixed_port: Number(raw) }));
+    schedulePersist("mixed_port", () => ({ mixed_port: Number(raw) }), "inbounds");
   };
 
   const onClashApiPortChange = (raw: string) => {
@@ -276,7 +301,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (!isValidPort(raw)) {
       return;
     }
-    schedulePersist("clash_api_port", () => ({ clash_api_port: Number(raw) }));
+    schedulePersist("clash_api_port", () => ({ clash_api_port: Number(raw) }), "clash_api");
   };
 
   const onClashApiSecretChange = (value: string) => {
@@ -286,14 +311,14 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (value.trim() === "") {
       return;
     }
-    schedulePersist("clash_api_secret", () => ({ clash_api_secret: value }));
+    schedulePersist("clash_api_secret", () => ({ clash_api_secret: value }), "clash_api");
   };
 
   const onGenerateClashApiSecret = () => {
     const secret = randomClashApiSecret();
     setClashApiSecretDraft(secret);
     cancelPersist("clash_api_secret");
-    void persist({ clash_api_secret: secret });
+    void persist({ clash_api_secret: secret }, "clash_api");
   };
 
   const onGithubProxyPrefixChange = (value: string) => {

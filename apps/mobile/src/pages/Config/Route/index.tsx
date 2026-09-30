@@ -8,11 +8,12 @@ import {
   configSlicesGet,
   configSlicesSave,
   defaultConfigSlices,
+  markRestartRequired,
   subscriptionNodeTags,
   subscriptionNodeTagsKey,
-  toErrorMessage,
   toastError,
   toastSuccess,
+  toErrorMessage,
   useClientConfig,
   useProxyStatus,
 } from "@pp/client-core";
@@ -101,6 +102,7 @@ export default function RoutePage() {
     setSaving(true);
     try {
       await configSlicesSave({ ...slices, route: draft });
+      markRestartRequired("route", coreRunning);
       toastSuccess(coreRunning ? "路由配置已保存，重启代理后生效" : "路由配置已保存");
       await queryClient.invalidateQueries({ queryKey: CONFIG_SLICES_KEY });
     } catch (err) {

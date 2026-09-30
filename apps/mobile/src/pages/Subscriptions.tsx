@@ -7,6 +7,7 @@ import {
   SUBSCRIPTIONS_KEY,
   addSubscription,
   listSubscriptions,
+  markRestartRequired,
   refreshSubscription,
   removeSubscription,
   setActiveSubscription,
@@ -17,6 +18,7 @@ import {
   toastWarning,
   updateSubscription,
   useClientConfig,
+  useProxyStatus,
 } from "@pp/client-core";
 import type { SubscriptionView } from "@pp/client-core";
 import { SubPageShell } from "../components/SubPageShell";
@@ -41,6 +43,8 @@ export default function Subscriptions() {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
   const activeId = config?.active_subscription_id ?? null;
+  const { data: proxyStatus } = useProxyStatus();
+  const coreRunning = proxyStatus?.core_running ?? false;
 
   const {
     data: subscriptions = [],
@@ -129,6 +133,8 @@ export default function Subscriptions() {
     setSavingId(sub.id);
     try {
       await setActiveSubscription(sub.id);
+      // 核心运行中切换生效订阅：节点集变更需重启核心才生效，上报全局重启提示。
+      markRestartRequired("subscription", coreRunning);
       toastSuccess(`已将「${sub.name}」设为生效订阅`);
       invalidateConfig();
     } catch (err) {

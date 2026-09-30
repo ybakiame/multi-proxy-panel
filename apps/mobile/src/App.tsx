@@ -3,6 +3,7 @@ import { KonstaProvider } from "konsta/react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { isTauriEnv } from "@pp/client-core";
 import { MobileToaster } from "./components/MobileToaster";
+import { RestartPrompt } from "./components/RestartPrompt";
 import { TABS, TabBar } from "./components/TabBar";
 import { ThemeProvider, useThemePreference } from "./theme";
 import Dashboard from "./pages/Dashboard";
@@ -197,6 +198,7 @@ function KonstaRoot() {
   return (
     <KonstaProvider theme={uiStyle} dark={resolvedTheme === "dark"}>
       <MobileToaster />
+      <RestartPrompt />
       <AppContent />
     </KonstaProvider>
   );
