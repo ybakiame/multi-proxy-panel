@@ -62,6 +62,12 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    // AGP 9.3.1 的 lintVitalAnalyzeUniversalRelease 在 lint 分析构建脚本时崩溃
+    //（Kotlin FIR 报错 `findFirCompiledSymbol only works on compiled declarations`，
+    // AGP lint 自身 bug）。release 打包不依赖 lint 结果，关闭 release lint vital。
+    lint {
+        checkReleaseBuilds = false
+    }
 }
 
 // AGP 9 移除了 android.kotlinOptions 旧 DSL，改用 KGP 的 compilerOptions
