@@ -195,7 +195,7 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 | Job | 说明 |
 |-----|------|
 | `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `client-shells` | 双壳独立 cargo 项目门禁：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 的 clippy（host），以及 mobile 壳 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，NDK 用 runner 预装版本以环境变量覆盖 `.cargo/config.toml` 的本机绝对路径） |
+| `client-shells` | 双壳独立 cargo 项目门禁：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 的 clippy（host），以及 mobile 壳 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径；工具链环境变量由 runner 预装 NDK 经 `apps/mobile/scripts/android-ndk-env.sh` 注入） |
 | `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-ui`（desktop）、`pp-client-mobile-ui`（mobile）四个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
@@ -444,35 +444,44 @@ export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 构建固定
 
 # 3. 打包 APK（debug）
 cd apps/mobile
-bun run tauri android build --debug --apk --target aarch64
+bun run android:build --debug --apk
 
-# 发布构建（双架构 + 签名 keystore 配置后）
-bun run tauri android build --apk --target aarch64 --target x86_64
+# 发布构建（签名 keystore 配置后）
+bun run android:build --apk
 ```
+
+> `android:build` / `android:dev` 是 package.json 里固定 `--target aarch64` 的封装：
+> 不带 `--target` 时 tauri CLI 默认构建全部 4 个 ABI（arm64/armv7/x86/x86_64），
+> 但 `abiFilters` 打包时只保留 arm64-v8a，其余纯属浪费编译时间。
 
 产物：`apps/mobile/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 
 > 注意：`panelcore.aar` 与 GEO 数据均为本地产物、不入库；克隆仓库后必须先跑步骤 1+2 才能打包。
 
-### ⚠️ 关键隐藏配置：`.cargo/config.toml`
+### ⚠️ Android 交叉编译环境：工具链变量与 pkg-config 守卫
 
-`apps/mobile/.cargo/config.toml` 是 Android 交叉编译的**必需**配置，缺失会导致难以排查的构建失败：
+Android target 的构建需要两组配置，缺失会导致难以排查的构建失败：
 
-- `CC_*` / `AR_*` / `linker`：cc-rs 编译 C 依赖（ring / aws-lc-sys 等）需要 NDK 工具链
-- `BINDGEN_EXTRA_CLANG_ARGS_*`：`rquickjs-sys` 的 bindgen 需要 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
+**1. NDK 工具链环境变量**（`CC_*` / `AR_*` / `CARGO_TARGET_*_LINKER` / `BINDGEN_EXTRA_CLANG_ARGS_*`，仅 aarch64）：
 
-要点：
+- cc-rs 编译 C 依赖（ring / aws-lc-sys / lzma-sys vendored 等）需要 `CC_*` / `AR_*`
+- `rquickjs-sys` 的 bindgen 需要 `BINDGEN_EXTRA_CLANG_ARGS_*` 指定 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
+- cargo 配置不支持环境变量展开，若在 `.cargo/config.toml` 写死 NDK 绝对路径会变成「个人目录入仓库」的灾难。因此改为全部由环境注入：
+  - **nix dev shell**：`flake.nix` 导出（指向 nix store 的 NDK 28.0.13004108）
+  - **非 nix / CI**：`source apps/mobile/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
+  - `tauri android build` 自身会按 `NDK_HOME` 注入 linker 与 RUSTFLAGS，与上述两者保持一致
 
-- cargo 只沿**当前工作目录**向上查找 `.cargo/config.toml`；tauri CLI 从前端项目根（`apps/mobile`）调 cargo，所以配置必须放 `apps/mobile/.cargo/`（`src-tauri/.cargo/` 下的副本仅供裸 `cargo check --target aarch64-linux-android` 用）
-- 配置值不支持环境变量展开，NDK 绝对路径按本机写死；NDK 版本变更需同步修改
-- **迁移/新建 app 目录时务必随迁该配置**（本次 apps/mobile 迁移就曾因遗漏导致构建失败）
+**2. pkg-config 守卫**：仓库根 `.cargo/config.toml` 设置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`，禁止 `lzma-sys` / `bzip2-sys`（zip 依赖）用 pkg-config 链接宿主系统库，强制 vendored 静态编译；否则交叉编译时会链接 host 架构的 `.so`，报 `liblzma.so is incompatible with aarch64linux`（nix dev shell 的 `PKG_CONFIG_PATH` 含 host 版 xz/bzip2，必现）。放在仓库根是因为 cargo 只沿**当前工作目录**向上发现配置：tauri CLI 从 `apps/mobile` 调 cargo、裸 cargo 在 `src-tauri`，根配置对两者同时生效。
 
 ### 常见问题
 
 | 症状 | 原因 | 处理 |
 |------|------|------|
 | `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
-| `gnu/stubs-32.h not found` | 缺 `.cargo/config.toml` 的 bindgen sysroot | 见上一节 |
+| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | nix 下进 `nix develop`；非 nix `source apps/mobile/scripts/android-ndk-env.sh`（见上一节） |
+| `liblzma.so / libbz2.so is incompatible with aarch64linux` | `lzma-sys` / `bzip2-sys` 经 pkg-config 链接了 host x86_64 系统库 | 配置已内置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`；若改过配置需 `cargo clean -p lzma-sys -p bzip2-sys` 后重构建 |
+| 进了 `nix develop` 仍用主机 NDK | 交互 bash 会 source `~/.bashrc`，其中无条件导出的 `ANDROID_HOME`/`NDK_HOME` 覆盖了 flake | rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫（见 nix-flake.md §4.6） |
+| `lintVitalAnalyzeUniversalRelease` 崩溃（`findFirCompiledSymbol`） | AGP 9.3.1 lint 分析构建脚本的自身 bug | 已在 `gen/android/app/build.gradle.kts` 设 `lint { checkReleaseBuilds = false }` |
 | `invalid reference to os.checkPidfdOnce` | gomobile fork 版本过旧（v0.1.8）与 Go 工具链不匹配 | 升级 gomobile 到 v0.1.12（脚本已内置）；工具链由 `GOTOOLCHAIN=auto` 自动切换 |
 | `unknown relocation (315) ... libcronet.a` | NDK 版本过低（< 28），`with_naive_outbound` 的 cronet 预编译库无法链接 | 安装并指定 NDK 28.0.13004108（`ANDROID_NDK_HOME`） |
 | Gradle 下载依赖超时 | 网络受限 | 配代理（`~/.gradle/gradle.properties` 的 `systemProp.http(s).proxy*`） |

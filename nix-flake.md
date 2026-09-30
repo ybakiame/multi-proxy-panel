@@ -29,7 +29,7 @@ exit                        # 退出
 
 | 类别 | 内容 | 来源 |
 |---|---|---|
-| Android | **SDK 35 / build-tools 35.0.0 / platform-tools / NDK 28.0.13004108**（`cmdline-tools` 齐备；许可证已预接受） | `tadfisher/android-nixpkgs`（stable 频道） |
+| Android | **SDK 35+36 / build-tools 35.0.0+36.0.0 / platform-tools / NDK 28.0.13004108**（`cmdline-tools` 齐备；许可证已预接受。mobile 工程 compileSdk=36 需要 platform/build-tools 36） | `tadfisher/android-nixpkgs`（stable 频道） |
 | Android 工具链 | JDK 17（JAVA_HOME 统一指向）、gradle、cargo-ndk | nixpkgs |
 | Rust | rustup + `rust-toolchain.toml` 锁定（stable + rustfmt/clippy + aarch64-linux-android target） | rustup（见下「Rust 例外」） |
 | Go | go 1.25.x（panelcore / gomobile 构建） | nixpkgs |
@@ -37,7 +37,7 @@ exit                        # 退出
 | 桌面 GUI 系统库 | webkit2gtk-4.1、gtk3、glib-networking、openssl、alsa-lib、xorg 等（Tauri / Dioxus desktop / Slint host 链接与运行） | nixpkgs |
 | 构建基础 | pkg-config、cmake、ninja、perl（openssl vendored）、protobuf、gnumake | nixpkgs |
 
-环境变量由 shell 自动导出：`ANDROID_HOME` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_ROOT`（指向 nix store 中的 NDK 28.0.13004108）/ `ANDROID_JAR`（platforms-android-35）/ `JAVA_HOME` / `PKG_CONFIG_PATH`（flake 系统库优先）。
+环境变量由 shell 自动导出：`ANDROID_HOME` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_ROOT` / `NDK_HOME` / `ANDROID_NDK_HOME`（均指向 nix store 中的 NDK 28.0.13004108）/ `ANDROID_JAR`（platforms-android-35）/ `JAVA_HOME` / `PKG_CONFIG_PATH`（flake 系统库优先）。另按 aarch64 单 ABI（mobile 仅发布 arm64）导出 `CC_*` / `AR_*` / `CARGO_TARGET_*_LINKER` / `BINDGEN_EXTRA_CLANG_ARGS_*`，使裸 `cargo check/build --target aarch64-linux-android` 也走 nix NDK；非 nix 环境的同一组变量由 `apps/mobile/scripts/android-ndk-env.sh` 注入。仓库内不再有任何写死的 NDK 绝对路径。
 
 ## 4. 例外与注意事项
 
@@ -46,6 +46,7 @@ exit                        # 退出
 3. **adb 设备**：宿主机已运行的 adb server 与 shell 内 nix 版 adb 版本一致即可混用；遇 `no devices` 先 `adb kill-server; adb devices`。
 4. **WSL2/WSLg**：GUI（Slint / Dioxus desktop host 窗口）依赖 WSLg 提供的 Wayland/X11；GPU 加速走宿主驱动。
 5. `direnv` 可选：`.envrc` 写 `use flake` 后进入仓库目录自动激活。
+6. **用户 shell rc 覆盖陷阱**：`nix develop` 的交互 bash 会 source `~/.bashrc`，若其中无条件 `export ANDROID_HOME/NDK_HOME` 指向主机 SDK，会覆盖 flake 的 nix 路径（tauri 探测 NDK 优先读 `NDK_HOME`），表现为「进了 nix 却仍用主机 NDK」。请在 rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫这些导出（本机 `~/.bashrc` 已加）。
 
 ## 5. 更新依赖
 
