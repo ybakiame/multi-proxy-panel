@@ -17,10 +17,6 @@ interface VpnNotificationCardProps {
 export function VpnNotificationCard({ settings }: VpnNotificationCardProps) {
   return (
     <Card>
-      <Card.Header>
-        <Card.Title>VPN 通知</Card.Title>
-        <Card.Description>Android 通知栏展示内容（移动端专属）</Card.Description>
-      </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <SwitchRow
           label="通知栏显示订阅与节点"
@@ -29,9 +25,6 @@ export function VpnNotificationCard({ settings }: VpnNotificationCardProps) {
           disabled={!settings.ready}
           onChange={(next) => void settings.onToggleVpnSelection(next)}
         />
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          保存后即时同步运行中的通知栏；核心未运行时将在下次启动生效。
-        </p>
       </Card.Content>
     </Card>
   );
