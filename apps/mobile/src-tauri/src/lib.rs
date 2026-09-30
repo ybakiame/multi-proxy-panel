@@ -64,7 +64,11 @@ pub fn run() {
             // 解析，guard 存入 AppState 持有，保证进程生命周期内文件写入线程存活。
             let log_guard = pp_client_tauri::logs::init_logging(&data_dir);
             tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
-            app.manage(pp_client_tauri::state::AppState::new(data_dir, log_guard));
+            app.manage(pp_client_tauri::state::AppState::new(data_dir.clone(), log_guard));
+            // 向 Android 核心桥注入数据目录（VPN 通知偏好/订阅名解析回源
+            // client.json / subscriptions.json；host 编译检查无 core_bridge 模块，cfg 包裹）。
+            #[cfg(target_os = "android")]
+            pp_client_tauri::core_bridge::set_data_dir(data_dir.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

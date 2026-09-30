@@ -123,10 +123,6 @@ pub struct ClientConfig {
     /// compatibility with old `client.json` that lacks this field.
     #[serde(default)]
     pub group_selections: HashMap<String, String>,
-    /// Whether to show upload/download traffic in the Android VPN notification.
-    /// `#[serde(default)]` ensures backward compatibility with old `client.json`.
-    #[serde(default = "default_true")]
-    pub vpn_notify_show_traffic: bool,
     /// Whether to show current proxy group & node in the Android VPN notification.
     /// `#[serde(default)]` ensures backward compatibility with old `client.json`.
     #[serde(default = "default_true")]
@@ -190,7 +186,6 @@ impl Default for ClientConfig {
             fetch_via_local_proxy: false,
             rule_mode: "rule".to_string(),
             group_selections: HashMap::new(),
-            vpn_notify_show_traffic: true,
             vpn_notify_show_selection: true,
         }
     }

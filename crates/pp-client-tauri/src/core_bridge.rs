@@ -9,8 +9,8 @@
 //! Kotlin 插件，核心生命周期由 libbox 执行。
 //!
 //! 配置下发：配置以 JSON 文本经 `config` 字段传给 Kotlin；客户端仅支持
-//! sing-box，`StartArgs` 不再携带核心分派参数（仅 `config` / `showTraffic` /
-//! `showSelection`）。
+//! sing-box，`StartArgs` 不再携带核心分派参数（仅 `config` / `showSelection` /
+//! `subscriptionName`）。
 //!
 //! 错误透传：Kotlin 侧 `invoke.reject(..., "vpn_not_authorized")` 的拒绝
 //! 在 [`plugin_error`] 中被规范为可识别前缀 `vpn_not_authorized: ...` 上抛，
@@ -43,6 +43,45 @@ pub struct IsRunningResponse {
 /// 已注册 `vpn` 插件的句柄（供 [`request_vpn_permission`] 命令调用 `prepare`）。
 static VPN_PLUGIN_HANDLE: std::sync::OnceLock<PluginHandle<tauri::Wry>> =
     std::sync::OnceLock::new();
+
+/// 应用数据目录（移动壳 setup 时经 [`set_data_dir`] 注入一次），供 VPN 通知
+/// 偏好与生效订阅名解析（`start` 收到的 config_json 是 sing-box 配置，不含
+/// 客户端偏好字段，必须回源 `client.json`）。
+static DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// 注入应用数据目录（移动壳 setup 调用一次；重复注入静默忽略）。
+pub fn set_data_dir(dir: std::path::PathBuf) {
+    let _ = DATA_DIR.set(dir);
+}
+
+/// VPN 通知展示上下文：是否展示节点选择 + 生效订阅名称。
+struct NotifyContext {
+    show_selection: bool,
+    subscription_name: Option<String>,
+}
+
+/// 从 `client.json` 与 `subscriptions.json` 解析通知展示上下文（文件缺失/损坏时
+/// 回退默认：显示节点选择、无订阅名）。
+fn notify_context(data_dir: &std::path::Path) -> NotifyContext {
+    let show_selection = pp_client::ClientConfig::load(data_dir)
+        .map(|cfg| cfg.vpn_notify_show_selection)
+        .unwrap_or(true);
+    let subscription_name = pp_client::ClientConfig::load(data_dir)
+        .ok()
+        .and_then(|cfg| cfg.active_subscription_id)
+        .and_then(|id| {
+            pp_client::SubscriptionStore::new(data_dir.to_path_buf())
+                .load()
+                .ok()?
+                .into_iter()
+                .find(|sub| sub.id == id)
+                .map(|sub| sub.name)
+        });
+    NotifyContext {
+        show_selection,
+        subscription_name,
+    }
+}
 
 /// 真实桥：持有已注册的 `vpn` 插件句柄，把核心生命周期转发给 Kotlin libbox。
 pub struct AndroidCoreBridge {
@@ -88,21 +127,22 @@ impl CoreEngineBridge for AndroidCoreBridge {
         config_json: &'a Value,
     ) -> BoxFuture<'a, PanelResult<()>> {
         Box::pin(async move {
-            // Read notification prefs from client config (default true if missing).
-            let show_traffic = config_json
-                .get("vpn_notify_show_traffic")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let show_selection = config_json
-                .get("vpn_notify_show_selection")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            // 与 Kotlin `StartArgs` 对齐（`config: String` + 通知偏好）：客户端仅支持
-            // sing-box，核心类型不再下发，配置以 JSON 文本传递。
+            // 通知偏好与生效订阅名回源 client.json / subscriptions.json（config_json
+            // 是 sing-box 配置，不含客户端字段）；data_dir 未注入（host 编译检查等
+            // 异常路径）时回退默认：显示节点选择、无订阅名。
+            let ctx = DATA_DIR
+                .get()
+                .map(|dir| notify_context(dir))
+                .unwrap_or(NotifyContext {
+                    show_selection: true,
+                    subscription_name: None,
+                });
+            // 与 Kotlin `StartArgs` 对齐（`config: String` + 通知偏好 + 订阅名）：
+            // 客户端仅支持 sing-box，核心类型不再下发，配置以 JSON 文本传递。
             let payload = serde_json::json!({
                 "config": config_json.to_string(),
-                "showTraffic": show_traffic,
-                "showSelection": show_selection,
+                "showSelection": ctx.show_selection,
+                "subscriptionName": ctx.subscription_name,
             });
             self.handle
                 .run_mobile_plugin_async::<Value>("start", payload)
@@ -215,15 +255,21 @@ pub async fn core_version() -> Result<String, String> {
 
 /// Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
 ///
-/// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5），逻辑原样：把通知偏好
-/// （`showTraffic` / `showSelection`）经 `updateNotifyPrefs` 下发给 Kotlin VpnPlugin。
+/// 迁移自 desktop 壳 `commands/platform.rs`（ADR-0003 M3.5）：把通知偏好
+/// （`showSelection`）与当前生效订阅名经 `updateNotifyPrefs` 下发给 Kotlin
+/// VpnPlugin；实时流量展示已移除（实用性低），订阅名随核心启动时解析，此处
+/// 一并热更新保证运行中切换订阅后通知内容准确。
 #[tauri::command]
-pub async fn notify_prefs_changed(show_traffic: bool, show_selection: bool) -> Result<(), String> {
+pub async fn notify_prefs_changed(
+    state: tauri::State<'_, crate::state::AppState>,
+    show_selection: bool,
+) -> Result<(), String> {
     let handle = vpn_plugin_handle()
         .ok_or_else(|| "VPN plugin not initialized, please restart the app".to_string())?;
+    let ctx = notify_context(&state.data_dir);
     let payload = serde_json::json!({
-        "showTraffic": show_traffic,
         "showSelection": show_selection,
+        "subscriptionName": ctx.subscription_name,
     });
     handle
         .run_mobile_plugin_async::<serde_json::Value>("updateNotifyPrefs", payload)

@@ -58,8 +58,6 @@ pub struct ClientConfigView {
     /// Invalid values are persisted as-is and normalized on read by
     /// `pp_client::ClientConfig::normalized_rule_mode()`.
     pub rule_mode: String,
-    /// Whether to show upload/download traffic in the Android VPN notification.
-    pub vpn_notify_show_traffic: bool,
     /// Whether to show current proxy group & node in the Android VPN notification.
     pub vpn_notify_show_selection: bool,
 }
@@ -89,7 +87,6 @@ impl Default for ClientConfigView {
             github_proxy_prefix: String::new(),
             fetch_via_local_proxy: false,
             rule_mode: "rule".to_string(),
-            vpn_notify_show_traffic: true,
             vpn_notify_show_selection: true,
         }
     }
@@ -124,7 +121,6 @@ impl ClientConfigView {
             github_proxy_prefix: cfg.github_proxy_prefix.clone(),
             fetch_via_local_proxy: cfg.fetch_via_local_proxy,
             rule_mode: cfg.rule_mode.clone(),
-            vpn_notify_show_traffic: cfg.vpn_notify_show_traffic,
             vpn_notify_show_selection: cfg.vpn_notify_show_selection,
         }
     }
@@ -157,7 +153,6 @@ impl ClientConfigView {
             "github_proxy_prefix": self.github_proxy_prefix,
             "fetch_via_local_proxy": self.fetch_via_local_proxy,
             "rule_mode": self.rule_mode,
-            "vpn_notify_show_traffic": self.vpn_notify_show_traffic,
             "vpn_notify_show_selection": self.vpn_notify_show_selection,
         });
         serde_json::from_value::<ClientConfig>(value).map_err(|e| e.to_string())

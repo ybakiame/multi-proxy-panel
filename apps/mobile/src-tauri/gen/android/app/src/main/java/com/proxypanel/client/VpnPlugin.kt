@@ -30,18 +30,18 @@ import java.util.zip.ZipOutputStream
 class StartArgs {
   var config: String? = null
 
-  /** Whether to show traffic in the VPN notification. */
-  var showTraffic: Boolean = true
-
-  /** Whether to show current proxy group & node in the VPN notification. */
+  /** Whether to show subscription & current node in the VPN notification. */
   var showSelection: Boolean = true
+
+  /** Active subscription name (shown in the VPN notification). */
+  var subscriptionName: String? = null
 }
 
 /** updateNotifyPrefs command args. */
 @InvokeArg
 class NotifyPrefsArgs {
-  var showTraffic: Boolean = true
   var showSelection: Boolean = true
+  var subscriptionName: String? = null
 }
 
 /**
@@ -64,10 +64,11 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
     /** Shared notification preferences (updated by updateNotifyPrefs, read by services). */
     @Volatile
-    var notifyShowTraffic: Boolean = true
-
-    @Volatile
     var notifyShowSelection: Boolean = true
+
+    /** Active subscription name shown in the notification (null = unknown). */
+    @Volatile
+    var notifySubscriptionName: String? = null
   }
 
   /**
@@ -119,13 +120,13 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     // Persist notification prefs from start args (for initial launch).
-    notifyShowTraffic = args.showTraffic
     notifyShowSelection = args.showSelection
+    notifySubscriptionName = args.subscriptionName
 
     val intent = Intent(activity, ProxyVpnService::class.java)
       .putExtra(ProxyVpnService.EXTRA_CONFIG, config)
-      .putExtra(ProxyVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
       .putExtra(ProxyVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
+      .putExtra(ProxyVpnService.EXTRA_SUBSCRIPTION_NAME, args.subscriptionName)
     try {
       ContextCompat.startForegroundService(activity, intent)
       invoke.resolve()
@@ -163,14 +164,14 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       invoke.reject("missing notify prefs args")
       return
     }
-    notifyShowTraffic = args.showTraffic
     notifyShowSelection = args.showSelection
+    notifySubscriptionName = args.subscriptionName
     // Forward to running service if alive.
     if (ProxyVpnService.instanceAlive) {
       val intent = Intent(activity, ProxyVpnService::class.java)
         .setAction(ProxyVpnService.ACTION_UPDATE_PREFS)
-        .putExtra(ProxyVpnService.EXTRA_SHOW_TRAFFIC, args.showTraffic)
         .putExtra(ProxyVpnService.EXTRA_SHOW_SELECTION, args.showSelection)
+        .putExtra(ProxyVpnService.EXTRA_SUBSCRIPTION_NAME, args.subscriptionName)
       try {
         ContextCompat.startForegroundService(activity, intent)
       } catch (e: Exception) {

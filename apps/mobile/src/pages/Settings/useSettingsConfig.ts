@@ -53,9 +53,7 @@ export interface UseSettingsConfigReturn {
   ready: boolean;
   /** 是否有保存进行中（即时保存按钮态 / 输入禁用可据此展示）。 */
   saving: boolean;
-  vpnNotifyTraffic: boolean;
   vpnNotifySelection: boolean;
-  onToggleVpnTraffic: (next: boolean) => Promise<void>;
   onToggleVpnSelection: (next: boolean) => Promise<void>;
   ipv6Enabled: boolean;
   onToggleIpv6: (next: boolean) => Promise<void>;
@@ -107,7 +105,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const saveConfigMutation = useSaveConfig();
 
   // ---- 表单草稿（config 变化时渲染期同步） ----
-  const [vpnNotifyTraffic, setVpnNotifyTraffic] = useState(false);
   const [vpnNotifySelection, setVpnNotifySelection] = useState(false);
   const [ipv6Enabled, setIpv6Enabled] = useState(false);
   const [tunStack, setTunStack] = useState("mixed");
@@ -123,7 +120,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   if (prevConfig !== config) {
     setPrevConfig(config);
     if (config) {
-      setVpnNotifyTraffic(config.vpn_notify_show_traffic);
       setVpnNotifySelection(config.vpn_notify_show_selection);
       setIpv6Enabled(config.ipv6_enabled);
       setTunStack(config.tun_stack || "mixed");
@@ -234,20 +230,12 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   }, []);
 
   /** 保存 VPN 通知偏好成功后的通知栏热更新（失败仅 toast 警告，不阻塞主流程）。 */
-  const notifyVpnPrefs = async (showTraffic: boolean, showSelection: boolean) => {
+  const notifyVpnPrefs = async (showSelection: boolean) => {
     try {
-      await notifyPrefsChanged(showTraffic, showSelection);
+      await notifyPrefsChanged(showSelection);
     } catch (err) {
       toastWarning(`通知栏偏好热更新失败：${toErrorMessage(err)}（核心未运行时将在下次启动生效）`);
     }
-  };
-
-  const onToggleVpnTraffic = async (next: boolean) => {
-    setVpnNotifyTraffic(next);
-    if (!(await persist({ vpn_notify_show_traffic: next }))) {
-      return;
-    }
-    await notifyVpnPrefs(next, vpnNotifySelection);
   };
 
   const onToggleVpnSelection = async (next: boolean) => {
@@ -255,7 +243,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     if (!(await persist({ vpn_notify_show_selection: next }))) {
       return;
     }
-    await notifyVpnPrefs(vpnNotifyTraffic, next);
+    await notifyVpnPrefs(next);
   };
 
   const onToggleIpv6 = async (next: boolean) => {
@@ -317,9 +305,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   return {
     ready: config !== undefined,
     saving: saveConfigMutation.isPending,
-    vpnNotifyTraffic,
     vpnNotifySelection,
-    onToggleVpnTraffic,
     onToggleVpnSelection,
     ipv6Enabled,
     onToggleIpv6,

@@ -97,10 +97,10 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
 
     /** Intent extra: sing-box JSON config content. */
     const val EXTRA_CONFIG = "config"
-    /** Intent extra: whether to show traffic in notification. */
-    const val EXTRA_SHOW_TRAFFIC = "show_traffic"
-    /** Intent extra: whether to show proxy selection in notification. */
+    /** Intent extra: whether to show subscription & current node in notification. */
     const val EXTRA_SHOW_SELECTION = "show_selection"
+    /** Intent extra: active subscription name (shown in notification). */
+    const val EXTRA_SUBSCRIPTION_NAME = "subscription_name"
 
     /**
      * Explicit stop action: sent by [VpnPlugin]. onStartCommand receives it and orderly shuts down
@@ -225,10 +225,11 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
 
   /** Notification preference flags (read from intent extras or VpnPlugin companion). */
   @Volatile
-  private var showTraffic = true
-
-  @Volatile
   private var showSelection = true
+
+  /** Active subscription name shown in the notification (empty = unknown). */
+  @Volatile
+  private var subscriptionName: String = ""
 
   /** Clash API polling state. */
   private var clashApiPort: Int = 9090
@@ -547,8 +548,8 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     }
 
     if (intent?.action == ACTION_UPDATE_PREFS) {
-      showTraffic = intent.getBooleanExtra(EXTRA_SHOW_TRAFFIC, showTraffic)
       showSelection = intent.getBooleanExtra(EXTRA_SHOW_SELECTION, showSelection)
+      subscriptionName = intent.getStringExtra(EXTRA_SUBSCRIPTION_NAME) ?: subscriptionName
       if (running) {
         updateNotificationContent()
       }
@@ -564,8 +565,9 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     }
 
     // Read notification prefs from intent extras (fallback to VpnPlugin companion values).
-    showTraffic = intent.getBooleanExtra(EXTRA_SHOW_TRAFFIC, VpnPlugin.notifyShowTraffic)
     showSelection = intent.getBooleanExtra(EXTRA_SHOW_SELECTION, VpnPlugin.notifyShowSelection)
+    subscriptionName = intent.getStringExtra(EXTRA_SUBSCRIPTION_NAME)
+      ?: (VpnPlugin.notifySubscriptionName ?: "")
 
     try {
       startForegroundWithNotification()
@@ -715,10 +717,10 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     }
   }
 
-  /** Start periodic notification content update (every 4s) if traffic or selection display is enabled. */
+  /** Start periodic notification content update (every 4s) if selection display is enabled. */
   private fun startNotificationPolling() {
     stopNotificationPolling()
-    if (!showTraffic && !showSelection) {
+    if (!showSelection) {
       return
     }
     notificationUpdateHandler = Handler(Looper.getMainLooper())
@@ -739,23 +741,27 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     notificationUpdateHandler = null
   }
 
-  /** Update notification content from Clash API (traffic + selection). */
+  /**
+   * Update notification content: subscription name + current node (Clash API selection).
+   *
+   * Compose as `<订阅名> · <分组: 节点>`；任一部分缺失则降级（仅节点 / 仅订阅名 /
+   * 默认运行文案），保证通知始终有内容。
+   */
   private fun updateNotificationContent() {
     try {
-      val lines = mutableListOf<String>()
-      if (showSelection) {
-        val selection = fetchClashSelection()
-        if (selection.isNotEmpty()) {
-          lines.add(selection)
-        }
+      if (!showSelection) {
+        updateNotification("VPN service is running")
+        return
       }
-      if (showTraffic) {
-        val traffic = fetchClashTraffic()
-        if (traffic.isNotEmpty()) {
-          lines.add(traffic)
-        }
+      val selection = fetchClashSelection()
+      val parts = mutableListOf<String>()
+      if (subscriptionName.isNotEmpty()) {
+        parts.add(subscriptionName)
       }
-      val contentText = if (lines.isEmpty()) "VPN service is running" else lines.joinToString(" · ")
+      if (selection.isNotEmpty()) {
+        parts.add(selection)
+      }
+      val contentText = if (parts.isEmpty()) "VPN service is running" else parts.joinToString(" · ")
       updateNotification(contentText)
     } catch (e: Exception) {
       Log.w(TAG, "notification update failed: ${e.message}")
@@ -792,38 +798,6 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
       ""
     } catch (e: Exception) {
       ""
-    }
-  }
-
-  /** Fetch total upload/download traffic from Clash API GET /connections. */
-  private fun fetchClashTraffic(): String {
-    return try {
-      val url = java.net.URL("http://127.0.0.1:$clashApiPort/connections")
-      val conn = url.openConnection() as java.net.HttpURLConnection
-      conn.connectTimeout = 2000
-      conn.readTimeout = 2000
-      if (clashApiSecret.isNotEmpty()) {
-        conn.setRequestProperty("Authorization", "Bearer $clashApiSecret")
-      }
-      val text = conn.inputStream.bufferedReader().use { it.readText() }
-      conn.disconnect()
-
-      val json = org.json.JSONObject(text)
-      val downloadTotal = json.optLong("downloadTotal", 0)
-      val uploadTotal = json.optLong("uploadTotal", 0)
-      if (downloadTotal == 0L && uploadTotal == 0L) return ""
-      "${formatBytes(downloadTotal)} / ${formatBytes(uploadTotal)}"
-    } catch (e: Exception) {
-      ""
-    }
-  }
-
-  private fun formatBytes(bytes: Long): String {
-    return when {
-      bytes >= 1024 * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-      bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f MB", bytes / (1024.0 * 1024.0))
-      bytes >= 1024 -> String.format(java.util.Locale.US, "%.2f KB", bytes / 1024.0)
-      else -> "$bytes B"
     }
   }
 
