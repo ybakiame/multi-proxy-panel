@@ -25,11 +25,17 @@
     android-sdk = android-nixpkgs.sdk.${system} (sdkPkgs: with sdkPkgs; [
       cmdline-tools-latest
       platform-tools
+      # 35: gomobile / ANDROID_JAR 等仍在使用；36: tauri 2.11 生成的工程
+      # compileSdk/targetSdk = 36，AGP 默认 build-tools 36.0.0
       platforms-android-35
+      platforms-android-36
       build-tools-35-0-0
+      build-tools-36-0-0
       ndk-28-0-13004108
     ]);
     ndkVersion = "28.0.13004108";
+    ndkHome = "${android-sdk}/share/android-sdk/ndk/${ndkVersion}";
+    ndkLlvm = "${ndkHome}/toolchains/llvm/prebuilt/linux-x86_64";
   in {
     devShells.${system}.default = pkgs.mkShell {
       # 构建基础与工具
@@ -86,8 +92,20 @@
         # android-nixpkgs 组合 SDK 安装于 share/android-sdk 子目录
         ANDROID_HOME = "${android-sdk}/share/android-sdk";
         ANDROID_SDK_ROOT = "${android-sdk}/share/android-sdk";
-        ANDROID_NDK_ROOT = "${android-sdk}/share/android-sdk/ndk/${ndkVersion}";
+        ANDROID_NDK_ROOT = ndkHome;
         ANDROID_JAR = "${android-sdk}/share/android-sdk/platforms/android-35/android.jar";
+        # tauri CLI 探测 NDK 时优先读 NDK_HOME（其次才扫 $ANDROID_HOME/ndk），
+        # 必须显式设置，否则用户 shell rc 里的主机 NDK 会污染构建
+        NDK_HOME = ndkHome;
+        ANDROID_NDK_HOME = ndkHome;
+        # 裸 cargo 交叉编译（cargo check/build --target aarch64-linux-android）同样走
+        # nix NDK。mobile 仅发布 arm64（abiFilters），故只导出 aarch64 一套；
+        # tauri android build 会按 NDK_HOME 再注入自己的工具链 env 覆盖此处，两者一致。
+        CC_aarch64_linux_android = "${ndkLlvm}/bin/aarch64-linux-android33-clang";
+        AR_aarch64_linux_android = "${ndkLlvm}/bin/llvm-ar";
+        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "${ndkLlvm}/bin/aarch64-linux-android33-clang";
+        # rquickjs-sys Android target 的 bindgen 需要 NDK sysroot
+        BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android = "--target=aarch64-linux-android33 --sysroot=${ndkLlvm}/sysroot -isystem ${ndkLlvm}/sysroot/usr/include";
       };
 
       shellHook = ''
