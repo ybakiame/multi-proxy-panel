@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import {
   PROXY_STATUS_KEY,
+  proxyStatus,
   startProxy,
   stopProxy,
   toErrorMessage,
@@ -52,6 +53,22 @@ export function RestartPrompt() {
   const hasPending = dirtyLabels.length > 0 && coreRunning;
   const dialogOpen = hasPending && !dismissed;
 
+  /**
+   * 等待核心真正停止（Kotlin 侧停止为异步：close 在线程中释放 TUN）。
+   * stopProxy 返回即 start 会与旧实例抢 TUN 资源导致新核心启动失败，故轮询
+   * `proxy_status` 确认停止后再拉起（真机实测踩坑）。
+   */
+  const waitCoreStopped = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) {
+      const status = await proxyStatus();
+      if (!status.core_running) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    // 超时仍按已停止继续（start 失败走下方错误提示，不无限等待）。
+  };
+
   const handleRestart = async () => {
     if (restarting) {
       return;
@@ -60,6 +77,7 @@ export function RestartPrompt() {
     try {
       const stopped = await stopProxy();
       queryClient.setQueryData(PROXY_STATUS_KEY, stopped);
+      await waitCoreStopped();
       const started = await startProxy();
       queryClient.setQueryData(PROXY_STATUS_KEY, started);
       reset();
