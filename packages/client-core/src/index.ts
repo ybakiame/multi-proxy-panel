@@ -25,5 +25,6 @@ export * from "./hooks/useProxyStatus";
 export * from "./env";
 export * from "./logCapture";
 export * from "./metaCubeCatalog";
+export * from "./pendingRestart";
 export * from "./rules";
 export * from "./toast";
