@@ -38,10 +38,14 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- 
 step "5/6 mobile 壳 host cargo clippy（apps/mobile/src-tauri）"
 cargo clippy --manifest-path apps/mobile/src-tauri/Cargo.toml --all-targets -- -D warnings
 
-# Android 交叉编译检查：需要 NDK linker 配置（apps/mobile/src-tauri/.cargo/config.toml
-# 按工作目录层级生效，故 cd 进入执行）与 rust 目标。
+# Android 交叉编译检查：需要 NDK 工具链环境（nix dev shell 由 flake.nix 导出；
+# 非 nix 环境由 apps/mobile/scripts/android-ndk-env.sh 补齐）与 rust 目标。
 if rustup target list --installed 2>/dev/null | grep -q '^aarch64-linux-android$' \
-    && [[ -n "${ANDROID_HOME:-}" || -n "${ANDROID_SDK_ROOT:-}" ]]; then
+    && [[ -n "${ANDROID_HOME:-}" || -n "${ANDROID_SDK_ROOT:-}" || -n "${ANDROID_NDK_ROOT:-}" || -n "${NDK_HOME:-}" ]]; then
+    if [[ -z "${CC_aarch64_linux_android:-}" ]]; then
+        # shellcheck source=../apps/mobile/scripts/android-ndk-env.sh
+        source apps/mobile/scripts/android-ndk-env.sh
+    fi
     step "6/6 mobile 壳 cargo check --target aarch64-linux-android"
     (cd apps/mobile/src-tauri && cargo check --target aarch64-linux-android)
 else
