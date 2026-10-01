@@ -24,6 +24,7 @@ export * from "./hooks/useProxyStatus";
 
 // 纯逻辑工具。
 export * from "./dnsSlice";
+export * from "./dnsValidate";
 export * from "./env";
 export * from "./localOverrideGuards";
 export * from "./logCapture";
@@ -33,5 +34,6 @@ export * from "./outboundOptions";
 export * from "./groupForm";
 export * from "./pendingRestart";
 export * from "./ruleSetOptions";
+export * from "./routeSlice";
 export * from "./rules";
 export * from "./toast";

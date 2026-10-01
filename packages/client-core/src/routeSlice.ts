@@ -1,6 +1,11 @@
-import type { ConfigSlices, NodeTagView, RouteSlice } from "@pp/client-core";
-import { outboundTag } from "@pp/client-core";
-import type { MobileSelectOption } from "../../../components/MobileSelectSheet";
+import type { ConfigSlices, NodeTagView, RouteSlice } from "./api";
+import { outboundTag } from "./api";
+/** 下拉选项（value/label + 可选说明；桌面与移动端各自的 Select 组件均消费该形态）。 */
+export interface MobileSelectOption {
+  value: string;
+  label: string;
+  description?: string;
+}
 
 /**
  * 路由切片（ADR-0005）纯逻辑：候选构建 / 校验。

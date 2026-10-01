@@ -23,7 +23,12 @@ import { SubPageShell } from "../../../components/SubPageShell";
 import { EntryLinkList } from "../../../components/EntryLinkCard";
 import { isConfigSlices } from "@pp/client-core";
 import { RouteSettingsCard } from "./RouteSettingsCard";
-import { buildFinalTagOptions, buildResolverServerOptions, isRouteSliceValid, validateRouteSlice } from "./routeUtils";
+import {
+  buildFinalTagOptions,
+  buildResolverServerOptions,
+  isRouteSliceValid,
+  validateRouteSlice,
+} from "@pp/client-core";
 
 /**
  * 路由切片配置子页（ADR-0005，路由 `/config/route`）。

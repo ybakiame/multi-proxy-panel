@@ -1,7 +1,7 @@
 import { Card } from "../../../components/ui";
 import type { DnsStrategy } from "@pp/client-core";
 import { MobileSelectSheet, type MobileSelectOption } from "../../../components/MobileSelectSheet";
-import { ROUTE_STRATEGY_OPTIONS } from "./routeUtils";
+import { ROUTE_STRATEGY_OPTIONS } from "@pp/client-core";
 
 interface RouteSettingsCardProps {
   /** `route.final`：默认出站 tag（空串 = 模板默认 `proxy`）。 */
