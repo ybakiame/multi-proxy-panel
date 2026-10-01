@@ -55,6 +55,10 @@ pub async fn start_proxy(
     let client = lock
         .as_mut()
         .ok_or_else(|| "客户端状态初始化失败".to_string())?;
+    // 注入流量统计存储（失败降级为内存态 tracker，不阻断启动）。
+    if let Some(store) = state.stats_store().await {
+        client.set_stats_store(store);
+    }
     client.start().await.map_err(|e| format!("启动失败: {e}"))?;
     let status = client.status().await;
     // 降级启动（内置规则集未全部本地化）：后台重试下载，补齐后自动重载核心恢复完整
