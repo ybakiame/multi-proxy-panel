@@ -12,6 +12,7 @@ import { useCapabilities, useClientConfig, useProxyStatus, useSaveConfig } from 
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
 import { markRestartRequired } from "@pp/client-core";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
+import TodayTrafficCard from "../components/TodayTrafficCard";
 import DashboardStatusCards from "./DashboardStatusCards";
 
 /** 规则模式按钮（与后端 `rule` / `global` / `direct` 对齐）。 */
@@ -469,7 +470,10 @@ export default function Dashboard() {
         </Card.Content>
       </Card>
 
-      {/* C. 状态卡片 */}
+      {/* C. 今日流量（点击进入统计详情页） */}
+      <TodayTrafficCard running={running} />
+
+      {/* D. 状态卡片 */}
       <DashboardStatusCards
         config={config}
         status={status}

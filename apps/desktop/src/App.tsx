@@ -18,6 +18,7 @@ import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 import Tools from "./pages/Tools";
 import Connections from "./pages/Connections";
+import Stats from "./pages/Stats";
 import Config from "./pages/Config";
 import DnsPage from "./pages/Config/Dns";
 import OutboundsPage from "./pages/Config/Outbounds";
@@ -118,6 +119,7 @@ function AppContent() {
             <Route path="/tools" element={<Tools />} />
             <Route path="/rules" element={<Rules />} />
             <Route path="/connections" element={<Connections />} />
+            <Route path="/stats" element={<Stats />} />
             <Route path="/mitm" element={<Mitm />} />
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/override" element={<Override />} />
