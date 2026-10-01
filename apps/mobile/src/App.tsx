@@ -19,6 +19,7 @@ import RoutePage from "./pages/Config/Route";
 import RuleSetMarket from "./pages/Config/RuleSetMarket";
 import RuleSetsPage from "./pages/Config/RuleSetsPage";
 import Settings from "./pages/Settings";
+import Stats from "./pages/Stats";
 import AboutPage from "./pages/Settings/AboutPage";
 import DevToolsPage from "./pages/Settings/DevToolsPage";
 import DiagnosePage from "./pages/Settings/DiagnosePage";
@@ -99,6 +100,7 @@ function TauriRequired() {
  *   （处理 `env(safe-area-inset-bottom)`）；内容区不被 TabBar 遮挡。
  * - 路由：`/` 首页仪表盘、`/config` 配置管理（Tab）、`/settings` 设置（Tab）；
  *   `/panel` Clash 面板页（内嵌 zashboard）、`/logs` 日志页、`/subscriptions` 订阅管理页、
+ *   `/stats` 流量统计详情页、
  *   `/config/route` 路由、`/config/route/rules` 规则管理、`/config/route/rulesets` 规则集管理、
  *   `/config/dns`、`/config/outbounds`、
  *   `/config/inbounds`、`/config/experimental` 为非 Tab 二级页——TabBar 仅在三主 Tab 路径渲染；
@@ -136,6 +138,7 @@ function AppContent() {
           <Route path="/connections" element={<Navigate to="/panel" replace />} />
           <Route path="/proxies" element={<Navigate to="/panel" replace />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/config" element={<Config />} />
           <Route path="/config/dns" element={<DnsPage />} />
           <Route path="/config/outbounds" element={<OutboundsPage />} />
