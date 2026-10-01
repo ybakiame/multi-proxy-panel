@@ -404,6 +404,8 @@ Hub 写入 host_metrics 表
 - **远程订阅**（`remote.rs`）: `RemoteManager` 定时拉取远程脚本 / 重写片段，写本地缓存（`data_dir/remote_cache/<name>.json`），运行期 `load_cached` 合并
 - **导入**（`import.rs`）: 把 QX / Surge / Loon 的 rewrite / script / task / mitm 片段经 `parse_import` 解析为 pp-mitm 规则与 pp-script 任务，未知行跳过并记 warning
 - **生命周期编排**（`state.rs`）: `ClientState` 编排启动链（订阅 → MITM → 合成配置 → 核心 → 系统代理），任一步失败**逆序回滚**，notifier / sysproxy 可注入
+- **连接追踪**（`connections/`）: Clash API `/connections` 采集器——**WebSocket 推送优先**（`?interval=1000` 全量快照推送，瞬时失败按退避重连，仅当服务端拒绝 upgrade 时永久回退 2s HTTP 轮询），快照差分维护活跃/已关闭连接视图（环形缓冲 500 条）
+- **流量统计**（`stats/`）: 客户端本地 SQLite（`<data_dir>/stats.db`，sqlx 直连 + `PRAGMA user_version` 轻量版本管理，不依赖 pp-db/sea-orm）。tracker 每轮快照差分产出字节增量（`StatDelta`）增量 upsert 日聚合表 `daily_stats`（`date + target(域名/IP) + destination_ip + rule + rule_payload + outbound` 六元主键），长连接流量随快照渐进入账；关闭连接写入明细表 `conn_records`（保留 7 天，聚合保留 90 天，打开时清理）。防重复计数：仅 `start ≥ tracker 启动时间` 的连接全量入账并计 conn_count，早前存活连接只建基线
 
 ### apps/desktop — 桌面客户端（UI + 壳）
 
@@ -416,10 +418,10 @@ Hub 写入 host_metrics 表
 
 Desktop/Mobile 壳共享的 Tauri 命令实现与辅助（ADR-0003 §3.2）：
 
-- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard），数据目录由壳层注入（desktop 桌面路径 / mobile Android 应用私有目录）
+- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard + 懒打开的流量统计存储 `StatsStore`），数据目录由壳层注入（desktop 桌面路径 / mobile Android 应用私有目录）
 - **日志系统**（`logs/`）: 日志初始化、滚动文件查询/导出/清空、前端日志上报
 - **平台能力矩阵**（`capabilities.rs`）: `get_capabilities` / `platform_info`；`is_android` 语义退化为运行时功能开关（desktop UI 已不消费）
-- **通用命令**（`commands/`）: config / subscription / profile / proxies / connections / preview / task / local_override 等 35 条单份实现
+- **通用命令**（`commands/`）: config / subscription / profile / proxies / connections / stats（流量统计：stats_today / stats_daily / stats_records / stats_clear）/ preview / task / local_override 等单份实现
 - **Android 专属**（`core_bridge.rs`，`cfg(target_os = "android")`）: `request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed` + Kotlin VpnPlugin 桥（`vpn_plugin`）
 - 壳层以全路径注册本 crate 命令（Tauri 2 支持跨 crate 注册）
 
