@@ -19,6 +19,7 @@ import Settings from "./pages/Settings";
 import Tools from "./pages/Tools";
 import Connections from "./pages/Connections";
 import Config from "./pages/Config";
+import DnsPage from "./pages/Config/Dns";
 
 /**
  * 渲染期错误兜底：捕获子组件渲染时的未处理异常，展示错误信息与
@@ -118,6 +119,7 @@ function AppContent() {
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/override" element={<Override />} />
             <Route path="/config" element={<Config />} />
+            <Route path="/config/dns" element={<DnsPage />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
