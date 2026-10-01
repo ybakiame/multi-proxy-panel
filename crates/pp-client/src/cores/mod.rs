@@ -253,6 +253,14 @@ impl ClientCoreInventory {
         let path = result;
         download::set_executable(&path)?;
 
+        // Windows：sing-box TUN 依赖 wintun.dll 与核心可执行文件同目录（核心不内嵌）。
+        // 核心下载成功后随附下载对应架构的 wintun.dll；失败不阻塞核心安装（TUN
+        // 启动时会报「Unable to load library」，错误信息足够明确）。
+        #[cfg(target_os = "windows")]
+        if let Err(e) = download::ensure_wintun(&self.client, &dir).await {
+            tracing::warn!(error = %e, "wintun.dll 下载失败，TUN 模式将不可用");
+        }
+
         // Version probe verification: output must contain target version; on failure clean up
         // directory to avoid leaving partial artifacts.
         if let Err(e) = version::verify_version(&path, &version) {

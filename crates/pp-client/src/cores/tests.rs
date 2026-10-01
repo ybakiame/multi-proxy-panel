@@ -50,6 +50,7 @@ fn with_patched_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
 }
 
 /// Construct tar.gz with several entries.
+#[cfg(unix)]
 fn build_tgz(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     {
