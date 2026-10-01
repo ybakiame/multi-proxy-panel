@@ -2,9 +2,9 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { isGroupOutbound, outboundTag } from "@pp/client-core";
 import type { CustomOutbound } from "@pp/client-core";
 import { Button, Card, Chip, Switch } from "../../../components/ui";
-import { outboundSummary } from "./outboundForm";
-import { groupSummary } from "./groupForm";
-import { outboundProtocolLabel } from "./outboundOptions";
+import { outboundSummary } from "@pp/client-core";
+import { groupSummary } from "@pp/client-core";
+import { outboundProtocolLabel } from "@pp/client-core";
 
 interface OutboundListSectionProps {
   items: CustomOutbound[];

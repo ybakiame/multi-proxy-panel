@@ -228,6 +228,9 @@ export const DNS_ROLE_PRESET_GROUPS: Record<DnsRoleTag, readonly DnsServerPreset
 /**
  * `ConfigSlices` 结构守卫：`CONFIG_SLICES_KEY` 缓存形态异常时视为未加载，
  * 页面渲染空态而非访问 undefined 崩溃（对齐 localOverrideGuards 的第二道防线）。
+ *
+ * 同时校验 DNS 与出站两个切片（二者同文件存取，损坏语义一致；原移动端在
+ * dnsSlice / outboundForm 各有一份仅查本段的同名守卫，上移后合并为单一实现）。
  */
 export function isConfigSlices(value: unknown): value is ConfigSlices {
   if (!value || typeof value !== "object") {
@@ -238,7 +241,10 @@ export function isConfigSlices(value: unknown): value is ConfigSlices {
     typeof slices.dns === "object" &&
     slices.dns !== null &&
     Array.isArray(slices.dns.servers) &&
-    Array.isArray(slices.dns.rules)
+    Array.isArray(slices.dns.rules) &&
+    typeof slices.outbounds === "object" &&
+    slices.outbounds !== null &&
+    Array.isArray(slices.outbounds.items)
   );
 }
 

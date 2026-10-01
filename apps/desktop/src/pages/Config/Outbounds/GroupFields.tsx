@@ -1,13 +1,12 @@
-import { CheckIcon } from "@heroicons/react/24/outline";
+import { Checkbox } from "@heroui/react";
 import type { OutboundFormFields } from "@pp/client-core";
-import { SectionTitle, SelectField, SwitchRow, TextField } from "./OutboundField";
 import { DEFAULT_URLTEST_URL, type GroupFormErrors, type GroupMemberCandidate } from "@pp/client-core";
+import { SectionTitle, SelectField, SwitchRow, TextField } from "./OutboundField";
 
 interface GroupFieldsProps {
   fields: OutboundFormFields;
   errors: GroupFormErrors;
-  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组；内置动态分组的默认成员
-   *  用全候选；内置静态分组成员可编辑，候选由页面收窄防循环）。 */
+  /** 成员候选（静态订阅节点 + 切片节点 + direct，不含其它分组）。 */
   candidates: GroupMemberCandidate[];
   /** 内置静态成员分组（global/final）：成员可编辑；内置动态分组（proxy/auto）隐藏成员。 */
   builtinMembersEditable?: boolean;
@@ -18,11 +17,10 @@ interface GroupFieldsProps {
 }
 
 /**
- * 分组出站（selector / urltest）字段区（ADR-0005 P0-4c）。
+ * 分组出站（selector / urltest）字段区（桌面端；语义对齐移动端 `GroupFields`）。
  *
- * 成员为触屏多选行（`min-h-12`，显示友好名 + tag）；候选不含其它分组（禁嵌套）。
- * selector 额外提供默认成员选择器，urltest 额外提供 url / interval / tolerance；
- * 两者共用 interrupt_exist_connections 开关。
+ * 成员为多选勾选列表；候选不含其它分组（禁嵌套）。selector 额外提供默认成员选择器，
+ * urltest 额外提供 url / interval / tolerance；两者共用 interrupt_exist_connections 开关。
  */
 export function GroupFields({
   fields,
@@ -57,48 +55,35 @@ export function GroupFields({
   return (
     <>
       {!subscriptionCacheAvailable && !builtin && (
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">未找到订阅节点缓存，请先同步订阅</span>
+        <span className="text-xs text-muted">未找到订阅节点缓存，请先同步订阅</span>
       )}
-      {builtin && (
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
-          内置分组的成员列表由模板按订阅动态计算，不可编辑
-        </span>
+      {builtin && !builtinMembersEditable && (
+        <span className="text-xs text-muted">内置分组的成员列表由模板按订阅动态计算，不可编辑</span>
       )}
 
-      {/* 成员多选（内置分组隐藏） */}
-      {!builtin && (
+      {/* 成员多选（内置动态分组隐藏） */}
+      {(!builtin || builtinMembersEditable) && (
         <div className="flex flex-col gap-1.5">
           <SectionTitle>成员</SectionTitle>
           {candidates.length === 0 ? (
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">暂无可选成员</span>
+            <span className="text-xs text-muted">暂无可选成员</span>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {candidates.map((candidate) => {
-                const selected = fields.members.includes(candidate.value);
-                return (
-                  <button
-                    key={candidate.value}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => toggleMember(candidate.value)}
-                    className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-2 text-left transition-colors ${
-                      selected
-                        ? "border-primary/50 bg-primary/5"
-                        : "border-zinc-200 dark:border-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-700"
-                    }`}
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {candidate.label}
-                      </span>
-                      <span className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                        {candidate.value}
-                      </span>
-                    </span>
-                    {selected && <CheckIcon className="size-5 shrink-0 text-primary" aria-hidden="true" />}
-                  </button>
-                );
-              })}
+            <div className="flex max-h-56 flex-col gap-1.5 overflow-y-auto">
+              {candidates.map((candidate) => (
+                <Checkbox
+                  key={candidate.value}
+                  isSelected={fields.members.includes(candidate.value)}
+                  onChange={() => toggleMember(candidate.value)}
+                >
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                  <Checkbox.Content>
+                    <span className="text-sm">{candidate.label}</span>
+                    <span className="block font-mono text-xs text-muted">{candidate.value}</span>
+                  </Checkbox.Content>
+                </Checkbox>
+              ))}
             </div>
           )}
           {errors.members && <span className="text-xs text-amber-500">{errors.members}</span>}

@@ -1,4 +1,4 @@
-import type { OutboundProtocol } from "@pp/client-core";
+import type { OutboundProtocol } from "./api";
 
 /**
  * 自定义出站切片（ADR-0005 P0-4c）枚举选项与展示标签：协议 / 传输 / 加密方式，

@@ -8,10 +8,9 @@ interface OutboundTlsFieldsProps {
 }
 
 /**
- * 出站 TLS 区块（ADR-0005 P0-4c）：vless / vmess / trojan / hysteria2 共用。
- *
- * 字段对齐 `OutboundTls`：enabled / server_name / insecure / alpn（逗号分隔草稿）。
- * 未启用时隐藏明细字段，保持移动端表单精简。
+ * 出站 TLS 区块（桌面端；语义对齐移动端 `OutboundTlsFields`）：
+ * vless / vmess / trojan / hysteria2 共用。字段对齐 `OutboundTls`：
+ * enabled / server_name / insecure / alpn（逗号分隔草稿）。
  */
 export function OutboundTlsFields({ fields, onChange }: OutboundTlsFieldsProps) {
   return (

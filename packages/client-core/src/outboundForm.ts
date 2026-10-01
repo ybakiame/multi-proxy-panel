@@ -1,12 +1,5 @@
-import { isGroupOutbound, outboundTag } from "@pp/client-core";
-import type {
-  ConfigSlices,
-  CustomOutbound,
-  GroupOutbound,
-  OutboundTls,
-  OutboundTransport,
-  OutboundsSlice,
-} from "@pp/client-core";
+import { isGroupOutbound, outboundTag } from "./api";
+import type { CustomOutbound, GroupOutbound, OutboundTls, OutboundTransport, OutboundsSlice } from "./api";
 import { applyGroupToForm, groupFormToOutbound, validateGroupItem } from "./groupForm";
 import { isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
 
@@ -19,22 +12,6 @@ import { isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
  * `formToOutbound` 转回 `CustomOutbound`，对齐 `DnsServerFormSheet` 的
  * 「字符串草稿 + 保存转换」模式。
  */
-
-// ---------------------------------------------------------------------------
-// 结构守卫
-// ---------------------------------------------------------------------------
-
-/**
- * `ConfigSlices` 结构守卫（出站切片视角）：`CONFIG_SLICES_KEY` 缓存形态异常时
- * 视为未加载，页面渲染空态而非访问 undefined 崩溃（对齐 dnsUtils 的第二道防线）。
- */
-export function isConfigSlices(value: unknown): value is ConfigSlices {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const slices = value as ConfigSlices;
-  return typeof slices.outbounds === "object" && slices.outbounds !== null && Array.isArray(slices.outbounds.items);
-}
 
 // ---------------------------------------------------------------------------
 // 表单草稿 <-> 结构化出站

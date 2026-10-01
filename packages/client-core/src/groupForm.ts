@@ -1,4 +1,4 @@
-import type { CustomOutbound, GroupOutbound } from "@pp/client-core";
+import type { CustomOutbound, GroupOutbound } from "./api";
 import type { OutboundFormFields } from "./outboundForm";
 
 /**

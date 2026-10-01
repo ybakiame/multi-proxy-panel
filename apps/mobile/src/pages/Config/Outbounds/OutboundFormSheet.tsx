@@ -15,9 +15,9 @@ import {
   isOutboundFormValid,
   outboundToForm,
   validateOutboundForm,
-} from "./outboundForm";
-import { isGroupFormValid, validateGroupFields, type GroupMemberCandidate } from "./groupForm";
-import { OUTBOUND_PROTOCOL_OPTIONS, isGroupProtocol, type OutboundProtocolType } from "./outboundOptions";
+} from "@pp/client-core";
+import { isGroupFormValid, validateGroupFields, type GroupMemberCandidate } from "@pp/client-core";
+import { OUTBOUND_PROTOCOL_OPTIONS, isGroupProtocol, type OutboundProtocolType } from "@pp/client-core";
 
 const inputClass = inputClassName;
 

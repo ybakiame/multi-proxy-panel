@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { InlineAlert } from "../../../components/InlineAlert";
-import { Button, Card, Spinner } from "../../../components/ui";
+import { useNavigate } from "react-router-dom";
+import { Alert, AlertDialog, Button } from "@heroui/react";
+import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import {
   CONFIG_SLICES_KEY,
   configSlicesGet,
@@ -18,30 +19,33 @@ import {
   useProxyStatus,
 } from "@pp/client-core";
 import type { ConfigSlices, CustomOutbound, NodeTagView, OutboundsSlice } from "@pp/client-core";
-import { SubPageShell } from "../../../components/SubPageShell";
-import { OutboundDeleteConfirm } from "./OutboundDeleteConfirm";
-import { OutboundFormSheet } from "./OutboundFormSheet";
+import {
+  buildGroupMemberCandidates,
+  isConfigSlices,
+  isOutboundsSliceValid,
+  validateOutboundsSlice,
+  type GroupMemberCandidate,
+  type OutboundProtocolType,
+} from "@pp/client-core";
+import { OutboundFormModal } from "./OutboundFormModal";
 import { OutboundListSection } from "./OutboundListSection";
-import { buildGroupMemberCandidates, type GroupMemberCandidate } from "@pp/client-core";
-import { isConfigSlices, isOutboundsSliceValid, validateOutboundsSlice } from "@pp/client-core";
-import type { OutboundProtocolType } from "@pp/client-core";
 
 /**
- * 自定义出站切片配置子页（ADR-0005 P0-4c，路由 `/config/outbounds`）。
+ * 自定义出站切片配置页（桌面端，路由 `/config/outbounds`；语义对齐移动端
+ * `Config/Outbounds/index.tsx`）。
  *
- * 结构自上而下：BackHeader（右侧保存动作）→ 出站列表（增删改）。
- * 出站可被「规则管理」的 `Outbound{tag}` 动作引用（tag 由名称生成，强制 `slice-` 前缀）。
- * 无切片总开关：启用中的条目即注入运行配置。
+ * 出站可被「规则」页的 `Outbound{tag}` 动作引用（tag 由名称生成，强制 `slice-`
+ * 前缀）。无切片总开关：启用中的条目即注入运行配置。
  *
- * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量 `ConfigSlices`；所有编辑只改内存中的
- * outbounds 切片草稿（copy-on-write），点击保存才整份 `configSlicesSave` 落盘，成功后
- * invalidate + toast；核心运行中追加「重启代理后生效」。校验（D5）在保存前对整份草稿
- * 执行，失败禁用保存并在列表行内提示。
+ * 数据流：`useQuery(CONFIG_SLICES_KEY)` 取全量切片；编辑只改内存草稿
+ * （copy-on-write），保存才整份 `configSlicesSave` 落盘，成功后 invalidate + toast
+ * 并上报重启脏标记；保存前整份草稿校验，失败禁用保存并在列表行内提示。
  */
 export default function OutboundsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
-  // 切片在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
+  // 切片在核心启动时注入，运行中变更不热更新：保存成功上报全局脏标记。
   const coreRunning = status?.core_running ?? false;
 
   const {
@@ -54,8 +58,7 @@ export default function OutboundsPage() {
     // 表单页草稿期间避免窗口聚焦触发的后台重取覆盖未保存编辑；保存后仍显式 invalidate。
     refetchOnWindowFocus: false,
   });
-  // 分组成员候选数据源：静态订阅节点读生效订阅的本地缓存（不依赖核心运行），
-  // 无生效订阅时不发起；核心未运行时仍能拿到订阅节点。
+  // 分组成员候选数据源：静态订阅节点读生效订阅的本地缓存（不依赖核心运行）。
   const { data: config } = useClientConfig();
   const activeSubscriptionId = config?.active_subscription_id ?? null;
   const { data: subscriptionNodes } = useQuery<NodeTagView[]>({
@@ -73,18 +76,18 @@ export default function OutboundsPage() {
 
   // ---- 内存草稿（query 数据变化时渲染期同步，copy-on-write 编辑） ----
   const [draft, setDraft] = useState<OutboundsSlice | null>(null);
-  const [prevSlices, setPrevSlices] = useState<ConfigSlices | undefined>(undefined);
+  const [prevSlices, setPrevSlices] = useState<ConfigSlices | null>(null);
   if (slices && prevSlices !== slices) {
     setPrevSlices(slices);
     setDraft(slices.outbounds);
   }
   if (!slices && draft !== null) {
-    setPrevSlices(undefined);
+    setPrevSlices(null);
     setDraft(null);
   }
 
   // ---- 局部 UI 状态 ----
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomOutbound | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomOutbound | null>(null);
   const [saving, setSaving] = useState(false);
@@ -99,10 +102,7 @@ export default function OutboundsPage() {
     [draft, editing],
   );
 
-  // 分组成员候选：静态订阅节点（订阅缓存）+ 切片节点出站（enabled）+ 内置 direct；
-  // 候选不含其它分组（禁嵌套，与 Rust `validate_group_members` 一致）。
-  // 内置 selector（proxy）的默认成员候选：运行时成员 = auto + 订阅节点（切片节点与
-  // direct/block 不在内置分组成员中，后端 apply 对悬空 default 保持模板默认并告警）。
+  // 内置 selector（proxy）的默认成员候选：运行时成员 = auto + 订阅节点。
   const builtinDefaultCandidates = useMemo<GroupMemberCandidate[]>(() => {
     const options: GroupMemberCandidate[] = [{ value: "auto", label: "auto（自动测速）", hint: "内置分组" }];
     for (const node of subscriptionNodes ?? []) {
@@ -158,12 +158,12 @@ export default function OutboundsPage() {
   const openAdd = (protocol: OutboundProtocolType) => {
     setNewProtocol(protocol);
     setEditing(null);
-    setSheetOpen(true);
+    setFormOpen(true);
   };
 
   const openEdit = (item: CustomOutbound) => {
     setEditing(item);
-    setSheetOpen(true);
+    setFormOpen(true);
   };
 
   const handleSaveItem = (item: CustomOutbound) => {
@@ -190,7 +190,7 @@ export default function OutboundsPage() {
   };
 
   const handleDeleteRequest = (item: CustomOutbound) => {
-    setSheetOpen(false);
+    setFormOpen(false);
     setPendingDelete(item);
   };
 
@@ -204,48 +204,52 @@ export default function OutboundsPage() {
   };
 
   return (
-    <SubPageShell
-      title="出站管理"
-      action={
+    <div className="flex max-w-2xl flex-col gap-6">
+      {/* 页头：返回 + 标题 + 保存 */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" isIconOnly aria-label="返回配置管理" onPress={() => navigate("/config")}>
+            <ArrowLeftIcon className="size-4" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold">出站管理</h1>
+            <p className="text-sm text-muted">自定义代理节点与分组</p>
+          </div>
+        </div>
         <Button
-          variant="tertiary"
-          className="h-11 shrink-0 px-2 font-semibold"
+          size="sm"
+          variant="primary"
           isDisabled={!valid || !dirty || saving}
           isPending={saving}
           onPress={() => void handleSave()}
         >
           {dirty ? "保存" : "已保存"}
         </Button>
-      }
-    >
+      </div>
+
       {isLoading && !slices && (
-        <Card>
-          <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-            <Spinner aria-hidden="true" />
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">正在加载自定义出站配置…</span>
-          </Card.Content>
-        </Card>
+        <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+          <span className="text-sm text-muted">正在加载自定义出站配置…</span>
+        </div>
       )}
 
       {!isLoading && queryError && (
-        <Card>
-          <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
-            <InlineAlert kind="danger" title="加载失败">
-              {toErrorMessage(queryError)}
-            </InlineAlert>
-          </Card.Content>
-        </Card>
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>加载失败</Alert.Title>
+            <Alert.Description>{toErrorMessage(queryError)}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       )}
 
       {!isLoading && !queryError && !slices && (
-        <Card>
-          <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">自定义出站配置不可用</span>
-            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={invalidate}>
-              重新加载
-            </Button>
-          </Card.Content>
-        </Card>
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-surface p-6 text-center">
+          <span className="text-sm text-muted">自定义出站配置不可用</span>
+          <Button size="sm" variant="secondary" onPress={invalidate}>
+            重新加载
+          </Button>
+        </div>
       )}
 
       {draft && (
@@ -259,11 +263,9 @@ export default function OutboundsPage() {
         />
       )}
 
-      {/* 内置出站：置底只读 */}
-
-      {/* 编辑 Sheet 与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
-      <OutboundFormSheet
-        isOpen={sheetOpen}
+      {/* 编辑弹窗与删除确认（常驻挂载，isOpen / 目标控制显隐） */}
+      <OutboundFormModal
+        isOpen={formOpen}
         editing={editing}
         otherNames={otherNames}
         defaultProtocol={newProtocol}
@@ -276,17 +278,38 @@ export default function OutboundsPage() {
         }
         builtinMembersEditable={editing?.builtin === true && (editing.name === "global" || editing.name === "final")}
         subscriptionCacheAvailable={subscriptionCacheAvailable}
-        onClose={() => setSheetOpen(false)}
+        onClose={() => setFormOpen(false)}
         onSave={handleSaveItem}
         onDeleteRequest={handleDeleteRequest}
       />
-      <OutboundDeleteConfirm
+
+      <AlertDialog.Backdrop
         isOpen={pendingDelete !== null}
-        title="删除自定义出站"
-        description={pendingDelete ? `确定删除出站「${pendingDelete.name}」吗？该操作不可撤销。` : ""}
-        onClose={() => setPendingDelete(null)}
-        onConfirm={handleDeleteConfirm}
-      />
-    </SubPageShell>
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog>
+            <AlertDialog.CloseTrigger />
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>删除自定义出站</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p className="break-words">确定删除出站「{pendingDelete?.name}」吗？该操作不可撤销。</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" onPress={() => setPendingDelete(null)}>
+                取消
+              </Button>
+              <Button slot="close" variant="danger" onPress={handleDeleteConfirm}>
+                删除
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+    </div>
   );
 }

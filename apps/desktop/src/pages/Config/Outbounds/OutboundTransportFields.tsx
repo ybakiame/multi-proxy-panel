@@ -9,9 +9,8 @@ interface OutboundTransportFieldsProps {
 }
 
 /**
- * 出站传输区块（ADR-0005 P0-4c）：vless / vmess / trojan 共用。
- *
- * 字段对齐 `OutboundTransport`：kind / path / host。按 kind 条件展示：
+ * 出站传输区块（桌面端；语义对齐移动端 `OutboundTransportFields`）：
+ * vless / vmess / trojan 共用。字段对齐 `OutboundTransport`：kind / path / host。
  * tcp 无附加字段；gRPC 的 path 语义为 service_name 且无 host；其余展示 path（+host）。
  */
 export function OutboundTransportFields({ fields, onChange }: OutboundTransportFieldsProps) {

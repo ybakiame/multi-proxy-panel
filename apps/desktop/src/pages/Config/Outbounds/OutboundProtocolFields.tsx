@@ -10,11 +10,8 @@ interface OutboundProtocolFieldsProps {
 }
 
 /**
- * 出站协议字段区（ADR-0005 P0-4c）：按当前协议条件渲染。
- *
- * 字段集严格对齐 client-core `OutboundProtocol` 各变体：server / server_port 通用；
- * vless（uuid/flow）、vmess（uuid/security/alter_id）、shadowsocks（method/password）、
- * trojan（password）、hysteria2（password/up_mbps/down_mbps/obfs）。
+ * 出站协议字段区（桌面端；语义对齐移动端 `OutboundProtocolFields`）：按当前协议
+ * 条件渲染。字段集严格对齐 client-core `OutboundProtocol` 各变体。
  */
 export function OutboundProtocolFields({ fields, errors, onChange }: OutboundProtocolFieldsProps) {
   return (
