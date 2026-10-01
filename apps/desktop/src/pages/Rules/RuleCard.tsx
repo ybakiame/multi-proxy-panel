@@ -1,4 +1,4 @@
-import { Button, Switch } from "@heroui/react";
+import { Button, Chip, Switch } from "@heroui/react";
 import { ArrowDownIcon, ArrowUpIcon, ShieldCheckIcon, TrashIcon } from "@heroicons/react/24/outline";
 import type { LocalRuleView } from "@pp/client-core";
 import { ruleDetailLine, ruleSummary } from "./types";
@@ -20,6 +20,11 @@ export function RuleCard({ rule, index, total, onToggle, onMoveUp, onMoveDown, o
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{ruleSummary(rule)}</span>
+          {rule.builtin && (
+            <Chip size="sm" variant="soft" color="accent" className="shrink-0">
+              内置
+            </Chip>
+          )}
           {rule.note && <span className="truncate text-xs text-muted">({rule.note})</span>}
         </div>
         <span className="text-xs text-muted">

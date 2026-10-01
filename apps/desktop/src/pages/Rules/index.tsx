@@ -4,6 +4,8 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } from "@pp/client-core";
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
+import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
+import type { BaselineView } from "@pp/client-core";
 import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
 import { markRestartRequired } from "@pp/client-core";
@@ -30,6 +32,15 @@ export default function Rules() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
   const [deleteRule, setDeleteRule] = useState<LocalRuleView | null>(null);
+
+  // 内置基线视图（还原模板数据源：缺失的内置规则按它补回；内置规则为普通规则，
+  // 可完整编辑/删除，还原是显式用户动作——对齐移动端物化模型语义）。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
+    retry: false,
+  });
 
   // 单核心（sing-box）：直接消费 singbox 桶。
   const currentCore = overrideData ? overrideData.singbox : null;
@@ -112,6 +123,38 @@ export default function Rules() {
 
   const error = queryError ? toErrorMessage(queryError) : null;
 
+  /** 一键还原内置规则：按基线模板补回缺失的内置规则（置顶），已存在的不动。 */
+  const handleRestoreBuiltinRules = async () => {
+    if (!currentCore || !baseline) return;
+    const existing = new Set(currentCore.rules.map((rule) => rule.id));
+    const missing = baseline.route_rules.filter((tpl) => !existing.has(tpl.id));
+    if (missing.length === 0) {
+      toastSuccess("内置规则已完整");
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const minSort = Math.min(0, ...currentCore.rules.map((rule) => rule.sort_order));
+    const restored: LocalRuleInput[] = missing.map((tpl, i) => ({
+      id: tpl.id,
+      name: tpl.name,
+      enabled: true,
+      match_type: "rule_set",
+      target: tpl.rule_set_tags.join(","),
+      action: tpl.outbound,
+      no_resolve: false,
+      invert: false,
+      note: "",
+      created_at: now,
+      sort_order: minSort - missing.length + i,
+      builtin: true,
+    }));
+    const input = viewToInput(currentCore);
+    await persist({ ...input, rules: [...restored, ...input.rules] }, "已还原内置规则（置顶）");
+  };
+
+  const hasMissingBuiltin =
+    !!currentCore && !!baseline && baseline.route_rules.some((tpl) => !currentCore.rules.some((r) => r.id === tpl.id));
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -141,17 +184,24 @@ export default function Rules() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">规则列表</span>
-              <Button
-                size="sm"
-                variant="primary"
-                onPress={() => {
-                  setEditingRule(null);
-                  setEditOpen(true);
-                }}
-              >
-                <PlusIcon className="size-4" />
-                新增规则
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasMissingBuiltin && (
+                  <Button size="sm" variant="secondary" onPress={() => void handleRestoreBuiltinRules()}>
+                    还原内置规则（置顶）
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onPress={() => {
+                    setEditingRule(null);
+                    setEditOpen(true);
+                  }}
+                >
+                  <PlusIcon className="size-4" />
+                  新增规则
+                </Button>
+              </div>
             </div>
             {currentCore.rules.length === 0 ? (
               <div className="rounded-lg border border-border/60 bg-surface p-6 text-center text-sm text-muted">

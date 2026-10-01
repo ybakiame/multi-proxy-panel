@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AlertDialog, Button, Chip, Table } from "@heroui/react";
 import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
-import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
+import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import {
+  BASELINE_VIEW_KEY,
+  baselineViewGet,
   buildSaveInput,
   localOverrideSave,
   markRestartRequired,
@@ -60,6 +63,14 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
   const ruleSets = overrideData.custom_rule_sets;
   const remoteCount = ruleSets.filter((rs) => rs.source.kind === "remote").length;
 
+  // 内置基线视图（恢复内置规则集模板数据源；内置条目可编辑/删除，恢复是显式用户动作）。
+  const { data: baseline } = useQuery<BaselineView>({
+    queryKey: BASELINE_VIEW_KEY,
+    queryFn: baselineViewGet,
+    staleTime: Infinity,
+    retry: false,
+  });
+
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomRuleSetView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomRuleSetView | null>(null);
@@ -113,6 +124,30 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
     setFormOpen(true);
   };
 
+  /** 恢复内置规则集：按基线模板补回缺失的内置条目（已存在的用户条目不动）。 */
+  const handleRestoreBuiltin = async () => {
+    if (!baseline) return;
+    const existing = new Set(ruleSets.map((rs) => rs.id));
+    const missing = baseline.rule_sets.filter((rs) => !existing.has(rs.id));
+    if (missing.length === 0) {
+      toastSuccess("内置规则集已完整");
+      return;
+    }
+    const restored: CustomRuleSetInput[] = missing.map((rs) => ({
+      id: rs.id,
+      name: rs.name,
+      tag: rs.tag,
+      source: { kind: "remote", url: rs.url, format: "binary" },
+      last_updated: 0,
+      builtin: true,
+    }));
+    if (await persistCustom([...ruleSets.map(toInput), ...restored])) {
+      toastSuccess(`已恢复 ${missing.length} 个内置规则集，点击「立即更新」下载内容`);
+    }
+  };
+
+  const hasMissingBuiltin = !!baseline && baseline.rule_sets.some((rs) => !ruleSets.some((item) => item.id === rs.id));
+
   const openEdit = (ruleSet: CustomRuleSetView) => {
     setEditing(ruleSet);
     setFormOpen(true);
@@ -155,6 +190,11 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {hasMissingBuiltin && (
+            <Button size="sm" variant="secondary" onPress={() => void handleRestoreBuiltin()}>
+              恢复内置规则集
+            </Button>
+          )}
           <Button size="sm" variant="primary" onPress={openCreate}>
             <PlusIcon className="size-4" />
             添加规则集
@@ -198,9 +238,16 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
                       <span title={ruleSet.tag}>{ruleSet.tag}</span>
                     </Table.Cell>
                     <Table.Cell>
-                      <Chip size="sm" variant="soft" color="accent">
-                        {sourceLabel(ruleSet)}
-                      </Chip>
+                      <div className="flex items-center gap-1.5">
+                        <Chip size="sm" variant="soft" color="accent">
+                          {sourceLabel(ruleSet)}
+                        </Chip>
+                        {ruleSet.builtin && (
+                          <Chip size="sm" variant="soft" color="default">
+                            内置
+                          </Chip>
+                        )}
+                      </div>
                     </Table.Cell>
                     <Table.Cell>
                       {ruleSet.cached ? (
