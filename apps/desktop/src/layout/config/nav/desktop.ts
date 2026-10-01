@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from "react";
 import {
   AdjustmentsHorizontalIcon,
+  AdjustmentsVerticalIcon,
   ArrowPathIcon,
   BeakerIcon,
   Cog6ToothIcon,
@@ -39,6 +40,7 @@ export const DESKTOP_NAV_ITEMS: DesktopNavItem[] = [
   { to: "/proxies", label: "代理", icon: GlobeAltIcon },
   { to: "/nodes", label: "订阅", icon: ServerStackIcon },
   { to: "/rules", label: "规则", icon: ShieldCheckIcon },
+  { to: "/config", label: "配置", icon: AdjustmentsVerticalIcon },
   { to: "/connections", label: "连接", icon: ArrowPathIcon },
   { to: "/mitm", label: "MITM", icon: BeakerIcon, requiresMitm: true },
   { to: "/scripts", label: "脚本", icon: WrenchScrewdriverIcon, requiresCronTasks: true },
