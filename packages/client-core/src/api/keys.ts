@@ -42,6 +42,12 @@ export const PROXIES_KEY = ["proxies_list"] as const;
 export const CONNECTIONS_KEY = ["connections_active"] as const;
 export const CLOSED_CONNECTIONS_KEY = ["connections_closed"] as const;
 
+export const STATS_TODAY_KEY = ["stats_today"] as const;
+/** 日聚合查询（按查询条件参数化）。 */
+export const statsDailyKey = (query: unknown) => ["stats_daily", query] as const;
+/** 连接明细查询（按查询条件参数化）。 */
+export const statsRecordsKey = (query: unknown) => ["stats_records", query] as const;
+
 export const LOGS_KEY = ["logs"] as const;
 export const LOG_FILES_KEY = ["log_files"] as const;
 

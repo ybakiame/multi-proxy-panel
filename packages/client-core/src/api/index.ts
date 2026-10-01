@@ -115,6 +115,21 @@ export type { ConnectionView, ActiveConnections } from "./connections";
 export { connectionsActive, connectionsClosed, connectionsClose } from "./connections";
 
 // ---------------------------------------------------------------------------
+// Traffic Stats
+// ---------------------------------------------------------------------------
+
+export type {
+  TodaySummary,
+  DailyStatRow,
+  ConnRecordRow,
+  DailySort,
+  RecordSort,
+  DailyQuery,
+  RecordsQuery,
+} from "./stats";
+export { statsToday, statsDaily, statsRecords, statsClear } from "./stats";
+
+// ---------------------------------------------------------------------------
 // Local Override
 // ---------------------------------------------------------------------------
 
