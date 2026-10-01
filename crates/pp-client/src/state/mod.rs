@@ -67,6 +67,8 @@ pub struct ClientState {
     scheduler: Option<SchedulerHandle>,
     /// Background connection tracker (started after core startup when Clash API is enabled, stopped on stop).
     connection_tracker: Option<ConnectionTrackerHandle>,
+    /// 流量统计存储（SQLite；由壳层注入，未注入时 tracker 仅维护内存环形缓冲）。
+    stats_store: Option<Arc<crate::stats::StatsStore>>,
     /// TUN privilege detection function (default [`tun_auth_status`]; tests can inject overrides to bypass real privilege checks).
     ///
     /// Only read on desktop builds (TUN pre-start privilege check gated by `#[cfg(not(target_os = "android"))]`
@@ -118,6 +120,7 @@ impl ClientState {
             recorder: Arc::new(MemoryRecorder::new(2048)),
             scheduler: None,
             connection_tracker: None,
+            stats_store: None,
             tun_auth_check: Arc::new(tun_auth_status),
             rule_count: 0,
             missing_rule_sets: Vec::new(),
@@ -128,6 +131,11 @@ impl ClientState {
     #[cfg(feature = "mitm")]
     pub fn recorder(&self) -> Arc<MemoryRecorder> {
         Arc::clone(&self.recorder)
+    }
+
+    /// 注入流量统计存储（壳层在 `start` 前调用；未注入时连接统计仅保留内存态）。
+    pub fn set_stats_store(&mut self, store: Arc<crate::stats::StatsStore>) {
+        self.stats_store = Some(store);
     }
 
     /// Scheduled task scheduler (remote subscription task scripts); `None` when not started or no tasks.

@@ -59,6 +59,7 @@ impl ClientState {
             let tracker = crate::connections::start_connection_tracker(
                 self.config.clash_api_port,
                 self.config.clash_api_secret.clone(),
+                self.stats_store.clone(),
             );
             self.connection_tracker = Some(ConnectionTrackerHandle { tracker });
         }

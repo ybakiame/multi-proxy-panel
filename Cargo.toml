@@ -42,6 +42,11 @@ prost = "0.13"
 prost-types = "0.13"
 
 # Database
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "macros",
+] }
 sea-orm = { version = "1.1", features = [
     "runtime-tokio-rustls",
     "sqlx-postgres",
@@ -110,6 +115,12 @@ http-body-util = "0.1"
 async-trait = "0.1"
 futures = "0.3"
 bytes = "1"
+
+# WebSocket client（无 TLS 特性：仅用于 127.0.0.1 回环 ws://，见 pp-client connections/ws）
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
+    "connect",
+    "handshake",
+] }
 
 # Internal crates
 pp-common = { path = "crates/pp-common" }

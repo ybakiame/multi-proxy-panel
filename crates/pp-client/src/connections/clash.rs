@@ -56,18 +56,45 @@ pub(crate) fn parse_connections_response(
 
         let metadata = obj.get("metadata").and_then(|m| m.as_object());
 
-        let host = metadata
+        let domain = metadata
             .and_then(|m| m.get("host").and_then(|h| h.as_str()))
-            .map(String::from)
-            .or_else(|| {
-                let dst_ip = metadata?.get("destinationIP")?.as_str()?;
-                let dst_port = metadata?.get("destinationPort")?.as_str()?;
-                Some(format!("{dst_ip}:{dst_port}"))
-            })
-            .unwrap_or_default();
+            .unwrap_or("");
+
+        let destination_ip = metadata
+            .and_then(|m| m.get("destinationIP").and_then(|h| h.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        let host = if !domain.is_empty() {
+            domain.to_string()
+        } else {
+            metadata
+                .and_then(|m| {
+                    let dst_ip = m.get("destinationIP")?.as_str()?;
+                    let dst_port = m.get("destinationPort")?.as_str()?;
+                    Some(format!("{dst_ip}:{dst_port}"))
+                })
+                .unwrap_or_default()
+        };
+
+        // 聚合目标：优先域名（体现规则命中语义），无域名时退化为目的 IP。
+        let target = if !domain.is_empty() {
+            domain.to_string()
+        } else {
+            destination_ip.clone()
+        };
 
         let network = metadata
             .and_then(|m| m.get("network").and_then(|n| n.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        // 叶子出站 = chains[0]（Clash API chains 从最终出站往入口排列）。
+        let outbound = obj
+            .get("chains")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
@@ -111,6 +138,9 @@ pub(crate) fn parse_connections_response(
         result.push(ConnectionView {
             id,
             host,
+            target,
+            destination_ip,
+            outbound,
             network,
             chain,
             rule,
