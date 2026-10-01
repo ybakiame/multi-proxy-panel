@@ -1,4 +1,4 @@
-import type { LocalOverrideView } from "@pp/client-core";
+import type { LocalOverrideView } from "./api";
 import { asArray } from "./localOverrideGuards";
 
 /**

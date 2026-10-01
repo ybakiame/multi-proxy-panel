@@ -1,4 +1,4 @@
-import { formatRuleSetTarget, parseRuleSetTags } from "@pp/client-core";
+import { formatRuleSetTarget, parseRuleSetTags } from "./rules";
 import type {
   ConfigSlices,
   DnsMatchType,
@@ -9,7 +9,7 @@ import type {
   DnsServerType,
   DnsSlice,
   DnsStrategy,
-} from "@pp/client-core";
+} from "./api";
 
 /**
  * DNS 切片（ADR-0005 P0-4b）纯逻辑：枚举选项 / 标签 / 结构守卫 / 表单校验。

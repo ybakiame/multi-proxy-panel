@@ -19,7 +19,7 @@ import type { CacheFileSlice, ClientConfig, ConfigSlices, ExperimentalSlice } fr
 import { SubPageShell } from "../../components/SubPageShell";
 import { useSettingsConfig, randomClashApiSecret } from "../Settings/useSettingsConfig";
 import { ClashApiCard } from "./ClashApiCard";
-import { isConfigSlices } from "./Dns/dnsUtils";
+import { isConfigSlices } from "@pp/client-core";
 
 /** 文本输入样式（复用 ui.tsx 的 `inputClassName`）。 */
 const INPUT_CLASS = inputClassName;

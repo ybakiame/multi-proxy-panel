@@ -2,7 +2,13 @@ import { GlobeAltIcon, HomeModernIcon, Square2StackIcon } from "@heroicons/react
 import { DNS_SERVER_PRESETS } from "@pp/client-core";
 import type { DnsServer, DnsServerPreset } from "@pp/client-core";
 import { BottomSheet, Chip } from "../../../components/ui";
-import { DNS_ROLE_LABELS, DNS_ROLE_PRESET_GROUPS, dnsRoleTag, dnsServerSummary, dnsServerTypeLabel } from "./dnsUtils";
+import {
+  DNS_ROLE_LABELS,
+  DNS_ROLE_PRESET_GROUPS,
+  dnsRoleTag,
+  dnsServerSummary,
+  dnsServerTypeLabel,
+} from "@pp/client-core";
 
 const GROUP_META: Record<DnsServerPreset["group"], { label: string; icon: typeof HomeModernIcon }> = {
   builtin: { label: "内置默认", icon: Square2StackIcon },

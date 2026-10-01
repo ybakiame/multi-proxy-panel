@@ -10,9 +10,9 @@ import {
 } from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
 import { BottomSheet, Button, Switch, inputClassName } from "../../components/ui";
-import type { RuleSetOption } from "./ruleSetOptions";
+import type { RuleSetOption } from "@pp/client-core";
 
-export type { RuleSetOption } from "./ruleSetOptions";
+export type { RuleSetOption } from "@pp/client-core";
 
 /** 指定出站动作的可选出站 tag（订阅节点 / 模板出站 / 切片出站并集）。 */
 export interface OutboundOption {

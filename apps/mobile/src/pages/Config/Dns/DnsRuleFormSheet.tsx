@@ -4,7 +4,7 @@ import type { DnsMatchType, DnsRule, DnsRuleAction } from "@pp/client-core";
 import { parseRuleSetTags } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import { BottomSheet, Button, Switch, inputClassName } from "../../../components/ui";
-import type { RuleSetOption } from "../ruleSetOptions";
+import type { RuleSetOption } from "@pp/client-core";
 import {
   DEFAULT_DNS_RCODE,
   DNS_CLASH_MODE_OPTIONS,
@@ -14,7 +14,7 @@ import {
   DNS_TARGET_PLACEHOLDER,
   firstInvalidQueryType,
   isValidRcode,
-} from "./dnsUtils";
+} from "@pp/client-core";
 
 const inputClass = inputClassName;
 

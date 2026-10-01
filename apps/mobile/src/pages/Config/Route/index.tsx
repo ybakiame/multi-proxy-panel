@@ -21,7 +21,7 @@ import type { ConfigSlices, DnsStrategy, NodeTagView, RouteSlice } from "@pp/cli
 import { useNavigate } from "react-router-dom";
 import { SubPageShell } from "../../../components/SubPageShell";
 import { EntryLinkList } from "../../../components/EntryLinkCard";
-import { isConfigSlices } from "../Dns/dnsUtils";
+import { isConfigSlices } from "@pp/client-core";
 import { RouteSettingsCard } from "./RouteSettingsCard";
 import { buildFinalTagOptions, buildResolverServerOptions, isRouteSliceValid, validateRouteSlice } from "./routeUtils";
 

@@ -1,7 +1,17 @@
 import { useState } from "react";
-import { dnsServerProbe, toErrorMessage, uniquePresetTag } from "@pp/client-core";
-import type { DnsServer, DnsServerPreset, DnsSlice } from "@pp/client-core";
-import type { DnsProbeState } from "./DnsServerListSection";
+import { dnsServerProbe, toErrorMessage, uniquePresetTag } from "../api";
+import type { DnsServer, DnsServerPreset, DnsSlice } from "../api";
+
+/** 单个服务器的探测结果（无键 = 未探测）。 */
+export interface DnsProbeState {
+  /** 探测中。 */
+  pending: boolean;
+  /** 成功：往返毫秒数；失败：错误文案；`null` = 尚无结果。 */
+  latency: number | null;
+  error: string | null;
+  /** 该类型不支持探测（local / fakeip / quic / h3）。 */
+  unsupported: boolean;
+}
 
 /** DNS 管理页服务器库 hook（启用/弃用切换、预置项物化、批量延迟探测）。 */
 export interface UseDnsServersReturn {
@@ -71,28 +81,32 @@ export function useDnsServers(setDraft: React.Dispatch<React.SetStateAction<DnsS
       }
       return next;
     });
-    await Promise.all(
-      targets.map(async (server) => {
-        let state: DnsProbeState;
-        try {
-          const latency = await dnsServerProbe({
-            server_type: server.server_type,
-            server: server.server,
-            server_port: server.server_port,
-          });
-          state = { pending: false, latency, error: null, unsupported: false };
-        } catch (err) {
-          const message = toErrorMessage(err);
-          state = {
-            pending: false,
-            latency: null,
-            error: message,
-            unsupported: message.includes("暂不支持"),
-          };
-        }
-        setProbes((current) => ({ ...current, [server.tag]: state }));
-      }),
-    );
+    const jobs: Promise<void>[] = [];
+    for (const server of targets) {
+      jobs.push(
+        (async () => {
+          let state: DnsProbeState;
+          try {
+            const latency = await dnsServerProbe({
+              server_type: server.server_type,
+              server: server.server,
+              server_port: server.server_port,
+            });
+            state = { pending: false, latency, error: null, unsupported: false };
+          } catch (err) {
+            const message = toErrorMessage(err);
+            state = {
+              pending: false,
+              latency: null,
+              error: message,
+              unsupported: message.includes("暂不支持"),
+            };
+          }
+          setProbes((current) => ({ ...current, [server.tag]: state }));
+        })(),
+      );
+    }
+    await Promise.all(jobs);
     setProbing(false);
   };
 

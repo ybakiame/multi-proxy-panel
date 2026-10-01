@@ -27,8 +27,8 @@ import type {
   LocalOverrideView,
 } from "@pp/client-core";
 import { SubPageShell } from "../../../components/SubPageShell";
-import { isLocalOverrideView } from "../localOverrideGuards";
-import { buildRuleSetOptions } from "../ruleSetOptions";
+import { isLocalOverrideView } from "@pp/client-core";
+import { buildRuleSetOptions } from "@pp/client-core";
 import { DnsDeleteConfirm } from "./DnsDeleteConfirm";
 import { DnsFakeipCard } from "./DnsFakeipCard";
 import { DnsRolePickerSheet } from "./DnsRolePickerSheet";
@@ -38,7 +38,7 @@ import { DnsRuleListSection } from "./DnsRuleListSection";
 import { DnsServerFormSheet } from "./DnsServerFormSheet";
 import { DnsServerListSection } from "./DnsServerListSection";
 import { DnsServerPresetSheet } from "./DnsServerPresetSheet";
-import { useDnsServers } from "./useDnsServers";
+import { useDnsServers } from "@pp/client-core";
 import {
   dnsRuleSummary,
   dnsServerTagOptions,
@@ -46,7 +46,7 @@ import {
   isConfigSlices,
   isDnsSliceValid,
   validateDnsSlice,
-} from "./dnsUtils";
+} from "@pp/client-core";
 
 /**
  * DNS 切片配置子页（ADR-0005 P0-4b，路由 `/config/dns`；2026-09 补记：内置默认映射 +

@@ -17,7 +17,7 @@ import {
 import type { CustomRuleSetInput, LocalOverrideView, MetaCubeEntry } from "@pp/client-core";
 import { SubPageShell } from "../../components/SubPageShell";
 import { MarketEntryList } from "./MarketEntryList";
-import { asArray, isLocalOverrideView } from "./localOverrideGuards";
+import { asArray, isLocalOverrideView } from "@pp/client-core";
 
 /** 常用检索词快捷 Chip（点击填充检索框）。 */
 const POPULAR_KEYWORDS = ["cn", "ads", "google", "netflix", "youtube", "telegram"];

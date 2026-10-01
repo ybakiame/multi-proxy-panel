@@ -2,18 +2,11 @@ import { ChevronRightIcon, PlusIcon, SignalIcon } from "@heroicons/react/24/outl
 import type { DnsServer } from "@pp/client-core";
 import { delayColor } from "../../../components/proxyFormat";
 import { Button, Card, Chip, Switch } from "../../../components/ui";
-import { DNS_ROLE_LABELS, dnsRoleTag, dnsServerSummary, dnsServerTypeLabel } from "./dnsUtils";
+import { DNS_ROLE_LABELS, dnsRoleTag, dnsServerSummary, dnsServerTypeLabel } from "@pp/client-core";
 
-/** 单个服务器的探测结果（无键 = 未探测）。 */
-export interface DnsProbeState {
-  /** 探测中。 */
-  pending: boolean;
-  /** 成功：往返毫秒数；失败：错误文案；`null` = 尚无结果。 */
-  latency: number | null;
-  error: string | null;
-  /** 该类型不支持探测（local / fakeip / quic / h3）。 */
-  unsupported: boolean;
-}
+/** 单个服务器的探测结果（定义收敛到 @pp/client-core `useDnsServers`，此处 re-export 保持导入路径不变）。 */
+export type { DnsProbeState } from "@pp/client-core";
+import type { DnsProbeState } from "@pp/client-core";
 
 interface DnsServerListSectionProps {
   servers: DnsServer[];

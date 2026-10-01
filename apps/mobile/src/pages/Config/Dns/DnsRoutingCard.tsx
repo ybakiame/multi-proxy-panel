@@ -1,7 +1,7 @@
 import { Card, Switch } from "../../../components/ui";
 import type { DnsStrategy } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
-import { DNS_STRATEGY_OPTIONS } from "./dnsUtils";
+import { DNS_STRATEGY_OPTIONS } from "@pp/client-core";
 
 interface DnsRoutingCardProps {
   finalTag: string;

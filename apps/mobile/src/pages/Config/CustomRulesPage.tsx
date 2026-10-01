@@ -35,11 +35,11 @@ import type {
 import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
 import type { BaselineView } from "@pp/client-core";
 import { SubPageShell } from "../../components/SubPageShell";
-import { isLocalOverrideView } from "./localOverrideGuards";
+import { isLocalOverrideView } from "@pp/client-core";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
 import type { OutboundOption, RuleSetOption } from "./RuleEditSheet";
-import { buildRuleSetOptions } from "./ruleSetOptions";
+import { buildRuleSetOptions } from "@pp/client-core";
 import { RuleListSection } from "./RuleListSection";
 
 /**

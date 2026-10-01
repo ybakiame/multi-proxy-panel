@@ -3,7 +3,12 @@ import { TrashIcon } from "@heroicons/react/24/outline";
 import type { DnsServer, DnsServerType } from "@pp/client-core";
 import { MobileSelectSheet } from "../../../components/MobileSelectSheet";
 import { BottomSheet, Button, inputClassName } from "../../../components/ui";
-import { DEFAULT_FAKEIP_INET4_RANGE, DNS_SERVER_TYPE_OPTIONS, parsePortDraft, validateDnsServerForm } from "./dnsUtils";
+import {
+  DEFAULT_FAKEIP_INET4_RANGE,
+  DNS_SERVER_TYPE_OPTIONS,
+  parsePortDraft,
+  validateDnsServerForm,
+} from "@pp/client-core";
 
 const inputClass = inputClassName;
 

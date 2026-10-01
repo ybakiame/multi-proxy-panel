@@ -19,12 +19,16 @@ export * from "./atoms/ui";
 export * from "./hooks/useCapabilities";
 export * from "./hooks/useClientConfig";
 export * from "./hooks/useCoreVersion";
+export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
 
 // 纯逻辑工具。
+export * from "./dnsSlice";
 export * from "./env";
+export * from "./localOverrideGuards";
 export * from "./logCapture";
 export * from "./metaCubeCatalog";
 export * from "./pendingRestart";
+export * from "./ruleSetOptions";
 export * from "./rules";
 export * from "./toast";

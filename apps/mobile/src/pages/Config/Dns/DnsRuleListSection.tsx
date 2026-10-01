@@ -1,7 +1,7 @@
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button, Card, Switch } from "../../../components/ui";
 import type { DnsRule } from "@pp/client-core";
-import { dnsRuleSummary } from "./dnsUtils";
+import { dnsRuleSummary } from "@pp/client-core";
 
 interface DnsRuleListSectionProps {
   rules: DnsRule[];

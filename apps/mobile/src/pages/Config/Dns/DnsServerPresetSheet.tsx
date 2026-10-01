@@ -2,7 +2,7 @@ import { GlobeAltIcon, HomeModernIcon, PencilSquareIcon, Square2StackIcon } from
 import type { DnsServerPreset } from "@pp/client-core";
 import { DNS_SERVER_PRESETS } from "@pp/client-core";
 import { BottomSheet, Button } from "../../../components/ui";
-import { dnsServerTypeLabel } from "./dnsUtils";
+import { dnsServerTypeLabel } from "@pp/client-core";
 
 interface DnsServerPresetSheetProps {
   isOpen: boolean;

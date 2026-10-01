@@ -22,7 +22,7 @@ import {
 import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import { useNavigate } from "react-router-dom";
 import { SubPageShell } from "../../components/SubPageShell";
-import { asArray, isLocalOverrideView } from "./localOverrideGuards";
+import { asArray, isLocalOverrideView } from "@pp/client-core";
 import { CustomRuleSetCard } from "./CustomRuleSetCard";
 import { RuleSetFormSheet } from "./RuleSetFormSheet";
 
