@@ -5,6 +5,7 @@ import type { CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@
 import {
   buildSaveInput,
   localOverrideSave,
+  markRestartRequired,
   localOverrideUpdateRulesetsNow,
   toErrorMessage,
   toastError,
@@ -72,6 +73,7 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
   const persistCustom = async (next: CustomRuleSetInput[]): Promise<boolean> => {
     try {
       await localOverrideSave({ ...buildSaveInput(overrideData), custom_rule_sets: next });
+      markRestartRequired("rulesets", coreRunning);
       onChanged();
       return true;
     } catch (err) {
@@ -90,6 +92,7 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
     setUpdating(true);
     try {
       const { updated, skipped, failed } = await localOverrideUpdateRulesetsNow();
+      markRestartRequired("rulesets", coreRunning);
       const suffix = coreRunning ? "，重启代理后生效" : "";
       const summary = `更新 ${updated}，已最新 ${skipped}，失败 ${failed}${suffix}`;
       if (failed > 0) {

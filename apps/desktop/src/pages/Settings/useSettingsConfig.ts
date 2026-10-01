@@ -2,11 +2,12 @@ import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
+import { markRestartRequired } from "@pp/client-core";
 import { toErrorMessage, tunAuthStatus } from "@pp/client-core";
-import { CONFIG_KEY, TUN_AUTH_KEY } from "@pp/client-core";
+import { CONFIG_KEY, PROXY_STATUS_KEY, TUN_AUTH_KEY } from "@pp/client-core";
 import { lastActionErrorAtom } from "@pp/client-core";
 import { useClientConfig, useSaveConfig } from "@pp/client-core";
-import type { ClientConfig } from "@pp/client-core";
+import type { ClientConfig, ClientStatus, RestartDirtyKey } from "@pp/client-core";
 
 // TODO: read version from package.json (build-time injection or runtime read)
 export const APP_VERSION = "0.1.0";
@@ -24,6 +25,23 @@ export const CLASH_UI_OPTIONS = [
   { id: "yacd", label: "yacd" },
   { id: "metacubexd", label: "metacubexd" },
 ] as const;
+
+/**
+ * 需重启核心才生效的 ClientConfig 字段 → 脏顶级配置域映射（RestartPrompt 消费）。
+ * 未列出的字段（github_proxy_prefix / fetch_via_local_proxy 等）不影响运行中核心，不上报。
+ */
+const RESTART_KEY_BY_FIELD: Record<string, RestartDirtyKey> = {
+  mixed_port: "inbounds",
+  ipv6_enabled: "inbounds",
+  tun_enabled: "inbounds",
+  tun_stack: "inbounds",
+  tun_auto_route: "inbounds",
+  clash_api_enabled: "clash_api",
+  clash_api_port: "clash_api",
+  clash_api_secret: "clash_api",
+  clash_api_ui: "clash_api",
+  dns_fakeip_enabled: "dns",
+};
 
 export interface UseSettingsConfigReturn {
   config: ClientConfig | null;
@@ -126,6 +144,15 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
         // 保存成功后 useSaveConfig 已用入参回写缓存；这里失效共享的
         // ["config"] Query 缓存让其它消费者重读，而不是再手动 invoke 一遍。
         await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+        // 需重启的字段上报全局脏标记（RestartPrompt 消费）；核心未运行时配置随
+        // 下次启动生效，无需提示（markRestartRequired 内部已判）。
+        const coreRunning = queryClient.getQueryData<ClientStatus>(PROXY_STATUS_KEY)?.core_running ?? false;
+        for (const field of Object.keys(patch)) {
+          const dirtyKey = RESTART_KEY_BY_FIELD[field];
+          if (dirtyKey) {
+            markRestartRequired(dirtyKey, coreRunning);
+          }
+        }
       } catch (err) {
         toastError(toErrorMessage(err));
         // 保存失败回滚：失效缓存触发重读

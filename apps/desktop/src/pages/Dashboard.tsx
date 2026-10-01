@@ -10,6 +10,7 @@ import { SUBSCRIPTIONS_KEY, lastActionErrorAtom } from "@pp/client-core";
 import type { ClientConfig, ClientStatus, LocalCoreView, ProfileView, SubscriptionView } from "@pp/client-core";
 import { useCapabilities, useClientConfig, useProxyStatus, useSaveConfig } from "@pp/client-core";
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
+import { markRestartRequired } from "@pp/client-core";
 import ConfigPreviewModal from "../components/ConfigPreviewModal";
 import DashboardStatusCards from "./DashboardStatusCards";
 
@@ -65,6 +66,8 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       setActionError(null);
+      // 生效订阅切换需重启核心才生效：上报全局脏标记（RestartPrompt 消费）。
+      markRestartRequired("subscription", status?.core_running ?? false);
       void queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
       void queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_KEY });
     },

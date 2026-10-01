@@ -3,6 +3,7 @@ import { ToastProvider, useTheme, toast as heroToast } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { toastModeOverride } from "@pp/client-core";
 import { Toaster } from "./components/Toaster";
+import { RestartPrompt } from "./components/RestartPrompt";
 import { isTauriEnv } from "@pp/client-core";
 import { setToastHandler } from "@pp/client-core";
 import { DesktopSidebar } from "./layout/desktop/DesktopSidebar";
@@ -123,6 +124,7 @@ function AppContent() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        <RestartPrompt />
       </div>
     </div>
   );

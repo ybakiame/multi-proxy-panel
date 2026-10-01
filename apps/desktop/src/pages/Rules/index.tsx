@@ -6,6 +6,7 @@ import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } f
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
 import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
+import { markRestartRequired } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
 import { RuleSetSection } from "./RuleSetSection";
@@ -44,6 +45,7 @@ export default function Rules() {
     try {
       await localOverrideSave(input);
       toastRuleSaved(successMessage);
+      markRestartRequired("rules", coreRunning);
       invalidate();
     } catch (err) {
       toastError(toErrorMessage(err));
