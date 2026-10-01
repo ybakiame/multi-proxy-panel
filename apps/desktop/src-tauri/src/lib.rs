@@ -47,19 +47,13 @@ pub(crate) fn is_wsl_osrelease(osrelease: &str) -> bool {
 
 /// 是否运行在 WSL（Linux 子系统）中。
 ///
-/// 依据 `/proc/sys/kernel/osrelease`（见 [`is_wsl_osrelease`]）；非 Linux 平台或
-/// 读取失败时返回 `false`。
+/// 依据 `/proc/sys/kernel/osrelease`（见 [`is_wsl_osrelease`]）；仅 Linux 需要
+/// （唯一消费方是 Linux-only 的 `configure_wsl_webkit_workaround`）。
+#[cfg(target_os = "linux")]
 pub(crate) fn is_wsl() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::fs::read_to_string("/proc/sys/kernel/osrelease")
-            .map(|osrelease| is_wsl_osrelease(&osrelease))
-            .unwrap_or(false)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|osrelease| is_wsl_osrelease(&osrelease))
+        .unwrap_or(false)
 }
 
 /// 仅在 Linux 且检测到 WSL 内核（`/proc/sys/kernel/osrelease` 内容忽略大小写包含

@@ -271,13 +271,13 @@ fn core_type_from_name(name: &str) -> PanelResult<CoreType> {
     }
 }
 
-fn set_executable(path: &Path) -> PanelResult<()> {
+fn set_executable(_path: &Path) -> PanelResult<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path)?.permissions();
+        let mut perms = std::fs::metadata(_path)?.permissions();
         perms.set_mode(perms.mode() | 0o755);
-        std::fs::set_permissions(path, perms)?;
+        std::fs::set_permissions(_path, perms)?;
     }
     Ok(())
 }

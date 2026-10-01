@@ -70,5 +70,7 @@ pub(super) fn set_executable(path: &Path) -> PanelResult<()> {
         perms.set_mode(perms.mode() | 0o755);
         std::fs::set_permissions(path, perms)?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
