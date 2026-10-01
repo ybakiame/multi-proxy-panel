@@ -200,6 +200,8 @@ bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
 ```
 
+支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（`bundle/nsis/*.exe`）；TUN 模式需要管理员权限（设置页「网络设置」提供一键以管理员身份重启），且依赖随核心自动下载的 `wintun.dll`。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包。
+
 #### Android（移动客户端）构建
 
 Android 客户端自 desktop 拆分独立为 `apps/mobile`（Tauri 2 移动应用）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。

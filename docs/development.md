@@ -200,12 +200,37 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 ### Release (`.github/workflows/release.yml`)
 
-在推送 `v*` 标签或手动触发时执行，包含四个阶段：
+在推送 `v*` 标签或手动触发时执行，包含五个阶段：
 
 1. **`web`** — 构建前端产物
 2. **`build`** — 在 x86_64 与 aarch64  runner 上交叉编译 Release 二进制，打包为 `proxy-panel-{hub,agent}-linux-{arch}.tar.gz`
-3. **`release`** — 汇总 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
-4. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+3. **`desktop-windows`** — 在 windows-latest 上经 tauri-action 构建桌面客户端 NSIS 安装包（`apps/desktop`）
+4. **`release`** — 汇总 tar.gz 与 Windows 安装包、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
+5. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+
+### Windows 桌面端构建
+
+桌面客户端（`apps/desktop`，Tauri 2）支持 Windows 安装包（NSIS）：
+
+```bash
+# Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
+cd apps/desktop && bun install && bun run tauri build
+# 产物：apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+```
+
+Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
+
+```bash
+cargo xwin clippy --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+```
+
+**TUN 模式**：sing-box 的 Windows TUN 依赖 `wintun.dll` 与 `sing-box.exe` 同目录——核心
+下载完成后客户端会自动从 wintun.net 官方发布拉取对应架构的 dll（失败不阻塞核心安装，
+TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：设置页「网络设置」的
+授权按钮会以管理员身份重启应用（UAC 确认）。
+
+**未签名安装包会触发 SmartScreen 警告**（无代码签名证书），属预期行为。
 
 提交 PR 前请确保本地已通过 `cargo clippy --workspace --all-targets -- -D warnings` 和 `cargo test --workspace`（后端）以及 `bun run verify`（前端）。
 
