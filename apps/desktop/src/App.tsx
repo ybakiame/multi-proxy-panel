@@ -70,15 +70,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 /**
- * 固定为深色主题：HeroUI v3 深色模式由 `<html>` 上的 `dark` / `data-theme="dark"`
- * 驱动（index.html 已静态设置），此处用 `useTheme` 钩子保证持久化后仍为深色。
+ * 主题同步（浅色 / 深色 / 跟随系统）：HeroUI v3 `useTheme` 读取 localStorage
+ * `heroui-theme`（默认 `system`），监听系统深浅色变化并同步 `<html>` 的
+ * class / `data-theme`；index.html 预置脚本负责首帧前就位，此组件挂载后接管。
  */
 function ThemeBootstrap() {
-  const { setTheme } = useTheme("dark");
-
-  useEffect(() => {
-    setTheme("dark");
-  }, [setTheme]);
+  useTheme("system");
 
   return null;
 }

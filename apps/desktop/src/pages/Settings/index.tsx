@@ -1,6 +1,7 @@
 import { Alert } from "@heroui/react";
 import { useSettingsConfig } from "./useSettingsConfig";
 import NetworkSettings from "./NetworkSettings";
+import AppearanceSettings from "./AppearanceSettings";
 import GithubSettings from "./GithubSettings";
 import ClashPanelSettings from "./ClashPanelSettings";
 import CoreManagement from "./CoreManagement";
@@ -22,6 +23,7 @@ export default function Settings() {
       </div>
 
       <NetworkSettings settings={settings} />
+      <AppearanceSettings />
       <GithubSettings settings={settings} />
       <ClashPanelSettings settings={settings} />
 
