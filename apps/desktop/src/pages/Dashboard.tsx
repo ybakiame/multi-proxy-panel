@@ -226,8 +226,11 @@ export default function Dashboard() {
   };
 
   const running = status?.core_running ?? false;
-  // start_proxy 在 TUN 未授权时返回 `tun_auth_required` 错误，改为引导前往设置页授权。
-  const tunAuthRequired = error?.includes("tun_auth_required") ?? false;
+  // start_proxy 在 TUN 未授权时返回 `tun_auth_required` 错误，改为引导前往入站管理页授权。
+  // 共享错误为会话级状态：TUN 此前开启时启动失败留下的错误可能残留——桌面端 TUN 为可选
+  // 模式，仅当配置中 TUN 仍处于启用状态时才展示授权门禁（已关闭则按普通错误提示，避免
+  // 「未启用 TUN 却被要求授权」的误导）。
+  const tunAuthRequired = (config?.tun_enabled ?? false) && (error?.includes("tun_auth_required") ?? false);
   const alertError = error ?? actionError;
 
   // 运行门禁：不满足时禁止启动并逐条提示。
@@ -290,7 +293,8 @@ export default function Dashboard() {
           <Alert.Content>
             <Alert.Title>需要 TUN 授权</Alert.Title>
             <Alert.Description>
-              代理启动失败：TUN 模式未获得系统授权。请前往「设置 → TUN 模式」点击「立即授权」后重新启动代理。
+              代理启动失败：TUN 模式未获得系统授权。请前往「配置 → 入站管理 → TUN
+              入站」点击「立即授权」后重新启动代理；如不使用 TUN，可在该页关闭「启用 TUN 模式」。
             </Alert.Description>
           </Alert.Content>
         </Alert>

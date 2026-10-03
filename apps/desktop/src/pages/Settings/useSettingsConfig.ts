@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
 import { markRestartRequired } from "@pp/client-core";
 import { toErrorMessage, tunAuthStatus } from "@pp/client-core";
@@ -111,6 +111,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   // 配置与共享错误均以 Query 缓存 / jotai atom 为权威源（替代原 store 双写）。
   const { data: config = null } = useClientConfig();
   const error = useAtomValue(lastActionErrorAtom);
+  const setLastError = useSetAtom(lastActionErrorAtom);
   const saveConfigMutation = useSaveConfig();
   const [mixedPortDraft, setMixedPortDraft] = useState("17890");
   const [ipv6Enabled, setIpv6Enabled] = useState(false);
@@ -179,13 +180,19 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
             markRestartRequired(dirtyKey, coreRunning);
           }
         }
+        // 关闭 TUN 后，此前「TUN 未授权」启动失败残留在共享错误里的记录不再适用：
+        // 桌面端 TUN 为可选模式，未启用时启动不再需要授权，清除避免 Dashboard
+        // 继续展示授权门禁（该门禁另按 config.tun_enabled 守卫，双保险）。
+        if (patch.tun_enabled === false) {
+          setLastError((current) => (current?.includes("tun_auth_required") ? null : current));
+        }
       } catch (err) {
         toastError(toErrorMessage(err));
         // 保存失败回滚：失效缓存触发重读
         await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
       }
     },
-    [queryClient, saveConfigMutation],
+    [queryClient, saveConfigMutation, setLastError],
   );
 
   const persistDebounced = useCallback(
