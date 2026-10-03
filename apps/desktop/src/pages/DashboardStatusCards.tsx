@@ -86,7 +86,7 @@ export default function DashboardStatusCards({
           {!config?.clash_api_enabled ? (
             <div className="flex flex-col gap-1">
               <span className="text-sm">未启用</span>
-              <span className="text-xs text-muted">在「设置 → Clash 面板」开启</span>
+              <span className="text-xs text-muted">在「配置 → 实验性配置 → Clash API」开启</span>
             </div>
           ) : (
             <>

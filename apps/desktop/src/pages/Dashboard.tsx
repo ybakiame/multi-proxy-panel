@@ -268,7 +268,7 @@ export default function Dashboard() {
   const ruleModeHint =
     running && config?.clash_api_enabled
       ? "即时生效"
-      : "已保存，将在下次启动生效（sing-box 运行时切换依赖 Clash 面板 API，需在「设置 → Clash 面板」开启）";
+      : "已保存，将在下次启动生效（sing-box 运行时切换依赖 Clash 面板 API，需在「配置 → 实验性配置 → Clash API」开启）";
 
   return (
     <div className="flex flex-col gap-6">

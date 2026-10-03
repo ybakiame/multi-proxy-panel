@@ -1,17 +1,27 @@
 import { Alert, Card, Input, Label, ListBox, Select, Switch } from "@heroui/react";
-import type { UseSettingsConfigReturn } from "./useSettingsConfig";
-import { CLASH_UI_OPTIONS } from "./useSettingsConfig";
+import { CLASH_UI_OPTIONS } from "../../Settings/useSettingsConfig";
+import type { UseSettingsConfigReturn } from "../../Settings/useSettingsConfig";
 
-interface ClashPanelSettingsProps {
+interface ClashApiCardProps {
   settings: UseSettingsConfigReturn;
 }
 
-export default function ClashPanelSettings({ settings }: ClashPanelSettingsProps) {
+/**
+ * Clash 面板卡（桌面端，2026-10 自「设置」页迁入「配置 → 实验性配置」页，
+ * 语义对齐移动端 `Config/ClashApiCard.tsx`）。
+ *
+ * Clash API 不是配置切片：作为高优先级设置（`client.json`）在配置合成 ④ 层
+ * 整体覆盖模板/覆写中的 `experimental.clash_api` 同名字段；桌面端保留启用开关
+ * 与可选密钥（区别于移动端的恒启用 + 必填密钥）。字段即时保存
+ * （useSettingsConfig），重启代理后生效，不经本页切片草稿的保存按钮。
+ */
+export default function ClashApiCard({ settings }: ClashApiCardProps) {
   const {
     clashApiEnabled,
     setClashApiEnabled,
-    clashApiPort,
-    setClashApiPort,
+    clashApiPortDraft,
+    clashApiPortError,
+    onClashApiPortChange,
     clashApiSecret,
     setClashApiSecret,
     clashApiUi,
@@ -23,7 +33,7 @@ export default function ClashPanelSettings({ settings }: ClashPanelSettingsProps
   return (
     <Card>
       <Card.Header>
-        <Card.Title>Clash 面板</Card.Title>
+        <Card.Title>Clash API</Card.Title>
         <Card.Description>通过本地面板 API 查看连接与切换节点</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
@@ -44,27 +54,24 @@ export default function ClashPanelSettings({ settings }: ClashPanelSettingsProps
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="settings-clash-port">端口</Label>
+            <Label htmlFor="experimental-clash-port">端口</Label>
             <Input
-              id="settings-clash-port"
+              id="experimental-clash-port"
               aria-label="端口"
               type="number"
               min={1}
               max={65535}
-              value={String(clashApiPort)}
-              onChange={(event) => {
-                const parsed = Number(event.target.value);
-                const next = Number.isFinite(parsed) ? parsed : 0;
-                setClashApiPort(next);
-                persistDebounced({ clash_api_port: next });
-              }}
+              value={clashApiPortDraft}
+              onChange={(event) => onClashApiPortChange(event.target.value)}
+              placeholder="9090"
               fullWidth
             />
+            {clashApiPortError && <span className="text-xs text-danger">{clashApiPortError}</span>}
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="settings-clash-secret">密钥（可选）</Label>
+            <Label htmlFor="experimental-clash-secret">密钥（可选）</Label>
             <Input
-              id="settings-clash-secret"
+              id="experimental-clash-secret"
               aria-label="密钥（可选）"
               type="password"
               value={clashApiSecret}
@@ -79,9 +86,9 @@ export default function ClashPanelSettings({ settings }: ClashPanelSettingsProps
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="settings-clash-ui">面板 UI</Label>
+          <Label htmlFor="experimental-clash-ui">面板 UI</Label>
           <Select
-            id="settings-clash-ui"
+            id="experimental-clash-ui"
             aria-label="面板 UI"
             value={clashApiUi}
             onChange={(value) => {
@@ -114,7 +121,7 @@ export default function ClashPanelSettings({ settings }: ClashPanelSettingsProps
           <Alert.Content>
             <Alert.Title>访问方式</Alert.Title>
             <Alert.Description>
-              面板地址 http://127.0.0.1:{clashApiPort}/ui，默认 {clashApiUi}，可切换 yacd / metacubexd
+              面板地址 http://127.0.0.1:{clashApiPortDraft}/ui，默认 {clashApiUi}，可切换 yacd / metacubexd
             </Alert.Description>
           </Alert.Content>
         </Alert>

@@ -26,7 +26,8 @@ interface ConfigEntry {
  * 入站（混合端口 / TUN / IPv6）与 Clash API 不是配置切片：作为高优先级设置
  * （`client.json`）在配置合成 ④ 层覆盖模板/覆写同名字段；入站管理由本页
  * `/config/inbounds` 承载（2026-10 自「设置」页剥离，对齐移动端），Clash API
- * 由「设置」页的 Clash 面板卡片承载；规则管理与规则集管理由侧边栏「规则」页承载。
+ * 由 `/config/experimental` 的 Clash API 卡承载（同步自「设置」页剥离）；规则
+ * 管理与规则集管理由侧边栏「规则」页承载。
  */
 const CONFIG_ENTRIES: ConfigEntry[] = [
   {
@@ -57,7 +58,7 @@ const CONFIG_ENTRIES: ConfigEntry[] = [
     to: "/config/experimental",
     icon: BeakerIcon,
     title: "Experimental",
-    description: "实验性配置（cache_file 缓存）",
+    description: "实验性配置（Clash API 与缓存）",
   },
 ];
 

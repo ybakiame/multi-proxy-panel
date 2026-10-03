@@ -15,11 +15,17 @@ import {
 } from "@pp/client-core";
 import type { CacheFileSlice, ConfigSlices, ExperimentalSlice } from "@pp/client-core";
 import { isConfigSlices } from "@pp/client-core";
+import { useSettingsConfig } from "../../Settings/useSettingsConfig";
+import ClashApiCard from "./ClashApiCard";
 
 /**
  * 实验性配置页（桌面端，路由 `/config/experimental`；语义对齐移动端
- * `Config/ExperimentalPage.tsx`，桌面端 Clash API 由「设置 → Clash 面板」承载，
- * 本页仅编辑 `experimental.cache_file` 切片）。
+ * `Config/ExperimentalPage.tsx`：Clash API + `experimental.cache_file` 切片；
+ * 2026-10 起并入 Clash 面板设置，自「设置」页剥离）。
+ *
+ * 结构自上而下：页头（返回 + 标题 + 保存按钮，仅作用于 Cache File 切片草稿）→
+ * 实验性能力提示 → Clash API 卡（ClientConfig 即时保存体系，与本页切片草稿
+ * 互不干扰，不经保存按钮）→ Cache File 卡。
  *
  * 数据流：同 DNS 页（内存草稿 copy-on-write，保存整份落盘 + invalidate + toast +
  * 上报重启脏标记）。校验对齐 Rust `ExperimentalSlice::validate`：`path` 非空时不得
@@ -30,6 +36,8 @@ export default function ExperimentalPage() {
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
   const coreRunning = status?.core_running ?? false;
+  // Clash API 卡（ClientConfig 即时保存，不经本页保存按钮）。
+  const settings = useSettingsConfig();
 
   const {
     data: rawSlices,
@@ -93,7 +101,7 @@ export default function ExperimentalPage() {
           </Button>
           <div>
             <h1 className="text-xl font-semibold">Experimental</h1>
-            <p className="text-sm text-muted">实验性配置（cache_file 缓存）</p>
+            <p className="text-sm text-muted">实验性配置（Clash API 与 cache_file 缓存）</p>
           </div>
         </div>
         <Button
@@ -138,6 +146,9 @@ export default function ExperimentalPage() {
           <Alert.Description>实验性功能，可能会存在不稳定现象。</Alert.Description>
         </Alert.Content>
       </Alert>
+
+      {/* Clash API（ClientConfig 即时保存，不经本页保存按钮） */}
+      <ClashApiCard settings={settings} />
 
       {draft && (
         <Card>

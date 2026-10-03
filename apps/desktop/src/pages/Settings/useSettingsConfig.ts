@@ -86,8 +86,10 @@ export interface UseSettingsConfigReturn {
   setTunAuthError: (value: string | null) => void;
   clashApiEnabled: boolean;
   setClashApiEnabled: (value: boolean) => void;
-  clashApiPort: number;
-  setClashApiPort: (value: number) => void;
+  /** Clash API 端口草稿（字符串，输入校验后合法才落库）。 */
+  clashApiPortDraft: string;
+  clashApiPortError: string | null;
+  onClashApiPortChange: (raw: string) => void;
   clashApiSecret: string;
   setClashApiSecret: (value: string) => void;
   clashApiUi: string;
@@ -121,7 +123,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [tunAuthError, setTunAuthError] = useState<string | null>(null);
   const [tunAuthBusy, setTunAuthBusy] = useState(false);
   const [clashApiEnabled, setClashApiEnabled] = useState(false);
-  const [clashApiPort, setClashApiPort] = useState(9090);
+  const [clashApiPortDraft, setClashApiPortDraft] = useState("9090");
   const [clashApiSecret, setClashApiSecret] = useState("");
   const [clashApiUi, setClashApiUi] = useState<string>("zashboard");
   const [githubProxyPrefix, setGithubProxyPrefix] = useState("");
@@ -143,7 +145,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
       setTunStack(config.tun_stack);
       setTunAutoRoute(config.tun_auto_route);
       setClashApiEnabled(config.clash_api_enabled);
-      setClashApiPort(config.clash_api_port);
+      setClashApiPortDraft(String(config.clash_api_port));
       setClashApiSecret(config.clash_api_secret);
       setClashApiUi(config.clash_api_ui || "zashboard");
       setGithubProxyPrefix(config.github_proxy_prefix || "");
@@ -217,6 +219,18 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     [persistDebounced],
   );
 
+  /** Clash API 端口输入：同混合端口，仅合法值防抖落库。 */
+  const onClashApiPortChange = useCallback(
+    (raw: string) => {
+      setClashApiPortDraft(raw);
+      if (portError(raw) !== null) {
+        return;
+      }
+      persistDebounced({ clash_api_port: Number(raw) });
+    },
+    [persistDebounced],
+  );
+
   // TUN 授权状态查询（桌面端且 TUN 启用时），Query 缓存为权威源。
   const { data: tunAuthData } = useQuery<string>({
     queryKey: TUN_AUTH_KEY,
@@ -256,8 +270,9 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     setTunAuthError,
     clashApiEnabled,
     setClashApiEnabled,
-    clashApiPort,
-    setClashApiPort,
+    clashApiPortDraft,
+    clashApiPortError: portError(clashApiPortDraft),
+    onClashApiPortChange,
     clashApiSecret,
     setClashApiSecret,
     clashApiUi,
