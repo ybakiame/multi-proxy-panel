@@ -1,0 +1,149 @@
+{
+  "protocol_version": "0.1.0",
+  "project": "ProxyPanel",
+  "repository": "https://github.com/ybakiame/multi-proxy-panel",
+  "revision": "8ebba040e8197f2428a4b0929359507aed0b525d (Pass 2 documentation changes uncommitted at report time)",
+  "status": "partial",
+  "audit": {
+    "pass": "Pass 2 — Adopt",
+    "completed_at": "2026-10-04",
+    "protocol_submodule_revision": "310fba5baa384c912e1fd8300e33d72a057908c5",
+    "pass1_records": [
+      "docs/adoption/project-inventory.json",
+      "docs/adoption/protocol-mapping.json",
+      "docs/adoption/audit-pass1.md"
+    ],
+    "authority": "ProxyPanel project contract (AGENTS.md, README.md, docs/, ADRs, source/CI) remains authoritative; Protocol files were reference material only and were neither copied nor modified"
+  },
+  "decisions_applied": [
+    {
+      "id": "ADC-001",
+      "decision": "Keep the existing ProxyPanel documentation convention; do not migrate existing documents to protocol-recommended paths.",
+      "applied": "docs/index.md, docs/architecture.md, docs/development.md, docs/deployment.md, docs/adr/ retained. No docs/workflows/, docs/testing/, docs/decisions/ or docs/architecture/ created; workflow and testing content was added to the existing development guide."
+    },
+    {
+      "id": "ADC-002",
+      "decision": "Coding-agent infrastructure is Agent Adapter scope; crates/pp-agent is not an AI/LLM Agent.",
+      "applied": "Created docs/adapters/README.md for opencode/pi/.agents; no project-level agents/tools/prompts/memory/mcp/evaluation subsystems created; vendor configuration kept out of the project contract (verified by check)."
+    },
+    {
+      "id": "ADC-003",
+      "decision": "ADR-0007 and the implementation are authoritative for client architecture; correct stale documentation; do not rewrite historical ADR-0003.",
+      "applied": "docs/architecture.md, README.md, docs/development.md, docs/index.md, Cargo.toml comments, .opencode rules and .agents rules aligned to apps/client; ADR-0003 body and status left untouched."
+    },
+    {
+      "id": "ADC-004",
+      "decision": "Protocol entry point committed before Pass 2; do not modify the protocol submodule.",
+      "applied": "Entry point is committed at 8ebba04 (AGENTS.md protocol section + ADOPT.md). Submodule remains clean at 310fba5; no Protocol file copied."
+    },
+    {
+      "id": "ADC-005",
+      "decision": "Do not add a mandatory frontend automated-test gate; document the current frontend validation capability accurately.",
+      "applied": "AGENTS.md §7 and docs/development.md document that frontend packages have no test runner and that verify = build + oxlint + oxfmt. No gate added."
+    },
+    {
+      "id": "ADC-006",
+      "decision": "Keep docs/adr/ as the ADR convention; add index/convention/template; repair only confirmed metadata drift.",
+      "applied": "Created docs/adr/README.md (status vocabulary, required fields, index, template). Repaired ADR-0002 Status (Proposed→Accepted) and ADR-0006 Date (2026-12-19→2026-10-02); decision bodies untouched."
+    },
+    {
+      "id": "ADC-007",
+      "decision": "Add and introduce CHANGELOG.md.",
+      "applied": "Created CHANGELOG.md (Keep a Changelog style) with [Unreleased] plus v0.4.0–v0.4.5 entries reconstructed from git release tags (dates and tag subjects) and post-v0.4.5 work grounded in README/AGENTS/ADR/git evidence; wired from README.md, docs/index.md, docs/contributing.md, AGENTS.md §9."
+    },
+    {
+      "id": "ADC-008",
+      "decision": "Resolve the README → LICENSE broken link: add the declared AGPL-3.0-or-later license file.",
+      "applied": "Added LICENSE with the verbatim GNU Affero General Public License v3 text (235 lines, 34020 bytes; md5 216109e2c1c3eaf57de2bfc18c11c9f8 identical to /usr/share/licenses/spdx/AGPL-3.0-or-later.txt). README.md's badge and license-section links now resolve; Cargo.toml/package.json already declared AGPL-3.0-or-later, so no new policy was introduced."
+    }
+  ],
+  "changes": {
+    "created": [
+      "CHANGELOG.md",
+      "LICENSE (GNU AGPL-3.0 verbatim text)",
+      "docs/adr/README.md",
+      "docs/adapters/README.md",
+      "docs/adoption/adoption-report.json",
+      "docs/adoption/adoption-report.md"
+    ],
+    "updated": [
+      "AGENTS.md (proto inventory, AppState, test strategy, doc-sync table, workflows §10, Definition of Done + escalation §11, resources)",
+      "README.md (apps tree, proto tree, Bun workspace install convention, docs index/CHANGELOG links)",
+      "docs/index.md (client entry, stack versions, ADR/adapters/adoption/nix-flake/CHANGELOG entries, install convention)",
+      "docs/architecture.md (client chapters rewritten to apps/client per ADR-0007, frontend stack versions, MITM scope notes)",
+      "docs/development.md (stack versions, root install convention, applicable workflows section, test surface incl. e2e and frontend capability, review checklist)",
+      "docs/contributing.md (documentation table, release steps reordered around CHANGELOG)",
+      "docs/adr/0002-client-rule-management.md (Status metadata only)",
+      "docs/adr/0006-client-traffic-stats.md (Date metadata only)",
+      ".opencode/AGENTS.md (removed placeholder, added project stack + rule precedence pointers)",
+      ".opencode/rules/coding-standards.md (verification matrix updated to apps/client, apps/panel, client-core)",
+      ".agents/rules/client-state-management.md (retargeted to apps/client + packages/client-core paths)",
+      "crates/pp-agent/README.md (fixed broken relative links)",
+      "crates/pp-hub/README.md (fixed broken relative links)",
+      "Cargo.toml (workspace members comment: apps/desktop → apps/client; comment only, no build semantics)",
+      "nix-flake.md (apps/client NDK script path, removed stale Dioxus/Slint and KMP ADR claims)"
+    ],
+    "preserved": [
+      "docs/adr/0001, 0003, 0004, 0005, 0007 (historical decision content and statuses untouched)",
+      "docs/plans/**, docs/research/** (dated historical records)",
+      "docs/deployment.md, docs/api_reference.md (reviewed, accurate, untouched)",
+      ".pi/** (adapter configuration; .pi/plans kept as historical records)",
+      "apps/panel/AGENTS.md (generated HeroUI docs index)",
+      ".agents/skills/**, .opencode/agents/**, opencode.jsonc (vendor adapter assets)",
+      ".protocol/agent-development-protocol/** (submodule untouched, still pinned)",
+      "docs/adoption/project-inventory.json, docs/adoption/protocol-mapping.json, docs/adoption/audit-pass1.md (frozen Pass 1 evidence/planning records)"
+    ],
+    "omitted": [
+      "docs/workflows/, docs/testing/, docs/decisions/, docs/architecture/ (would duplicate existing convention; ADC-001)",
+      "docs/evaluation/, docs/agents/, docs/tools/, docs/prompts/, docs/memory/, docs/mcp/ (capabilities N/A; no empty placeholders)",
+      "LICENSE (requires human decision — ADC-008; not created to avoid fabricating a legal artifact)"
+    ]
+  },
+  "capability_outcome": [
+    { "id": "project-contract", "status": "Existing", "note": "Contract reconciled and made explicit (DoD, escalation, workflows, index wiring); ADC-008 resolved by adding LICENSE, so README's license links resolve and no contract gap remains." },
+    { "id": "architecture", "status": "Existing", "note": "docs/architecture.md now matches ADR-0007 and the apps/client implementation; stack versions corrected; stale references removed outside historical records." },
+    { "id": "workflows", "status": "Existing", "note": "Five applicable workflows (feature, bugfix, refactor, docs, adoption) documented with all required phases; Definition of Done and stop/escalation conditions added to AGENTS.md §11." },
+    { "id": "testing", "status": "Existing", "note": "Real test surface documented (unit, ignored e2e, DB/gRPC guidance, frontend verify boundary, CI gates); absence of frontend tests is a documented, accepted project limitation (ADC-005)." },
+    { "id": "evaluation", "status": "N/A", "note": "No AI/LLM agent runtime; docs/plans evaluation is an architecture assessment (ADC-002)." },
+    { "id": "operations", "status": "Existing", "note": "docs/deployment.md, Docker/compose, install scripts, CLI lifecycle and release CI unchanged and verified accurate." },
+    { "id": "agents", "status": "N/A", "note": "pp-agent is a proxy node daemon, not an AI Agent (ADC-002)." },
+    { "id": "tools", "status": "N/A", "note": "No project-owned Agent tool contracts (ADC-002)." },
+    { "id": "prompts", "status": "N/A", "note": "Coding-agent prompts are adapter assets documented in docs/adapters/ (ADC-002)." },
+    { "id": "memory", "status": "N/A", "note": "No agent memory; in-repo state is application state and product persistence (ADC-002)." },
+    { "id": "mcp", "status": "N/A", "note": "No MCP integration anywhere in the repository (ADC-002)." },
+    { "id": "adrs", "status": "Existing", "note": "docs/adr/README.md adds status convention, index and template; confirmed metadata drift repaired; historical content preserved." },
+    { "id": "agent-adapter", "status": "Partial", "note": "docs/adapters/README.md documents opencode/pi/.agents adapters, precedence and validation; remaining gap is the absence of representative-task execution evidence (accepted, deferred)." }
+  ],
+  "capability_summary": {
+    "Existing": 6,
+    "Partial": 1,
+    "Missing": 0,
+    "N/A": 6
+  },
+  "validation": {
+    "structural": "PASS — docs/adoption/project-inventory.json and docs/adoption/protocol-mapping.json validate against .protocol/agent-development-protocol/schemas/ (ajv 2020-12): 13 capabilities, one status each, evidence on all non-N/A, explicit reason on all N/A, 7 open decisions. docs/adoption/adoption-report.json validates against adoption-report.schema.json.",
+    "content": "PASS with recorded gaps — generated claims were re-verified against the audited revision: 92 evidence paths from the Pass 1 artifacts resolved; stale client references removed from current docs while historical records were intentionally preserved; ADR metadata repairs grounded in git first-commit evidence; CHANGELOG entries grounded in README/AGENTS/ADR/git history and release tags; LICENSE content taken verbatim from the canonical SPDX/FSF text rather than authored.",
+    "project": "PASS — the diff is documentation-only; the single non-markdown change is a comment in Cargo.toml (comment lines only, no build semantics, `cargo metadata` parses cleanly). `git diff --check` clean; `scripts/check-file-size.sh` on all changed files exit 0; `bun run verify:rust:fast` passed (fmt --check, root workspace clippy, client shell host clippy, aarch64-linux-android check) and full `bun run verify:rust` (with cargo test --workspace) passed.",
+    "conformance": "PASS — all protocol conformance checks passed (21/21 automated checks: required project contract files, documentation index under the retained convention, architecture documentation, applicable workflow coverage, Definition of Done, stop/escalation conditions, adapter documentation and rule precedence, no vendor configuration in the project contract, adoption record present, Protocol submodule unmodified)."
+  },
+  "validation_detail": {
+    "links": "177 markdown files scanned; 1034 relative links checked; 0 unresolved anchors; 0 broken links after adding LICENSE (README.md → LICENSE resolved).",
+    "commands": "52 documented command assertions checked against the repository (cargo bins/targets via cargo metadata, bun workspace package scripts, scripts/*.sh paths): 0 problems.",
+    "schemas": "project-inventory.schema.json, protocol-mapping.schema.json, adoption-report.schema.json — all PASS (ajv 2020-12).",
+    "reconciliation": "Re-inspected after generation: documented paths exist; documented commands exist; architecture statements match apps/client; links resolve except LICENSE; no vendor-specific requirement introduced into the project contract."
+  },
+  "open_decisions": [],
+  "known_limitations": [
+    "agent-adapter remains Partial: the repository has no recorded representative-task execution evidence for the opencode/pi adapters (documented as an accepted gap in docs/adapters/README.md §6).",
+    "Frontend packages (apps/panel, apps/client, packages/client-core) have no automated tests; verify = build + oxlint + oxfmt. Accepted per ADC-005 and documented, not changed.",
+    "Historical material intentionally retains pre-ADR-0007 paths (ADR-0003/0004/0005/0006 bodies and Scope lines, docs/plans/, docs/research/, .pi/plans/) and is not rewritten.",
+    "ADR-0002 Status and ADR-0006 Date were repaired as metadata; provenance is recorded in docs/adr/README.md §元数据修正记录. No decision content was altered.",
+    "The Pass 2 report is produced against an uncommitted working tree on top of revision 8ebba04; the base revision has no Pass 2 changes.",
+    "Project validation targeted a documentation-only diff: the fast and full Rust gates were run and passed, but no runtime/behavioral change is covered by this diff.",
+    "CHANGELOG history predating v0.4.0 is not preserved in the repository and is not reconstructed; v0.4.0–v0.4.5 entries derive from git release tags (dates and tag subjects), and [Unreleased] summarizes post-v0.4.5 mainline themes rather than every one of the ~318 commits (full list: git log v0.4.5..HEAD)."
+  ],
+  "follow_up": [
+    "Record representative adapter execution evidence in a future real task (PR description or docs/adoption/) to close the agent-adapter gap.",
+    "Re-run adoption reconciliation after substantial project changes, as described in the adoption workflow (docs/development.md#变更工作流workflows)."
+  ]
+}
