@@ -4191,27 +4191,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pp-client-tauri"
-version = "0.4.5"
-dependencies = [
- "chrono",
- "pp-client",
- "pp-common",
- "pp-script",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "pp-client-ui"
+name = "pp-client-app"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
@@ -4226,6 +4206,26 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "pp-client-tauri"
+version = "0.4.5"
+dependencies = [
+ "chrono",
+ "pp-client",
+ "pp-common",
+ "pp-script",
+ "serde",
+ "serde_json",
+ "tauri",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tokio",

@@ -7,10 +7,8 @@ use pp_script::ScriptDialect;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::commands::{
-    remote_kind_str, script_dialect_str,
-};
-use crate::state::AppState;
+use crate::desktop::commands::{remote_kind_str, script_dialect_str};
+use crate::desktop::state::AppState;
 
 /// External view of a remote resource.
 #[derive(Debug, Clone, Serialize, Deserialize)]

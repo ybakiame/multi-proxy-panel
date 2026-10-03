@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tauri::State;
 
-use crate::state::AppState;
+use crate::desktop::state::AppState;
 
 /// External view of a local core.
 #[derive(Debug, Clone, Serialize)]

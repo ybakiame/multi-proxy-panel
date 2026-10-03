@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeDevCommand": "bun run dev:android",
+    "beforeBuildCommand": "bun run build:android",
+    "devUrl": "http://localhost:1430",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": false,
+    "android": {
+      "minSdkVersion": 33
+    }
+  }
+}

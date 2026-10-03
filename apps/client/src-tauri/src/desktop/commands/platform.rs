@@ -6,7 +6,7 @@
 
 use tauri::State;
 
-use crate::state::AppState;
+use crate::desktop::state::AppState;
 
 /// TUN authorization status based on current `core_binary`.
 #[tauri::command]
@@ -44,7 +44,7 @@ pub(crate) fn gpu_acceleration_impl(
     if !cfg!(target_os = "linux") {
         return true;
     }
-    if os_release.is_some_and(crate::is_wsl_osrelease) {
+    if os_release.is_some_and(crate::desktop::is_wsl_osrelease) {
         return has_dxg && libgl_always_software.is_none_or(|v| v == "0");
     }
     libgl_always_software.is_none_or(|v| v != "1")

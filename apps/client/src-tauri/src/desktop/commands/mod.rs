@@ -16,7 +16,5 @@ pub use platform::*;
 pub use remote::*;
 
 // Shared command-layer helpers (双端通用) live in `pp-client-tauri`; re-export here
-// so existing `crate::commands::*` references in shell command modules stay unchanged.
-pub use pp_client_tauri::commands::{
-    TauriNotifier, parse_profile_id, remote_kind_str, script_dialect_str, sub_format_str,
-};
+// so existing `crate::desktop::commands::*` references in shell command modules stay unchanged.
+pub use pp_client_tauri::commands::{remote_kind_str, script_dialect_str};

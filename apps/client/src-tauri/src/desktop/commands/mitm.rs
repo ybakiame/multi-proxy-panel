@@ -4,7 +4,7 @@ use pp_mitm::{CaStore, TrafficRecorder};
 use serde::Serialize;
 use tauri::State;
 
-use crate::state::AppState;
+use crate::desktop::state::AppState;
 
 /// External view of a traffic record.
 #[derive(Debug, Clone, Serialize)]

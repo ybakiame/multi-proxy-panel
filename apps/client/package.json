@@ -17,7 +17,7 @@
     "verify": "bun run build && bun run build:android && bun run lint && bun run format:check",
     "tauri": "tauri",
     "android:dev": "tauri android dev --target aarch64",
-    "android:build": "tauri android build --target aarch64"
+    "android:build": "CARGO_PROFILE_RELEASE_OPT_LEVEL=z tauri android build --target aarch64"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
