@@ -36,54 +36,56 @@
     ndkVersion = "28.0.13004108";
     ndkHome = "${android-sdk}/share/android-sdk/ndk/${ndkVersion}";
     ndkLlvm = "${ndkHome}/toolchains/llvm/prebuilt/linux-x86_64";
+
+    baseLibs = with pkgs; [
+
+    ];
+
+    # ===== 桌面 GUI 运行期依赖（编译 + 运行都要）=====
+    desktopLibs = with pkgs; [
+      webkitgtk_4_1
+      gtk3
+      glib
+      glib-networking
+      gdk-pixbuf
+      pango
+      cairo
+      libsoup_3
+      openssl
+      alsa-lib
+      libxkbcommon
+      libX11
+      libXcursor
+      libXrandr
+      libXi
+      dbus
+      libGL
+      nss
+      nspr
+      at-spi2-atk
+      at-spi2-core
+      libdrm
+      mesa
+      expat
+      cups
+      libpng
+      librsvg
+      fontconfig
+      freetype
+      harfbuzz
+      libepoxy
+    ];
+
   in {
     devShells.${system}.default = pkgs.mkShell {
       # 构建基础与工具
-      packages = with pkgs; [
-        git
-        curl
-        wget
-        unzip
-        gnumake
-        cmake
-        ninja
-        pkg-config
-        perl # openssl-sys(vendored) 构建
-        protobuf # pp-proto / tonic 代码生成
-
-        # Rust 生态（工具链本体由 rustup 按 rust-toolchain.toml 锁定）
-        rustup
-        cargo-ndk # Android 交叉编译 + jniLibs 打包
-
-        # Android（声明式 SDK/NDK 见 android-sdk；AGP / gomobile / adb）
-        android-sdk
-        jdk17
-        gradle
-
-        # Go（panelcore / gomobile）
+      packages = desktopLibs ++ (with pkgs; [
+        git curl wget unzip gnumake cmake ninja pkg-config perl protobuf
+        rustup cargo-ndk
+        android-sdk jdk17 gradle
         go
-
-        # 前端（Bun workspaces）
-        bun
-        nodejs
-
-        # 桌面 GUI 系统库（Tauri / Dioxus desktop / Slint host）
-        webkitgtk_4_1
-        gtk3
-        glib
-        glib-networking # webkit 运行时 TLS
-        gdk-pixbuf
-        pango
-        cairo
-        libsoup_3
-        openssl
-        alsa-lib
-        libxkbcommon
-        libX11
-        libXcursor
-        libXrandr
-        libXi
-      ];
+        bun nodejs
+      ]);
 
       env = {
         # Gradle / gomobile 统一使用 flake 提供的 JDK
@@ -109,9 +111,8 @@
       };
 
       shellHook = ''
-        # 让 nixpkgs 的 pkg-config 优先发现 flake 提供的系统库
         export PKG_CONFIG_PATH="${pkgs.webkitgtk_4_1.dev}/lib/pkgconfig:${pkgs.gtk3.dev}/lib/pkgconfig:${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
-
+        export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath desktopLibs}:$LD_LIBRARY_PATH"
         echo "ProxyPanel dev shell: go=$(go version 2>/dev/null | cut -d' ' -f3) bun=$(bun --version 2>/dev/null) ndk=$(basename "$ANDROID_NDK_ROOT")"
       '';
     };
