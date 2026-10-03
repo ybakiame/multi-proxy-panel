@@ -115,7 +115,7 @@ git checkout -b feature/your-feature
 cargo fmt --all
 
 # 5. 静态检查 + 测试 + 双壳编译门禁（推荐一条命令，等价于下面 6/7 两条再加双壳检查）
-bun run verify:rust        # = cargo fmt --check + clippy + test + desktop/mobile 壳 clippy + Android target 检查
+bun run verify:rust        # = cargo fmt --check + clippy + test + 客户端壳（apps/client/src-tauri）clippy + Android target 检查
 # 或快速版（跳过测试）：bun run verify:rust:fast
 
 # 6. 静态检查（仅根 workspace；注意不覆盖 apps/*/src-tauri 双壳）
@@ -134,6 +134,76 @@ git commit -m "feat: your feature description"
 > 专属代码（`#[cfg(target_os = "android")]`）在 host（桌面目标）编译下也不可见。
 > 提交涉及 Rust 的改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），
 > 它补齐壳层 host clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
+
+### 变更工作流（Workflows）
+
+本节定义仓库实际执行的变更工作流。每个工作流都必须覆盖：使用时机、上下文发现、计划、
+实现、验证、文档、最终复查；完成定义与停止/升级条件统一见 `AGENTS.md` §11。
+
+#### 功能开发（feature）
+
+- **使用时机**：新增用户可见能力、接口、协议支持或数据模型。先判断是否触及架构边界
+  （架构边界变更需先有 ADR，见 `docs/adr/README.md`）。
+- **上下文发现**：读 `AGENTS.md` §1/§3/§4 与对应模块文档（`docs/architecture.md`、
+  `docs/api_reference.md`），确认现有约定与可复用结构；查 `docs/adr/` 是否已有相关决策。
+- **计划**：拆分为一个逻辑变更单元（大改动拆多个原子提交），列出受影响 crate / app、
+  接口与数据变更、文档同步项（`AGENTS.md` §9）。
+- **实现**：遵循 §3 代码规范与 §6 常见修改任务；数据库变更走 Migration + `UPGRADE_STEPS`
+  （见 `.agents/rules/data-migration.md`）。
+- **验证**：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、
+  `cargo test --workspace`；涉及 Rust 提交前跑 `bun run verify:rust`；前端改动跑对应包
+  `bun run --filter <pkg> verify`。
+- **文档**：更新 §9 表格中受影响文档；用户可见变更写入 `CHANGELOG.md`。
+- **最终复查**：`git diff` 逐项复查，确认无无关改动、无半成品；提交遵循 §5。
+
+#### 缺陷修复（bugfix）
+
+- **使用时机**：既有行为与预期/文档不符。
+- **上下文发现**：复现问题，确定受影响版本、模块与触发条件；收集日志
+  （见本文「调试技巧」）。
+- **计划**：在不扩大改动面的前提下定位根因；若根因涉及架构缺陷，转 feature 并评估 ADR。
+- **实现**：最小修复；禁止顺带重构无关代码或格式化无关文件（原子化提交）。
+- **验证**：为缺陷补充回归测试（无法自动化的前端场景记录手动验证步骤）；运行受影响
+  crate 测试与 CI 同款命令。
+- **文档**：若行为或配置语义变化，同步 `docs/` 与 `CHANGELOG.md`（`### Fixed`）。
+- **最终复查**：确认修复能通过原始复现步骤，且未掩盖相邻问题。
+
+#### 重构（refactor）
+
+- **使用时机**：不改变外部行为的结构调整（拆分文件、提取模块、去重）。
+- **上下文发现**：确认现有测试覆盖范围作为行为基线；文件规模规则见
+  `.agents/rules/code-organization.md`。
+- **计划**：分步拆分，每步保持可编译；不扩大 `pub` 可见性。
+- **实现**：纯结构变更，不夹带语义修改。
+- **验证**：`cargo test --workspace`（或前端 `verify`）结果与重构前一致；纯重构必须
+  行为不变。
+- **文档**：仅当公开路径/模块结构变化时更新 `docs/architecture.md` 等文档。
+- **最终复查**：确认 diff 中无语义变化；一个拆分一个提交。
+
+#### 文档（docs）
+
+- **使用时机**：仅修改说明性内容（README、docs/、AGENTS.md、CHANGELOG）。
+- **上下文发现**：相关内容以**实现与已接受 ADR** 为准（`AGENTS.md` §11 停止条件）；
+  采集代码/配置证据，避免凭印象改写。
+- **计划**：列出涉及的文档、交叉引用与需要同步的索引（`docs/index.md`、`docs/adr/README.md`）。
+- **实现**：保留既有项目知识，不整篇重写；不把厂商/代理特有内容写入项目契约。
+- **验证**：校验文档内链接与相对路径可解析、命令真实存在（例如 `bun run verify:rust`、
+  `scripts/check-rust-gates.sh`）；必要时抽检实现位置。
+- **文档**：同步更新 `docs/index.md` 与 `AGENTS.md` §9 相关行。
+- **最终复查**：确认没有引入未经验证的断言；一次逻辑变更一个提交。
+
+#### 协议采纳（adoption）
+
+- **使用时机**：首次采纳 Agent Development Protocol，或仓库发生重大变化后复跑采纳。
+- **上下文发现**：只读发现仓库证据（结构、构建、验证、约定、代理组件、既有文档与 ADR）。
+- **计划**：两遍制——Pass 1 只产出 `docs/adoption/project-inventory.json`、
+  `protocol-mapping.json` 与审计报告；Pass 2 在人工确认开放决策后生成文档。
+- **实现**：只生成有证据支撑的 ProxyPanel 文档；不拷贝 Protocol 文档，不改动子模块。
+- **验证**：JSON 产物对照 `.protocol/agent-development-protocol/schemas/` 校验；执行
+  链接/命令校验与适用项目验证；对照 `docs/conformance.md` 做符合性检查。
+- **文档**：产出 `docs/adoption/adoption-report.json` 与 `adoption-report.md`，记录开放
+  决策、接受的缺口与已知限制。
+- **最终复查**：确认无未解决的实质矛盾；Pass 1 与 Pass 2 的写入边界各自成立。
 
 ### 启动开发环境
 
@@ -160,11 +230,17 @@ RUST_LOG=proxy_panel_agent=debug \
 
 **终端 3 — 启动前端开发服务器:**
 
+前端依赖在**仓库根目录**统一安装（单一 `bun.lock`，Bun workspaces）：
+
 ```bash
-cd apps/panel
+# 仓库根目录一次安装所有前端依赖
 bun install
-bun run dev
+
+# panel 管理系统（Vite 开发服务器，端口 5173）
+bun run --filter pp-web dev
 ```
+
+也可 `cd apps/panel && bun run dev`（依赖仍由根目录 `bun install` 提供）。
 
 访问 `http://localhost:5173`（Vite 开发服务器，带热重载）。
 首次打开页面会要求输入 **API Key**，可从 Hub 启动日志中找到 Bootstrap API Key：
@@ -358,13 +434,17 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 
 ### 技术栈
 
-- **框架**: React 18 + TypeScript
-- **构建工具**: Vite 6
-- **UI 库**: HeroUI
+- **框架**: React 19 + TypeScript
+- **构建工具**: Vite 8
+- **UI 库**: HeroUI 3（`@heroui/react` / `@heroui/styles`）
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7
 - **国际化**: react-i18next
 - **HTTP 客户端**: Axios
+- **包管理器**: Bun workspaces（依赖在仓库根目录安装，单一 `bun.lock`）
+
+> 客户端 `apps/client` 使用同一套 React 19 / Vite 8 / Tailwind v4，但桌面 UI 为 HeroUI、
+> 移动 UI 为 Konsta（`apps/client/src/{desktop,mobile}`，见 ADR-0007）。
 
 ### 项目结构
 
@@ -537,6 +617,33 @@ cargo test --workspace -- --ignored
 cargo test --workspace -- --nocapture
 ```
 
+**集成测试（e2e）:**
+
+`crates/pp-client/tests/real_core_e2e.rs` 是真实 sing-box 核心的全链路集成测试
+（reqwest → 核心 mixed 入口 → 白名单路由 → pp-mitm → 回流 → direct）。它默认
+`#[ignore]`，且需要真实 sing-box 二进制（找不到二进制时测试直接返回、不算失败）：
+
+```bash
+cargo test -p pp-client --test real_core_e2e -- --include-ignored --nocapture
+```
+
+二进制路径解析顺序见测试文件头：环境变量 `PROXYPANEL_TEST_SINGBOX`，或
+`target/test-cores/sing-box`。
+
+**前端验证能力（当前边界）:**
+
+`apps/panel`、`apps/client`、`packages/client-core` **没有单元测试运行器**，各自的
+`verify` 只包含构建 + oxlint + oxfmt：
+
+```bash
+bun run --filter pp-web verify            # panel：tsc 构建 + lint + format:check
+bun run --filter pp-client-app verify     # client：desktop + android 双 mode 构建 + lint + format
+bun run --filter @pp/client-core verify   # 共享库：typecheck + lint + format
+```
+
+因此前端改动以对应包 `verify` + 手动验证为准；引入自动化前端测试属于流程变更，需先经
+项目决策（见 `docs/adoption/adoption-report.md` 中接受的前端测试缺口）。
+
 ### 编写测试
 
 **单元测试（内联）:**
@@ -654,19 +761,20 @@ SELECT * FROM clients; # 查看客户端
 
 ## 代码审查清单
 
-提交 PR 前，请确认以下事项：
+提交 PR 前，请确认以下事项（与 `AGENTS.md` §11 完成定义一致）：
 
 ### 功能性
 
-- [ ] 新功能有对应的测试覆盖
+- [ ] 新功能有对应的测试覆盖；前端改动至少执行对应包 `verify` 并记录手动验证步骤
 - [ ] 手动测试通过（至少运行一次完整流程）
 - [ ] 错误路径已处理（如数据库连接失败、网络超时）
 
 ### 代码质量
 
-- [ ] `cargo fmt --all` 已执行
+- [ ] `cargo fmt --all --check` 已执行
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` 无警告
 - [ ] `cargo test --workspace` 全部通过
+- [ ] 涉及 Rust 时 `bun run verify:rust` 通过（覆盖客户端壳双目标）
 - [ ] 无裸 `unwrap()` / `expect()`（初始化代码除外）
 - [ ] 新增公开的 API 有文档注释 (`///`)
 
@@ -680,8 +788,8 @@ SELECT * FROM clients; # 查看客户端
 
 - [ ] README.md 已更新（如添加新功能或变更使用方式）
 - [ ] AGENTS.md 已更新（如变更架构或规范）
-- [ ] `docs/` 下相关文档已更新
-- [ ] 变更日志已记录（如项目使用 CHANGELOG）
+- [ ] `docs/` 下相关文档已更新（含 `docs/index.md` / `docs/adr/README.md` 索引）
+- [ ] `CHANGELOG.md` 已记录用户可见变更
 
 ---
 

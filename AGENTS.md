@@ -183,8 +183,8 @@ pub use models::*;
 
 ### 3.6 Protobuf / gRPC
 
-- `.proto` 文件位于 `proto/hub_agent.proto`
-- 生成代码位于 `crates/pp-proto/src/lib.rs`（由 `build.rs` 自动生成）
+- `.proto` 文件位于 `proto/`：`proto/hub_agent.proto`（Hub↔Agent 控制面）与 `proto/singbox_daemon.proto`
+- 生成代码位于 `crates/pp-proto/src/lib.rs`（由 `crates/pp-proto/build.rs` 编译 `proto/` 下全部 `.proto` 自动生成）
 - **禁止直接修改** `crates/pp-proto/src/lib.rs`，应修改 `.proto` 后重新构建
 - proto 中的枚举值与 Rust 枚举通过显式 `match` 转换（参见 `pp-agent/src/client.rs` 的 `core_type_from_i32`）
 
@@ -194,17 +194,25 @@ pub use models::*;
 
 ### 4.1 Hub-State 设计
 
-`AppState` 是 Hub 的核心共享状态：
+`AppState` 是 Hub 的核心共享状态（完整定义见 `crates/pp-hub/src/state.rs`）：
 
 ```rust
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub config: HubConfig,
+    pub rate_limiter: RateLimiter,
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
+    pub metrics_handle: Option<Arc<MetricsHandle>>,
+    pub api_key_cache: ApiKeyCache,
+    pub binary_waiters: /* 等待 Agent 回复的核心二进制请求 */,
 }
 ```
 
 - `db`: Sea-ORM 数据库连接
+- `config`: Hub 运行配置
+- `rate_limiter`: 请求限流器
 - `agents`: 内存中的 Agent 连接表，用于向指定节点推送消息
+- `metrics_handle` / `api_key_cache` / `binary_waiters`: 指标采集句柄、API Key 缓存、核心二进制请求等待表
 
 **注意**：`AppState` 使用 `Arc<AppState>` 传递，本身已实现 `Clone`（浅拷贝）。
 
@@ -333,21 +341,21 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 
 ## 6. 常见修改任务
 
-### 5.1 添加新的数据库实体
+### 6.1 添加新的数据库实体
 
 1. 在 `crates/pp-db/src/migration/` 中创建新迁移文件
 2. 在 `crates/pp-db/src/migration/mod.rs` 注册迁移
 3. 运行 `cargo run --bin proxy-panel -- init-db`
 4. （可选）生成实体：`sea-orm-cli generate entity -o src/entities`
 
-### 5.2 添加新的 HTTP API 端点
+### 6.2 添加新的 HTTP API 端点
 
 1. 在 `crates/pp-hub/src/routes/` 新建或修改路由模块
 2. 在 `crates/pp-hub/src/routes/mod.rs` 导出
 3. 在 `crates/pp-hub/src/main.rs` 的 Router 中注册路由
 4. 如需新业务逻辑，在 `crates/pp-hub/src/service/` 添加 service 方法
 
-### 5.3 添加新的 gRPC 消息类型
+### 6.3 添加新的 gRPC 消息类型
 
 1. 修改 `proto/hub_agent.proto`
 2. 在 `AgentMessage` 或 `HubMessage` 的 `oneof payload` 中添加新字段
@@ -355,13 +363,13 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 4. 在 `pp-hub/src/grpc/agent_service.rs` 添加处理逻辑
 5. 在 `pp-agent/src/client.rs` 添加发送/接收逻辑
 
-### 5.4 添加新的订阅格式
+### 6.4 添加新的订阅格式
 
 1. 在 `crates/pp-subscription/src/formats/` 新建模块
 2. 在 `crates/pp-subscription/src/formats/mod.rs` 导出
 3. 在 `crates/pp-subscription/src/generator.rs` 的 `SubscriptionFormat` 和 `generate_subscription` 中添加分支
 
-### 5.5 添加新的协议支持
+### 6.5 添加新的协议支持
 
 1. 在 `pp-common/src/protocol.rs` 的 `ProtocolType` 中添加变体
 2. 在 `pp-config/src/singbox.rs` 和/或 `pp-config/src/mihomo.rs` 实现对应的 `build_inbound`
@@ -373,9 +381,11 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 ## 7. 测试策略
 
 - 单元测试：各 crate 的 `src/` 中内联 `#[cfg(test)]` 模块
-- 集成测试：尚未设置，计划添加 `tests/` 目录
+- 集成测试：`crates/pp-client/tests/real_core_e2e.rs` 是真实 sing-box 全链路 e2e，默认 `#[ignore]`，需手动运行 `cargo test -p pp-client --test real_core_e2e -- --include-ignored`（需真实 sing-box 二进制，见文件头注释）
 - 数据库测试：使用 `tokio-test` + 内存 SQLite
 - gRPC 测试：使用 `tonic` 的内存通道
+- 前端验证能力：`apps/panel`、`apps/client`、`packages/client-core` **没有单元测试运行器**，其 `verify` = 构建 + oxlint + oxfmt；前端改动的自动化边界即该 verify + 手动验证
+- 权威门禁：`.github/workflows/ci.yml`（Rust fmt/clippy/test + 客户端壳双目标 + 前端三包 verify）；涉及 Rust 的提交前本地跑 `bun run verify:rust`
 
 ---
 
@@ -413,11 +423,70 @@ grpcurl -plaintext localhost:50052 list proxypanel.HubAgent
 | 构建流程变化 | `README.md`, `docs/development.md` |
 | 部署方式变化 | `docs/deployment.md` |
 | 代码规范变化 | `AGENTS.md` |
+| 架构决策变化 | 新增 ADR 到 `docs/adr/` 并更新 `docs/adr/README.md` 索引 |
+| 客户端架构变化 | `docs/architecture.md`、`AGENTS.md` §4.5、相关 ADR |
+| 新增/调整编码代理适配器 | `docs/adapters/README.md` 与对应适配器配置 |
+| 用户可见的行为/功能变化 | `CHANGELOG.md`（格式见 `docs/contributing.md`） |
+| 协议采纳状态变化 | `docs/adoption/`（inventory / mapping / report） |
 
 ---
 
-## 10. 联系方式与资源
+## 10. 变更工作流
+
+适用于本仓库的变更类型与对应工作流（完整阶段说明见
+[docs/development.md](docs/development.md#变更工作流workflows)）：
+
+| 工作流 | 适用场景 | 等价入口 |
+|--------|----------|----------|
+| 功能开发 `feature` | 新增用户可见能力或接口 | 分支 → 实现 → 测试 → 文档 → 提交 |
+| 缺陷修复 `bugfix` | 修复既有行为错误 | 复现 → 定位根因 → 最小修复 → 回归验证 |
+| 重构 `refactor` | 行为不变的结构调整 | 测试基线 → 分步重构 → 行为不变验证 |
+| 文档 `docs` | 仅文档/说明变更 | 证据核对 → 编辑 → 链接与命令校验 |
+| 协议采纳 `adoption` | 首次/复跑 Agent Development Protocol 采纳 | 发现 → 映射 → 生成 → 协调 → 校验 → 报告（两遍制：Pass 1 审计只读，Pass 2 生成） |
+
+每个工作流都必须给出：使用时机、上下文发现、计划、实现、验证、文档、最终复查、
+完成定义（§11）与停止/升级条件（§11）。不要为不存在的变更类型创建空工作流文档。
+
+---
+
+## 11. 完成定义（Definition of Done）与升级条件
+
+### 完成定义
+
+一个变更只有在以下全部成立时才算完成：
+
+- [ ] 请求的变更已实现，且范围限于一个逻辑变更单元
+- [ ] 遵循了 §10 中对应的工作流
+- [ ] 验证按变更类型执行并记录结果：
+  - Rust：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`，以及 `bun run verify:rust`（覆盖客户端壳双目标）
+  - 前端：对应包的 `bun run --filter <pkg> verify`
+  - 文档：文档链接与命令校验通过；采纳相关文档同步更新 `docs/adoption/`
+- [ ] 行为变更附带测试或明确记录为何无法自动化（前端无测试运行器时以 verify + 手动验证记录为准）
+- [ ] §9 中受影响的文档已同步
+- [ ] 未包含无关文件改动；`git diff` 已复查
+- [ ] 提交符合 §5（原子化 + Conventional Commits）
+- [ ] 涉及架构或流程决策时，已新增/更新 ADR（见 `docs/adr/README.md`）
+
+### 停止 / 升级条件
+
+遇到以下情况必须停止并向人类请求决策，不得静默猜测或自行放宽规则：
+
+- 实现与文档、或两份文档之间冲突，且权威来源不明确（实现 + 已接受 ADR 通常是更高权威）
+- 变更会改动架构边界、公开接口或构建/部署契约而没有 ADR
+- 变更会引入新的强制门禁、流程或运维职责
+- 涉及数据迁移、删除数据或不可逆操作
+- 除协议维护任务外需要改动 `.protocol/agent-development-protocol/` 子模块
+- 需要把厂商/代理特有要求写入项目契约（应放入 `docs/adapters/`）
+- 需求本身存在歧义，或验收标准无法确定
+
+---
+
+## 12. 联系方式与资源
 
 - 仓库: `https://github.com/ybakiame/multi-proxy-panel`
 - Issues: 使用 GitHub Issues
-- 文档目录: `docs/`
+- 文档索引: `docs/index.md`
+- ADR 索引与约定: `docs/adr/README.md`
+- 编码代理适配器: `docs/adapters/README.md`
+- 协议采纳记录: `docs/adoption/`（`audit-pass1.md`、`adoption-report.md`）
+- 变更日志: `CHANGELOG.md`
