@@ -316,12 +316,16 @@ Closes #456
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
+| 文档索引 | `docs/index.md` | 全部文档入口 |
 | README | `README.md` | 项目概览和快速开始 |
-| AGENTS | `AGENTS.md` | 开发代理指南 |
+| AGENTS | `AGENTS.md` | 开发代理指南（含工作流、完成定义与停止条件） |
 | 架构文档 | `docs/architecture.md` | 系统架构说明 |
-| 开发指南 | `docs/development.md` | 开发环境和工作流 |
+| 开发指南 | `docs/development.md` | 开发环境、变更工作流、测试与调试 |
 | API 参考 | `docs/api_reference.md` | REST API 文档 |
 | 部署指南 | `docs/deployment.md` | 生产部署说明 |
+| ADR 索引 | `docs/adr/README.md` | 架构决策记录与状态约定 |
+| 编码代理适配器 | `docs/adapters/README.md` | opencode / pi / `.agents` 适配器说明 |
+| 变更日志 | `CHANGELOG.md` | 各版本用户可见变更 |
 | 贡献指南 | `docs/contributing.md` | 本文档 |
 
 ### 文档规范
@@ -346,8 +350,8 @@ Closes #456
 
 ### 发布步骤
 
-1. 更新 `Cargo.toml` 中的版本号
-2. 更新 `CHANGELOG.md`
+1. 将 `CHANGELOG.md` 的 `[Unreleased]` 条目移入新的版本标题下并补发布日期
+2. 更新 `Cargo.toml` 中的版本号
 3. 创建 Git Tag: `git tag -a v0.1.0 -m "Release v0.1.0"`
 4. 推送 Tag: `git push origin v0.1.0`
 5. 在 GitHub 创建 Release，填写变更说明
