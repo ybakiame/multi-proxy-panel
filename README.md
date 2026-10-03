@@ -139,10 +139,13 @@ Hub 将监听：
 
 ### 6. 构建 Web 前端
 
+前端依赖在**仓库根目录**统一安装（Bun workspaces，单一 `bun.lock`）：
+
 ```bash
-cd apps/panel
 bun install
-bun run build
+
+# panel 发布构建（产物 apps/panel/dist/）
+bun run --filter pp-web build
 ```
 
 产物位于 `apps/panel/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
@@ -150,9 +153,10 @@ bun run build
 开发模式热重载：
 
 ```bash
-cd apps/panel
-bun run dev
+bun run --filter pp-web dev
 ```
+
+也可 `cd apps/panel && bun run dev`（依赖仍由根目录 `bun install` 提供）。
 
 ### 7. 使用 CLI 安装 Agent（推荐）
 
@@ -191,11 +195,10 @@ cargo run --release --bin proxy-panel-agent \
 
 ### 9. 构建客户端（可选）
 
-客户端为单一 Tauri 项目 `apps/client`（壳退出根 workspace），使用 Bun 作为包管理器：
+客户端为单一 Tauri 项目 `apps/client`（壳退出根 workspace，包名 `pp-client-app`），使用 Bun 作为包管理器；依赖已在上一步于仓库根目录统一安装：
 
 ```bash
 cd apps/client
-bun install
 bun run tauri dev      # 桌面开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 桌面发布构建（产物位于 src-tauri/target/release/）
 bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/development.md）
@@ -215,7 +218,8 @@ proxy-panel/
 ├── Cargo.toml              # Workspace 根配置
 ├── docker-compose.yml      # 开发环境编排
 ├── proto/
-│   └── hub_agent.proto     # Hub-Agent gRPC 协议定义
+│   ├── hub_agent.proto         # Hub-Agent gRPC 协议定义
+│   └── singbox_daemon.proto    # sing-box 守护进程协议定义
 ├── crates/
 │   ├── pp-common/          # 共享类型、错误、工具函数
 │   ├── pp-db/              # Sea-ORM 实体与迁移
@@ -232,12 +236,12 @@ proxy-panel/
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
-│   ├── desktop/            # 客户端：Tauri 2 桌面应用（Linux/Windows/macOS，React 前端 + 独立 cargo 项目）
-│   └── mobile/             # 客户端：Tauri 2 移动应用（Android）+ 安卓核心 Go 模块（panel-core）与构建脚本
+│   └── client/             # 客户端：单一 Tauri 2 应用（单包双入口/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
 ├── packages/
 │   └── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
-├── docs/                   # 项目文档
-└── scripts/                # 辅助脚本
+├── docs/                   # 项目文档（索引见 docs/index.md）
+├── scripts/                # 辅助脚本
+└── CHANGELOG.md            # 变更日志
 ```
 
 ## 主要 Crate 说明
@@ -272,7 +276,7 @@ proxy-panel/
 
 ## 开发指南
 
-详见 [docs/development.md](docs/development.md)。
+完整文档索引见 [docs/index.md](docs/index.md)；开发流程、变更工作流与测试细节见 [docs/development.md](docs/development.md)。
 
 快速命令：
 
@@ -286,8 +290,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 # 格式化代码
 cargo fmt --all
 
-# 构建前端
-cd apps/panel && bun install && bun run build
+# Rust 全量门禁（含客户端壳双目标）
+bun run verify:rust
+
+# 前端：根目录安装依赖后按包构建/校验
+bun install
+bun run --filter pp-web build
 
 # 生成实体（修改迁移后）
 cd crates/pp-db && sea-orm-cli generate entity -o src/entities
@@ -411,7 +419,7 @@ Hub 提供完整的 REST API，详见 [docs/api_reference.md](docs/api_reference
 
 ## 贡献指南
 
-欢迎提交 Issue 和 PR！请阅读 [docs/contributing.md](docs/contributing.md) 了解详情。
+欢迎提交 Issue 和 PR！请阅读 [docs/contributing.md](docs/contributing.md) 了解详情；变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 

@@ -20,14 +20,15 @@
 
 ## 整体架构
 
-ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩展了用户侧客户端（**Desktop / Mobile** 双客户端，见 [客户端架构](#客户端架构)）。系统由四个主要部分组成：用户层（Web 管理界面、订阅客户端、桌面/移动客户端）、Hub、Agent 与 ProxyPanel Client。
+ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩展了用户侧客户端（**单一 Tauri 应用 `apps/client`，单壳双目标：桌面 / Android**，见 [客户端架构](#客户端架构)）。系统由四个主要部分组成：用户层（Web 管理界面、订阅客户端、桌面/移动客户端）、Hub、Agent 与 ProxyPanel Client。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         用户层                               │
 │    Web 浏览器 ────────── 订阅客户端 (Clash/V2RayNG/...)      │
-│    ProxyPanel Desktop (pp-client-ui / Tauri)                 │
-│    ProxyPanel Mobile  (pp-client-mobile-ui / Tauri Android)  │
+│    ProxyPanel Client (pp-client-app / Tauri 2 单壳双目标)      │
+│      ├─ 桌面目标 (Linux/Windows/macOS)                       │
+│      └─ Android 目标 (VpnService + panelcore.aar)            │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┴───────────────┐
@@ -47,9 +48,9 @@ ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩
 └─────────────────────────────────────────────────────────────┘
 ```
 
-桌面与移动客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动代理核心：桌面端叠加 MITM 与脚本引擎，代理流量直连远端节点；移动端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心并以 VPN 模式接管流量。
+桌面与 Android 目标（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动代理核心：桌面目标叠加 MITM 与脚本引擎，代理流量直连远端节点；Android 目标由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心并以 VPN 模式接管流量。
 
-> **注：MITM 为桌面端能力（移动端受系统限制不支持，mobile 壳依赖表天然不含 `pp-mitm`）。**
+> **注：MITM 为桌面目标能力（Android 受系统限制不支持，`apps/client/src-tauri` 的 Android target 依赖表天然不含 `pp-mitm`）。**
 
 ### 设计原则
 
@@ -123,7 +124,7 @@ pp-agent/
 
 基于 React 的响应式单页应用（SPA）：
 
-- **技术栈**: React 18 + TypeScript + Vite 6 + HeroUI + Tailwind CSS v4 + react-i18next（国际化）
+- **技术栈**: React 19 + TypeScript + Vite 8 + HeroUI 3 + Tailwind CSS v4 + react-i18next（国际化）
 - **构建目标**: 静态 JavaScript / CSS 资源（由 Hub 或 CDN 托管）
 - **通信方式**: 通过 Axios 调用 Hub REST API
 
@@ -350,23 +351,24 @@ Hub 写入 host_metrics 表
 
 ## 客户端架构
 
-客户端自 ADR-0003 起按平台拆为**两个独立 Tauri 应用**（Desktop / Mobile），共用一层前端共享库与一层 Rust 共享命令 crate。
+客户端自 ADR-0007 起是**单一 Tauri 应用** `apps/client`（单包双入口、单壳双目标），平台差异全部为**编译期事实**；前端共享库与 Rust 共享命令层各自单份实现（ADR-0003 的分离收益由编译期机制保留）。
 
-**桌面客户端**（`apps/desktop`）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
+**桌面目标**（`apps/client/src/desktop` + 壳的 `desktop/` 适配层）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
 
-**移动客户端**（`apps/mobile`）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（mobile 壳依赖表天然不含 `pp-mitm`，无需 feature hack）。
+**Android 目标**（`apps/client/src/mobile` + 壳的 `mobile/` 适配层）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（`apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`）。
 
 | 载体 | 类型 | 职责 |
 |------|------|------|
-| `apps/desktop`（`pp-client-ui`） | 桌面客户端（UI + 壳） | 桌面 UI + Rust 壳：全路径注册共享命令与桌面专属命令（mitm / core_mgmt / remote 等），含 WSL workaround |
-| `apps/mobile`（`pp-client-mobile-ui`） | 移动客户端（UI + Android 壳） | 移动 UI + Rust 壳：全路径注册共享命令与 Android 专属 `core_bridge` 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）+ vpn 插件 |
+| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
+| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src-tauri`（`pp-client-app`） | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表裁剪 Android 构建图 |
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）/ hooks / atoms / 纯工具；两端 UI 禁止直接 `invoke()` |
-| `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
+| `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
 | `pp-script` | 脚本引擎层 | QuickJS 运行时 + QX/Surge/Loon 三方言 API 适配 + cron 调度 |
-| `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面专属） |
+| `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面目标专属，Android 构建图不含） |
 | `pp-client` | 客户端核心库 / 引擎层 | 订阅同步、核心配置合成、系统代理、生命周期编排；`CoreEngineBridge` 抽象——桌面 spawn sing-box 子进程 / Android 经 Kotlin 桥驱动 Go 引擎 |
 
-> `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（desktop 上 mitm 等仍可能因环境禁用）；UI 分离后平台差异转为编译期事实，desktop UI 已不再消费该字段。
+> `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（桌面目标上 mitm 等仍可能因环境禁用）；UI 平台差异是编译期事实，desktop UI 已不再消费该字段。Tauri 配置为桌面基线 `tauri.conf.json` + Android overlay `tauri.android.conf.json`（RFC 7396 合并：devUrl / 构建命令 / bundle 差异）。
 
 ### pp-script — 脚本引擎层
 
@@ -382,7 +384,7 @@ Hub 写入 host_metrics 表
 
 本地 HTTPS 中间人代理，基于 hudsucker 0.25：
 
-> **注：MITM 为桌面端能力（移动客户端不提供，mobile 壳依赖表不含本 crate）。**
+> **注：MITM 为桌面目标能力（Android 不提供，`apps/client/src-tauri` 的 Android target 依赖表不含本 crate）。**
 
 - **CA 管理**: [`CaStore`] trait 抽象 CA 材料，[`FileCaStore`] 为基于本地目录的默认实现，首次调用用 **rcgen** 生成自签证书（`ca.crt` / `ca.key`，文件权限 **0600**）
 - **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）/ `should_intercept_tls`，白名单外流量整体透传
@@ -393,7 +395,7 @@ Hub 写入 host_metrics 表
 
 ### pp-client — 客户端核心库（引擎层）
 
-承载客户端核心业务逻辑，经共享命令层供双端壳调用（desktop 为全功能形态；mobile 以 `scripts-only` 形态复用不含 MITM 的部分）：
+承载客户端核心业务逻辑，经共享命令层供单壳的桌面 / Android 目标调用（桌面为全功能形态；Android 以不含 MITM 的部分复用）：
 
 - **配置**: `ClientConfig`（`client.json`）定义客户端配置，含 `mixed_port`（默认 17890）与 MITM 配置
 - **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅（Clash 节点经 `node_convert::mihomo_to_singbox` 转换为 sing-box 节点），解析 `subscription-userinfo` 响应头（upload / download / total / expire）
@@ -407,31 +409,32 @@ Hub 写入 host_metrics 表
 - **连接追踪**（`connections/`）: Clash API `/connections` 采集器——**WebSocket 推送优先**（`?interval=1000` 全量快照推送，瞬时失败按退避重连，仅当服务端拒绝 upgrade 时永久回退 2s HTTP 轮询），快照差分维护活跃/已关闭连接视图（环形缓冲 500 条）
 - **流量统计**（`stats/`）: 客户端本地 SQLite（`<data_dir>/stats.db`，sqlx 直连 + `PRAGMA user_version` 轻量版本管理，不依赖 pp-db/sea-orm）。tracker 每轮快照差分产出字节增量（`StatDelta`）增量 upsert 日聚合表 `daily_stats`（`date + target(域名/IP) + destination_ip + rule + rule_payload + outbound` 六元主键），长连接流量随快照渐进入账；关闭连接写入明细表 `conn_records`（保留 7 天，聚合保留 90 天，打开时清理）。防重复计数：仅 `start ≥ tracker 启动时间` 的连接全量入账并计 conn_count，早前存活连接只建基线
 
-### apps/desktop — 桌面客户端（UI + 壳）
+### apps/client — 客户端（单壳双目标，UI + 壳）
 
-- **技术栈**: Tauri 2.11（独立 cargo 项目，**退出根 workspace**）+ React 19 / Vite 8 / TypeScript 7 / Tailwind CSS 4 / HeroUI 3.2，Bun 作为包管理器
-- **页面**: 仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
+由 ADR-0003 的 desktop / mobile 双应用合并而来（ADR-0007 回摆为单应用）：
+
+- **桌面目标**: Tauri 2（独立 cargo 项目 `apps/client/src-tauri`，包名 `pp-client-app`，**退出根 workspace**）+ 桌面 UI（React 19 / Vite 8 / Tailwind CSS 4 / HeroUI 3.2），Bun 作为包管理器；页面为仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
 - **通知**: `tauri-plugin-notification` 桌面通知
-- **壳**: 注册共享层命令（`pp-client-tauri`）+ 桌面专属命令（mitm / core_mgmt / remote / tun 授权 / gpu_acceleration 等）；含 WSL WebKitGTK workaround；数据目录解析为桌面语义（`~/.proxy-panel-client`）
+- **壳**: 注册共享层命令（`pp-client-tauri`）+ 平台专属命令——桌面：mitm / core_mgmt / remote / tun 授权 / gpu_acceleration 等，含 WSL WebKitGTK workaround；Android：`core_bridge` 三命令与 vpn 插件注册
+- **数据目录**: 桌面解析为桌面语义（`~/.proxy-panel-client`）；Android 使用应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
 
-### pp-client-tauri — 双端共享命令层
+### Android 目标（同一 `apps/client` 的移动目标）
 
-Desktop/Mobile 壳共享的 Tauri 命令实现与辅助（ADR-0003 §3.2）：
+- **技术栈**: 同一壳的移动目标（`tauri.android.conf.json` overlay）+ 移动 UI（React 19 / Tailwind CSS 4 / **Konsta UI**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
+- **核心引擎**: 内置 Go 模块 `panel-core`（`apps/client/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
+- **无 MITM**: `apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`（ADR-0003 §3.5 的依赖图隔离思路由 ADR-0007 §2 保留）
+- **构建**: 交叉编译与 AAR 打包见 `docs/development.md`「Android 客户端构建」
 
-- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard + 懒打开的流量统计存储 `StatsStore`），数据目录由壳层注入（desktop 桌面路径 / mobile Android 应用私有目录）
+### pp-client-tauri — 共享命令层（桌面 / Android）
+
+`apps/client` 单壳的桌面 / Android 目标共享的 Tauri 命令实现与辅助（架构分离源自 ADR-0003 §3.2，合并见 ADR-0007）：
+
+- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard + 懒打开的流量统计存储 `StatsStore`），数据目录由壳层注入（桌面路径 / Android 应用私有目录）
 - **日志系统**（`logs/`）: 日志初始化、滚动文件查询/导出/清空、前端日志上报
 - **平台能力矩阵**（`capabilities.rs`）: `get_capabilities` / `platform_info`；`is_android` 语义退化为运行时功能开关（desktop UI 已不消费）
 - **通用命令**（`commands/`）: config / subscription / profile / proxies / connections / stats（流量统计：stats_today / stats_daily / stats_records / stats_clear）/ preview / task / local_override 等单份实现
 - **Android 专属**（`core_bridge.rs`，`cfg(target_os = "android")`）: `request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed` + Kotlin VpnPlugin 桥（`vpn_plugin`）
 - 壳层以全路径注册本 crate 命令（Tauri 2 支持跨 crate 注册）
-
-### apps/mobile — 移动客户端（Android）
-
-- **技术栈**: Tauri 2（Android 目标，`pp-client-mobile-ui`，独立 cargo 项目）+ 移动 UI（React 19 / Tailwind CSS 4 / **Konsta UI**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
-- **壳**: 注册共享命令与 Android 专属 `core_bridge` 三命令；数据目录用 Android 应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
-- **核心引擎**: 内置 Go 模块 `panel-core`（`apps/mobile/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
-- **无 MITM**: mobile 壳 `Cargo.toml` 依赖表不含 `pp-mitm`，Android 禁 MITM 由依赖图天然表达（ADR-0003 §3.5）
-- **构建**: 交叉编译与 AAR 打包见 `docs/development.md`「Android 客户端构建」
 
 ### 客户端流量链路
 

@@ -61,4 +61,4 @@ cargo test -p pp-agent
 
 ## 部署
 
-生产部署请使用 systemd 服务文件，参见 [deploy/README.md](../deploy/README.md) 和 [docs/deployment.md](../docs/deployment.md)。
+生产部署请使用 systemd 服务文件，参见 [deploy/README.md](../../deploy/README.md) 和 [docs/deployment.md](../../docs/deployment.md)。
