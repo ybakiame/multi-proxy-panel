@@ -4,6 +4,20 @@
 
 ---
 
+## Agent Development Protocol
+
+This repository consumes the Agent Development Protocol through:
+
+`.protocol/agent-development-protocol/`
+
+When performing protocol adoption, conformance, or protocol maintenance:
+
+1. initialize the submodule if necessary;
+2. read `.protocol/agent-development-protocol/ADOPT.md`;
+3. treat this repository's AGENTS.md, README.md, and docs/ as project-specific authority;
+4. do not treat generic protocol documentation as project documentation;
+5. do not modify the protocol submodule during ordinary project work unless the task explicitly targets protocol maintenance.
+
 ## 1. 项目概述
 
 ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
