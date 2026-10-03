@@ -8,8 +8,8 @@
 # 所需的变量。mobile 仅发布 arm64，故只导出 aarch64 一套。
 #
 # 用法（必须 source，让变量进入当前 shell）：
-#   source apps/mobile/scripts/android-ndk-env.sh
-#   cd apps/mobile && bun run android:build
+#   source apps/client/scripts/android-ndk-env.sh
+#   cd apps/client && bun run android:build
 
 # 1) 定位 NDK
 _NDK="${ANDROID_NDK_HOME:-${NDK_HOME:-}}"

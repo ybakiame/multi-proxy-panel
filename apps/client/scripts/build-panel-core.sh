@@ -3,11 +3,11 @@ set -euo pipefail
 
 # ProxyPanel Android 客户端 panelcore.aar 源码构建脚本
 #
-# 将 apps/mobile/panel-core（module: panelcore）gomobile bind 导出 sing-box
+# 将 apps/client/panel-core（module: panelcore）gomobile bind 导出 sing-box
 # libbox 绑定，产出 panelcore.aar（本地构建产物，不入库）。
 #
 # 用法:
-#   ./apps/mobile/scripts/build-panel-core.sh [OUTPUT_AAR]
+#   ./apps/client/scripts/build-panel-core.sh [OUTPUT_AAR]
 #
 # 环境要求:
 #   - Go 工具链（sing-box 1.15.0-alpha.5 要求 go >= 1.25.5；脚本优先探测
@@ -41,10 +41,10 @@ set -euo pipefail
 #     差异：-androidapi 33（对齐 App minSdk）、-javapkg com.proxypanel.core
 #     （官方为 21 / io.nekohasekai）。
 #   - 同步提醒：升级 sing-box 或调整下方 `-tags` 后，请同步更新关于页常量
-#     apps/mobile/src/coreBuildInfo.ts 的 SING_BOX_BUILD_TAGS（两者必须一致）；
+#     apps/client/src/mobile/coreBuildInfo.ts 的 SING_BOX_BUILD_TAGS（两者必须一致）；
 #     sing-box 版本由关于页经运行时 libbox.Version() 动态读取，无需硬编码。
 #   - ABI 只编 arm64-v8a + x86_64，与
-#     apps/mobile/src-tauri/gen/android/app/build.gradle.kts 的
+#     apps/client/src-tauri/gen/android/app/build.gradle.kts 的
 #     abiFilters 对齐。
 #   - libbox 包不在本 module 内，由 panel-core/pin.go 的 blank import
 #     钉进 go.mod，gobind 的 packages.Load 方可解析。
@@ -57,7 +57,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # 参数（可覆盖）
-OUTPUT_AAR="${1:-$REPO_ROOT/apps/mobile/src-tauri/gen/android/app/libs/panelcore.aar}"
+OUTPUT_AAR="${1:-$REPO_ROOT/apps/client/src-tauri/gen/android/app/libs/panelcore.aar}"
 
 # 环境默认值
 GOPATH="${GOPATH:-$HOME/go-work}"
@@ -129,7 +129,7 @@ gomobile init
 # 2. 构建 AAR（bind libbox，参数对齐 build_libbox）
 echo "==> 构建 panelcore.aar（libbox，多 ABI，耗时较长）..."
 mkdir -p "$(dirname "$OUTPUT_AAR")"
-cd "$REPO_ROOT/apps/mobile/panel-core"
+cd "$REPO_ROOT/apps/client/panel-core"
 gomobile bind -v -x \
     -target android/arm64,android/amd64 \
     -androidapi 33 \

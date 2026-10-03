@@ -129,11 +129,11 @@ git add .
 git commit -m "feat: your feature description"
 ```
 
-> **注意**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是**独立 cargo 项目**，
-> 不在根 workspace 内，根目录的 `cargo clippy/test --workspace` 覆盖不到它们；Android
-> 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。提交涉及 Rust 的
-> 改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），它补齐双壳
-> clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
+> **注意**：`apps/client/src-tauri` 是**独立 cargo 项目**（单壳双目标），
+> 不在根 workspace 内，根目录的 `cargo clippy/test --workspace` 覆盖不到；Android
+> 专属代码（`#[cfg(target_os = "android")]`）在 host（桌面目标）编译下也不可见。
+> 提交涉及 Rust 的改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），
+> 它补齐壳层 host clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
 
 ### 启动开发环境
 
@@ -195,8 +195,8 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 | Job | 说明 |
 |-----|------|
 | `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `client-shells` | 双壳独立 cargo 项目门禁：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 的 clippy（host），以及 mobile 壳 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径；工具链环境变量由 runner 预装 NDK 经 `apps/mobile/scripts/android-ndk-env.sh` 注入） |
-| `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-ui`（desktop）、`pp-client-mobile-ui`（mobile）四个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
+| `client-shells` | 客户端壳（`apps/client/src-tauri`，独立 cargo 项目）门禁：host（桌面目标）clippy 与 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，并实证 Android 构建图无 pp-mitm；工具链环境变量由 runner 预装 NDK 注入） |
+| `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-app`（客户端，verify 内含 desktop/android 双 mode 构建）三个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
 
@@ -204,24 +204,24 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 1. **`web`** — 构建前端产物
 2. **`build`** — 在 x86_64 与 aarch64  runner 上交叉编译 Release 二进制，打包为 `proxy-panel-{hub,agent}-linux-{arch}.tar.gz`
-3. **`desktop-windows`** — 在 windows-latest 上经 tauri-action 构建桌面客户端 NSIS 安装包（`apps/desktop`）
+3. **`desktop-windows`** — 在 windows-latest 上经 tauri-action 构建客户端 Windows NSIS 安装包（`apps/client`）
 4. **`release`** — 汇总 tar.gz 与 Windows 安装包、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
 5. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
 
 ### Windows 桌面端构建
 
-桌面客户端（`apps/desktop`，Tauri 2）支持 Windows 安装包（NSIS）：
+客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS）：
 
 ```bash
 # Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
-cd apps/desktop && bun install && bun run tauri build
-# 产物：apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+cd apps/client && bun install && bun run tauri build
+# 产物：apps/client/src-tauri/target/release/bundle/nsis/*.exe
 ```
 
 Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
 
 ```bash
-cargo xwin clippy --manifest-path apps/desktop/src-tauri/Cargo.toml \
+cargo xwin clippy --manifest-path apps/client/src-tauri/Cargo.toml \
   --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 ```
 
@@ -436,7 +436,7 @@ export function MyPage() {
 
 ## Android 客户端构建
 
-`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/mobile/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供。
+`apps/client` 的 Android 目标（Tauri 2 移动应用形态：Rust 壳 mobile 适配层 + Konsta 移动 UI）核心代理能力由 `apps/client/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供；`tauri android` 子命令经 `tauri.android.conf.json` overlay 切换 devUrl 与构建命令。
 
 ### 构建链路总览
 
@@ -462,13 +462,13 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 构建固定 NDK 28；按本机实际路径
 
 # 1. GEO 数据（APK 内置避免首启无代理下载失败）
-./apps/mobile/scripts/update-android-geodata.sh
+./apps/client/scripts/update-android-geodata.sh
 
 # 2. 构建 panelcore.aar（gomobile bind sing-box libbox）
-./apps/mobile/scripts/build-panel-core.sh
+./apps/client/scripts/build-panel-core.sh
 
 # 3. 打包 APK（debug）
-cd apps/mobile
+cd apps/client
 bun run android:build --debug --apk
 
 # 发布构建（签名 keystore 配置后）
@@ -479,7 +479,7 @@ bun run android:build --apk
 > 不带 `--target` 时 tauri CLI 默认构建全部 4 个 ABI（arm64/armv7/x86/x86_64），
 > 但 `abiFilters` 打包时只保留 arm64-v8a，其余纯属浪费编译时间。
 
-产物：`apps/mobile/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+产物：`apps/client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 
 > 注意：`panelcore.aar` 与 GEO 数据均为本地产物、不入库；克隆仓库后必须先跑步骤 1+2 才能打包。
 
@@ -493,17 +493,17 @@ Android target 的构建需要两组配置，缺失会导致难以排查的构�
 - `rquickjs-sys` 的 bindgen 需要 `BINDGEN_EXTRA_CLANG_ARGS_*` 指定 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
 - cargo 配置不支持环境变量展开，若在 `.cargo/config.toml` 写死 NDK 绝对路径会变成「个人目录入仓库」的灾难。因此改为全部由环境注入：
   - **nix dev shell**：`flake.nix` 导出（指向 nix store 的 NDK 28.0.13004108）
-  - **非 nix / CI**：`source apps/mobile/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
+  - **非 nix / CI**：`source apps/client/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
   - `tauri android build` 自身会按 `NDK_HOME` 注入 linker 与 RUSTFLAGS，与上述两者保持一致
 
-**2. pkg-config 守卫**：仓库根 `.cargo/config.toml` 设置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`，禁止 `lzma-sys` / `bzip2-sys`（zip 依赖）用 pkg-config 链接宿主系统库，强制 vendored 静态编译；否则交叉编译时会链接 host 架构的 `.so`，报 `liblzma.so is incompatible with aarch64linux`（nix dev shell 的 `PKG_CONFIG_PATH` 含 host 版 xz/bzip2，必现）。放在仓库根是因为 cargo 只沿**当前工作目录**向上发现配置：tauri CLI 从 `apps/mobile` 调 cargo、裸 cargo 在 `src-tauri`，根配置对两者同时生效。
+**2. pkg-config 守卫**：仓库根 `.cargo/config.toml` 设置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`，禁止 `lzma-sys` / `bzip2-sys`（zip 依赖）用 pkg-config 链接宿主系统库，强制 vendored 静态编译；否则交叉编译时会链接 host 架构的 `.so`，报 `liblzma.so is incompatible with aarch64linux`（nix dev shell 的 `PKG_CONFIG_PATH` 含 host 版 xz/bzip2，必现）。放在仓库根是因为 cargo 只沿**当前工作目录**向上发现配置：tauri CLI 从 `apps/client` 调 cargo、裸 cargo 在 `src-tauri`，根配置对两者同时生效。
 
 ### 常见问题
 
 | 症状 | 原因 | 处理 |
 |------|------|------|
 | `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
-| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | nix 下进 `nix develop`；非 nix `source apps/mobile/scripts/android-ndk-env.sh`（见上一节） |
+| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | nix 下进 `nix develop`；非 nix `source apps/client/scripts/android-ndk-env.sh`（见上一节） |
 | `liblzma.so / libbz2.so is incompatible with aarch64linux` | `lzma-sys` / `bzip2-sys` 经 pkg-config 链接了 host x86_64 系统库 | 配置已内置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`；若改过配置需 `cargo clean -p lzma-sys -p bzip2-sys` 后重构建 |
 | 进了 `nix develop` 仍用主机 NDK | 交互 bash 会 source `~/.bashrc`，其中无条件导出的 `ANDROID_HOME`/`NDK_HOME` 覆盖了 flake | rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫（见 nix-flake.md §4.6） |
 | `lintVitalAnalyzeUniversalRelease` 崩溃（`findFirCompiledSymbol`） | AGP 9.3.1 lint 分析构建脚本的自身 bug | 已在 `gen/android/app/build.gradle.kts` 设 `lint { checkReleaseBuilds = false }` |

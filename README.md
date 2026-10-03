@@ -67,7 +67,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-客户端分桌面（`apps/desktop`，`pp-client-ui`）与移动（`apps/mobile`，`pp-client-mobile-ui`）两个独立 Tauri 应用，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
+客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：桌面 UI（HeroUI）与移动 UI（Konsta）经 vite mode 构建期分发，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -189,22 +189,24 @@ cargo run --release --bin proxy-panel-agent \
   --token "your-agent-token"
 ```
 
-### 9. 构建桌面客户端（可选）
+### 9. 构建客户端（可选）
 
-桌面客户端为独立的 Tauri 项目（退出根 workspace），使用 Bun 作为包管理器：
+客户端为单一 Tauri 项目 `apps/client`（壳退出根 workspace），使用 Bun 作为包管理器：
 
 ```bash
-cd apps/desktop
+cd apps/client
 bun install
-bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
-bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
+bun run tauri dev      # 桌面开发模式（Vite 热重载 + Tauri 窗口）
+bun run tauri build    # 桌面发布构建（产物位于 src-tauri/target/release/）
+bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/development.md）
+bun run android:build  # Android APK 构建
 ```
 
 支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（`bundle/nsis/*.exe`）；TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启），且依赖随核心自动下载的 `wintun.dll`。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包。
 
-#### Android（移动客户端）构建
+#### Android（移动端目标）构建
 
-Android 客户端自 desktop 拆分独立为 `apps/mobile`（Tauri 2 移动应用）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
+Android 为 `apps/client` 的移动目标（Tauri 2，`tauri.android.conf.json` overlay）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
 
 ## 项目结构
 
@@ -257,8 +259,7 @@ proxy-panel/
 | `pp-client` | 客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
 | `pp-client-tauri` | 双端共享 Tauri 命令层：state / logs / capabilities / 35 条通用命令单份实现，Android 专属 core_bridge（cfg 门控） | 库 |
 | `@pp/client-core` | desktop/mobile 共享前端库：api 的 invoke 封装 + hooks + atoms + 纯工具（bun workspaces 成员） | 库 |
-| `apps/desktop` | Tauri 2 桌面客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员；壳为退出根 workspace 的独立 cargo 项目） | 桌面应用 |
-| `apps/mobile` | Tauri 2 移动客户端（Android：移动 UI + 壳 + Go 核心 `panel-core`，bun workspaces 成员） | Android 应用 |
+| `apps/client` | Tauri 2 客户端（React 19 + Vite 8，单包双入口：桌面 HeroUI / 移动 Konsta + Go 核心 `panel-core`；壳为退出根 workspace 的独立 cargo 项目） | 桌面（Linux/Windows/macOS）+ Android 应用 |
 
 ## 支持的协议
 

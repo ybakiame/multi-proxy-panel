@@ -48,14 +48,14 @@ jobs:
         run: cargo test --workspace
 
   client-shells:
-    name: Client Shells (desktop / mobile)
+    name: Client Shell (desktop / android targets)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Install Tauri Linux system dependencies
-        # 双壳（desktop/mobile src-tauri）依赖 tauri → gtk / webkit2gtk → glib-sys，
+        # 客户端壳（apps/client/src-tauri）依赖 tauri → gtk / webkit2gtk → glib-sys，
         # 与根 workspace 的 pp-client-tauri 相同，需要系统 dev 包。
         run: |
           sudo apt-get update
@@ -76,19 +76,17 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      # 双壳是独立 cargo 项目（不在根 workspace），rust 任务的 clippy/test 覆盖不到；
+      # 客户端壳是独立 cargo 项目（不在根 workspace），rust 任务的 clippy/test 覆盖不到；
       # 这里单独门禁，避免「根 workspace 全绿但壳编译失败」。
-      - name: Check desktop shell
-        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Check client shell (host = desktop target)
+        # host 编译即桌面目标：desktop 适配层与 pp-client-tauri/mitm feature 在此覆盖。
+        run: cargo clippy --manifest-path apps/client/src-tauri/Cargo.toml --all-targets -- -D warnings
 
-      - name: Check mobile shell (host)
-        run: cargo clippy --manifest-path apps/mobile/src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Check mobile shell (aarch64-linux-android)
-        # 覆盖 host 编译不可见的 #[cfg(target_os = "android")] 路径（历史上两次
-        # 「host 全绿但 Android 编译失败」的盲区）。apps/mobile/src-tauri/.cargo/config.toml
-        # 内的 NDK 路径是本机绝对路径，CI 上用 ubuntu-latest 预装 NDK 以环境变量覆盖
-        # （环境变量优先级高于 .cargo/config.toml）。
+      - name: Check client shell (aarch64-linux-android)
+        # 覆盖 host 编译不可见的 #[cfg(target_os = "android")] 路径（mobile 适配层 +
+        # core_bridge；历史上两次「host 全绿但 Android 编译失败」的盲区），并实证
+        # Android 构建图不含 pp-mitm（target 依赖表，I3）。CI 用 ubuntu-latest 预装
+        # NDK，经环境变量注入工具链。
         run: |
           NDK=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
           echo "Using NDK: $NDK"
@@ -96,7 +94,7 @@ jobs:
           export AR_aarch64_linux_android="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
           export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-android33 --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem $NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
-          cd apps/mobile/src-tauri && cargo check --target aarch64-linux-android
+          cd apps/client/src-tauri && cargo check --target aarch64-linux-android
 
   web:
     name: Web Checks
@@ -117,8 +115,6 @@ jobs:
       - name: Verify client-core (shared library)
         run: bun run --filter @pp/client-core verify
 
-      - name: Verify desktop UI
-        run: bun run --filter pp-client-ui verify
-
-      - name: Verify mobile UI
-        run: bun run --filter pp-client-mobile-ui verify
+      - name: Verify client app (desktop + android builds)
+        # 单包 verify 内含双 mode 构建（desktop / android），一次门禁双产物。
+        run: bun run --filter pp-client-app verify

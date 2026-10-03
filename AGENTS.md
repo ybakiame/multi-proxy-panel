@@ -11,8 +11,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
-- **Desktop** (`apps/desktop`): 桌面客户端（Linux/Windows/macOS，Tauri 壳 + React 前端 + 独立 cargo 项目），含 MITM / 脚本引擎 / 核心管理等桌面专属能力
-- **Mobile** (`apps/mobile`): 移动客户端（Android，Tauri 壳 + 移动 UI（React + **Konsta UI**，iOS/Material 双主题可切换）+ 独立 cargo 项目），核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM（见 ADR-0003）
+- **Client** (`apps/client`): 客户端（Linux/Windows/macOS/Android，Tauri 壳 + React 前端，单包双入口单壳双目标，见 ADR-0007）：前端 `src/desktop`（HeroUI）/ `src/mobile`（**Konsta UI**，iOS/Material 双主题）经 vite mode 构建期分发；壳 `src-tauri` 为独立 cargo 项目，经 target 依赖表与 cfg 适配层区分桌面/移动目标。桌面端含 MITM / 脚本引擎 / 核心管理等专属能力；Android 端核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM
 - **`packages/client-core`** (`@pp/client-core`): desktop/mobile 共享前端库（api 的 invoke 封装 + hooks + atoms + 纯工具），两端 UI 一律经它调用 Tauri 命令
 
 ---
@@ -23,7 +22,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
-- 前端应用（`apps/panel` 管理系统、`apps/desktop` / `apps/mobile` Tauri 双客户端）与共享前端库（`packages/*`）不是 Cargo workspace 成员（双客户端各自 `src-tauri/` 为退出根 workspace 的独立 cargo 项目），由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）
+- 前端应用（`apps/panel` 管理系统、`apps/client` Tauri 客户端）与共享前端库（`packages/*`）不是 Cargo workspace 成员（客户端 `src-tauri/` 为退出根 workspace 的独立 cargo 项目），由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）
 
 ### 2.2 常用构建命令
 
@@ -53,22 +52,23 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 
 # Rust 全量门禁（推荐提交前执行；scripts/check-rust-gates.sh）
-# = fmt --check + clippy + test + desktop/mobile 壳（独立 cargo 项目）clippy
-#   + 有 NDK 时 mobile 壳 aarch64-linux-android 交叉编译检查
+# = fmt --check + clippy + test + 客户端壳（apps/client/src-tauri，独立 cargo
+#   项目）host clippy + 有 NDK 时 aarch64-linux-android 交叉编译检查
 bun run verify:rust
 # 快速版（跳过测试，pre-commit 钩子同款）
 bun run verify:rust:fast
 ```
 
-> **双壳盲区提醒**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是退出根
-> workspace 的独立 cargo 项目，根目录 `cargo clippy/test --workspace` **覆盖不到**；
-> Android 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。涉及 Rust
+> **壳层盲区提醒**：`apps/client/src-tauri` 是退出根 workspace 的独立 cargo 项目，
+> 根目录 `cargo clippy/test --workspace` **覆盖不到**；Android 专属代码
+> （`#[cfg(target_os = "android")]`，`mobile` 适配层与 `core_bridge`）在 host（桌面
+> 目标）编译下也不可见，且 Android 构建图经 target 依赖表裁剪（无 pp-mitm）。涉及 Rust
 > 的提交前务必跑 `bun run verify:rust`，不要只跑 `-p <crate>` 的包级测试——跨 crate 的
 > 字段/签名变更（如 `PanelFeatures` 增字段）在包级测试下无法暴露。
 
 ### 2.3 前端构建（Bun workspaces）
 
-前端应用（`apps/panel`、`apps/desktop`、`apps/mobile`）与共享前端库（`packages/*`，含 `@pp/client-core`）都是 Bun workspaces 成员，依赖在**仓库根目录**统一安装（单一 `bun.lock`）：
+前端应用（`apps/panel`、`apps/client`）与共享前端库（`packages/*`，含 `@pp/client-core`）都是 Bun workspaces 成员，依赖在**仓库根目录**统一安装（单一 `bun.lock`）：
 
 ```bash
 # 根目录一次安装全部前端依赖
@@ -77,8 +77,8 @@ bun install
 # 按 app 执行脚本（--filter 用各 app package.json 的 name）
 bun run --filter pp-web dev          # panel 开发模式
 bun run --filter pp-web build        # panel 发布构建（产物 apps/panel/dist/）
-bun run --filter pp-client-ui dev    # desktop 开发模式
-bun run --filter pp-client-mobile-ui dev  # mobile 开发模式
+bun run --filter pp-client-app dev   # client 桌面开发模式（vite mode=desktop，端口 1420）
+bun run --filter pp-client-app dev:android  # client 移动开发模式（vite mode=android，端口 1430）
 ```
 
 前端代码检查与格式化已集成 oxc 工具链（也可 `cd apps/panel` 后直接 `bun run <script>`）：
@@ -92,7 +92,7 @@ bun run --filter pp-web format
 bun run --filter pp-web verify
 ```
 
-提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-ui` / `--filter pp-client-mobile-ui` / `--filter @pp/client-core`）并全部通过。
+提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-app` / `--filter @pp/client-core`）并全部通过。
 
 > **Android（移动端）构建**：APK 打包涉及 NDK 交叉编译、`panel-core` AAR 与 GEO 数据，完整步骤见 `docs/development.md` 的「Android 客户端构建」章节，不在此重复。
 
@@ -100,10 +100,10 @@ bun run --filter pp-web verify
 
 仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**本地检查**：
 - `scripts/check-file-size.sh`：文件规模门禁（业务 >500 行 / 测试 >1000 行拦截，>400 行告警，规则见 `.agents/rules/code-organization.md`）
-- 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + desktop/mobile 壳 clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
-- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / desktop / mobile / client-core 全覆盖）
+- 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + 客户端壳 host clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
+- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / client / client-core 全覆盖）
 
-Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（双壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
+Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（客户端壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
 
 ---
 
@@ -259,19 +259,24 @@ pp-subscription::generate_subscription(format)
 Base64 / JSON / Clash YAML / SingBox JSON / V2RayNG
 ```
 
-### 4.5 客户端双应用架构（desktop / mobile 分离）
+### 4.5 客户端单壳双目标架构（apps/client）
 
-客户端自 ADR-0003 起按平台拆为两个独立 Tauri 应用，共用两层共享载体：
+客户端自 ADR-0007 起合并为单一 Tauri 应用 `apps/client`（前身为 ADR-0003 的
+desktop/mobile 双应用），平台差异全部为**编译期事实**：
 
 | 载体 | 形态 | 职责 |
 |------|------|------|
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）、hooks、atoms、纯工具；两端 UI 禁止直接 `invoke()` |
-| `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现，双壳以全路径注册；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
-| `apps/desktop/src-tauri` | 桌面壳 | 注册共享命令 + 桌面专属命令（mitm / core_mgmt / remote 等），含 WSL workaround |
-| `apps/mobile/src-tauri` | 移动壳 | 注册共享命令 + Android 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）；依赖表天然不含 `pp-mitm`，无需 feature hack。移动 UI 组件库为 Konsta UI（iOS/Material 双主题，设置页可切换，默认 iOS），桌面端仍为 HeroUI |
+| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
+| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题，设置页可切换，默认 iOS） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src-tauri` | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表使 Android 构建图不含 `pp-mitm` |
+| `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
 | `crates/pp-client`（`CoreEngineBridge`） | 核心引擎层 | 桌面侧 spawn sing-box 子进程；Android 侧经 Kotlin 桥由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心 |
 
-`get_capabilities` 的 `is_android` 保留为**运行时功能开关**（desktop UI 已不再消费，UI 分离后平台差异转为编译期事实）。详见 ADR-0003。
+`get_capabilities` 的 `is_android` 保留为**运行时功能开关**（UI 平台差异已是编译期
+事实）。Tauri 配置：桌面基线 `tauri.conf.json` + Android overlay
+`tauri.android.conf.json`（RFC 7396 合并：devUrl/构建命令/bundle 差异）。
+详见 ADR-0003（分离）与 ADR-0007（合并回摆）。
 
 ---
 
