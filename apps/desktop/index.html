@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ProxyPanel Client</title>
     <script>
-      // 主题预置（首帧前执行，避免闪变）：与 HeroUI v3 useTheme 的存储键/值域一致
-      // （heroui-theme：light / dark / system，默认 system 跟随系统），React 挂载后
-      // 由 useTheme 接管（App.tsx ThemeBootstrap）。
+      // 主题预置（首帧前执行，避免闪变）：与 @pp/client-core theme 模块的存储键/
+      // 值域一致（pp-ui-theme：light / dark / system，默认 system 跟随系统；存量
+      // 历史键 heroui-theme 回退读取，模块加载时一次性迁移）。React 挂载后由
+      // ThemeProvider 接管（App.tsx）。
       (function () {
         var stored = null;
         try {
-          stored = localStorage.getItem("heroui-theme");
+          stored = localStorage.getItem("pp-ui-theme") || localStorage.getItem("heroui-theme");
         } catch (e) {
           /* 存储不可用：按无记录处理 */
         }

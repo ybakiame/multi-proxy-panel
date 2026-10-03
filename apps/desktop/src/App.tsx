@@ -1,7 +1,7 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
-import { ToastProvider, useTheme, toast as heroToast } from "@heroui/react";
+import { ToastProvider, toast as heroToast } from "@heroui/react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
-import { toastModeOverride } from "@pp/client-core";
+import { ThemeProvider, toastModeOverride } from "@pp/client-core";
 import { Toaster } from "./components/Toaster";
 import { RestartPrompt } from "./components/RestartPrompt";
 import { isTauriEnv } from "@pp/client-core";
@@ -77,15 +77,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 /**
- * 主题同步（浅色 / 深色 / 跟随系统）：HeroUI v3 `useTheme` 读取 localStorage
- * `heroui-theme`（默认 `system`），监听系统深浅色变化并同步 `<html>` 的
- * class / `data-theme`；index.html 预置脚本负责首帧前就位，此组件挂载后接管。
+ * 主题同步（浅色 / 深色 / 跟随系统）：由 `@pp/client-core` 的 `ThemeProvider`
+ * 自管理（UI 无关存储键 `pp-ui-theme`，2026-10 自 HeroUI `useTheme` 的硬编码键
+ * `heroui-theme` 迁移；存量键由 client-core theme 模块启动时一次性迁移），监听
+ * 系统深浅色变化并同步 `<html>` 的 class / `data-theme`；index.html 预置脚本
+ * 负责首帧前就位，Provider 挂载后接管。
  */
-function ThemeBootstrap() {
-  useTheme("system");
-
-  return null;
-}
 
 /**
  * Toast 双态实现（详见 `@pp/client-core` 的 toast.ts 适配器模式）：
@@ -190,11 +187,12 @@ export default function App() {
 
   return (
     <HashRouter>
-      <ThemeBootstrap />
-      <ErrorBoundary>
-        {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
-        <AppContent />
-      </ErrorBoundary>
+      <ThemeProvider>
+        <ErrorBoundary>
+          {heroToastEnabled ? <ToastProvider placement="bottom end" maxVisibleToasts={3} /> : <Toaster />}
+          <AppContent />
+        </ErrorBoundary>
+      </ThemeProvider>
     </HashRouter>
   );
 }

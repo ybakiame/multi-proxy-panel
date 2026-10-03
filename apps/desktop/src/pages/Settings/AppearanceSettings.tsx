@@ -1,8 +1,8 @@
 import { Card } from "@heroui/react";
-import { useTheme } from "@heroui/react";
+import { useThemePreference } from "@pp/client-core";
 import { ComputerDesktopIcon, MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 
-/** 主题选项（值域与 HeroUI v3 `useTheme` 的 `heroui-theme` 存储键一致）。 */
+/** 主题选项（值域与 `@pp/client-core` theme 模块的 `pp-ui-theme` 存储键一致）。 */
 const THEME_OPTIONS = [
   { value: "system", label: "跟随系统", icon: ComputerDesktopIcon },
   { value: "light", label: "浅色", icon: SunIcon },
@@ -12,11 +12,12 @@ const THEME_OPTIONS = [
 /**
  * 外观设置卡：浅色 / 深色 / 跟随系统三选（默认跟随系统）。
  *
- * 经 HeroUI v3 `useTheme` 切换并持久化（localStorage `heroui-theme`）；
- * 首帧由 index.html 预置脚本就位，`system` 下持续跟随系统深浅色变化。
+ * 经 `@pp/client-core` 的 `useThemePreference` 切换并持久化（localStorage
+ * `pp-ui-theme`，UI 无关键）；首帧由 index.html 预置脚本就位，`system` 下持续
+ * 跟随系统深浅色变化。
  */
 export default function AppearanceSettings() {
-  const { theme, setTheme } = useTheme("system");
+  const { theme, setTheme } = useThemePreference();
 
   return (
     <Card>

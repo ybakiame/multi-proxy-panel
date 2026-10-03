@@ -37,4 +37,5 @@ export * from "./pendingRestart";
 export * from "./ruleSetOptions";
 export * from "./routeSlice";
 export * from "./rules";
+export * from "./theme";
 export * from "./toast";
