@@ -1,7 +1,7 @@
 # ADR-0006: 客户端流量统计（Clash API WebSocket 采集 + 本地 SQLite 聚合）
 
 - **Status:** Accepted
-- **Date:** 2026-12-19
+- **Date:** 2026-10-02
 - **Deciders:** ProxyPanel Contributors
 - **Scope:** 客户端（`pp-client` / `pp-client-tauri` / `packages/client-core` / `apps/desktop` / `apps/mobile`）
 
