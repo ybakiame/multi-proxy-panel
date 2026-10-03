@@ -1,7 +1,7 @@
 # 客户端合并迁移评估：apps/desktop + apps/mobile → apps/client
 
 - **Date:** 2026-10-03
-- **Status:** 评估稿（待评审）
+- **Status:** 评估稿（M0 已于 2026-10-03 实证通过，见 §6.1；主题键已前置统一，见 §4.1）
 - **Scope:** `apps/desktop`、`apps/mobile`、`packages/client-core`、`crates/pp-client-tauri`、CI/CD 与构建脚本
 - **关联：** ADR-0003（双应用分离，本评估实质上是对其「双 app」形态的再评估与部分回摆）
 
@@ -154,7 +154,7 @@ apps/client/
 
 - **alias 分发**：`resolve.alias["@app"] = mode === "android" ? "./src/mobile" : "./src/desktop"`；`main.tsx` 只写 `import("@app/App")` + `import("@app/index.css")`。HeroUI / Konsta / codemirror 只进入各自 mode 的 bundle（构建产物互不含对方 UI 库，包体积与现状一致）。
 - **react-compiler**：desktop mode 开、android mode 关（维持现状差异；若想统一开启，列为独立验证任务，Konsta 兼容性需实测）。
-- **index.html 主题预置脚本**：两端不同（`heroui-theme` vs `pp-ui-theme` 首帧脚本）。用 vite `transformIndexHtml` 按 mode 注入对应 `<script>` 片段（首选；单 index.html 保持 Tauri `frontendDist` 约定不变），或退化为 `build.rollupOptions.input` 双 HTML 模板（`input: { index: "index.desktop.html" }` 产物名仍为 `dist/index.html`）。
+- **index.html 主题预置脚本**：~~两端不同（`heroui-theme` vs `pp-ui-theme` 首帧脚本）~~ **已收敛为单一键**（2026-10 合并前置提交完成）：HeroUI v3 `useTheme` 的存储键 `heroui-theme` 硬编码不可配，属 UI 库耦合的历史遗留；主题管理已上移 `@pp/client-core` theme 模块，双端统一为 UI 无关键 `pp-ui-theme`（存量 `heroui-theme` 由模块加载时一次性迁移，首帧脚本保留只读回退兜底）。**合并后 index.html 为单一文件、单一首帧脚本，无需按 mode 注入/切换**。
 - **端口**：mode 决定 dev 端口（desktop 1420 / android 1430），`tauri.android.conf.json` overlay 同步 devUrl + beforeDevCommand（`bun run dev:android`）。
 - **package.json scripts**：`verify` = `build` + `build:android` + `lint` + `format:check`（CI 一次门禁双产物，防止「一端绿一端红」）。
 - **包名**：`pp-client` 与 Rust crate 撞名但不同生态（bun vs cargo），不冲突；也可 `pp-client-app`。**注意 CI/release 与根 package.json 的 `--filter` 引用同步改**。
@@ -262,14 +262,24 @@ codegen-units = 1
 
 | 里程碑 | 内容 | 验收 |
 |---|---|---|
-| **M0 验证钉（spike，先于一切）** | 三个未知项各自最小验证：① Cargo.toml target 依赖表 + `pp-client-tauri/mitm` feature 在 android target 构建图中确实排除 `pp-mitm`（`cargo tree --target aarch64-linux-android -i pp-mitm` 无输出）；② `tauri.android.conf.json` overlay 被 `tauri android dev/build` 正确合并（devUrl/beforeBuildCommand 生效）；③ vite mode alias 双构建产物互不含对方 UI 库（`grep -r konsta dist-desktop/` 为零等） | 三项全部实证通过；任一失败则降级方案（见 §7） |
+| **M0 验证钉（spike，先于一切）** ✅ 已通过（2026-10-03，证据见 §6.1） | 三个未知项各自最小验证：① Cargo.toml target 依赖表 + `pp-client-tauri/mitm` feature 在 android target 构建图中确实排除 `pp-mitm`（`cargo tree --target aarch64-linux-android -i pp-mitm` 无输出）；② `tauri.android.conf.json` overlay 被 `tauri android dev/build` 正确合并（devUrl/beforeBuildCommand 生效）；③ vite mode alias 双构建产物互不含对方 UI 库（`grep -r konsta dist-desktop/` 为零等） | 三项全部实证通过；任一失败则降级方案（见 §7） |
 | **M1** | 建 `apps/client` 壳：desktop src-tauri 为基座 + mobile 适配层迁入 + target 依赖表 + gen/android/keystore/panel-core/scripts 随迁 + tauri.android.conf.json | host clippy + android cargo check 通过；desktop 可 dev 启动（UI 暂用 desktop 目录直接挂） |
-| **M2** | 前端合并：双目录迁入 + vite mode + 单 package.json/tsconfig/oxlint + index.html 主题注入 | `verify` 全绿；desktop dev / android dev 双端页面与行为零变化（对照截图/手测清单） |
+| **M2** | 前端合并：双目录迁入 + vite mode + 单 package.json/tsconfig/oxlint + 单一 index.html（主题键已前置统一，无 per-mode 注入） | `verify` 全绿；desktop dev / android dev 双端页面与行为零变化（对照截图/手测清单） |
 | **M3** | CI/CD/脚本/文档切换（§5 全表） | CI 全绿；release dry-run（windows NSIS + android APK 产物齐全） |
 | **M4** | 删除 `apps/desktop`、`apps/mobile`；ADR-0007 落地，ADR-0003 标记 Superseded | 仓库无残留引用（`rg "apps/desktop\|apps/mobile"` 仅剩历史文档） |
 | **M5（可选，解耦）** | VPN 插件抽取为正式 tauri 插件结构（`src-tauri/plugins/sing-box-mobile/`：Rust 插件 crate + android/ gradle 子模块） | Android 功能零回归；gen/android 内手写 Kotlin 仅剩 app 胶水 |
 
 每个里程碑独立可合入；M1/M2 之间保持双 app 可用（旧目录暂不删）以便对照验证。
+
+### 6.1 M0 实证记录（2026-10-03，spike 工程位于 `tmp/m0-spike/`，不入库）
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| ① target 依赖表 + feature 裁剪 | spike 壳（`tmp/m0-spike/shell`）：`[dependencies]` 基线引用 `pp-client-tauri`（scripts-only），`[target.'cfg(not(any(android, ios)))'.dependencies]` 同名引用加 `features=["mitm"]` 并直挂 `pp-client`/`pp-mitm`/`pp-script`；分别跑 `cargo tree -i pp-mitm`（host）与 `cargo tree --target aarch64-linux-android -i pp-mitm` | ✅ host：pp-mitm 经三条边（直接依赖 / pp-client 默认 features / pp-client-tauri mitm feature）在图内；android target：`nothing to print`，pp-mitm 不在构建图。**I3 成立** |
+| ② Tauri 平台 overlay 合并 | spike 壳 `tauri.conf.json`（`beforeDevCommand: echo M0_MARKER_BASE_CONFIG`）+ `tauri.linux.conf.json`（overlay 为 `echo M0_MARKER_LINUX_OVERLAY`）；`tauri dev` 观察实际执行的 beforeDevCommand；对照组移除 overlay 重跑 | ✅ 有 overlay 时输出 `M0_MARKER_LINUX_OVERLAY`，无 overlay 时输出 `M0_MARKER_BASE_CONFIG`（RFC 7396 合并生效）。`tauri.android.conf.json` 为同一机制（CLI 按目标平台选择 overlay 文件），残留风险仅 android 子命令的路径差异，M1 时随 `tauri android dev` 首跑复核 |
+| ③ vite mode alias 双产物隔离 | spike 前端（`tmp/m0-spike/web`）：`vite.config.ts` 按 mode 切换 `@app` alias（desktop→HeroUI+react-compiler，android→Konsta），两入口各带标记字符串与各自 UI 库 CSS；分别构建 | ✅ desktop 产物含 `__M0_DESKTOP_ONLY__` + HeroUI 主题 token（css 448KB），android 产物含 `__M0_MOBILE_ONLY__` + Konsta 样式（css 125KB），交叉 grep 均为零命中。**双 UI 库产物级隔离成立** |
+
+另注：spike 中 bun 隔离式 node_modules 对非 workspace 目录不自动可见，spike 以 symlink 方式引入依赖；正式 apps/client 作为 workspace 成员无此问题。
 
 ### 工作量粗估
 
