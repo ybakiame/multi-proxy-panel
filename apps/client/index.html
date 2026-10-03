@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>ProxyPanel Client</title>
+    <title>ProxyPanel</title>
     <script>
       // 主题预置（首帧前执行，避免闪变）：与 @pp/client-core theme 模块的存储键/
       // 值域一致（pp-ui-theme：light / dark / system，默认 system 跟随系统；存量
-      // 历史键 heroui-theme 回退读取，模块加载时一次性迁移）。React 挂载后由
-      // ThemeProvider 接管（App.tsx）。
+      // 历史键 heroui-theme 回退读取，模块加载时一次性迁移）。单文件单脚本服务
+      // 双端（合并后不再与具体 UI 库耦合），React 挂载后由 ThemeProvider 接管。
       (function () {
         var stored = null;
         try {
@@ -23,7 +23,9 @@
       })();
     </script>
   </head>
-  <body class="bg-background text-foreground antialiased">
+  <!-- 底色由平台 UI 各自的根容器 / 样式承担（HeroUI / Konsta token 分属两套产物），
+       body 只保留抗锯齿，避免引用单一平台的 token。 -->
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
