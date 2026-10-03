@@ -23,6 +23,7 @@ import Config from "./pages/Config";
 import DnsPage from "./pages/Config/Dns";
 import OutboundsPage from "./pages/Config/Outbounds";
 import RoutePage from "./pages/Config/Route";
+import InboundsPage from "./pages/Config/Inbounds";
 import ExperimentalPage from "./pages/Config/Experimental";
 
 /**
@@ -127,6 +128,7 @@ function AppContent() {
             <Route path="/config/dns" element={<DnsPage />} />
             <Route path="/config/outbounds" element={<OutboundsPage />} />
             <Route path="/config/route" element={<RoutePage />} />
+            <Route path="/config/inbounds" element={<InboundsPage />} />
             <Route path="/config/experimental" element={<ExperimentalPage />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/settings" element={<Settings />} />

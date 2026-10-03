@@ -227,7 +227,7 @@ cargo xwin clippy --manifest-path apps/desktop/src-tauri/Cargo.toml \
 
 **TUN 模式**：sing-box 的 Windows TUN 依赖 `wintun.dll` 与 `sing-box.exe` 同目录——核心
 下载完成后客户端会自动从 wintun.net 官方发布拉取对应架构的 dll（失败不阻塞核心安装，
-TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：设置页「网络设置」的
+TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：「配置 → 入站管理 → TUN 入站」的
 授权按钮会以管理员身份重启应用（UAC 确认）。
 
 **未签名安装包会触发 SmartScreen 警告**（无代码签名证书），属预期行为。

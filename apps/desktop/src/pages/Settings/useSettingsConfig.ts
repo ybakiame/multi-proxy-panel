@@ -43,11 +43,35 @@ const RESTART_KEY_BY_FIELD: Record<string, RestartDirtyKey> = {
   dns_fakeip_enabled: "dns",
 };
 
+/** 端口越界/非法时展示在输入框下方的提示（对齐移动端 `isValidPort` 校验）。 */
+export const PORT_RANGE_ERROR = "端口需在 1-65535 之间";
+
+/** 校验端口草稿：仅接受 1-65535 的整数。 */
+export function isValidPort(raw: string): boolean {
+  if (!/^\d+$/.test(raw)) {
+    return false;
+  }
+  const value = Number(raw);
+  return value >= 1 && value <= 65535;
+}
+
+/** 空白 / 非法端口的错误文案。 */
+function portError(raw: string): string | null {
+  if (raw.trim() === "") {
+    return "请输入端口号";
+  }
+  return isValidPort(raw) ? null : PORT_RANGE_ERROR;
+}
+
 export interface UseSettingsConfigReturn {
   config: ClientConfig | null;
   error: string | null;
-  mixedPort: number;
-  setMixedPort: (value: number) => void;
+  /** 混合端口草稿（字符串，输入校验后合法才落库）。 */
+  mixedPortDraft: string;
+  mixedPortError: string | null;
+  onMixedPortChange: (raw: string) => void;
+  ipv6Enabled: boolean;
+  setIpv6Enabled: (value: boolean) => void;
   tunEnabled: boolean;
   setTunEnabled: (value: boolean) => void;
   tunStack: string;
@@ -88,7 +112,8 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const { data: config = null } = useClientConfig();
   const error = useAtomValue(lastActionErrorAtom);
   const saveConfigMutation = useSaveConfig();
-  const [mixedPort, setMixedPort] = useState(1080);
+  const [mixedPortDraft, setMixedPortDraft] = useState("17890");
+  const [ipv6Enabled, setIpv6Enabled] = useState(false);
   const [tunEnabled, setTunEnabled] = useState(false);
   const [tunStack, setTunStack] = useState<string>("mixed");
   const [tunAutoRoute, setTunAutoRoute] = useState(true);
@@ -111,7 +136,8 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   if (prevConfig !== config) {
     setPrevConfig(config);
     if (config) {
-      setMixedPort(config.mixed_port);
+      setMixedPortDraft(String(config.mixed_port));
+      setIpv6Enabled(config.ipv6_enabled);
       setTunEnabled(config.tun_enabled);
       setTunStack(config.tun_stack);
       setTunAutoRoute(config.tun_auto_route);
@@ -172,6 +198,18 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
     [persist],
   );
 
+  /** 混合端口输入：草稿即时更新，仅合法值（1-65535 整数）防抖落库。 */
+  const onMixedPortChange = useCallback(
+    (raw: string) => {
+      setMixedPortDraft(raw);
+      if (portError(raw) !== null) {
+        return;
+      }
+      persistDebounced({ mixed_port: Number(raw) });
+    },
+    [persistDebounced],
+  );
+
   // TUN 授权状态查询（桌面端且 TUN 启用时），Query 缓存为权威源。
   const { data: tunAuthData } = useQuery<string>({
     queryKey: TUN_AUTH_KEY,
@@ -192,8 +230,11 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   return {
     config,
     error,
-    mixedPort,
-    setMixedPort,
+    mixedPortDraft,
+    mixedPortError: portError(mixedPortDraft),
+    onMixedPortChange,
+    ipv6Enabled,
+    setIpv6Enabled,
     tunEnabled,
     setTunEnabled,
     tunStack,

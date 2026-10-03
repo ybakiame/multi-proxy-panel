@@ -200,7 +200,7 @@ bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
 bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
 ```
 
-支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（`bundle/nsis/*.exe`）；TUN 模式需要管理员权限（设置页「网络设置」提供一键以管理员身份重启），且依赖随核心自动下载的 `wintun.dll`。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包。
+支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（`bundle/nsis/*.exe`）；TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启），且依赖随核心自动下载的 `wintun.dll`。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包。
 
 #### Android（移动客户端）构建
 

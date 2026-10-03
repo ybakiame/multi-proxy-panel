@@ -1,5 +1,12 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowsRightLeftIcon, BeakerIcon, ChevronRightIcon, GlobeAltIcon, MapIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowsRightLeftIcon,
+  BeakerIcon,
+  ChevronRightIcon,
+  GlobeAltIcon,
+  MapIcon,
+  WifiIcon,
+} from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 
 interface ConfigEntry {
@@ -13,10 +20,13 @@ interface ConfigEntry {
  * 配置管理入口页（分段配置切片编辑，语义对齐移动端 `apps/mobile/src/pages/Config`）。
  *
  * 入口卡列表（名称对齐 sing-box 顶级字段语义）：DNS 管理（`dns`）、出站管理
- * （`outbounds`）、路由管理（`route`）、Experimental（`experimental`）。
+ * （`outbounds`）、路由管理（`route`）、入站管理（`inbounds`）、Experimental
+ * （`experimental`）。
  *
- * 入站（混合端口 / TUN）与 Clash API 在桌面端由「设置」页的对应卡片承载（桌面端
- * 先于切片页实现），此处不重复入口；规则管理与规则集管理由侧边栏「规则」页承载。
+ * 入站（混合端口 / TUN / IPv6）与 Clash API 不是配置切片：作为高优先级设置
+ * （`client.json`）在配置合成 ④ 层覆盖模板/覆写同名字段；入站管理由本页
+ * `/config/inbounds` 承载（2026-10 自「设置」页剥离，对齐移动端），Clash API
+ * 由「设置」页的 Clash 面板卡片承载；规则管理与规则集管理由侧边栏「规则」页承载。
  */
 const CONFIG_ENTRIES: ConfigEntry[] = [
   {
@@ -36,6 +46,12 @@ const CONFIG_ENTRIES: ConfigEntry[] = [
     icon: MapIcon,
     title: "路由管理",
     description: "默认出站与默认域名解析器",
+  },
+  {
+    to: "/config/inbounds",
+    icon: WifiIcon,
+    title: "入站管理",
+    description: "Inbounds 中的混合端口与 TUN 参数",
   },
   {
     to: "/config/experimental",
