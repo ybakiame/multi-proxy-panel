@@ -2,7 +2,7 @@
   "protocol_version": "0.1.0",
   "project": "ProxyPanel",
   "repository": "https://github.com/ybakiame/multi-proxy-panel",
-  "revision": "8ebba040e8197f2428a4b0929359507aed0b525d (Pass 2 documentation changes uncommitted at report time)",
+  "revision": "Pass 2 changes committed as 8 atomic commits on top of 8ebba040e8197f2428a4b0929359507aed0b525d (5a81a7d, a71a1dc, efec011, 422a72a, 7db8c49, 7f7e3c3, d22f9a1, b770602)",
   "status": "partial",
   "audit": {
     "pass": "Pass 2 — Adopt",
@@ -15,6 +15,16 @@
     ],
     "authority": "ProxyPanel project contract (AGENTS.md, README.md, docs/, ADRs, source/CI) remains authoritative; Protocol files were reference material only and were neither copied nor modified"
   },
+  "applied_commits": [
+    "5a81a7d docs: 新增 ADR 约定、索引与模板并修正元数据漂移",
+    "a71a1dc docs: 新增编码代理适配器文档并修复适配器过期路径",
+    "efec011 docs: 新增 LICENSE（AGPL-3.0-or-later）",
+    "422a72a docs: 新增 CHANGELOG.md 并更新文档索引与发布流程",
+    "7db8c49 docs: 记录协议采纳 Pass 1 审计产物",
+    "7f7e3c3 docs: 新增协议采纳 Pass 2 报告",
+    "d22f9a1 docs: 补充变更工作流、完成定义与升级条件并修正契约漂移",
+    "b770602 docs: 文档对齐 apps/client 单壳双目标（ADR-0007）"
+  ],
   "decisions_applied": [
     {
       "id": "ADC-001",
@@ -138,9 +148,9 @@
     "Frontend packages (apps/panel, apps/client, packages/client-core) have no automated tests; verify = build + oxlint + oxfmt. Accepted per ADC-005 and documented, not changed.",
     "Historical material intentionally retains pre-ADR-0007 paths (ADR-0003/0004/0005/0006 bodies and Scope lines, docs/plans/, docs/research/, .pi/plans/) and is not rewritten.",
     "ADR-0002 Status and ADR-0006 Date were repaired as metadata; provenance is recorded in docs/adr/README.md §元数据修正记录. No decision content was altered.",
-    "The Pass 2 report is produced against an uncommitted working tree on top of revision 8ebba04; the base revision has no Pass 2 changes.",
     "Project validation targeted a documentation-only diff: the fast and full Rust gates were run and passed, but no runtime/behavioral change is covered by this diff.",
-    "CHANGELOG history predating v0.4.0 is not preserved in the repository and is not reconstructed; v0.4.0–v0.4.5 entries derive from git release tags (dates and tag subjects), and [Unreleased] summarizes post-v0.4.5 mainline themes rather than every one of the ~318 commits (full list: git log v0.4.5..HEAD)."
+    "CHANGELOG history predating v0.4.0 is not preserved in the repository and is not reconstructed; v0.4.0–v0.4.5 entries derive from git release tags (dates and tag subjects), and [Unreleased] summarizes post-v0.4.5 mainline themes rather than every one of the ~318 commits (full list: git log v0.4.5..HEAD).",
+    "The Pass 2 changes were split into 8 atomic commits (5a81a7d…b770602) per AGENTS.md §5; this report was generated before that commit split and its metadata was updated in a follow-up commit."
   ],
   "follow_up": [
     "Record representative adapter execution evidence in a future real task (PR description or docs/adoption/) to close the agent-adapter gap.",

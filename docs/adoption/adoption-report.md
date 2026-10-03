@@ -7,7 +7,8 @@
 - **Adoption date:** 2026-10-04
 - **Protocol version:** 0.1.0 (`.protocol/agent-development-protocol/protocol-manifest.json`)
 - **Protocol submodule revision:** `310fba5baa384c912e1fd8300e33d72a057908c5`
-- **Base revision:** `8ebba040e8197f2428a4b0929359507aed0b525d`（Pass 2 文档改动在报告生成时未提交）
+- **Base revision:** `8ebba040e8197f2428a4b0929359507aed0b525d`；Pass 2 改动在其上拆为 8 个原子提交
+  （`5a81a7d` → `b770602`，见「Applied Commits」）
 - **Pass 1 records:** [project-inventory.json](project-inventory.json)、[protocol-mapping.json](protocol-mapping.json)、[audit-pass1.md](audit-pass1.md)
 
 ## Summary
@@ -87,6 +88,21 @@ Pass 1 登记的 10 项矛盾处理结果（全部按 ADC-003 的权威来源：
 | ADC-007 | 新增 `CHANGELOG.md` | 创建 Keep a Changelog 风格文件：`[Unreleased]` 记录 v0.4.5 之后的 mainline 工作，v0.4.0–v0.4.5 条目依据 git 发布标签（日期 + 标签说明）重建；接入 `README.md`、`docs/index.md`、`docs/contributing.md`、`AGENTS.md` §9 |
 | ADC-008 | 补齐 `LICENSE` | 新增 GNU AGPL-3.0 完整文本（235 行 / 34020 字节，与 `/usr/share/licenses/spdx/AGPL-3.0-or-later.txt` md5 一致 `216109e2…`），对应 `Cargo.toml` / `package.json` 已声明的 `AGPL-3.0-or-later`；`README.md` badge 与许可证链接解析通过 |
 
+## Applied Commits
+
+Pass 2 改动按 `AGENTS.md` §5 拆为 8 个原子提交（在 `8ebba04` 之上）：
+
+| Commit | 内容 |
+|--------|------|
+| `5a81a7d` | ADR 约定、索引与模板；ADR-0002 / ADR-0006 元数据修复 |
+| `a71a1dc` | 编码代理适配器文档；适配器过期路径修复 |
+| `efec011` | `LICENSE`（AGPL-3.0-or-later，ADC-008） |
+| `422a72a` | `CHANGELOG.md`；`docs/contributing.md` 文档表与发布步骤 |
+| `7db8c49` | Pass 1 审计产物（inventory / mapping / audit） |
+| `7f7e3c3` | Pass 2 采纳报告（本文件与 JSON） |
+| `d22f9a1` | `AGENTS.md` 工作流/DoD/升级条件与契约漂移修复；`docs/development.md` |
+| `b770602` | 文档对齐 `apps/client`（README / index / architecture / Cargo.toml / crate README / nix-flake） |
+
 ## Files Created
 
 - [`CHANGELOG.md`](../../CHANGELOG.md)
@@ -159,8 +175,8 @@ Pass 1 登记的 10 项矛盾处理结果（全部按 ADC-003 的权威来源：
    `.pi/plans/**` 中的 `apps/desktop`/`apps/mobile` 属当时真实记录，不回溯改写。
 4. **ADR 元数据修复属事后更正：** ADR-0002 状态与 ADR-0006 日期依据实现证据与首次提交日期修正，
    溯源记录在 `docs/adr/README.md`；决策正文未改。
-5. **报告基于未提交工作树：** 基线 `8ebba04` 不含 Pass 2 改动；建议按原子提交拆分（文档一致性、
-   ADR 约定、适配器文档、工作流/DoD、CHANGELOG、LICENSE）。
+5. **提交范围：** Pass 2 改动已按原子提交拆分（`5a81a7d`…`b770602`，共 8 个）；本报告的
+   提交范围字段在提交后随本次元数据更新同步（见「Applied Commits」）。
 6. **项目验证面向文档/许可证变更：** 已跑通快速与完整 Rust 门禁，但本变更不涉及运行时行为。
 7. **CHANGELOG 历史未完全回溯：** `v0.4.0` 之前的版本历史未在仓库保留，不做重建；
    `v0.4.0`–`v0.4.5` 条目依据 git 发布标签（日期 + 标签说明）整理；`[Unreleased]` 记录
@@ -173,5 +189,4 @@ Pass 1 登记的 10 项矛盾处理结果（全部按 ADC-003 的权威来源：
   adapter 执行证据，不影响项目契约的准确性。
 - **Follow-up actions：**
   1. 在后续真实任务中留存适配器执行证据（PR 描述或 `docs/adoption/`），以关闭 agent-adapter 缺口；
-  2. 仓库发生重大变化后按 `docs/development.md#变更工作流workflows` 的 adoption 工作流复跑协调与校验；
-  3. 按 `AGENTS.md` §5 将本次未提交改动拆为原子提交（建议拆分见 Known Limitations 第 5 项）。
+  2. 仓库发生重大变化后按 `docs/development.md#变更工作流workflows` 的 adoption 工作流复跑协调与校验。
