@@ -29,7 +29,8 @@ export const SUBSCRIPTIONS_KEY = ["subscriptions"] as const;
 export const subscriptionNodeTagsKey = (id: string) => ["subscription_node_tags", id] as const;
 export const CORES_KEY = ["cores"] as const;
 export const CORES_LIST_KEY = ["cores_list"] as const;
-export const REMOTE_VERSIONS_KEY = ["remote_core_versions"] as const;
+/** 远端核心各通道最新版本（稳定版 / 测试版 / 预发布版）。 */
+export const REMOTE_CHANNELS_KEY = ["remote_core_channels"] as const;
 export const VPN_ERROR_KEY = ["vpnLastError"] as const;
 /** sing-box 核心版本（Android，经 libbox.Version() 读取）。 */
 export const CORE_VERSION_KEY = ["core_version"] as const;

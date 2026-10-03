@@ -5,6 +5,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import type { CoreChannel } from "../coreChannels";
 
 /** Core source: `downloaded` (downloaded) / `system` (system detected). */
 export type CoreSource = "downloaded" | "system";
@@ -18,14 +19,20 @@ export interface LocalCoreView {
   active: boolean;
 }
 
+/** Remote channel latest version view (aligned with Rust `RemoteChannelView`). */
+export interface RemoteCoreChannel {
+  channel: CoreChannel;
+  version: string;
+}
+
 /** List locally available cores (downloaded + system detected, with active flag). */
 export function listCores(): Promise<LocalCoreView[]> {
   return invoke<LocalCoreView[]>("list_cores");
 }
 
-/** List recent 10 remote releases (GitHub releases). */
-export function listRemoteCoreVersions(): Promise<string[]> {
-  return invoke<string[]>("list_remote_core_versions");
+/** List the latest remote version per release channel (稳定版 / 测试版 / 预发布版). */
+export function listRemoteCoreChannels(): Promise<RemoteCoreChannel[]> {
+  return invoke<RemoteCoreChannel[]>("list_remote_core_channels");
 }
 
 /** List downloaded versions (version directory scan, semver descending). */

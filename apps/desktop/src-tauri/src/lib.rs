@@ -160,7 +160,7 @@ pub fn run() {
             pp_client_tauri::commands::refresh_subscription,
             pp_client_tauri::commands::subscription_node_tags,
             commands::list_cores,
-            commands::list_remote_core_versions,
+            commands::list_remote_core_channels,
             commands::list_downloaded_versions,
             commands::download_core,
             commands::set_active_core,

@@ -23,6 +23,7 @@ export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
 
 // 纯逻辑工具。
+export * from "./coreChannels";
 export * from "./dnsSlice";
 export * from "./dnsValidate";
 export * from "./env";

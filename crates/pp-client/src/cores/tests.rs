@@ -129,13 +129,17 @@ fn list_downloaded_versions_sorts_semantically_descending() {
     );
 }
 
-// ---------- ② list_remote_versions: mock releases API ----------
+// ---------- ② list_remote_channels: mock releases API ----------
 #[tokio::test]
-async fn list_remote_versions_parses_releases() {
+async fn list_remote_channels_picks_latest_per_channel() {
+    // GitHub releases 按创建时间倒序（最新在前）；每个通道取首个命中。
     let singbox_releases = serde_json::json!([
-        { "tag_name": "v1.13.15" },
-        { "tag_name": "v1.13.14" },
-        { "tag_name": "v1.12.0-alpha.1" },
+        { "tag_name": "v1.14.0-alpha.2", "prerelease": true },
+        { "tag_name": "v1.14.0-alpha.1", "prerelease": true },
+        { "tag_name": "v1.14.0-beta.4", "prerelease": true },
+        { "tag_name": "v1.14.0-rc.1", "prerelease": true },
+        { "tag_name": "v1.13.15", "prerelease": false },
+        { "tag_name": "v1.13.14", "prerelease": false },
     ]);
     let app = axum::Router::new().route(
         "/repos/SagerNet/sing-box/releases",
@@ -144,8 +148,40 @@ async fn list_remote_versions_parses_releases() {
     let base = spawn_server(app).await;
     let inv = ClientCoreInventory::with_api_base(PathBuf::new(), &base);
 
-    let sb = inv.list_remote_versions().await.unwrap();
-    assert_eq!(sb, vec!["1.13.15", "1.13.14", "1.12.0-alpha.1"]);
+    let channels = inv.list_remote_channels().await.unwrap();
+    let pairs: Vec<(crate::cores::CoreChannel, String)> = channels
+        .into_iter()
+        .map(|c| (c.channel, c.version))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            (
+                crate::cores::CoreChannel::Prerelease,
+                "1.14.0-alpha.2".to_string()
+            ),
+            (crate::cores::CoreChannel::Beta, "1.14.0-beta.4".to_string()),
+            (crate::cores::CoreChannel::Stable, "1.13.15".to_string()),
+        ]
+    );
+}
+
+/// 通道分类：无后缀 = 稳定版；beta / rc = 测试版；alpha 及其它后缀 = 预发布版。
+#[test]
+fn channel_of_version_classifies_prerelease_markers() {
+    use crate::cores::{CoreChannel, channel_of_version};
+    assert_eq!(channel_of_version("1.13.15"), CoreChannel::Stable);
+    assert_eq!(channel_of_version("v1.13.15"), CoreChannel::Stable);
+    assert_eq!(channel_of_version("1.14.0-beta.4"), CoreChannel::Beta);
+    assert_eq!(channel_of_version("1.14.0-rc.1"), CoreChannel::Beta);
+    assert_eq!(
+        channel_of_version("1.14.0-alpha.2"),
+        CoreChannel::Prerelease
+    );
+    assert_eq!(
+        channel_of_version("1.14.0-nightly.1"),
+        CoreChannel::Prerelease
+    );
 }
 
 // ---------- ③ download: mock asset download + extract + chmod + --version ----------

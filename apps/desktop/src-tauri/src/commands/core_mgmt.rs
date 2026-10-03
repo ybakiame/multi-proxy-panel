@@ -65,13 +65,32 @@ pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>
         .collect())
 }
 
-/// List recent 10 remote releases (GitHub releases, `v` prefix stripped).
+/// External view of a remote channel's latest version.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteChannelView {
+    /// `stable` / `beta` / `prerelease`.
+    pub channel: String,
+    pub version: String,
+}
+
+/// List the latest remote version per release channel (稳定版 / 测试版 / 预发布版,
+/// `v` prefix stripped; channel model references `.reference/GUI.for.SingBox`).
 #[tauri::command]
-pub async fn list_remote_core_versions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+pub async fn list_remote_core_channels(
+    state: State<'_, AppState>,
+) -> Result<Vec<RemoteChannelView>, String> {
     let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    inv.list_remote_versions()
+    let channels = inv
+        .list_remote_channels()
         .await
-        .map_err(|e| format!("拉取远端版本失败: {e}"))
+        .map_err(|e| format!("拉取远端版本失败: {e}"))?;
+    Ok(channels
+        .iter()
+        .map(|c| RemoteChannelView {
+            channel: c.channel.as_str().to_string(),
+            version: c.version.clone(),
+        })
+        .collect())
 }
 
 /// List downloaded versions (semantic version descending).
@@ -297,7 +316,8 @@ mod tests {
         );
         cfg.save().unwrap();
 
-        let err = with_empty_path(|| delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err());
+        let err =
+            with_empty_path(|| delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err());
         assert!(err.contains("正在使用的核心不可删除"), "{err}");
         assert!(bin.exists());
     }

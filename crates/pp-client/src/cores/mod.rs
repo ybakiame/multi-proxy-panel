@@ -25,11 +25,13 @@ use tokio::io::AsyncWriteExt;
 
 use crate::config::ClientConfig;
 
+mod channel;
 mod download;
 #[cfg(test)]
 mod tests;
 mod version;
 
+pub use channel::{CoreChannel, RemoteChannelVersion, channel_of_version};
 pub use version::infer_core_type;
 
 /// GitHub API request timeout (seconds).
@@ -150,46 +152,6 @@ impl ClientCoreInventory {
             .collect();
         versions.sort_by(|a, b| version::compare_core_versions(b, a));
         versions
-    }
-
-    /// List recent 10 remote release versions (strip `v` prefix).
-    pub async fn list_remote_versions(&self) -> PanelResult<Vec<String>> {
-        let (owner, repo) = CoreType::SingBox.github_repo();
-        let url = format!(
-            "{}/repos/{}/{}/releases?per_page=10",
-            self.api_base, owner, repo
-        );
-        // GitHub API URL is wrapped by configured proxy prefix (shares GitHub access strategy
-        // with remote resource fetching); injected mock service addresses (non-GitHub domains)
-        // are not affected.
-        let url = crate::apply_github_proxy_prefix(&url, &self.github_proxy_prefix());
-        let resp = self
-            .client
-            .get(&url)
-            .header("User-Agent", "proxy-panel-client")
-            .send()
-            .await
-            .map_err(|e| PanelError::Core(format!("GitHub API request failed: {e}")))?;
-        if !resp.status().is_success() {
-            return Err(PanelError::Core(format!(
-                "GitHub API returned status {}",
-                resp.status()
-            )));
-        }
-        let releases: Vec<serde_json::Value> = resp
-            .json()
-            .await
-            .map_err(|e| PanelError::Core(format!("Failed to parse GitHub releases: {e}")))?;
-        let mut versions = Vec::new();
-        for release in releases {
-            if let Some(tag) = release.get("tag_name").and_then(|v| v.as_str()) {
-                let version = tag.strip_prefix('v').unwrap_or(tag);
-                if !version.is_empty() {
-                    versions.push(version.to_string());
-                }
-            }
-        }
-        Ok(versions)
     }
 
     /// Download specified core version and save to `cores_dir/sing-box/<version>/`.
