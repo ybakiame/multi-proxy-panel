@@ -47,6 +47,20 @@ pub fn run() {
             let log_guard = pp_client_tauri::logs::init_logging(&data_dir);
             tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
             app.manage(pp_client_tauri::state::AppState::new(data_dir.clone(), log_guard));
+            // 安装包内置种子核心首启释放（ADR-0008 D5）：仅桌面目标；无种子资源
+            // （dev / Linux / macOS 构建）或已装核心时静默跳过，失败仅告警不阻塞启动。
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                match pp_client::cores::seed_bundled_core(&data_dir, &resource_dir) {
+                    Ok(Some(core)) => {
+                        tracing::info!(version = %core.version, "种子核心已释放并就绪");
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(error = %e, "种子核心释放失败，可在核心管理中手动下载");
+                    }
+                }
+            }
             // 向 Android 核心桥注入数据目录（VPN 通知偏好/订阅名解析回源
             // client.json / subscriptions.json）。
             #[cfg(target_os = "android")]

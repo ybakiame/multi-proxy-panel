@@ -27,11 +27,13 @@ use crate::config::ClientConfig;
 
 mod channel;
 mod download;
+mod seed;
 #[cfg(test)]
 mod tests;
 mod version;
 
 pub use channel::{CoreChannel, RemoteChannelVersion, channel_of_version};
+pub use seed::seed_bundled_core;
 pub use version::infer_core_type;
 
 /// GitHub API request timeout (seconds).
@@ -112,7 +114,7 @@ impl ClientCoreInventory {
     }
 
     /// Specific core version directory: `data_dir/cores/sing-box/<version>`.
-    fn core_dir(&self, version: &str) -> PathBuf {
+    pub(super) fn core_dir(&self, version: &str) -> PathBuf {
         self.cores_dir().join(version::binary_name()).join(version)
     }
 
