@@ -41,6 +41,9 @@ pp-client = { path = "../../../crates/pp-client" }
 pp-common = { path = "../../../crates/pp-common" }
 pp-mitm = { path = "../../../crates/pp-mitm" }
 pp-script = { path = "../../../crates/pp-script" }
+# 自动更新（ADR-0008 D2）：仅桌面目标；Android 走应用商店/手动 APK 分发。
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 base64 = "0.22"
 chrono = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

@@ -34,7 +34,16 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+
+    // 自动更新（ADR-0008 D2）：仅桌面目标注册（Android 不经 updater 分发，
+    // 对应 capability 亦按 platforms 门控于桌面）。
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+
+    let builder = builder
         .setup(|app| {
             // 数据目录：桌面 `$HOME/.proxy-panel-client`；Android 应用私有目录
             // （HOME 在 Android 为只读 `/`）。

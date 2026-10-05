@@ -21,6 +21,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4MDRGMjA0Q0E1QUM5M0EKUldRNnlWcktCUElFMkNIdWxZVVFRL3pXQjlway9ZMWZmbGNwdmNGM2FRclRLUlhjTFpsWGkvWVgK",
+      "endpoints": [
+        "https://github.com/ybakiame/multi-proxy-panel/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
