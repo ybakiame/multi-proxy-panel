@@ -116,8 +116,10 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             arch: x86_64
+            seed_arch: amd64
           - target: aarch64-pc-windows-msvc
             arch: aarch64
+            seed_arch: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -139,11 +141,15 @@ jobs:
           workspaces: apps/client/src-tauri
           key: ${{ matrix.target }}
 
+      - name: Fetch seed core (sing-box + wintun, ADR-0008 D5)
+        working-directory: apps/client
+        run: bun run fetch-seed ${{ matrix.seed_arch }}
+
       - name: Build desktop app (NSIS installer)
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: apps/client
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.windows.conf.json
           # 不传 tagName：仅构建不创建 release，产物经 artifact 汇总给 release job 统一发布。
 
       - name: Upload NSIS installer
