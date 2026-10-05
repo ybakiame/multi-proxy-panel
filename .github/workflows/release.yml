@@ -151,12 +151,18 @@ jobs:
           projectPath: apps/client
           args: --target ${{ matrix.target }} --config src-tauri/tauri.windows.conf.json
           # 不传 tagName：仅构建不创建 release，产物经 artifact 汇总给 release job 统一发布。
+        env:
+          # updater 签名密钥（ADR-0008 D2）；未配置 secret 时跳过签名，release job
+          # 相应跳过 latest.json 生成（降级为无自动更新的普通发布）。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v5
         with:
           name: desktop-windows-${{ matrix.arch }}
-          path: apps/client/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          # 安装包 + updater 更新包（.nsis.zip）与签名（.sig，密钥已配置时）。
+          path: apps/client/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*
           retention-days: 1
 
   release:
@@ -183,10 +189,45 @@ jobs:
           pattern: desktop-windows-*
           merge-multiple: true
 
+      - name: Generate updater manifest (latest.json, ADR-0008 D2)
+        # 仅稳定版 tag：预发布（tag 含 -）不占用 releases/latest 端点，不进入自动更新。
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd dist
+          VER="${TAG#v}"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          X64="ProxyPanel_${VER}_x64-setup.nsis.zip"
+          ARM64="ProxyPanel_${VER}_arm64-setup.nsis.zip"
+          # 文件名中的版本取自 tauri.conf.json：tag 与 conf 版本不一致即失败，避免
+          # 发布出与 updater 版本比较错位的更新包。
+          for f in "$X64" "$ARM64"; do
+            [ -f "$f" ] || { echo "::error::缺少更新包 $f（tag 与 tauri.conf.json 版本不一致？）"; exit 1; }
+          done
+          if [ ! -f "$X64.sig" ] || [ ! -f "$ARM64.sig" ]; then
+            echo "::warning::缺少 .sig（未配置 TAURI_SIGNING_PRIVATE_KEY？），跳过 latest.json；本次发布无自动更新"
+            exit 0
+          fi
+          jq -n \
+            --arg v "$TAG" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg notes "https://github.com/${REPO}/releases/tag/${TAG}" \
+            --arg sx "$(cat "$X64.sig")" --arg ux "$BASE/$X64" \
+            --arg sa "$(cat "$ARM64.sig")" --arg ua "$BASE/$ARM64" \
+            '{version: $v, notes: $notes, pub_date: $date, platforms: {
+              "windows-x86_64": {signature: $sx, url: $ux},
+              "windows-aarch64": {signature: $sa, url: $ua}
+            }}' > latest.json
+          cat latest.json
+
       - name: Generate SHA256SUMS
         run: |
           cd dist
-          sha256sum *.tar.gz *.exe > SHA256SUMS
+          sha256sum *.tar.gz *.exe *.nsis.zip > SHA256SUMS
+          [ -f latest.json ] && sha256sum latest.json >> SHA256SUMS || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
