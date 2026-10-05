@@ -28,65 +28,49 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 ## 系统架构
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           ProxyPanel Hub                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │   HTTP API   │  │  gRPC Stream │  │   Web App    │              │
-│  │   (Axum)     │  │   (Tonic)    │  │  (React)     │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │    Business Layer   │                                │
-│              │  (Services / State) │                                │
-│              └─────────────────────┘                                │
-│                          │                                          │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │   Database (Sea-ORM)│                                │
-│              │ PostgreSQL / SQLite │                                │
-│              └─────────────────────┘                                │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │ gRPC (双向流)
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        ProxyPanel Agent (Node)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ gRPC Client  │  │   Reporter   │  │   Monitor    │              │
-│  │              │  │(Traffic/Logs)│  │(Host Metrics)│              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │    Core Supervisor  │                                │
-│              │ sing-box / mihomo  │                                │
-│              └─────────────────────┘                                │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph hub["ProxyPanel Hub"]
+        direction TB
+        api["HTTP API (Axum)"]
+        grpc["gRPC Stream (Tonic)"]
+        web["Web App (React)"]
+        biz["Business Layer<br/>(Services / State)"]
+        db[("Database (Sea-ORM)<br/>PostgreSQL / SQLite")]
+        api --> biz
+        grpc --> biz
+        web --> biz
+        biz --> db
+    end
+    subgraph agent["ProxyPanel Agent (Node)"]
+        direction TB
+        gc["gRPC Client"]
+        rep["Reporter<br/>(Traffic / Logs)"]
+        mon["Monitor<br/>(Host Metrics)"]
+        sup["Core Supervisor<br/>sing-box / mihomo"]
+        gc --> sup
+        rep --> sup
+        mon --> sup
+    end
+    hub -- "gRPC（双向流）" --> agent
 ```
 
 客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：桌面 UI（HeroUI）与移动 UI（Konsta）经 vite mode 构建期分发，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      ProxyPanel Client (Desktop)                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ pp-script    │  │ pp-mitm      │  │ pp-core      │              │
-│  │ 脚本引擎     │  │ MITM 引擎    │  │ 核心子进程    │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────────────┐                        │
-│              │    pp-client (ClientState)   │                        │
-│              │  订阅同步 / 配置合成 / 系统代理 │                        │
-│              └─────────────────────────────┘                        │
-└─────────────────────────────────────────────────────────────────────┘
-            │ 订阅 (HTTP)                           │ 本地代理流量
-            ▼                                        ▼
-   Hub /sub/{token} 公开订阅端点            远端代理节点 (sing-box / mihomo)
+```mermaid
+flowchart TB
+    subgraph client["ProxyPanel Client (Desktop)"]
+        direction TB
+        script["pp-script<br/>脚本引擎"]
+        mitm["pp-mitm<br/>MITM 引擎"]
+        core["pp-core<br/>核心子进程"]
+        state["pp-client (ClientState)<br/>订阅同步 / 配置合成 / 系统代理"]
+        script --> state
+        mitm --> state
+        core --> state
+    end
+    client -- "订阅 (HTTP)" --> subEndpoint["Hub /sub/{token} 公开订阅端点"]
+    client -- "本地代理流量" --> remote["远端代理节点 (sing-box / mihomo)"]
 ```
 
 ## 快速开始
