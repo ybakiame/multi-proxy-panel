@@ -1,0 +1,30 @@
+{
+  "$comment": "Windows 安装包内置种子核心清单（ADR-0008 D5）。由 apps/client/scripts/fetch-seed-core.ts 消费：下载 → SHA256 校验 → 解压到 src-tauri/resources/seed/。升级版本时同步更新 version / file / sha256（sha256 以 GitHub release asset digest 交叉核对）。sing-box 版本要求 >= 1.14.0（ADR-0005 配置切片字段基线）。",
+  "sing_box": {
+    "version": "1.14.2",
+    "release_url_base": "https://github.com/SagerNet/sing-box/releases/download/v1.14.2",
+    "assets": {
+      "amd64": {
+        "file": "sing-box-1.14.2-windows-amd64.zip",
+        "sha256": "c2d8bfff918755808781dfdeeb8581b6c91eb3a243d9a7b55483cfc0c0684d32"
+      },
+      "arm64": {
+        "file": "sing-box-1.14.2-windows-arm64.zip",
+        "sha256": "2bb467039310452380958b821983d5bb4f78fb70a2583914e4bea8b011582b64"
+      }
+    }
+  },
+  "wintun": {
+    "version": "0.14.1",
+    "url": "https://www.wintun.net/builds/wintun-0.14.1.zip",
+    "sha256": "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51",
+    "dll_path": {
+      "amd64": "wintun/bin/amd64/wintun.dll",
+      "arm64": "wintun/bin/arm64/wintun.dll"
+    }
+  },
+  "gpl3": {
+    "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  }
+}

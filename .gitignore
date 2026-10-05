@@ -17,6 +17,9 @@
 scripts/.deploy-secrets.env
 node_modules/
 apps/panel/dist/
+# 客户端 Windows 种子核心（ADR-0008 D5）：由 apps/client/scripts/fetch-seed-core.ts
+# 按 seed-manifest.json 拉取，二进制不入库。
+apps/client/src-tauri/resources/seed/
 __pycache__/
 
 # Local configs (tracked examples only)

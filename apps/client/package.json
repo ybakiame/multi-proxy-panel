@@ -16,6 +16,7 @@
     "format:check": "oxfmt --check src/",
     "verify": "bun run build && bun run build:android && bun run lint && bun run format:check",
     "tauri": "tauri",
+    "fetch-seed": "bun scripts/fetch-seed-core.ts",
     "android:dev": "tauri android dev --target aarch64",
     "android:build": "CARGO_PROFILE_RELEASE_OPT_LEVEL=z tauri android build --target aarch64"
   },
@@ -50,6 +51,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.1.0",
+    "fflate": "^0.8.3",
     "oxc-transform-react": "^0.145.0",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
