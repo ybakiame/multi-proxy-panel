@@ -24,6 +24,11 @@
 - **客户端核心管理**：远端核心版本改为通道模型（稳定版 / 测试版 / 预发布版）。
 - **Windows 桌面端**：启用 Tauri NSIS 打包与图标集，TUN 提权与 `wintun.dll` 随核心分发，
   Release 流程新增 Windows 安装包构建。
+- **Windows 桌面端打包完善**（ADR-0008）：安装包内置 sing-box 种子核心 + `wintun.dll`
+  （首启免联网即可用，升级仍走核心管理下载通道，随包附 GPL-3.0 / wintun 许可证文本）；
+  新增 Windows ARM64 安装包；新增自动更新（设置页「关于应用 → 检查更新」，GitHub
+  Releases + ed25519 签名校验，预发布不进入自动更新）；WebView2 改为内嵌引导（离线
+  可装）；NSIS 固定 per-user 安装（免 UAC）。安装包不签名，SmartScreen 警告为预期行为。
 - **Android 目标**：移动 UI 迁移至 Konsta UI（iOS/Material 双主题），构建收敛为 arm64 单 ABI，
   新增 `apps/client/scripts/android-ndk-env.sh` 与 nix dev shell 的声明式 NDK 工具链。
 - **Agent Development Protocol 采纳**（`docs/adoption/`）：Pass 1 审计（inventory / mapping /

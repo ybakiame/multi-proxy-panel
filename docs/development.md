@@ -280,19 +280,31 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 1. **`web`** — 构建前端产物
 2. **`build`** — 在 x86_64 与 aarch64  runner 上交叉编译 Release 二进制，打包为 `proxy-panel-{hub,agent}-linux-{arch}.tar.gz`
-3. **`desktop-windows`** — 在 windows-latest 上经 tauri-action 构建客户端 Windows NSIS 安装包（`apps/client`）
-4. **`release`** — 汇总 tar.gz 与 Windows 安装包、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
+3. **`desktop-windows`** — 在 windows-latest 上按 x86_64 / aarch64 矩阵经 tauri-action 构建客户端 Windows NSIS 安装包（`apps/client`），构建前抓取种子核心（ADR-0008 D5），并注入 updater 签名密钥产出 `.nsis.zip` 更新包与 `.sig`
+4. **`release`** — 汇总 tar.gz 与 Windows 安装包、稳定版 tag 下生成 updater 清单 `latest.json`、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
 5. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
 
 ### Windows 桌面端构建
 
-客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS）：
+客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS，x86_64 / aarch64 双架构）。
+打包决策见 [ADR-0008](adr/0008-windows-desktop-packaging.md)。
 
 ```bash
 # Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
-cd apps/client && bun install && bun run tauri build
+cd apps/client && bun install
+
+# 1. 抓取种子核心（ADR-0008 D5）：按 src-tauri/seed-manifest.json 锁定的版本下载
+#    sing-box + wintun.dll（SHA256 校验）到 src-tauri/resources/seed/；arm64 换 arm64。
+bun run fetch-seed amd64
+
+# 2. 构建（--config 启用 Windows overlay 把种子打入安装包）
+bun run tauri build -- --config src-tauri/tauri.windows.conf.json
 # 产物：apps/client/src-tauri/target/release/bundle/nsis/*.exe
+#       （设置 TAURI_SIGNING_PRIVATE_KEY 时另有 .nsis.zip 更新包与 .sig）
 ```
+
+不带 `--config` 的普通 `bun run tauri build` 仍可构建（安装包不含种子核心，首启
+回退为运行时下载核心），Linux/macOS 构建不受 Windows overlay 影响。
 
 Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
 
@@ -301,12 +313,24 @@ cargo xwin clippy --manifest-path apps/client/src-tauri/Cargo.toml \
   --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 ```
 
-**TUN 模式**：sing-box 的 Windows TUN 依赖 `wintun.dll` 与 `sing-box.exe` 同目录——核心
-下载完成后客户端会自动从 wintun.net 官方发布拉取对应架构的 dll（失败不阻塞核心安装，
-TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：「配置 → 入站管理 → TUN 入站」的
-授权按钮会以管理员身份重启应用（UAC 确认）。
+**种子核心**：安装包内置 sing-box（版本锁定于 `seed-manifest.json`）+ `wintun.dll`，
+首启且无已装核心时自动释放到 `数据目录/cores/sing-box/<version>/`，之后与运行时下载的
+核心无差别、升级仍走核心管理的下载通道。许可证合规：sing-box（GPL-3.0）与 wintun 的
+许可证文本随包内 `seed/licenses/` 分发。
 
-**未签名安装包会触发 SmartScreen 警告**（无代码签名证书），属预期行为。
+**自动更新**（ADR-0008 D2）：设置页「关于应用 → 检查更新」经 GitHub Releases 的
+`latest.json` 检查新版本（ed25519 签名校验，密钥对经
+`bun run tauri signer generate` 生成，私钥配置为 CI secrets
+`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。预发布 tag
+（含 `-`）不进入自动更新。
+
+**TUN 模式**：sing-box 的 Windows TUN 依赖 `wintun.dll` 与 `sing-box.exe` 同目录——安装包
+种子核心已内置；运行时下载的核心则由客户端自动从 wintun.net 官方发布拉取对应架构的 dll
+（失败不阻塞核心安装，TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：
+「配置 → 入站管理 → TUN 入站」的授权按钮会以管理员身份重启应用（UAC 确认）。
+
+**未签名安装包会触发 SmartScreen 警告**（无代码签名证书，ADR-0008 D3 决策为维持不签名），
+属预期行为；自动更新的完整性由 updater 的 ed25519 签名校验独立保障。
 
 提交 PR 前请确保本地已通过 `cargo clippy --workspace --all-targets -- -D warnings` 和 `cargo test --workspace`（后端）以及 `bun run verify`（前端）。
 

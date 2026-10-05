@@ -205,7 +205,7 @@ bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/de
 bun run android:build  # Android APK 构建
 ```
 
-支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（`bundle/nsis/*.exe`）；TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启），且依赖随核心自动下载的 `wintun.dll`。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包。
+支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（x86_64 / ARM64 双架构，`bundle/nsis/*.exe`），内置 sing-box 种子核心与 `wintun.dll`（首启免联网即可用，ADR-0008），并支持自动更新（设置页「关于应用 → 检查更新」）。TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启）。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包；本地完整打包流程见 [docs/development.md](docs/development.md#windows-桌面端构建)。
 
 #### Android（移动端目标）构建
 
