@@ -141,17 +141,16 @@ jobs:
           workspaces: apps/client/src-tauri
           key: ${{ matrix.target }}
 
-      - name: Fetch seed core (sing-box + wintun, ADR-0008 D5)
-        working-directory: apps/client
-        run: bun run fetch-seed ${{ matrix.seed_arch }}
-
       - name: Build desktop app (NSIS installer)
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: apps/client
-          args: --target ${{ matrix.target }} --config src-tauri/tauri.windows.conf.json
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.windows.conf.json5
           # 不传 tagName：仅构建不创建 release，产物经 artifact 汇总给 release job 统一发布。
         env:
+          # overlay 的 beforeBuildCommand 自动抓取种子核心（ADR-0008 D5）；交叉构建
+          # （x64 宿主构建 arm64 包）须显式指定目标架构。
+          SEED_ARCH: ${{ matrix.seed_arch }}
           # updater 签名密钥（ADR-0008 D2）；未配置 secret 时跳过签名，release job
           # 相应跳过 latest.json 生成（降级为无自动更新的普通发布）。
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

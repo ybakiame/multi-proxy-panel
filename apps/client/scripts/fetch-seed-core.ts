@@ -1,7 +1,8 @@
 /**
  * Fetch the bundled seed core for the Windows installer (ADR-0008 D5).
  *
- * Usage: bun scripts/fetch-seed-core.ts <amd64|arm64> [--force]
+ * Usage: bun scripts/fetch-seed-core.ts [amd64|arm64] [--force]
+ * （架构缺省取 SEED_ARCH 环境变量，再缺省取宿主架构）
  *
  * Reads `src-tauri/seed-manifest.json` (pinned versions + SHA256), downloads the
  * sing-box release asset and the wintun build, verifies hashes, and extracts into
@@ -52,9 +53,15 @@ interface Manifest {
 function parseArgs(): { arch: Arch; force: boolean } {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
-  const arch = args.find((a) => !a.startsWith("--"));
-  if (!arch || !ARCHES.includes(arch as Arch)) {
-    console.error(`usage: bun scripts/fetch-seed-core.ts <${ARCHES.join("|")}> [--force]`);
+  // 架构优先级：命令行参数 > SEED_ARCH 环境变量（CI 按矩阵注入）> 宿主架构。
+  // beforeBuildCommand 不带参数调用本脚本，交叉构建（x64 宿主构建 arm64 包）
+  // 必须经 SEED_ARCH 指定目标架构。
+  const fromHost = process.arch === "arm64" ? "arm64" : "amd64";
+  const arch = args.find((a) => !a.startsWith("--")) ?? process.env.SEED_ARCH ?? fromHost;
+  if (!ARCHES.includes(arch as Arch)) {
+    console.error(
+      `usage: bun scripts/fetch-seed-core.ts [${ARCHES.join("|")}] [--force]（无效架构: ${arch}）`,
+    );
     process.exit(1);
   }
   return { arch: arch as Arch, force };

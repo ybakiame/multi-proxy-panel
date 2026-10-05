@@ -293,18 +293,19 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 # Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
 cd apps/client && bun install
 
-# 1. 抓取种子核心（ADR-0008 D5）：按 src-tauri/seed-manifest.json 锁定的版本下载
-#    sing-box + wintun.dll（SHA256 校验）到 src-tauri/resources/seed/；arm64 换 arm64。
-bun run fetch-seed amd64
-
-# 2. 构建（--config 启用 Windows overlay 把种子打入安装包）
-bun run tauri build -- --config src-tauri/tauri.windows.conf.json
+# Windows overlay（tauri.windows.conf.json5）会把 beforeBuildCommand 覆写为
+# 「前端构建 + 种子核心抓取」（幂等，已是最新则跳过；交叉构建经 SEED_ARCH
+# 环境变量指定目标架构，缺省按宿主架构），随后自动把种子打入安装包：
+bun run tauri build --config src-tauri/tauri.windows.conf.json5
+# 注意：`bun run tauri build` 与 --config 之间不要再加 `--`（`--` 后的参数会被
+# 透传给 cargo，导致 overlay 静默不生效）。
 # 产物：apps/client/src-tauri/target/release/bundle/nsis/*.exe
 #       （设置 TAURI_SIGNING_PRIVATE_KEY 时另有 .nsis.zip 更新包与 .sig）
 ```
 
-不带 `--config` 的普通 `bun run tauri build` 仍可构建（安装包不含种子核心，首启
-回退为运行时下载核心），Linux/macOS 构建不受 Windows overlay 影响。
+种子抓取也可手动执行：`bun run fetch-seed amd64`（或 `arm64`）。不带 `--config`
+的普通 `bun run tauri build` 仍可构建（安装包不含种子核心，首启回退为运行时下载
+核心），Linux/macOS 构建不受 Windows overlay 影响。
 
 Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
 
