@@ -1,3 +1,7 @@
+mod path;
+
+use path::absolutize;
+
 use pp_common::{CoreType, PanelError, PanelResult};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -115,8 +119,8 @@ pub struct SingBoxProcessManager {
 impl SingBoxProcessManager {
     pub fn new(binary: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> PanelResult<Self> {
         Ok(Self {
-            binary: binary.as_ref().to_path_buf(),
-            config_dir: config_dir.as_ref().to_path_buf(),
+            binary: absolutize(binary.as_ref()),
+            config_dir: absolutize(config_dir.as_ref()),
             process: RwLock::new(None),
             start_time: RwLock::new(None),
             last_error: Arc::new(RwLock::new(String::new())),
@@ -312,8 +316,8 @@ pub struct MihomoProcessManager {
 impl MihomoProcessManager {
     pub fn new(binary: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> PanelResult<Self> {
         Ok(Self {
-            binary: binary.as_ref().to_path_buf(),
-            config_dir: config_dir.as_ref().to_path_buf(),
+            binary: absolutize(binary.as_ref()),
+            config_dir: absolutize(config_dir.as_ref()),
             process: RwLock::new(None),
             start_time: RwLock::new(None),
             last_error: Arc::new(RwLock::new(String::new())),
