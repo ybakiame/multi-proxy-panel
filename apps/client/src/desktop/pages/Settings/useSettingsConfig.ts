@@ -135,7 +135,10 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
 
   // config 变化时在渲染期间同步表单本地状态（React 推荐的 adjust-state-during-render
   // 模式，替代 effect 内同步 setState，满足 React Compiler 的 set-state-in-effect 限制）。
-  const [prevConfig, setPrevConfig] = useState(config);
+  // prevConfig 初始为 null（而非 config）：挂载时 Query 缓存若已就绪（如从首页导航
+  // 过来），`prevConfig === config` 会导致首次同步被跳过、表单停留在 useState 默认值
+  // （如 TUN 实际开启却显示关闭）——以 null 为哨兵保证首次渲染即同步。
+  const [prevConfig, setPrevConfig] = useState<ClientConfig | null>(null);
   if (prevConfig !== config) {
     setPrevConfig(config);
     if (config) {
