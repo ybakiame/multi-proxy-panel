@@ -58,6 +58,7 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0006](0006-client-traffic-stats.md) | Accepted | 2026-10-02 | 客户端流量统计（Clash API WebSocket 采集 + 本地 SQLite 聚合） |
 | [ADR-0007](0007-client-single-shell-merge.md) | Accepted | 2026-10-03 | 客户端合并为单壳双目标应用（apps/client） |
 | [ADR-0008](0008-windows-desktop-packaging.md) | Accepted | 2026-10-05 | Windows 桌面端打包与分发方案（NSIS + 种子核心 + 自动更新） |
+| [ADR-0009](0009-client-repo-boundary.md) | Accepted | 2026-10-06 | 客户端产品定位与仓库边界（单仓过渡 + 拆分触发条件） |
 
 > 关联计划与评估材料：`docs/plans/2026-10-03-client-merge-evaluation.md`（ADR-0007 的评估依据）、
 > `docs/research/client-audit-2026-08.md`、`docs/research/panel-comparison.md`。
