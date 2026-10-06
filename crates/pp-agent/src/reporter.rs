@@ -109,7 +109,7 @@ fn singbox_traffic_state() -> &'static tokio::sync::Mutex<SingboxTrafficState> {
 
 /// Collect traffic stats from the sing-box 1.14.0+ gRPC StartedService.
 ///
-/// Endpoint and secret conventions match `pp_core::core_api`:
+/// Endpoint and secret conventions match `crate::core_api`:
 /// `PROXYPANEL_SINGBOX_API_LISTEN` (default `http://127.0.0.1:9090`) and
 /// `PROXYPANEL_SINGBOX_API_SECRET` sent as a Bearer token.
 async fn collect_singbox_traffic_grpc()
@@ -393,8 +393,8 @@ async fn collect_mihomo_traffic() -> pp_common::PanelResult<(Vec<InboundTraffic>
         .build()
         .map_err(|e| pp_common::PanelError::Core(format!("http client: {}", e)))?;
 
-    let mut request = client.get(format!("{}/traffic", pp_core::core_api::mihomo_api_base()));
-    let secret = pp_core::core_api::mihomo_api_secret();
+    let mut request = client.get(format!("{}/traffic", crate::core_api::mihomo_api_base()));
+    let secret = crate::core_api::mihomo_api_secret();
     if !secret.is_empty() {
         request = request.bearer_auth(secret);
     }

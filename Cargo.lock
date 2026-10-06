@@ -4982,9 +4982,6 @@ dependencies = [
  "flate2",
  "notify",
  "pp-common",
- "pp-config",
- "pp-proto",
- "prost",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -4994,7 +4991,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
- "tonic",
  "tracing",
  "zip",
 ]

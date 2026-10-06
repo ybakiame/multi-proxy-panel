@@ -732,7 +732,7 @@ fn collect_load_average() -> (f32, f32, f32) {
 /// Collect currently online users from running proxy cores.
 /// Returns an empty list if core APIs are unavailable.
 async fn collect_online_users() -> Vec<OnlineUser> {
-    match pp_core::query_all_online_users().await {
+    match crate::core_api::query_all_online_users().await {
         Ok(users) => users
             .into_iter()
             .map(|u| OnlineUser {
