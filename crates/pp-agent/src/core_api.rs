@@ -1,7 +1,3 @@
-// 沿用 pp-core 时期的豁免（该模块自 pp-core 迁入）：PanelError 错误体偏大，
-// 这些 API 的错误仅作上报展示，不值得为 lint 引入 Box 包装噪音。
-#![allow(clippy::result_large_err)]
-
 use pp_common::PanelResult;
 use serde_json::Value;
 

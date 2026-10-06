@@ -6,8 +6,6 @@
 //! 系统代理（[`sysproxy`]）、核心运行器（[`runner`]）、核心引擎桥（[`core_engine`]）、
 //! MITM 构建（[`mitm`]）与运行状态编排（[`state`]）。仅支持 sing-box 核心。
 
-#![allow(clippy::result_large_err)]
-
 pub mod config;
 pub mod config_slices;
 pub mod connections;

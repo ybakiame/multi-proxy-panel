@@ -4,8 +4,6 @@
 //! 基础配置（[`config`]）、hudsucker 拦截代理（[`proxy`]）、URL/Header/Body
 //! 重写引擎（[`rewrite`]）、流量记录（[`recorder`]）以及脚本钩子（[`script_hook`]）。
 
-#![allow(clippy::result_large_err)]
-
 pub mod ca;
 pub mod config;
 pub mod proxy;

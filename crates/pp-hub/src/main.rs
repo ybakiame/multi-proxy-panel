@@ -1,7 +1,5 @@
 //! ProxyPanel Hub — Central management panel.
 
-#![allow(clippy::result_large_err)]
-
 use axum::{
     Router,
     http::header,

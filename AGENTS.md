@@ -161,6 +161,13 @@ pub use models::*;
 ### 3.3 错误处理
 
 - 所有 crate 统一使用 `PanelError` / `PanelResult<T>`（定义于 `pp-common`）
+- `PanelError` 体积纪律：新增大 variant（>64 字节）必须装箱（`Box<T>`），保证
+  `PanelError` 不超过 clippy `result_large_err` 的 128 字节阈值（有
+  `pp-common/tests/size_check.rs` 回归守护）；**禁止新增
+  `#[allow(clippy::result_large_err)]` 豁免**——唯一保留的豁免是 pp-proto 生成代码
+  （tonic codegen 返回 `Result<_, Status>`，上游签名固定无法装箱）；自定义函数
+  即使面对 tonic::Status 也应装箱返回（`Box<Status>`，`From<T> for Box<T>` 使
+  `map_err(Status)?` 自动装箱，参考 pp-hub `grpc/agent_service/register.rs`）
 - gRPC handler 内部可使用 `anyhow::Result` 简化传播
 - HTTP handler 使用 `Result<T, StatusCode>`，将业务错误映射为 HTTP 状态码
 - 禁止裸 `unwrap()` / `expect()`，仅在测试或 `main` 的初始化阶段允许
