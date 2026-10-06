@@ -69,11 +69,27 @@ function parseArgs(): { arch: Arch; force: boolean } {
 
 async function downloadVerified(url: string, sha256: string, label: string): Promise<Uint8Array> {
   console.log(`下载 ${label}: ${url}`);
-  const resp = await fetch(url, { headers: { "User-Agent": "proxy-panel-client" } });
-  if (!resp.ok) {
-    throw new Error(`${label} 下载失败: HTTP ${resp.status}`);
+  // CI 网络抖动（连接被拒/重置）重试 3 次，间隔递增；哈希校验失败不重试（内容性问题）。
+  let bytes: Uint8Array | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= 3 && !bytes; attempt++) {
+    try {
+      const resp = await fetch(url, { headers: { "User-Agent": "proxy-panel-client" } });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      bytes = new Uint8Array(await resp.arrayBuffer());
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 3) {
+        console.log(`  ! 第 ${attempt} 次尝试失败（${String(e)}），${attempt * 3}s 后重试`);
+        await new Promise((r) => setTimeout(r, attempt * 3000));
+      }
+    }
   }
-  const bytes = new Uint8Array(await resp.arrayBuffer());
+  if (!bytes) {
+    throw new Error(`${label} 下载失败（3 次尝试）: ${String(lastErr)}`);
+  }
   const actual = createHash("sha256").update(bytes).digest("hex");
   if (actual !== sha256) {
     throw new Error(`${label} SHA256 校验失败: 期望 ${sha256}，实际 ${actual}`);

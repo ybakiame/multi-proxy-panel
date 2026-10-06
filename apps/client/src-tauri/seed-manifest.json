@@ -24,7 +24,8 @@
     }
   },
   "gpl3": {
-    "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
-    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    "$comment": "GPL-3.0 全文。源用 SPDX 官方数据仓库的 tagged 版本而非 gnu.org：gnu.org 在 GitHub Actions Windows runner 上实测 ConnectionRefused（2026-10），GitHub raw 在 CI 可达性最好。内容与 gnu.org 版仅排版差异。",
+    "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GPL-3.0-or-later.txt",
+    "sha256": "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0"
   }
 }
