@@ -6,8 +6,70 @@ on:
   pull_request:
 
 jobs:
+  # 变更检测（ADR-0009 D2）：按路径分片，各门禁 job 仅在相关路径变更时运行，
+  # 避免服务端与客户端改动互相拖累 CI。过滤规则需与仓库结构同步维护。
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      shell: ${{ steps.filter.outputs.shell }}
+      panel: ${{ steps.filter.outputs.panel }}
+      client_core: ${{ steps.filter.outputs.client_core }}
+      client_web: ${{ steps.filter.outputs.client_web }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Path filters
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            # 根 workspace Rust 门禁：任何 crate / proto / 工具链变更。
+            rust:
+              - 'crates/**'
+              - 'proto/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'scripts/check-rust-gates.sh'
+              - '.github/workflows/ci.yml'
+            # 客户端壳（独立 cargo 项目）：壳自身 + 其 Rust 依赖链 + 共享 crate。
+            shell:
+              - 'apps/client/src-tauri/**'
+              - 'crates/pp-client/**'
+              - 'crates/pp-client-tauri/**'
+              - 'crates/pp-mitm/**'
+              - 'crates/pp-script/**'
+              - 'crates/pp-common/**'
+              - 'crates/pp-core/**'
+              - 'Cargo.toml'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
+            panel:
+              - 'apps/panel/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+            client_core:
+              - 'packages/client-core/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+            # 客户端前端：apps/client（排除 src-tauri，Rust 侧由 shell 覆盖）+ 共享库。
+            client_web:
+              - 'apps/client/**'
+              - '!apps/client/src-tauri/**'
+              - 'packages/client-core/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+
   rust:
     name: Rust Checks
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -47,8 +109,24 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      # ADR-0009 D1：客户端 crate 禁依赖服务端专属 crate（pp-db / pp-proto /
+      # pp-config / pp-subscription），含传递依赖；破坏边界即失败。
+      - name: Assert client/server dependency boundary (ADR-0009 D1)
+        run: |
+          set -euo pipefail
+          for p in pp-client pp-client-tauri pp-mitm pp-script; do
+            if cargo tree -p "$p" --prefix none -e normal | grep -qE '^pp-(db|proto|config|subscription) v'; then
+              echo "::error::$p 的依赖图中出现服务端专属 crate（ADR-0009 D1 边界破坏）"
+              cargo tree -p "$p" --prefix none -e normal | grep -E '^pp-' | sort -u
+              exit 1
+            fi
+          done
+          echo "客户端/服务端依赖边界断言通过"
+
   client-shells:
     name: Client Shell (desktop / android targets)
+    needs: changes
+    if: needs.changes.outputs.shell == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -98,6 +176,11 @@ jobs:
 
   web:
     name: Web Checks
+    needs: changes
+    if: >-
+      needs.changes.outputs.panel == 'true'
+      || needs.changes.outputs.client_core == 'true'
+      || needs.changes.outputs.client_web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -110,11 +193,15 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Verify panel
+        if: needs.changes.outputs.panel == 'true'
         run: bun run --filter pp-web verify
 
       - name: Verify client-core (shared library)
+        if: needs.changes.outputs.client_core == 'true'
         run: bun run --filter @pp/client-core verify
 
       - name: Verify client app (desktop + android builds)
-        # 单包 verify 内含双 mode 构建（desktop / android），一次门禁双产物。
+        # 单包 verify 内含双 mode 构建（desktop / android），一次门禁双产物；
+        # client_web 过滤条件已含 packages/client-core（共享库变更触发整包验证）。
+        if: needs.changes.outputs.client_web == 'true'
         run: bun run --filter pp-client-app verify

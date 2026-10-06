@@ -266,13 +266,15 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 ### CI (`.github/workflows/ci.yml`)
 
-在每次 push 到 `main`/`master` 或提交 Pull Request 时触发，包含三个并行 Job：
+在每次 push 到 `main`/`master` 或提交 Pull Request 时触发。首置 `changes` job 经
+paths-filter 按变更路径分片（ADR-0009 D2），各门禁 job 仅在相关路径变更时运行
+（共享 crate 与根 manifest 变更会同时触发两侧门禁；跳过的 job 在必需检查中按成功计）：
 
-| Job | 说明 |
-|-----|------|
-| `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `client-shells` | 客户端壳（`apps/client/src-tauri`，独立 cargo 项目）门禁：host（桌面目标）clippy 与 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，并实证 Android 构建图无 pp-mitm；工具链环境变量由 runner 预装 NDK 注入） |
-| `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-app`（客户端，verify 内含 desktop/android 双 mode 构建）三个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
+| Job | 触发路径 | 说明 |
+|-----|------|------|
+| `rust` | crates/、proto/、根 Cargo 清单、工具链、CI 自身 | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`)、客户端/服务端依赖边界断言（ADR-0009 D1） |
+| `client-shells` | 壳（`apps/client/src-tauri`）+ 其 Rust 依赖链 + 共享 crate | 客户端壳（独立 cargo 项目）门禁：host（桌面目标）clippy 与 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，并实证 Android 构建图无 pp-mitm；工具链环境变量由 runner 预装 NDK 注入） |
+| `web` | `apps/panel` / `packages/client-core` / `apps/client`（排除 src-tauri）分别门控 | `pp-web`（panel）、`@pp/client-core`、`pp-client-app`（客户端，verify 内含 desktop/android 双 mode 构建）三个前端包按变更范围分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
 
