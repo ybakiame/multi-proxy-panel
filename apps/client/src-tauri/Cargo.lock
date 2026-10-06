@@ -4288,6 +4288,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "dirs",
  "pp-client",
  "pp-client-tauri",
  "pp-common",

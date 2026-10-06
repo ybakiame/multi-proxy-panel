@@ -44,6 +44,8 @@ pp-script = { path = "../../../crates/pp-script" }
 # 自动更新（ADR-0008 D2）：仅桌面目标；Android 走应用商店/手动 APK 分发。
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# 桌面数据目录主目录解析（Windows 上 HOME 通常不存在，需 Known Folder 回退）。
+dirs = "7"
 base64 = "0.22"
 chrono = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
