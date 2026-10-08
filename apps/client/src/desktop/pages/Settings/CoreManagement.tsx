@@ -41,11 +41,12 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
     retry: false,
   });
 
-  const { data: remoteChannels = [] } = useQuery<RemoteCoreChannel[]>({
+  const channelsQuery = useQuery<RemoteCoreChannel[]>({
     queryKey: REMOTE_CHANNELS_KEY,
     queryFn: listRemoteCoreChannels,
     retry: false,
   });
+  const remoteChannels = channelsQuery.data ?? [];
 
   const invalidateCoreQueries = async () => {
     await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
@@ -141,10 +142,11 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <Button
               size="sm"
               variant="tertiary"
-              isDisabled={channelBusy !== null}
+              isPending={channelsQuery.isFetching}
+              isDisabled={channelBusy !== null || channelsQuery.isFetching}
               onPress={() => void queryClient.invalidateQueries({ queryKey: REMOTE_CHANNELS_KEY })}
             >
-              检查更新
+              {channelsQuery.isFetching ? "检查中…" : "检查更新"}
             </Button>
           </div>
           <div className="flex flex-col gap-2">
@@ -189,6 +191,21 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             })}
           </div>
         </div>
+
+        {/* 远端通道查询失败：此前被 react-query 静默吞掉（retry: false 且无展示），
+            表现为「检查更新没有响应」；此处显式暴露错误与代理前缀配置引导。 */}
+        {channelsQuery.error && (
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>无法获取远端版本</Alert.Title>
+              <Alert.Description>
+                {toErrorMessage(channelsQuery.error)}
+                （应用按设计绕过系统代理直连 GitHub；网络受限时可在「设置 → GitHub 访问」配置 GitHub 代理前缀后重试）
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
 
         {/* 已安装核心 */}
         <div className="overflow-x-auto">
