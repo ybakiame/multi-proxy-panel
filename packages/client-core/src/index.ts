@@ -21,6 +21,7 @@ export * from "./hooks/useClientConfig";
 export * from "./hooks/useCoreVersion";
 export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
+export * from "./hooks/useSettingsPersist";
 
 // 纯逻辑工具。
 export * from "./coreChannels";

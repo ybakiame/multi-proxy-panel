@@ -1,16 +1,17 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue, useSetAtom } from "jotai";
-import { toastError, toastSuccess, toastWarning } from "@pp/client-core";
-import { markRestartRequired } from "@pp/client-core";
-import { toErrorMessage, tunAuthStatus } from "@pp/client-core";
-import { CONFIG_KEY, PROXY_STATUS_KEY, TUN_AUTH_KEY } from "@pp/client-core";
+import { tunAuthStatus } from "@pp/client-core";
+import { TUN_AUTH_KEY } from "@pp/client-core";
 import { lastActionErrorAtom } from "@pp/client-core";
-import { useClientConfig, useSaveConfig } from "@pp/client-core";
-import type { ClientConfig, ClientStatus, RestartDirtyKey } from "@pp/client-core";
+import { useClientConfig, useSettingsPersist } from "@pp/client-core";
+import { PORT_RANGE_ERROR, isValidPort, portError } from "@pp/client-core";
+import type { ClientConfig, RestartDirtyKey } from "@pp/client-core";
 
 // TODO: read version from package.json (build-time injection or runtime read)
 export const APP_VERSION = "0.1.0";
+
+export { PORT_RANGE_ERROR, isValidPort };
 
 /** TUN 协议栈选项（与后端 `ClientConfigView.tun_stack` 的 serde 值一致）。 */
 export const TUN_STACK_OPTIONS = [
@@ -19,7 +20,7 @@ export const TUN_STACK_OPTIONS = [
   { id: "system", label: "system" },
 ] as const;
 
-/** Clash 面板 UI 选项（与后端 `ClientConfigView.clash_api_ui` 的 serde 值一致，默认 zashboard）。 */
+/** Clash 面板 UI 选项（与后端 `ClientConfigView.clash_api_ui` 的 serde 值一致，默认 `zashboard`）。 */
 export const CLASH_UI_OPTIONS = [
   { id: "zashboard", label: "zashboard" },
   { id: "yacd", label: "yacd" },
@@ -43,24 +44,16 @@ const RESTART_KEY_BY_FIELD: Record<string, RestartDirtyKey> = {
   dns_fakeip_enabled: "dns",
 };
 
-/** 端口越界/非法时展示在输入框下方的提示（对齐移动端 `isValidPort` 校验）。 */
-export const PORT_RANGE_ERROR = "端口需在 1-65535 之间";
-
-/** 校验端口草稿：仅接受 1-65535 的整数。 */
-export function isValidPort(raw: string): boolean {
-  if (!/^\d+$/.test(raw)) {
-    return false;
+/** 按补丁字段推导重启脏标记键（桌面端补丁可能多字段，逐字段映射去重）。 */
+function restartKeysOf(patch: Partial<ClientConfig>): RestartDirtyKey[] {
+  const keys = new Set<RestartDirtyKey>();
+  for (const field of Object.keys(patch)) {
+    const key = RESTART_KEY_BY_FIELD[field];
+    if (key) {
+      keys.add(key);
+    }
   }
-  const value = Number(raw);
-  return value >= 1 && value <= 65535;
-}
-
-/** 空白 / 非法端口的错误文案。 */
-function portError(raw: string): string | null {
-  if (raw.trim() === "") {
-    return "请输入端口号";
-  }
-  return isValidPort(raw) ? null : PORT_RANGE_ERROR;
+  return [...keys];
 }
 
 export interface UseSettingsConfigReturn {
@@ -108,13 +101,19 @@ export interface UseSettingsConfigReturn {
   persistDebounced: (patch: Partial<ClientConfig>) => void;
 }
 
+/**
+ * 桌面设置页视图模型（ADR-0011 试点）：保存引擎复用 client-core 共享的
+ * [`useSettingsPersist`]（persist 串行链 + 字段级防抖 + 卸载 flush），
+ * 本 hook 只保留桌面专属逻辑：RESTART_KEY_BY_FIELD 派生、TUN 授权态查询、
+ * TUN 关闭时残留授权错误清理、Clash 面板 UI 选择与代理连通性测试状态。
+ */
 export function useSettingsConfig(): UseSettingsConfigReturn {
   const queryClient = useQueryClient();
   // 配置与共享错误均以 Query 缓存 / jotai atom 为权威源（替代原 store 双写）。
   const { data: config = null } = useClientConfig();
   const error = useAtomValue(lastActionErrorAtom);
   const setLastError = useSetAtom(lastActionErrorAtom);
-  const saveConfigMutation = useSaveConfig();
+  const engine = useSettingsPersist();
   const [mixedPortDraft, setMixedPortDraft] = useState("17890");
   const [ipv6Enabled, setIpv6Enabled] = useState(false);
   const [tunEnabled, setTunEnabled] = useState(false);
@@ -131,7 +130,6 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   const [proxyTestPending, setProxyTestPending] = useState(false);
   const [proxyTestResult, setProxyTestResult] = useState<string | null>(null);
   const [proxyTestError, setProxyTestError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // config 变化时在渲染期间同步表单本地状态（React 推荐的 adjust-state-during-render
   // 模式，替代 effect 内同步 setState，满足 React Compiler 的 set-state-in-effect 限制）。
@@ -157,81 +155,54 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
   }
 
   /**
-   * 配置即时保存：从 Query 缓存取最新配置叠加补丁（避免闭包旧值）。
-   * 保存结果通过全局 toast 反馈；失败时失效 CONFIG_KEY 重读回滚。
+   * 配置即时保存：委托共享引擎（串行链 + 重启脏标记按补丁字段派生）。
+   * 关闭 TUN 后，此前「TUN 未授权」启动失败残留在共享错误里的记录不再适用：
+   * 桌面端 TUN 为可选模式，未启用时启动不再需要授权，清除避免 Dashboard
+   * 继续展示授权门禁（该门禁另按 config.tun_enabled 守卫，双保险）。
    */
   const persist = useCallback(
     async (patch: Partial<ClientConfig>) => {
-      const current = queryClient.getQueryData<ClientConfig>(CONFIG_KEY);
-      if (!current) {
-        return;
-      }
-      try {
-        const { warning } = await saveConfigMutation.mutateAsync({ ...current, ...patch });
-        if (warning) {
-          toastWarning(warning);
-        } else {
-          toastSuccess("设置已保存");
-        }
-        // 保存成功后 useSaveConfig 已用入参回写缓存；这里失效共享的
-        // ["config"] Query 缓存让其它消费者重读，而不是再手动 invoke 一遍。
-        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
-        // 需重启的字段上报全局脏标记（RestartPrompt 消费）；核心未运行时配置随
-        // 下次启动生效，无需提示（markRestartRequired 内部已判）。
-        const coreRunning = queryClient.getQueryData<ClientStatus>(PROXY_STATUS_KEY)?.core_running ?? false;
-        for (const field of Object.keys(patch)) {
-          const dirtyKey = RESTART_KEY_BY_FIELD[field];
-          if (dirtyKey) {
-            markRestartRequired(dirtyKey, coreRunning);
-          }
-        }
-        // 关闭 TUN 后，此前「TUN 未授权」启动失败残留在共享错误里的记录不再适用：
-        // 桌面端 TUN 为可选模式，未启用时启动不再需要授权，清除避免 Dashboard
-        // 继续展示授权门禁（该门禁另按 config.tun_enabled 守卫，双保险）。
-        if (patch.tun_enabled === false) {
-          setLastError((current) => (current?.includes("tun_auth_required") ? null : current));
-        }
-      } catch (err) {
-        toastError(toErrorMessage(err));
-        // 保存失败回滚：失效缓存触发重读
-        await queryClient.invalidateQueries({ queryKey: CONFIG_KEY });
+      const ok = await engine.persist(patch, restartKeysOf(patch));
+      if (ok && patch.tun_enabled === false) {
+        setLastError((current) => (current?.includes("tun_auth_required") ? null : current));
       }
     },
-    [queryClient, saveConfigMutation, setLastError],
+    [engine, setLastError],
   );
 
+  /** 字段级防抖保存：补丁首字段名为 key（桌面补丁均单字段），非法输入由调用方先行取消。 */
   const persistDebounced = useCallback(
     (patch: Partial<ClientConfig>) => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-      debounceRef.current = setTimeout(() => void persist(patch), 500);
+      const field = Object.keys(patch)[0] ?? "patch";
+      engine.schedulePersist(field, () => patch, restartKeysOf(patch));
     },
-    [persist],
+    [engine],
   );
 
-  /** 混合端口输入：草稿即时更新，仅合法值（1-65535 整数）防抖落库。 */
+  /** 混合端口输入：草稿即时更新，仅合法值（1-65535 整数）防抖落库；非法时取消待落库保存。 */
   const onMixedPortChange = useCallback(
     (raw: string) => {
       setMixedPortDraft(raw);
+      engine.cancelPersist("mixed_port");
       if (portError(raw) !== null) {
         return;
       }
       persistDebounced({ mixed_port: Number(raw) });
     },
-    [persistDebounced],
+    [engine, persistDebounced],
   );
 
   /** Clash API 端口输入：同混合端口，仅合法值防抖落库。 */
   const onClashApiPortChange = useCallback(
     (raw: string) => {
       setClashApiPortDraft(raw);
+      engine.cancelPersist("clash_api_port");
       if (portError(raw) !== null) {
         return;
       }
       persistDebounced({ clash_api_port: Number(raw) });
     },
-    [persistDebounced],
+    [engine, persistDebounced],
   );
 
   // TUN 授权状态查询（桌面端且 TUN 启用时），Query 缓存为权威源。
