@@ -31,8 +31,9 @@ import {
  * 路由切片配置页（桌面端，路由 `/config/route`；语义对齐移动端 `Config/Route/index.tsx`）。
  *
  * 编辑 `route.final`（默认出站）与 `route.default_domain_resolver`（出站域名解析器）。
- * 无切片总开关：非空字段即覆写运行配置。规则管理与规则集管理在桌面端由侧边栏
- * 「规则」页承载（此处不重复入口）。
+ * 无切片总开关：非空字段即覆写运行配置。规则管理（`/config/route/rules`）与
+ * 规则集管理（`/config/route/rulesets`）作为本页入口卡承载（对齐移动端组织，
+ * 数据键同为 `local_override.json`）。
  *
  * 数据流：同 DNS 页（内存草稿 copy-on-write，保存整份落盘 + invalidate + toast +
  * 上报重启脏标记）。校验对齐 Rust `RouteSlice::validate`：非空的 `final_tag` /
@@ -274,6 +275,31 @@ export default function RoutePage() {
           </Card.Content>
         </Card>
       )}
+
+      {/* 规则 / 规则集管理入口（对齐移动端 Route 页入口区） */}
+      <div className="flex flex-col gap-2">
+        {[
+          { to: "/config/route/rules", title: "规则管理", description: "本地规则卡片与内置规则还原" },
+          {
+            to: "/config/route/rulesets",
+            title: "规则集管理",
+            description: "社区与自定义规则集管理",
+          },
+        ].map((entry) => (
+          <button
+            key={entry.to}
+            type="button"
+            onClick={() => navigate(entry.to)}
+            className="flex items-center gap-3 rounded-xl border border-border/60 bg-surface p-4 text-left transition-colors hover:bg-surface-secondary/40"
+          >
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-sm font-medium text-foreground">{entry.title}</span>
+              <span className="text-xs text-muted">{entry.description}</span>
+            </span>
+            <span className="text-xs text-muted">›</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -11,7 +11,6 @@ import { toastError, toastSuccess } from "@pp/client-core";
 import { markRestartRequired } from "@pp/client-core";
 import { RuleCard } from "./RuleCard";
 import { RuleEditModal } from "./RuleEditModal";
-import { RuleSetSection } from "./RuleSetSection";
 import { buildSaveInput, ruleSummary, viewToInput } from "./types";
 
 export default function Rules() {
@@ -158,8 +157,8 @@ export default function Rules() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold">规则</h1>
-        <p className="text-sm text-muted">本地规则卡片与规则集管理</p>
+        <h1 className="text-xl font-semibold">规则管理</h1>
+        <p className="text-sm text-muted">本地规则卡片（命中规则集经 tag 引用；规则集本身在规则集管理中维护）</p>
       </div>
 
       {error && (
@@ -228,9 +227,6 @@ export default function Rules() {
               </div>
             )}
           </div>
-
-          {/* 规则集管理（社区 / 自定义） */}
-          <RuleSetSection overrideData={overrideData} coreRunning={coreRunning} onChanged={invalidate} />
         </>
       )}
 

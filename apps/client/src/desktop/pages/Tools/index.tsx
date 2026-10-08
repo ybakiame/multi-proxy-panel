@@ -66,9 +66,9 @@ export default function Tools() {
         {showRules && (
           <ToolCard
             title="规则"
-            description="本地规则卡片与规则集管理"
+            description="本地规则卡片与规则集管理（路由管理下）"
             icon={ShieldCheckIcon}
-            onPress={() => navigate("/rules")}
+            onPress={() => navigate("/config/route/rules")}
           />
         )}
         {showScripts && (

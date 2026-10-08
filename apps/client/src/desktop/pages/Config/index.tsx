@@ -27,7 +27,7 @@ interface ConfigEntry {
  * （`client.json`）在配置合成 ④ 层覆盖模板/覆写同名字段；入站管理由本页
  * `/config/inbounds` 承载（2026-10 自「设置」页剥离，对齐移动端），Clash API
  * 由 `/config/experimental` 的 Clash API 卡承载（同步自「设置」页剥离）；规则
- * 管理与规则集管理由侧边栏「规则」页承载。
+ * 管理与规则集管理迁入「路由管理」（`/config/route` 入口区，对齐移动端）。
  */
 const CONFIG_ENTRIES: ConfigEntry[] = [
   {

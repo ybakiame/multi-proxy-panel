@@ -13,7 +13,6 @@ import Mitm from "./pages/Mitm";
 import Nodes from "./pages/Nodes";
 import Override from "./pages/Override";
 import Proxies from "./pages/Proxies";
-import Rules from "./pages/Rules";
 import Scripts from "./pages/Scripts";
 import Settings from "./pages/Settings";
 import Tools from "./pages/Tools";
@@ -23,6 +22,8 @@ import Config from "./pages/Config";
 import DnsPage from "./pages/Config/Dns";
 import OutboundsPage from "./pages/Config/Outbounds";
 import RoutePage from "./pages/Config/Route";
+import RulesPage from "./pages/Config/Rules";
+import RuleSetsPage from "./pages/Config/RuleSets";
 import InboundsPage from "./pages/Config/Inbounds";
 import ExperimentalPage from "./pages/Config/Experimental";
 
@@ -115,7 +116,6 @@ function AppContent() {
             <Route path="/proxies" element={<Proxies />} />
             <Route path="/nodes" element={<Nodes />} />
             <Route path="/tools" element={<Tools />} />
-            <Route path="/rules" element={<Rules />} />
             <Route path="/connections" element={<Connections />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/mitm" element={<Mitm />} />
@@ -125,6 +125,8 @@ function AppContent() {
             <Route path="/config/dns" element={<DnsPage />} />
             <Route path="/config/outbounds" element={<OutboundsPage />} />
             <Route path="/config/route" element={<RoutePage />} />
+            <Route path="/config/route/rules" element={<RulesPage />} />
+            <Route path="/config/route/rulesets" element={<RuleSetsPage />} />
             <Route path="/config/inbounds" element={<InboundsPage />} />
             <Route path="/config/experimental" element={<ExperimentalPage />} />
             <Route path="/logs" element={<Logs />} />

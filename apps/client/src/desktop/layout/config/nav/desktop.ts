@@ -9,7 +9,6 @@ import {
   DocumentTextIcon,
   GlobeAltIcon,
   ServerStackIcon,
-  ShieldCheckIcon,
   Squares2X2Icon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
@@ -40,7 +39,6 @@ export const DESKTOP_NAV_ITEMS: DesktopNavItem[] = [
   { to: "/", label: "仪表盘", icon: Squares2X2Icon },
   { to: "/proxies", label: "代理", icon: GlobeAltIcon },
   { to: "/nodes", label: "订阅", icon: ServerStackIcon },
-  { to: "/rules", label: "规则", icon: ShieldCheckIcon },
   { to: "/config", label: "配置", icon: AdjustmentsVerticalIcon },
   { to: "/connections", label: "连接", icon: ArrowPathIcon },
   { to: "/stats", label: "统计", icon: ChartBarIcon },

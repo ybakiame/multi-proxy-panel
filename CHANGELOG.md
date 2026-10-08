@@ -56,6 +56,15 @@
   吞掉，现展示错误并引导配置 GitHub 代理前缀）；修复慢速直连网络下核心下载必然失败
   （reqwest 全局 30s 超时把 body 下载计入总时长，现拆分为连接超时 10s + 仅元数据 API
   限时 30s，二进制下载不限总时长）。
+- **Windows 客户端**：修复启动时 cmd 窗口不断闪动（GUI 应用下子进程未标记
+  `CREATE_NO_WINDOW`，核心 run / 版本探测 / reg 系统代理命令各自弹出控制台窗口，
+  现统一施加）。
+
+### Changed
+
+- **桌面客户端**：规则管理与规则集管理自侧边栏独立「规则」页迁入「配置 → 路由管理」
+  （`/config/route` 入口区，`/config/route/rules` 与 `/config/route/rulesets` 子页），
+  与移动端组织方式对齐，数据键不变（`local_override.json`）。
 
 ### Removed
 
