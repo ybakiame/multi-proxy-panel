@@ -5,7 +5,6 @@ import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import {
   CORE_CHANNELS,
   deleteCore,
-  detectSystemCores,
   downloadCore,
   latestVersionOfChannel,
   listCores,
@@ -24,8 +23,8 @@ interface CoreManagementProps {
  *
  * - 版本通道：稳定版 / 测试版 / 预发布版三通道，各通道展示远端最新版本与本地
  *   已装版本，一键下载/更新到该通道最新版；不再让用户手动挑选具体版本号。
- * - 本地核心清单：已下载 + 系统探测核心列表（使用中标记、删除）；「当前核心」
- *   由首页（Dashboard）选择生效。
+ * - 本地核心清单：已下载 / 安装包种子核心列表（使用中标记、删除）；「当前核心」
+ *   由首页（Dashboard）选择生效。系统核心探测功能已移除。
  */
 export default function CoreManagement({ settings }: CoreManagementProps) {
   const { config } = settings;
@@ -68,21 +67,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
       setCoresError(toErrorMessage(err));
     }
     setChannelBusy(null);
-  };
-
-  const handleDetectSystem = async () => {
-    setCoresBusy(true);
-    setCoresError(null);
-    setCoresMessage(null);
-    try {
-      const detected = await detectSystemCores();
-      setCoresMessage(`探测到 ${detected.length} 个系统核心`);
-      await queryClient.invalidateQueries({ queryKey: CORES_LIST_KEY });
-      await queryClient.invalidateQueries({ queryKey: CORES_KEY });
-    } catch (err) {
-      setCoresError(toErrorMessage(err));
-    }
-    setCoresBusy(false);
   };
 
   const handleDeleteCore = async (core: LocalCoreView) => {
@@ -213,7 +197,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <thead>
               <tr className="border-b border-border/60 text-left text-xs text-muted">
                 <th className="py-2 pr-3 font-normal">版本</th>
-                <th className="py-2 pr-3 font-normal">来源</th>
                 <th className="py-2 pr-3 font-normal">路径</th>
                 <th className="py-2 text-right font-normal">操作</th>
               </tr>
@@ -221,8 +204,8 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             <tbody>
               {cores.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-sm text-muted">
-                    暂无可用核心，可从上方通道下载或探测系统核心
+                  <td colSpan={3} className="py-8 text-center text-sm text-muted">
+                    暂无可用核心，可从上方通道下载
                   </td>
                 </tr>
               ) : (
@@ -238,11 +221,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
                         )}
                       </span>
                     </td>
-                    <td className="py-2 pr-3">
-                      <Chip size="sm" variant="soft" color={core.source === "downloaded" ? "accent" : "warning"}>
-                        {core.source === "downloaded" ? "下载" : "系统"}
-                      </Chip>
-                    </td>
                     <td className="max-w-[180px] truncate py-2 pr-3 text-xs text-muted">
                       <span title={core.path}>{core.path}</span>
                     </td>
@@ -250,14 +228,9 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
                       <Button
                         size="sm"
                         variant="tertiary"
-                        isDisabled={coresBusy || core.source === "system" || core.active}
+                        isDisabled={coresBusy || core.active}
                         {...{
-                          title:
-                            core.source === "system"
-                              ? "系统核心不可删除"
-                              : core.active
-                                ? "正在使用的核心不可删除"
-                                : undefined,
+                          title: core.active ? "正在使用的核心不可删除" : undefined,
                         }}
                         onPress={() => void handleDeleteCore(core)}
                       >
@@ -270,11 +243,6 @@ export default function CoreManagement({ settings }: CoreManagementProps) {
             </tbody>
           </table>
         </div>
-
-        {/* 探测系统核心 */}
-        <Button variant="secondary" isPending={coresBusy} onPress={() => void handleDetectSystem()}>
-          探测系统核心
-        </Button>
 
         {coresMessage && <span className="text-sm text-success">{coresMessage}</span>}
         {coresError && (

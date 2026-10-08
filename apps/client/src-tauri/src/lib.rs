@@ -168,8 +168,6 @@ pub fn run() {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::set_active_core,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            desktop::commands::detect_system_cores,
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::delete_core,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::gpu_acceleration,

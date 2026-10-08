@@ -10,7 +10,7 @@
 //! Seed semantics:
 //!
 //! - **补白不覆盖**：仅当无任何已下载核心时释放；用户已装核心（下载 / 系统）时跳过；
-//! - 释放结果与运行时下载的核心**无差别**（`CoreSource::Downloaded`），后续升级仍走
+//! - 释放结果与运行时下载的核心**无差别**（落在同一版本化目录），后续升级仍走
 //!   [`ClientCoreInventory::download`] 通道；
 //! - 缺失 seed 资源（开发构建、Linux/macOS 包）→ `Ok(None)`，不是错误；
 //! - 释放后版本探测失败（如杀软拦截）→ 清理半成品目录并 `Ok(None)`，回退运行时
@@ -21,7 +21,7 @@ use std::path::Path;
 use pp_common::{PanelError, PanelResult};
 use serde::Deserialize;
 
-use super::{ClientCoreInventory, CoreSource, LocalCore, download, version};
+use super::{ClientCoreInventory, LocalCore, download, version};
 
 /// Runtime seed manifest (`<resource_dir>/seed/manifest.json`), written by
 /// `fetch-seed-core.ts` from the pinned `src-tauri/seed-manifest.json`.
@@ -90,7 +90,6 @@ pub fn seed_bundled_core(data_dir: &Path, resource_dir: &Path) -> PanelResult<Op
     Ok(Some(LocalCore {
         version: version_str,
         path: dest,
-        source: CoreSource::Downloaded,
     }))
 }
 
@@ -140,7 +139,6 @@ mod tests {
             .unwrap()
             .expect("seed should apply");
         assert_eq!(core.version, "1.14.2");
-        assert_eq!(core.source, CoreSource::Downloaded);
         assert!(core.path.is_file());
         assert!(
             core.path

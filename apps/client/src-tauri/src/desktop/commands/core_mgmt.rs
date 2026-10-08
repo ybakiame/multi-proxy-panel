@@ -14,7 +14,6 @@ use crate::desktop::state::AppState;
 pub struct LocalCoreView {
     pub version: String,
     pub path: String,
-    pub source: String,
     pub active: bool,
 }
 
@@ -23,27 +22,9 @@ impl LocalCoreView {
         Self {
             version: core.version.clone(),
             path: core.path.to_string_lossy().into_owned(),
-            source: match core.source {
-                pp_client::CoreSource::Downloaded => "downloaded",
-                pp_client::CoreSource::System => "system",
-            }
-            .to_string(),
             active: core.path == active_binary,
         }
     }
-}
-
-/// Merge installed and system-detected cores (dedup by path, system first).
-pub(crate) fn merge_cores(
-    mut installed: Vec<pp_client::LocalCore>,
-    system: Vec<pp_client::LocalCore>,
-) -> Vec<pp_client::LocalCore> {
-    for s in system {
-        if !installed.iter().any(|c| c.path == s.path) {
-            installed.push(s);
-        }
-    }
-    installed
 }
 
 /// Current active core binary path from config (empty if config not saved).
@@ -53,13 +34,13 @@ pub(crate) fn active_binary(data_dir: &std::path::Path) -> std::path::PathBuf {
         .unwrap_or_default()
 }
 
-/// List local available cores (installed + system-detected, with active flag).
+/// List local available cores (downloaded / installer-seeded, with active flag).
 #[tauri::command]
 pub async fn list_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
     let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let cores = merge_cores(inv.list_installed(), inv.detect_system_cores());
     let active = active_binary(&state.data_dir);
-    Ok(cores
+    Ok(inv
+        .list_installed()
         .iter()
         .map(|c| LocalCoreView::from_core(c, &active))
         .collect())
@@ -156,37 +137,20 @@ pub async fn set_active_core(state: State<'_, AppState>, path: String) -> Result
     config.save().map_err(|e| format!("保存配置失败: {e}"))
 }
 
-/// Refresh system core detection.
-#[tauri::command]
-pub async fn detect_system_cores(state: State<'_, AppState>) -> Result<Vec<LocalCoreView>, String> {
-    let inv = pp_client::ClientCoreInventory::new(state.data_dir.clone());
-    let active = active_binary(&state.data_dir);
-    Ok(inv
-        .detect_system_cores()
-        .iter()
-        .map(|c| LocalCoreView::from_core(c, &active))
-        .collect())
-}
-
 /// Delete core implementation (testable pure logic).
 pub(crate) fn delete_core_impl(data_dir: &std::path::Path, path: &str) -> Result<(), String> {
     let bin = PathBuf::from(path);
     let inv = pp_client::ClientCoreInventory::new(data_dir.to_path_buf());
-    let matched = merge_cores(inv.list_installed(), inv.detect_system_cores())
-        .into_iter()
-        .find(|c| c.path == bin);
-    if matched.is_some_and(|c| c.source == pp_client::CoreSource::System) {
-        return Err("系统核心不可删除：仅支持删除已下载的核心".to_string());
-    }
     let active = active_binary(data_dir);
     if bin == active {
         return Err("正在使用的核心不可删除：请先切换其他核心".to_string());
     }
+    // cores 目录外的路径（含曾经意义上的「系统核心」）由 pp-client 的越界校验拒绝。
     inv.delete(&bin, &active)
         .map_err(|e| format!("删除核心失败: {e}"))
 }
 
-/// Delete a downloaded core (system source / currently active cores cannot be deleted).
+/// Delete a downloaded core (currently active core cannot be deleted).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn delete_core(state: State<'_, AppState>, path: String) -> Result<(), String> {
     delete_core_impl(&state.data_dir, &path)
@@ -320,40 +284,6 @@ mod tests {
             with_empty_path(|| delete_core_impl(dir.path(), &bin.to_string_lossy()).unwrap_err());
         assert!(err.contains("正在使用的核心不可删除"), "{err}");
         assert!(bin.exists());
-    }
-
-    #[test]
-    fn delete_core_rejects_system_source() {
-        let dir = TestDir::new();
-        let system_bin = dir.path().join("bin/sing-box");
-        std::fs::create_dir_all(system_bin.parent().unwrap()).unwrap();
-        std::fs::write(&system_bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&system_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-
-        fn with_patched_path<T>(path: &std::path::Path, f: impl FnOnce() -> T) -> T {
-            let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let old = std::env::var_os("PATH");
-            unsafe {
-                std::env::set_var("PATH", path);
-            }
-            let result = f();
-            match old {
-                Some(v) => unsafe { std::env::set_var("PATH", v) },
-                None => unsafe { std::env::remove_var("PATH") },
-            }
-            result
-        }
-
-        let err = with_patched_path(&dir.path().join("bin"), || {
-            delete_core_impl(dir.path(), &system_bin.to_string_lossy())
-        })
-        .unwrap_err();
-        assert!(err.contains("系统核心不可删除"), "{err}");
-        assert!(system_bin.exists());
     }
 
     #[test]

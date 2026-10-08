@@ -1,4 +1,4 @@
-//! Core version management: download local cores + detect system-installed cores + active selection.
+//! Core version management: download local cores and list installed versions.
 //!
 //! The client only supports the sing-box core.
 //!
@@ -20,7 +20,6 @@
 use std::path::{Path, PathBuf};
 
 use pp_common::{CoreType, PanelError, PanelResult};
-use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 use crate::config::ClientConfig;
@@ -43,25 +42,17 @@ const HTTP_TIMEOUT_SECS: u64 = 30;
 /// TCP connect timeout (seconds) for all requests (fast fail on dead networks).
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 
-/// Core source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CoreSource {
-    /// Downloaded from GitHub Releases to `data_dir/cores` by this module.
-    Downloaded,
-    /// System-installed core detected via PATH.
-    System,
-}
-
-/// A locally available sing-box core (downloaded or system-installed).
+/// A locally available sing-box core (downloaded to `data_dir/cores`, or seeded
+/// from the installer bundle on first run — seeding lands in the same versioned
+/// directory and is indistinguishable from a download).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalCore {
     pub version: String,
     pub path: PathBuf,
-    pub source: CoreSource,
 }
 
 /// Client core inventory: manages download directory scanning, remote version listing,
-/// download installation, system detection, and active matching.
+/// download installation, and deletion.
 #[derive(Debug, Clone)]
 pub struct ClientCoreInventory {
     data_dir: PathBuf,
@@ -140,11 +131,7 @@ impl ClientCoreInventory {
                 let version = entry.file_name().to_string_lossy().into_owned();
                 let bin = path.join(version::binary_name_on_disk());
                 if bin.is_file() {
-                    out.push(LocalCore {
-                        version,
-                        path: bin,
-                        source: CoreSource::Downloaded,
-                    });
+                    out.push(LocalCore { version, path: bin });
                 }
             }
         }
@@ -158,7 +145,6 @@ impl ClientCoreInventory {
         let mut versions: Vec<String> = self
             .list_installed()
             .into_iter()
-            .filter(|c| c.source == CoreSource::Downloaded)
             .map(|c| c.version)
             .collect();
         versions.sort_by(|a, b| version::compare_core_versions(b, a));
@@ -183,7 +169,6 @@ impl ClientCoreInventory {
             return Ok(LocalCore {
                 version,
                 path: on_disk,
-                source: CoreSource::Downloaded,
             });
         }
 
@@ -246,69 +231,7 @@ impl ClientCoreInventory {
             path = %path.display(),
             "Core download complete"
         );
-        Ok(LocalCore {
-            version,
-            path,
-            source: CoreSource::Downloaded,
-        })
-    }
-
-    /// Look up system-installed sing-box cores via PATH (append `.exe` on Windows),
-    /// try `version` / `--version` / `-v` in sequence and parse version number; on parse failure
-    /// record as `unknown`.
-    pub fn detect_system_cores(&self) -> Vec<LocalCore> {
-        let Some(path_value) = std::env::var_os("PATH") else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for dir in std::env::split_paths(&path_value) {
-            if !dir.is_dir() {
-                continue;
-            }
-            let candidate = dir.join(version::binary_name_on_disk());
-            if !candidate.is_file() || out.iter().any(|c: &LocalCore| c.path == candidate) {
-                continue;
-            }
-            let version = version::parse_version_from_output(&version::binary_output(&candidate))
-                .unwrap_or_else(|| "unknown".to_string());
-            out.push(LocalCore {
-                version,
-                path: candidate,
-                source: CoreSource::System,
-            });
-        }
-        out
-    }
-
-    /// Match installed / system core by `config.core_binary`; returns `None` when not set.
-    pub fn active_core(&self, config: &ClientConfig) -> Option<LocalCore> {
-        if config.core_binary.as_os_str().is_empty() {
-            return None;
-        }
-        self.list_installed()
-            .into_iter()
-            .chain(self.detect_system_cores())
-            .find(|c| paths_equal(&c.path, &config.core_binary))
-    }
-
-    /// Preferred local binary:
-    ///
-    /// 1. The highest version among downloaded cores (semantic version sorting, prerelease lower
-    ///    than same-base stable, e.g. `1.14.0-beta.4` < `1.14.0` but `> 1.13.15`);
-    /// 2. Fallback to first system core detected in PATH when no downloaded cores;
-    /// 3. Neither → `None` (command layer prompts user to download from core management).
-    pub fn preferred_binary(&self) -> Option<PathBuf> {
-        let downloaded = self
-            .list_installed()
-            .into_iter()
-            .max_by(|a, b| version::compare_core_versions(&a.version, &b.version));
-        if let Some(core) = downloaded {
-            return Some(core.path);
-        }
-        self.detect_system_cores()
-            .into_iter()
-            .next()
-            .map(|c| c.path)
+        Ok(LocalCore { version, path })
     }
 
     /// Delete a downloaded core (only cores within `cores_dir`).

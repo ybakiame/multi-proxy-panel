@@ -89,7 +89,7 @@ export { listTasks, runTask } from "./tasks";
 // Cores
 // ---------------------------------------------------------------------------
 
-export type { CoreSource, LocalCoreView, RemoteCoreChannel } from "./cores";
+export type { LocalCoreView, RemoteCoreChannel } from "./cores";
 export {
   listCores,
   listRemoteCoreChannels,
@@ -97,7 +97,6 @@ export {
   downloadCore,
   setActiveCore,
   deleteCore,
-  detectSystemCores,
 } from "./cores";
 
 // ---------------------------------------------------------------------------
