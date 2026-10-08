@@ -59,6 +59,8 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0007](0007-client-single-shell-merge.md) | Accepted | 2026-10-03 | 客户端合并为单壳双目标应用（apps/client） |
 | [ADR-0008](0008-windows-desktop-packaging.md) | Accepted | 2026-10-05 | Windows 桌面端打包与分发方案（NSIS + 种子核心 + 自动更新） |
 | [ADR-0009](0009-client-repo-boundary.md) | Accepted | 2026-10-06 | 客户端产品定位与仓库边界（单仓过渡 + 拆分触发条件） |
+| [ADR-0010](0010-desktop-bundled-core.md) | Accepted | 2026-10-08 | 桌面核心收敛为内嵌 pinned 核心（FlClash 模式） |
+| [ADR-0011](0011-shared-view-model-layer.md) | Accepted | 2026-10-08 | 客户端 UI 共享视图模型层（View-Model 下沉至 client-core） |
 
 > 关联计划与评估材料：`docs/plans/2026-10-03-client-merge-evaluation.md`（ADR-0007 的评估依据）、
 > `docs/research/client-audit-2026-08.md`、`docs/research/panel-comparison.md`。
