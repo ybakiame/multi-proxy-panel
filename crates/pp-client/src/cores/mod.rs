@@ -36,8 +36,12 @@ pub use channel::{CoreChannel, RemoteChannelVersion, channel_of_version};
 pub use seed::seed_bundled_core;
 pub use version::infer_core_type;
 
-/// GitHub API request timeout (seconds).
+/// GitHub API request timeout (seconds) — applied per-request to release metadata
+/// calls only; the binary download itself has no total timeout (see below).
 const HTTP_TIMEOUT_SECS: u64 = 30;
+
+/// TCP connect timeout (seconds) for all requests (fast fail on dead networks).
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 
 /// Core source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,8 +88,13 @@ impl ClientCoreInventory {
                 "删除遗留 mihomo 核心目录失败"
             );
         }
+        // 超时纪律：connect_timeout 覆盖全部请求；30s 总超时只按请求施加于
+        // release 元数据 API（响应体小），**不**施加于核心二进制下载——
+        // reqwest 的 Client 级 .timeout() 会把 body 流式下载计入总时长，
+        // 慢速直连网络下 ~30MB 的核心包必然超时被砍（实测 WSL 直连 GitHub
+        // 延迟高，30s 内下不完）。
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
+            .connect_timeout(std::time::Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
             .no_proxy()
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -408,6 +417,7 @@ impl ClientCoreInventory {
         let resp = self
             .client
             .get(&url)
+            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
             .header("User-Agent", "proxy-panel-client")
             .send()
             .await

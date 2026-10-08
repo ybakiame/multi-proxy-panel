@@ -80,6 +80,7 @@ impl ClientCoreInventory {
         let resp = self
             .client
             .get(&url)
+            .timeout(std::time::Duration::from_secs(super::HTTP_TIMEOUT_SECS))
             .header("User-Agent", "proxy-panel-client")
             .send()
             .await
