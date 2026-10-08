@@ -158,15 +158,17 @@ impl CoreManager for SingBoxProcessManager {
             return Err(PanelError::Core(msg));
         }
 
-        let mut child = match Command::new(&self.binary)
-            .arg("run")
-            .arg("-c")
-            .arg(&config_path)
-            .arg("-D")
-            .arg(&self.config_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+        let mut child = match pp_common::no_window_tokio(
+            Command::new(&self.binary)
+                .arg("run")
+                .arg("-c")
+                .arg(&config_path)
+                .arg("-D")
+                .arg(&self.config_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped()),
+        )
+        .spawn()
         {
             Ok(c) => c,
             Err(e) => {
@@ -254,12 +256,14 @@ impl CoreManager for SingBoxProcessManager {
         let config_path = self.config_path();
         tokio::fs::write(&config_path, serde_json::to_string_pretty(config)?).await?;
 
-        let output = Command::new(&self.binary)
-            .arg("reload")
-            .arg("-c")
-            .arg(&config_path)
-            .output()
-            .await?;
+        let output = pp_common::no_window_tokio(
+            Command::new(&self.binary)
+                .arg("reload")
+                .arg("-c")
+                .arg(&config_path),
+        )
+        .output()
+        .await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -274,7 +278,9 @@ impl CoreManager for SingBoxProcessManager {
     }
 
     async fn version(&self) -> PanelResult<String> {
-        let output = Command::new(&self.binary).arg("version").output().await?;
+        let output = pp_common::no_window_tokio(Command::new(&self.binary).arg("version"))
+            .output()
+            .await?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(first_output_line(&stdout))
     }
@@ -356,14 +362,16 @@ impl CoreManager for MihomoProcessManager {
             return Err(PanelError::Core(msg));
         }
 
-        let mut child = match Command::new(&self.binary)
-            .arg("-d")
-            .arg(&self.config_dir)
-            .arg("-f")
-            .arg(&config_path)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+        let mut child = match pp_common::no_window_tokio(
+            Command::new(&self.binary)
+                .arg("-d")
+                .arg(&self.config_dir)
+                .arg("-f")
+                .arg(&config_path)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped()),
+        )
+        .spawn()
         {
             Ok(c) => c,
             Err(e) => {
@@ -452,7 +460,9 @@ impl CoreManager for MihomoProcessManager {
     }
 
     async fn version(&self) -> PanelResult<String> {
-        let output = Command::new(&self.binary).arg("-v").output().await?;
+        let output = pp_common::no_window_tokio(Command::new(&self.binary).arg("-v"))
+            .output()
+            .await?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(first_output_line(&stdout))
     }
