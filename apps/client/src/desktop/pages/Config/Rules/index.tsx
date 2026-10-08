@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, AlertDialog, Button } from "@heroui/react";
-import { PlusIcon } from "@heroicons/react/24/outline";
+import { ArrowLeftIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } from "@pp/client-core";
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
@@ -14,6 +15,7 @@ import { RuleEditModal } from "./RuleEditModal";
 import { buildSaveInput, ruleSummary, viewToInput } from "./types";
 
 export default function Rules() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
   // 本地规则 / 规则集在核心启动时注入，运行中变更不热更新：核心运行中成功 toast 追加「重启代理后生效」。
@@ -156,9 +158,20 @@ export default function Rules() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold">规则管理</h1>
-        <p className="text-sm text-muted">本地规则卡片（命中规则集经 tag 引用；规则集本身在规则集管理中维护）</p>
+      <div className="flex items-center gap-3">
+        <Button
+          size="sm"
+          variant="ghost"
+          isIconOnly
+          aria-label="返回路由管理"
+          onPress={() => navigate("/config/route")}
+        >
+          <ArrowLeftIcon className="size-4" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold">规则管理</h1>
+          <p className="text-sm text-muted">本地规则卡片（命中规则集经 tag 引用；规则集本身在规则集管理中维护）</p>
+        </div>
       </div>
 
       {error && (

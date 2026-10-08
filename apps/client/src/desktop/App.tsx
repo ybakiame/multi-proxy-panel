@@ -24,6 +24,7 @@ import OutboundsPage from "./pages/Config/Outbounds";
 import RoutePage from "./pages/Config/Route";
 import RulesPage from "./pages/Config/Rules";
 import RuleSetsPage from "./pages/Config/RuleSets";
+import RuleSetMarketPage from "./pages/Config/RuleSets/Market";
 import InboundsPage from "./pages/Config/Inbounds";
 import ExperimentalPage from "./pages/Config/Experimental";
 
@@ -127,6 +128,7 @@ function AppContent() {
             <Route path="/config/route" element={<RoutePage />} />
             <Route path="/config/route/rules" element={<RulesPage />} />
             <Route path="/config/route/rulesets" element={<RuleSetsPage />} />
+            <Route path="/config/route/rulesets/market" element={<RuleSetMarketPage />} />
             <Route path="/config/inbounds" element={<InboundsPage />} />
             <Route path="/config/experimental" element={<ExperimentalPage />} />
             <Route path="/logs" element={<Logs />} />

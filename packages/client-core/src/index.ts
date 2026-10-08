@@ -22,6 +22,7 @@ export * from "./hooks/useCoreVersion";
 export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
 export * from "./hooks/useSettingsPersist";
+export * from "./hooks/useRuleSetMarket";
 
 // 纯逻辑工具。
 export * from "./coreChannels";

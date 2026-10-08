@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertDialog, Button, Chip, Table } from "@heroui/react";
-import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, PlusIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import type { BaselineView, CustomRuleSetInput, CustomRuleSetView, LocalOverrideView } from "@pp/client-core";
 import {
   BASELINE_VIEW_KEY,
@@ -60,6 +61,7 @@ function toInput(ruleSet: CustomRuleSetView): CustomRuleSetInput {
  * 落盘（Rust 链路自动清理文件）。
  */
 export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSetSectionProps) {
+  const navigate = useNavigate();
   const ruleSets = overrideData.custom_rule_sets;
   const remoteCount = ruleSets.filter((rs) => rs.source.kind === "remote").length;
 
@@ -195,6 +197,10 @@ export function RuleSetSection({ overrideData, coreRunning, onChanged }: RuleSet
               恢复内置规则集
             </Button>
           )}
+          <Button size="sm" variant="secondary" onPress={() => navigate("/config/route/rulesets/market")}>
+            <SparklesIcon className="size-4" />
+            市场
+          </Button>
           <Button size="sm" variant="primary" onPress={openCreate}>
             <PlusIcon className="size-4" />
             添加规则集

@@ -1,23 +1,10 @@
-import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MagnifyingGlassIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { InlineAlert } from "../../components/InlineAlert";
 import { Button, Card, Spinner, inputClassName } from "../../components/ui";
-import {
-  LOCAL_OVERRIDE_KEY,
-  META_CUBE_SOURCE,
-  buildSaveInput,
-  localOverrideGet,
-  localOverrideSave,
-  searchMetaCubeEntries,
-  toErrorMessage,
-  toastError,
-  toastSuccess,
-} from "@pp/client-core";
-import type { CustomRuleSetInput, LocalOverrideView, MetaCubeEntry } from "@pp/client-core";
+import { META_CUBE_SOURCE, useRuleSetMarket } from "@pp/client-core";
+import type { MarketCategoryFilter } from "@pp/client-core";
 import { SubPageShell } from "../../components/SubPageShell";
 import { MarketEntryList } from "./MarketEntryList";
-import { asArray, isLocalOverrideView } from "@pp/client-core";
 
 /** 常用检索词快捷 Chip（点击填充检索框）。 */
 const POPULAR_KEYWORDS = ["cn", "ads", "google", "netflix", "youtube", "telegram"];
@@ -28,8 +15,6 @@ const CATEGORY_FILTERS = [
   { id: "geoip", label: "GeoIP" },
   { id: "geosite", label: "GeoSite" },
 ] as const;
-
-type CategoryFilter = (typeof CATEGORY_FILTERS)[number]["id"];
 
 const inputClass = `${inputClassName} pl-10`;
 
@@ -44,73 +29,18 @@ const inputClass = `${inputClassName} pl-10`;
  * - 自定义需求走规则集管理页的「添加」表单（远程 URL）。
  */
 export default function RuleSetMarket() {
-  const queryClient = useQueryClient();
-  const {
-    data: rawOverride,
-    isLoading,
-    error,
-  } = useQuery<LocalOverrideView>({
-    queryKey: LOCAL_OVERRIDE_KEY,
-    queryFn: localOverrideGet,
-  });
+  // 本地检索 / 添加 / 落盘逻辑已单源化至 client-core `useRuleSetMarket`（ADR-0011）。
+  const market = useRuleSetMarket();
+  const { keyword, setKeyword, category, setCategory, results, addingKey, addedUrls } = market;
 
-  // 结构守卫：缓存残留异构形态时视为未加载，渲染加载/空态而非崩溃。
-  const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
-  const customSets = asArray(overrideData?.custom_rule_sets);
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: LOCAL_OVERRIDE_KEY });
-
-  // ---- 局部 UI 状态 ----
-  const [keyword, setKeyword] = useState("");
-  const [category, setCategory] = useState<CategoryFilter>("all");
-  const [addingKey, setAddingKey] = useState<string | null>(null);
-
-  // 本地检索：空关键词返回空数组（渲染引导态）；分类过滤与文本检索叠加生效。
-  const results = useMemo(
-    () => searchMetaCubeEntries(keyword, category === "all" ? undefined : category),
-    [keyword, category],
-  );
-
-  // 已添加判定：按 URL 匹配。
-  const addedUrls = useMemo(
-    () => new Set(customSets.flatMap((rs) => (rs.source.kind === "remote" ? [rs.source.url] : []))),
-    [customSets],
-  );
-
-  // ---- 一键添加：custom 段整段替换追加（Remote + binary 声明格式） ----
-  const handleAddEntry = async (entry: MetaCubeEntry) => {
-    if (!overrideData || addingKey !== null || addedUrls.has(entry.url)) return;
-    setAddingKey(entry.id);
-    const input: CustomRuleSetInput = {
-      id: crypto.randomUUID(),
-      name: entry.name,
-      tag: entry.id,
-      source: { kind: "remote", url: entry.url, format: entry.format },
-      // 新条目尚未下载，last_updated 归零，待「立即更新」。
-      last_updated: 0,
-      remote_updated_at: 0,
-    };
-    const base = buildSaveInput(overrideData);
-    try {
-      await localOverrideSave({ ...base, custom_rule_sets: [...base.custom_rule_sets, input] });
-      toastSuccess(`已添加「${entry.name}」，点击立即更新下载`);
-      invalidate();
-    } catch (err) {
-      // 保存失败（如 tag 冲突）保留现场，仅报错。
-      toastError(toErrorMessage(err));
-      invalidate();
-    } finally {
-      setAddingKey(null);
-    }
-  };
-
-  const hasKeyword = keyword.trim().length > 0;
+  const hasKeyword = market.hasKeyword;
   // 空结果文案前缀：选中分类时点明过滤范围（全部则留空）。
   const filterPrefix =
     category === "all" ? "" : `${CATEGORY_FILTERS.find((item) => item.id === category)?.label ?? ""} `;
 
   return (
     <SubPageShell title="规则集市场">
-      {isLoading && !overrideData && (
+      {market.isLoading && !market.ready && (
         <Card>
           <Card.Content className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Spinner aria-hidden="true" />
@@ -119,28 +49,28 @@ export default function RuleSetMarket() {
         </Card>
       )}
 
-      {!overrideData && !isLoading && error && (
+      {!market.ready && !market.isLoading && market.error && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-2 py-8 text-center">
             <InlineAlert kind="danger" title="加载失败">
-              {toErrorMessage(error)}
+              {market.error}
             </InlineAlert>
           </Card.Content>
         </Card>
       )}
 
-      {!overrideData && !isLoading && !error && (
+      {!market.ready && !market.isLoading && !market.error && (
         <Card>
           <Card.Content className="flex flex-col items-center gap-3 py-12 text-center">
             <span className="text-sm text-zinc-500 dark:text-zinc-400">规则集数据不可用</span>
-            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => void invalidate()}>
+            <Button variant="secondary" className="min-h-11 shrink-0 px-4" onPress={() => market.invalidate()}>
               重新加载
             </Button>
           </Card.Content>
         </Card>
       )}
 
-      {overrideData && (
+      {market.ready && (
         <>
           {/* 固定源说明卡 */}
           <Card>
@@ -185,7 +115,7 @@ export default function RuleSetMarket() {
                 variant={category === item.id ? "primary" : "secondary"}
                 size="sm"
                 className="min-h-11 flex-1"
-                onPress={() => setCategory(item.id)}
+                onPress={() => setCategory(item.id as MarketCategoryFilter)}
               >
                 {item.label}
               </Button>
@@ -210,7 +140,7 @@ export default function RuleSetMarket() {
                   entries={results}
                   addedUrls={addedUrls}
                   addingKey={addingKey}
-                  onAdd={(entry) => void handleAddEntry(entry)}
+                  onAdd={(entry) => void market.addEntry(entry)}
                 />
               </>
             )

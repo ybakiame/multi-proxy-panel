@@ -1,4 +1,6 @@
-import { Alert } from "@heroui/react";
+import { Alert, Button } from "@heroui/react";
+import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LOCAL_OVERRIDE_KEY, localOverrideGet, toErrorMessage, useProxyStatus } from "@pp/client-core";
 import type { LocalOverrideView } from "@pp/client-core";
@@ -12,6 +14,7 @@ import { RuleSetSection } from "./RuleSetSection";
  * 主体复用 [`RuleSetSection`]（社区 / 自定义单一表格形态）。
  */
 export default function RuleSets() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: status } = useProxyStatus();
   const coreRunning = status?.core_running ?? false;
@@ -30,9 +33,20 @@ export default function RuleSets() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold">规则集管理</h1>
-        <p className="text-sm text-muted">社区与自定义规则集；经规则的 rule_set 目标引用后生效</p>
+      <div className="flex items-center gap-3">
+        <Button
+          size="sm"
+          variant="ghost"
+          isIconOnly
+          aria-label="返回路由管理"
+          onPress={() => navigate("/config/route")}
+        >
+          <ArrowLeftIcon className="size-4" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold">规则集管理</h1>
+          <p className="text-sm text-muted">社区与自定义规则集；经规则的 rule_set 目标引用后生效</p>
+        </div>
       </div>
 
       {error && (
