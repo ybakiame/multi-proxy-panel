@@ -64,6 +64,14 @@ impl CoreRunner {
     pub async fn is_running(&self) -> bool {
         self.inner.is_running().await
     }
+
+    /// 收割上次实例遗留的核心进程（ADR-0012 D2；Android 桥为空实现）。
+    ///
+    /// 启动前的端口诊断之前应先调用本方法：孤儿进程占用端口的场景由收割
+    /// 自愈，剩余的占用才是外部进程冲突。
+    pub fn reap_stale(&self) {
+        self.inner.reap_stale();
+    }
 }
 
 #[cfg(test)]

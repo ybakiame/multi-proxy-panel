@@ -24,6 +24,27 @@ impl ClientState {
         tracing::info!(binary = %self.config.core_binary.display(), "Starting core");
         let core = CoreRunner::create(&self.config.core_binary, &self.config.data_dir)?;
 
+        // ADR-0012 D2+D4（桌面）：先收割上次实例遗留的核心进程（孤儿占用端口
+        // 场景自愈），再探测端口占用；被外部进程占用时报错并指明占用者。
+        // Android 核心由 VPN 服务托管生命周期，不参与收割与端口探测。
+        #[cfg(not(target_os = "android"))]
+        {
+            core.reap_stale();
+            let mut ports: Vec<(u16, &str)> = vec![(self.config.mixed_port, "主入站 mixed")];
+            if self.config.clash_api_enabled {
+                ports.push((self.config.clash_api_port, "Clash API"));
+            }
+            // MITM 链路激活时核心另绑回流入站（mixed_port + 1，state::mitm 处定义）。
+            #[cfg(feature = "mitm")]
+            if self.mitm.is_some() {
+                ports.push((self.config.mixed_port.saturating_add(1), "MITM 回流入站"));
+            }
+            if let Err(e) = crate::port_guard::ensure_ports_available(&ports) {
+                self.rollback_mitm_started().await;
+                return Err(e);
+            }
+        }
+
         // Before Android startup, write the final config sent to core to disk with credentials redacted: uuid/password/server masked as
         // "***" and written to data_dir/logs/last_start_config.json (pretty JSON). This file is included in log export zip,
         // for troubleshooting to confirm the real config reaching the core. The whole process is best-effort: any

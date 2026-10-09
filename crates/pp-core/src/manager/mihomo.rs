@@ -219,4 +219,8 @@ impl CoreManager for MihomoProcessManager {
     async fn last_error(&self) -> PanelResult<String> {
         Ok(self.last_error.read().await.clone())
     }
+
+    fn reap_stale(&self) {
+        lifecycle::reap_stale(&self.pid_path(), &self.binary);
+    }
 }

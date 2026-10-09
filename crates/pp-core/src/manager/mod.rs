@@ -49,6 +49,12 @@ pub trait CoreManager: Send + Sync {
 
     /// Last recorded error message.
     async fn last_error(&self) -> PanelResult<String>;
+
+    /// Reap a stale core process left by a previous instance (ADR-0012 D2).
+    ///
+    /// 在 start 前的端口诊断之前调用，保证「孤儿进程占用端口」场景优先自愈；
+    /// 非进程型管理器（如 Android 引擎桥）使用默认空实现。
+    fn reap_stale(&self) {}
 }
 
 /// Factory for creating CoreManager instances.

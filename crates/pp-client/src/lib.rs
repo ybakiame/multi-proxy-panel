@@ -20,6 +20,7 @@ pub mod local_override;
 #[cfg(feature = "mitm")]
 pub mod mitm;
 pub mod node_convert;
+pub mod port_guard;
 pub mod privilege;
 pub mod profile;
 pub mod proxies;
