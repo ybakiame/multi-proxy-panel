@@ -825,6 +825,12 @@ sudo systemctl status proxy-panel-hub
 | `release` | `build` 完成后 | 收集 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease） |
 | `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent` |
 
+### Desktop Test Build Workflow (`.github/workflows/desktop-test.yml`)
+
+| 触发条件 | 说明 |
+|----------|------|
+| 仅手动触发（`workflow_dispatch`） | 按输入的架构（x86_64 / aarch64 / both）构建客户端 Windows NSIS 安装包并上传 artifact（保留 7 天）；可选注入 updater 签名密钥（默认不签名）；不创建 Release |
+
 ### 产物命名
 
 | 产物 | 文件名 |

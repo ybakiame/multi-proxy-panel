@@ -286,6 +286,13 @@ paths-filter 按变更路径分片（ADR-0009 D2），各门禁 job 仅在相关
 4. **`release`** — 汇总 tar.gz 与 Windows 安装包、稳定版 tag 下生成 updater 清单 `latest.json`、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
 5. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
 
+### Desktop Test Build (`.github/workflows/desktop-test.yml`)
+
+仅手动触发（Actions 页选择该工作流 → Run workflow）的桌面端测试构建：与
+Release 的 `desktop-windows` 同参数构建 Windows NSIS 安装包，但只上传 artifact
+（保留 7 天），不创建 Release。触发时可选目标架构（x86_64 / aarch64 / both）
+与是否注入 updater 签名密钥（默认不签名，避免与正式发布更新包混淆）。
+
 ### Windows 桌面端构建
 
 客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS，x86_64 / aarch64 双架构）。
