@@ -9,6 +9,40 @@ pub mod state;
 
 pub use state::default_data_dir;
 
+/// 退出清理（ADR-0012 D3）：`RunEvent::ExitRequested` 时 best-effort 停止核心
+/// 并恢复系统代理（`ClientState::stop` 的完整逆序关闭）。
+///
+/// 仅覆盖正常退出路径；进程被杀（冻结后结束任务、崩溃）时收不到本事件，由
+/// pp-core 的 OS 级父子绑定与 PID 收割兜底。整体 5s 超时保护，任何失败仅
+/// 告警，绝不阻塞退出。
+pub fn cleanup_on_exit(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let state = app.state::<pp_client_tauri::state::AppState>();
+    let client = state.client.clone();
+    // 退出回调运行在事件循环线程（非 tokio worker），需临时运行时驱动异步清理。
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build();
+    let Ok(runtime) = runtime else {
+        eprintln!("[pp-client-app] 退出清理：临时运行时创建失败，跳过");
+        return;
+    };
+    runtime.block_on(async move {
+        let cleanup = async {
+            let mut lock = client.lock().await;
+            if let Some(client) = lock.as_mut() {
+                client.stop().await;
+            }
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(5), cleanup)
+            .await
+            .is_err()
+        {
+            tracing::warn!("退出清理超时（5s），照常退出");
+        }
+    });
+}
+
 /// WSL 下 WebKitGTK 兼容与 GPU 处理。
 ///
 /// WSL2 中 Tauri v2 在 Linux 使用的 WebKitGTK 存在导致页面全黑的上游已知问题

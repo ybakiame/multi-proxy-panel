@@ -4169,6 +4169,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "hex",
+ "libc",
  "rand 0.9.5",
  "sea-orm",
  "serde",
@@ -4180,6 +4181,7 @@ dependencies = [
  "tokio",
  "tonic",
  "uuid",
+ "windows-sys 0.61.2",
  "x25519-dalek",
 ]
 

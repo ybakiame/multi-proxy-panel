@@ -193,7 +193,19 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(pp_client_tauri::core_bridge::vpn_plugin());
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // ADR-0012 D3：退出清理（桌面）。正常退出路径（关窗/退出菜单）时
+    // best-effort 停止核心并恢复系统代理；冻结被杀等异常路径收不到退出事件，
+    // 由 pp-core 的 OS 级父子绑定与 PID 收割兜底，本层不为此负责。
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            desktop::cleanup_on_exit(app_handle);
+        }
+    });
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    app.run(|_, _| {});
 }
