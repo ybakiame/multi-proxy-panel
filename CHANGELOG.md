@@ -40,6 +40,17 @@
   CA 说明文案（移除与本页无关的 Android / iOS 条目、更正证书来源为客户端本地自签）。
 - 补充 `LICENSE` 文件（GNU AGPL-3.0 完整文本，对应 `Cargo.toml` / `package.json` 声明的
   `AGPL-3.0-or-later`）；此前 README 的许可证链接指向不存在的文件。
+- **客户端 MITM / 脚本生态兼容**：Snippet 导入与远程订阅解析补齐三方生态语法——
+  QX `rewrite_local` 全 action（reject 五变体 / 302 / 307 / echo-response / script 六形态 /
+  双正则 body 改写，含混入 Loon / Surge 风格行按行型分派）、Loon `[Rewrite]` section 与
+  逗号粘连参数 / URL 编码 argument / max-size、Surge 尾部 mode token / 阶段前缀 /
+  `[Body Rewrite]`；QX 顶层裸 `hostname = ...` 行正确汇入 MITM 白名单；hostname 支持
+  中段 / 尾部通配与端口剥离。重写引擎支持 Reject 响应变体、Redirect、头块正则与
+  双正则 Body 改写；脚本钩子 `$done` 语义对齐三方（URL 替换、mock 响应、abort、
+  字符串 body、statusCode 别名），并修复 URL Rewrite 命中后不回写请求行的问题。
+- **客户端 MITM 白名单派生视图**：MITM 页白名单改由已启用远程 Snippet 与本地导入
+  自动派生（域名 + 来源标注），手动填写降级为「手动补充（高级）」并与派生白名单
+  合并生效。
 - **客户端核心生命周期管理**（ADR-0012，纵深防御四层）：OS 级父子绑定（Windows Job
   Object / Linux PR_SET_PDEATHSIG，父进程被杀核心即被 OS 回收）、PID 文件 + 启动收割
   （exe 路径校验防 PID 复用误杀）、退出事件清理（ExitRequested 时停止核心并恢复系统
