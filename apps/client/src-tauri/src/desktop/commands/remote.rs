@@ -350,7 +350,11 @@ pub async fn detect_remote(
         None
     };
 
-    Ok(DetectRemoteView { kind, dialect, meta })
+    Ok(DetectRemoteView {
+        kind,
+        dialect,
+        meta,
+    })
 }
 
 /// Fetch text content for metadata sniffing (15s timeout).

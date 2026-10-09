@@ -29,7 +29,10 @@ use tauri::Manager;
 pub fn run() {
     // 必须在任何 WebKit 相关初始化之前执行（桌面 Linux 专属；target_os = "linux"
     // 不含 Android，无需额外排除）。
-    #[cfg(all(target_os = "linux", not(any(target_os = "android", target_os = "ios"))))]
+    #[cfg(all(
+        target_os = "linux",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
     desktop::configure_wsl_webkit_workaround();
 
     let builder = tauri::Builder::default()
@@ -55,7 +58,10 @@ pub fn run() {
             // 解析，guard 存入 AppState 持有，保证进程生命周期内文件写入线程存活。
             let log_guard = pp_client_tauri::logs::init_logging(&data_dir);
             tracing::info!("ProxyPanel 客户端数据目录：{}", data_dir.display());
-            app.manage(pp_client_tauri::state::AppState::new(data_dir.clone(), log_guard));
+            app.manage(pp_client_tauri::state::AppState::new(
+                data_dir.clone(),
+                log_guard,
+            ));
             // 安装包内置种子核心首启释放（ADR-0008 D5）：仅桌面目标；无种子资源
             // （dev / Linux / macOS 构建）或已装核心时静默跳过，失败仅告警不阻塞启动。
             #[cfg(not(any(target_os = "android", target_os = "ios")))]

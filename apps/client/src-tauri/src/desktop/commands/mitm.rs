@@ -191,9 +191,21 @@ mod tests {
     fn get_mitm_ca_generates_and_reports_path() {
         let dir = TestDir::new();
         let view = get_mitm_ca_impl(dir.path()).unwrap();
-        assert!(view.pem.contains("BEGIN CERTIFICATE"), "pem should contain cert block: {}", view.pem);
-        assert!(view.path.ends_with("ca.crt"), "path should end with ca.crt: {}", view.path);
-        assert!(std::path::Path::new(&view.path).is_file(), "CA cert should be on disk: {}", view.path);
+        assert!(
+            view.pem.contains("BEGIN CERTIFICATE"),
+            "pem should contain cert block: {}",
+            view.pem
+        );
+        assert!(
+            view.path.ends_with("ca.crt"),
+            "path should end with ca.crt: {}",
+            view.path
+        );
+        assert!(
+            std::path::Path::new(&view.path).is_file(),
+            "CA cert should be on disk: {}",
+            view.path
+        );
 
         let again = get_mitm_ca_impl(dir.path()).unwrap();
         assert_eq!(view.pem, again.pem, "idempotent: should not regenerate");
