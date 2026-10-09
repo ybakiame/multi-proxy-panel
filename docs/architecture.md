@@ -330,7 +330,8 @@ flowchart TD
 > **注：MITM 为桌面目标能力（Android 不提供，`apps/client/src-tauri` 的 Android target 依赖表不含本 crate）。**
 
 - **CA 管理**: [`CaStore`] trait 抽象 CA 材料，[`FileCaStore`] 为基于本地目录的默认实现，首次调用用 **rcgen** 生成自签证书（`ca.crt` / `ca.key`，文件权限 **0600**）
-- **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）/ `should_intercept_tls`，白名单外流量整体透传
+- **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）+ `should_intercept_tls`（TLS ClientHello 按 SNI 二次判定），白名单外流量整体盲隧道透传；库层空白名单语义为「全拦截」，但产品层（pp-client）在空白名单时不启动 MITM 链（见下）
+- **CA 系统信任**（`ca_trust.rs`）: 一键将 CA 安装到系统信任库 + 信任状态检测——Windows `certutil -user -addstore Root`（CurrentUser 存储，免 UAC）/ macOS `security add-trusted-cert`（osascript 提权）/ Linux `pkexec install + update-ca-certificates`；检测按平台分别走 certutil 输出匹配、`security verify-cert` 退出码、anchors 目录 SHA-256 指纹比对
 - **`RewriteEngine`**（`rewrite.rs`）: URL / Header / Body / Reject / Mock 五类重写动作
 - **`ScriptHookEngine`**（`script_hook.rs`）: 将 http-request / http-response 类型脚本按 URL 规则挂载到流量路径，成功时回写输出，脚本**超时或抛异常时 no-op（透传原值）**并记录警告
 - **流量抓包**: [`TrafficRecorder`] trait + [`MemoryRecorder`] 环形缓冲实现（`recorder.rs`）
@@ -342,7 +343,7 @@ flowchart TD
 
 - **配置**: `ClientConfig`（`client.json`）定义客户端配置，含 `mixed_port`（默认 17890）与 MITM 配置
 - **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅（Clash 节点经 `node_convert::mihomo_to_singbox` 转换为 sing-box 节点），解析 `subscription-userinfo` 响应头（upload / download / total / expire）
-- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地 sing-box 启动配置，构建 **MITM 链路**——双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则
+- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地 sing-box 启动配置，构建 **MITM 链路**——双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则；**空白名单（含仅排除项）时不启动 MITM 链、不注入路由与 `pp-mitm` outbound**，避免无域名条件的 match-all 规则把全部流量送进 MITM
 - **MITM 编排**（`mitm.rs`）: MITM 上游指向本机核心回流 mixed 入站端口（默认 `mixed_port + 1`），解密后的流量回流核心继续正常路由
 - **核心进程**（`runner.rs`）: `CoreRunner` 封装 pp-core 的 `CoreManagerFactory`，管理 sing-box 子进程
 - **系统代理**（`sysproxy.rs`）: `SystemProxy` trait + 平台实现——macOS `networksetup`、Windows `reg add`（Internet Settings）、Linux `gsettings`（GNOME），命令构造为纯函数便于单测断言，可注入 `MockSystemProxy`

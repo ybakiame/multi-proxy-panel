@@ -35,6 +35,9 @@
   audit）与 Pass 2 结果（adoption-report）；新增 `docs/adr/README.md`、`docs/adapters/README.md`、
   `AGENTS.md` §10 工作流与 §11 完成定义/升级条件、本文件。
 - WSL `:Zone.Identifier` 清理脚本（`scripts/clear-zone-identifier.sh`）。
+- **桌面端 MITM CA 信任管理**：MITM 页新增「一键安装到系统信任库」与信任状态检测
+  （Windows 写入当前用户信任库、免管理员；macOS / Linux 经系统提权框安装），并修正
+  CA 说明文案（移除与本页无关的 Android / iOS 条目、更正证书来源为客户端本地自签）。
 - 补充 `LICENSE` 文件（GNU AGPL-3.0 完整文本，对应 `Cargo.toml` / `package.json` 声明的
   `AGPL-3.0-or-later`）；此前 README 的许可证链接指向不存在的文件。
 
@@ -46,6 +49,11 @@
 
 ### Fixed
 
+- **桌面端规则编辑**：规则集绑定由单选改为多选（后端与移动端本就支持逗号分隔多 tag，
+  桌面表单此前误用单值选择器只能绑定一个规则集）。
+- **客户端 MITM**：未配置任何脚本 / 白名单时不再劫持全部流量——此前空白名单会退化为
+  match-all 路由，所有 CONNECT 被强制解密，CA 未受系统信任时全网 TLS 握手失败；同时
+  为 MITM 引擎补齐 TLS ClientHello SNI 级第二道拦截判定（白名单外盲隧道透传）。
 - 构建命令补充 `LD_LIBRARY_PATH` 环境导出。
 - 移动端 Android 交叉编译与 lint/重启链路问题若干（详见 `git log v0.4.5..HEAD`）。
 - **Windows 客户端**：数据目录在 HOME 环境变量缺失时解析为相对路径，导致配置落入安装
