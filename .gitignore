@@ -41,3 +41,7 @@ id_rsa*
 deploy/sing-box-sub-temp.json
 /tmp/
 /.reference/
+
+# Agent temp files
+.pi/tasks/*
+.pi/plans/*
