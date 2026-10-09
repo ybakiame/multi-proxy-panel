@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/react";
 import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
+import { parseRuleSetTags } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
 
 /**
@@ -16,8 +17,10 @@ const DESKTOP_RULE_ACTIONS = RULE_ACTIONS.filter((opt) => opt.id !== "outbound")
 export interface RuleSetOption {
   /** 写入 `rule.target` 的原始值：自定义规则集 `tag`。 */
   value: string;
-  /** 下拉显示名（自定义规则集 tag）。 */
+  /** 显示名（自定义规则集 tag）。 */
   label: string;
+  /** 附加提示（如「原值保留」标注）。 */
+  hint?: string;
 }
 
 export interface RuleEditModalProps {
@@ -43,6 +46,10 @@ function RuleEditForm({
 }) {
   const [matchType, setMatchType] = useState(initial?.match_type ?? "domain");
   const [target, setTarget] = useState(initial?.target ?? "");
+  /** `rule_set` 匹配的已选 tag（多选）；其余匹配类型走 `target` 文本框。 */
+  const [ruleSetTags, setRuleSetTags] = useState<string[]>(() =>
+    initial?.match_type === "rule_set" ? parseRuleSetTags(initial.target) : [],
+  );
   const [action, setAction] = useState(initial?.action ?? "proxy");
   const [name, setName] = useState(initial?.name ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
@@ -65,19 +72,22 @@ function RuleEditForm({
   );
 
   /**
-   * 规则集选择器候选：编辑已有 `rule_set` 规则时若其原 target 不在候选中
-   * （自定义规则集已删除/尚未添加），追加为「原值保留」项——选择器显示原值且不强清，
-   * 由用户决定改选或保留。
+   * 规则集多选候选：编辑已有 `rule_set` 规则时若其原 tag 不在候选中
+   * （自定义规则集已删除/尚未添加），逐个追加为「原值保留」项——保持勾选态并标注，
+   * 由用户决定取消或保留（保留且规则集不存在时，引用该 tag 的规则集不会注入）。
    */
   const effectiveRuleSetOptions = useMemo<RuleSetOption[]>(() => {
-    const stale =
-      matchType === "rule_set" &&
-      initial?.match_type === "rule_set" &&
-      target.trim() !== "" &&
-      !ruleSetOptions.some((opt) => opt.value === target);
-    if (!stale) return ruleSetOptions;
-    return [...ruleSetOptions, { value: target, label: target }];
-  }, [matchType, initial, target, ruleSetOptions]);
+    if (matchType !== "rule_set") return ruleSetOptions;
+    const known = new Set(ruleSetOptions.map((opt) => opt.value));
+    const stale = ruleSetTags.filter((tag) => !known.has(tag));
+    if (stale.length === 0) return ruleSetOptions;
+    return [...ruleSetOptions, ...stale.map((tag) => ({ value: tag, label: tag, hint: "当前无此规则集（原值保留）" }))];
+  }, [matchType, ruleSetOptions, ruleSetTags]);
+
+  /** 切换规则集勾选：追加保持点击顺序；取消移除该项。 */
+  const toggleRuleSetTag = useCallback((tag: string) => {
+    setRuleSetTags((tags) => (tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags, tag]));
+  }, []);
 
   const handleSave = useCallback(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -86,7 +96,8 @@ function RuleEditForm({
       name: name.trim(),
       enabled: initial?.enabled ?? true,
       match_type: matchType,
-      target: matchType === "final" ? "" : target.trim(),
+      // rule_set 多选序列化为逗号分隔 target（对齐 Rust parse_rule_set_tags）。
+      target: matchType === "final" ? "" : matchType === "rule_set" ? ruleSetTags.join(",") : target.trim(),
       action,
       no_resolve: noResolve,
       invert,
@@ -95,10 +106,10 @@ function RuleEditForm({
       sort_order: initial?.sort_order ?? 0,
     });
     onClose();
-  }, [initial, matchType, target, action, name, noResolve, invert, note, onSave, onClose]);
+  }, [initial, matchType, target, ruleSetTags, action, name, noResolve, invert, note, onSave, onClose]);
 
   const isFinal = matchType === "final";
-  const canSave = isFinal ? true : target.trim().length > 0;
+  const canSave = isFinal ? true : matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0;
 
   return (
     <>
@@ -133,32 +144,33 @@ function RuleEditForm({
             <Label>{matchType === "rule_set" ? "规则集" : "匹配目标"}</Label>
             {matchType === "rule_set" ? (
               <>
-                <Select
-                  aria-label="规则集"
-                  placeholder="请选择规则集"
-                  value={target}
-                  onChange={(value) => setTarget(String(value ?? ""))}
-                  fullWidth
-                >
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      {effectiveRuleSetOptions.map((opt) => (
-                        <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                          {opt.label}
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
                 {effectiveRuleSetOptions.length === 0 ? (
                   <span className="text-xs text-muted">当前没有可用规则集，请先在「规则集管理」中添加</span>
                 ) : (
-                  <span className="text-xs text-muted">选择规则集 tag（规则集随引用它的规则一同注入）</span>
+                  <div className="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-lg border border-border/40 p-3">
+                    {effectiveRuleSetOptions.map((opt) => (
+                      <Checkbox
+                        key={opt.value}
+                        isSelected={ruleSetTags.includes(opt.value)}
+                        onChange={() => toggleRuleSetTag(opt.value)}
+                      >
+                        <Checkbox.Content>
+                          <Checkbox.Control>
+                            <Checkbox.Indicator />
+                          </Checkbox.Control>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate">{opt.label}</span>
+                            {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
+                          </span>
+                        </Checkbox.Content>
+                      </Checkbox>
+                    ))}
+                  </div>
+                )}
+                {effectiveRuleSetOptions.length === 0 ? null : ruleSetTags.length === 0 ? (
+                  <span className="text-xs text-amber-500">请至少选择一个规则集</span>
+                ) : (
+                  <span className="text-xs text-muted">可多选；规则集随引用它的规则一同注入</span>
                 )}
               </>
             ) : (
