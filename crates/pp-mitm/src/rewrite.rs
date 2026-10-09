@@ -2,6 +2,10 @@
 
 use regex::Regex;
 
+/// 1×1 透明 GIF（QX `reject-img` 语义）。
+const REJECT_IMG_BODY: &[u8] = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\
+\x21\xf9\x04\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x4c\x01\x00\x3b";
+
 /// 规则作用的代理阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -14,25 +18,89 @@ pub enum Phase {
 pub enum RewriteKind {
     /// 重写请求 URL，支持 `$1` 等捕获组引用。
     UrlRewrite { target: String },
-    /// 改写（`value: Some`）或删除（`value: None`）指定请求头。
+    /// 返回 302/307 重定向（`target` 支持捕获组引用，写入 `Location` 头）。
+    Redirect { status: u16, target: String },
+    /// 改写（`value: Some`）或删除（`value: None`）指定请求头（头名大小写不敏感）。
     HeaderRewrite {
         phase: Phase,
         name: String,
         value: Option<String>,
     },
-    /// 在 body 中做正则替换。
-    BodyRewrite { phase: Phase, replacement: String },
-    /// 直接拒绝该请求。
-    Reject,
-    /// 直接返回合成响应。
+    /// 对指定头的**值**做正则替换（Surge `header-replace-regex`）。
+    HeaderValueRewrite {
+        phase: Phase,
+        name: String,
+        value_pattern: Regex,
+        replacement: String,
+    },
+    /// 对序列化头块（`Name: value\r\n...`）整体做正则替换（QX
+    /// `request-header` / `response-header` 双正则语义）。
+    HeaderBlockRewrite {
+        phase: Phase,
+        block_pattern: Regex,
+        replacement: String,
+    },
+    /// 在 body 中做正则替换：URL 由规则 `pattern` 门控，body 正则取
+    /// `body_pattern`，为 `None` 时复用 URL pattern（兼容旧行为）。
+    BodyRewrite {
+        phase: Phase,
+        body_pattern: Option<Regex>,
+        replacement: String,
+    },
+    /// 直接拒绝该请求：状态码 + 可选 body / Content-Type（覆盖 QX/Loon 的
+    /// `reject` / `reject-200` / `reject-img` / `reject-dict` / `reject-array`）。
+    Reject {
+        status: u16,
+        body: Vec<u8>,
+        content_type: Option<String>,
+    },
+    /// 直接返回合成响应（Surge `[Map Local]` / QX `echo-response`）。
     Mock {
         status: u16,
-        body: String,
+        body: Vec<u8>,
         headers: Vec<(String, String)>,
     },
 }
 
-/// 单条重写规则：正则模式 + 动作。
+impl RewriteKind {
+    /// QX/Loon `reject`：404 + 空 body。
+    pub fn reject() -> Self {
+        Self::Reject {
+            status: 404,
+            body: Vec::new(),
+            content_type: None,
+        }
+    }
+
+    /// QX/Loon `reject-200`：200 + 空 body。
+    pub fn reject_200() -> Self {
+        Self::Reject {
+            status: 200,
+            body: Vec::new(),
+            content_type: None,
+        }
+    }
+
+    /// QX `reject-img`：200 + 1×1 GIF。
+    pub fn reject_img() -> Self {
+        Self::Reject {
+            status: 200,
+            body: REJECT_IMG_BODY.to_vec(),
+            content_type: Some("image/gif".to_string()),
+        }
+    }
+
+    /// QX/Loon `reject-dict`（`{}`）/ `reject-array`（`[]`）。
+    pub fn reject_json(body: &'static str) -> Self {
+        Self::Reject {
+            status: 200,
+            body: body.as_bytes().to_vec(),
+            content_type: Some("application/json".to_string()),
+        }
+    }
+}
+
+/// 单条重写规则：URL 正则模式 + 动作。
 #[derive(Debug, Clone)]
 pub struct RewriteRule {
     pub kind: RewriteKind,
@@ -43,11 +111,16 @@ pub struct RewriteRule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RewriteAction {
     Continue,
-    Reject,
+    /// 终止本次请求并以合成响应作答（`Reject` 各变体与 `Mock` 统一走此动作）。
     Mock {
         status: u16,
-        body: String,
+        body: Vec<u8>,
         headers: Vec<(String, String)>,
+    },
+    /// 终止本次请求并返回重定向响应。
+    Redirect {
+        status: u16,
+        location: String,
     },
 }
 
@@ -59,7 +132,7 @@ pub struct RewriteEngine {
 
 impl RewriteEngine {
     /// 应用请求阶段规则：URL 重写、phase=Request 的 Header/Body 规则；
-    /// `Reject` / `Mock` 命中即短路返回。
+    /// `Reject` / `Mock` / `Redirect` 命中即短路返回。
     pub fn apply_request(
         &self,
         url: &mut String,
@@ -67,41 +140,8 @@ impl RewriteEngine {
         body: &mut Option<String>,
     ) -> RewriteAction {
         for rule in &self.rules {
-            match &rule.kind {
-                RewriteKind::UrlRewrite { target } => {
-                    *url = rule.pattern.replace(url, target.as_str()).into_owned();
-                }
-                RewriteKind::HeaderRewrite {
-                    phase: Phase::Request,
-                    name,
-                    value,
-                } if rule.pattern.is_match(url) => {
-                    apply_header(headers, name, value);
-                }
-                RewriteKind::BodyRewrite {
-                    phase: Phase::Request,
-                    replacement,
-                } if rule.pattern.is_match(url) => {
-                    if let Some(b) = body {
-                        *b = rule.pattern.replace(b, replacement.as_str()).into_owned();
-                    }
-                }
-                RewriteKind::Reject if rule.pattern.is_match(url) => {
-                    return RewriteAction::Reject;
-                }
-                RewriteKind::Mock {
-                    status,
-                    body: mock_body,
-                    headers,
-                } if rule.pattern.is_match(url) => {
-                    return RewriteAction::Mock {
-                        status: *status,
-                        body: mock_body.clone(),
-                        headers: headers.clone(),
-                    };
-                }
-                // 响应阶段规则留待 apply_response 处理。
-                _ => {}
+            if let Some(action) = self.apply_one(rule, Phase::Request, url, headers, body) {
+                return action;
             }
         }
         RewriteAction::Continue
@@ -115,247 +155,138 @@ impl RewriteEngine {
         headers: &mut Vec<(String, String)>,
         body: &mut Option<String>,
     ) -> RewriteAction {
+        let mut url = url.to_string();
         for rule in &self.rules {
-            match &rule.kind {
-                RewriteKind::HeaderRewrite {
-                    phase: Phase::Response,
-                    name,
-                    value,
-                } if rule.pattern.is_match(url) => {
-                    apply_header(headers, name, value);
-                }
-                RewriteKind::BodyRewrite {
-                    phase: Phase::Response,
-                    replacement,
-                } if rule.pattern.is_match(url) => {
-                    if let Some(b) = body {
-                        *b = rule.pattern.replace(b, replacement.as_str()).into_owned();
-                    }
-                }
-                RewriteKind::Reject if rule.pattern.is_match(url) => {
-                    return RewriteAction::Reject;
-                }
-                RewriteKind::Mock {
-                    status,
-                    body: mock_body,
-                    headers,
-                } if rule.pattern.is_match(url) => {
-                    return RewriteAction::Mock {
-                        status: *status,
-                        body: mock_body.clone(),
-                        headers: headers.clone(),
-                    };
-                }
-                // 请求阶段规则与 URL 重写在 apply_request 中处理。
-                _ => {}
+            if let Some(action) = self.apply_one(rule, Phase::Response, &mut url, headers, body) {
+                return action;
             }
         }
         RewriteAction::Continue
     }
+
+    /// 应用单条规则；命中短路类动作时返回 `Some(action)`。
+    fn apply_one(
+        &self,
+        rule: &RewriteRule,
+        phase: Phase,
+        url: &mut String,
+        headers: &mut Vec<(String, String)>,
+        body: &mut Option<String>,
+    ) -> Option<RewriteAction> {
+        match &rule.kind {
+            RewriteKind::UrlRewrite { target } if phase == Phase::Request => {
+                *url = rule.pattern.replace(url, target.as_str()).into_owned();
+            }
+            RewriteKind::Redirect { status, target }
+                if phase == Phase::Request && rule.pattern.is_match(url) =>
+            {
+                return Some(RewriteAction::Redirect {
+                    status: *status,
+                    location: rule.pattern.replace(url, target.as_str()).into_owned(),
+                });
+            }
+            RewriteKind::HeaderRewrite {
+                phase: p,
+                name,
+                value,
+            } if *p == phase && rule.pattern.is_match(url) => {
+                apply_header(headers, name, value);
+            }
+            RewriteKind::HeaderValueRewrite {
+                phase: p,
+                name,
+                value_pattern,
+                replacement,
+            } if *p == phase && rule.pattern.is_match(url) => {
+                for (n, v) in headers.iter_mut() {
+                    if n.eq_ignore_ascii_case(name) && value_pattern.is_match(v) {
+                        *v = value_pattern.replace(v, replacement.as_str()).into_owned();
+                    }
+                }
+            }
+            RewriteKind::HeaderBlockRewrite {
+                phase: p,
+                block_pattern,
+                replacement,
+            } if *p == phase && rule.pattern.is_match(url) => {
+                let block = headers_to_block(headers);
+                if block_pattern.is_match(&block) {
+                    *headers =
+                        block_to_headers(&block_pattern.replace(&block, replacement.as_str()));
+                }
+            }
+            RewriteKind::BodyRewrite {
+                phase: p,
+                body_pattern,
+                replacement,
+            } if *p == phase && rule.pattern.is_match(url) => {
+                if let Some(b) = body {
+                    let pat = body_pattern.as_ref().unwrap_or(&rule.pattern);
+                    *b = pat.replace(b, replacement.as_str()).into_owned();
+                }
+            }
+            RewriteKind::Reject {
+                status,
+                body: reject_body,
+                content_type,
+            } if rule.pattern.is_match(url) => {
+                let headers = content_type
+                    .as_ref()
+                    .map(|ct| vec![("Content-Type".to_string(), ct.clone())])
+                    .unwrap_or_default();
+                return Some(RewriteAction::Mock {
+                    status: *status,
+                    body: reject_body.clone(),
+                    headers,
+                });
+            }
+            RewriteKind::Mock {
+                status,
+                body: mock_body,
+                headers,
+            } if rule.pattern.is_match(url) => {
+                return Some(RewriteAction::Mock {
+                    status: *status,
+                    body: mock_body.clone(),
+                    headers: headers.clone(),
+                });
+            }
+            _ => {}
+        }
+        None
+    }
 }
 
-/// 改写指定请求头：先移除同名项，`value` 存在时追加新值，否则视为删除。
+/// 改写指定请求头：先移除同名项（大小写不敏感），`value` 存在时追加新值，
+/// 否则视为删除。
 pub(crate) fn apply_header(
     headers: &mut Vec<(String, String)>,
     name: &str,
     value: &Option<String>,
 ) {
-    headers.retain(|(n, _)| n.as_str() != name);
+    headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
     if let Some(value) = value {
         headers.push((name.to_string(), value.clone()));
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// 头列表 → `Name: value\r\n...` 序列化块（QX header rewrite 的操作对象）。
+fn headers_to_block(headers: &[(String, String)]) -> String {
+    headers
+        .iter()
+        .map(|(n, v)| format!("{n}: {v}"))
+        .collect::<Vec<_>>()
+        .join("\r\n")
+}
 
-    fn engine(rules: Vec<RewriteRule>) -> RewriteEngine {
-        RewriteEngine { rules }
-    }
-
-    #[test]
-    fn url_rewrite_supports_capture_groups() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::UrlRewrite {
-                target: "https://cdn.example.com/v1/$1".to_string(),
-            },
-            pattern: Regex::new(r"^http://static\.example\.com/(.*)$").unwrap(),
-        }]);
-        let mut url = "http://static.example.com/foo/bar".to_string();
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, RewriteAction::Continue);
-        assert_eq!(url, "https://cdn.example.com/v1/foo/bar");
-    }
-
-    #[test]
-    fn request_header_rewrite_sets_and_deletes() {
-        let e = engine(vec![
-            RewriteRule {
-                kind: RewriteKind::HeaderRewrite {
-                    phase: Phase::Request,
-                    name: "X-Proxy".to_string(),
-                    value: Some("on".to_string()),
-                },
-                pattern: Regex::new(".*").unwrap(),
-            },
-            RewriteRule {
-                kind: RewriteKind::HeaderRewrite {
-                    phase: Phase::Request,
-                    name: "X-Remove".to_string(),
-                    value: None,
-                },
-                pattern: Regex::new(".*").unwrap(),
-            },
-        ]);
-        let mut url = "http://example.com/".to_string();
-        let mut headers = vec![
-            ("X-Proxy".to_string(), "off".to_string()),
-            ("X-Remove".to_string(), "yes".to_string()),
-            ("X-Keep".to_string(), "me".to_string()),
-        ];
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, RewriteAction::Continue);
-        assert_eq!(
-            headers,
-            vec![
-                ("X-Keep".to_string(), "me".to_string()),
-                ("X-Proxy".to_string(), "on".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn response_body_rewrite_matches_request_url() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::BodyRewrite {
-                phase: Phase::Response,
-                replacement: "REDACTED".to_string(),
-            },
-            pattern: Regex::new("secret").unwrap(),
-        }]);
-        let mut status = 200u16;
-        let mut headers = Vec::new();
-        let mut body = Some("hello secret world".to_string());
-        let action = e.apply_response(
-            "http://example.com/page?secret=1",
-            &mut status,
-            &mut headers,
-            &mut body,
-        );
-        assert_eq!(action, RewriteAction::Continue);
-        assert_eq!(body.as_deref(), Some("hello REDACTED world"));
-
-        // 请求 URL 不命中 pattern 时 body 保持不变。
-        let mut status = 200u16;
-        let mut headers = Vec::new();
-        let mut body = Some("hello secret world".to_string());
-        e.apply_response(
-            "http://example.com/other",
-            &mut status,
-            &mut headers,
-            &mut body,
-        );
-        assert_eq!(body.as_deref(), Some("hello secret world"));
-    }
-
-    #[test]
-    fn response_phase_rules_are_skipped_in_request_pass() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::HeaderRewrite {
-                phase: Phase::Response,
-                name: "X-Server".to_string(),
-                value: Some("mitm".to_string()),
-            },
-            pattern: Regex::new(".*").unwrap(),
-        }]);
-        let mut url = "http://example.com/".to_string();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, RewriteAction::Continue);
-        assert!(headers.is_empty());
-    }
-
-    #[test]
-    fn reject_short_circuits() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::Reject,
-            pattern: Regex::new("blocked").unwrap(),
-        }]);
-        let mut url = "http://example.com/blocked/path".to_string();
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, RewriteAction::Reject);
-
-        // 未命中 pattern 时正常继续。
-        let mut url = "http://example.com/ok/path".to_string();
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, RewriteAction::Continue);
-    }
-
-    #[test]
-    fn mock_short_circuits_with_synthetic_response() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::Mock {
-                status: 403,
-                body: "forbidden".to_string(),
-                headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
-            },
-            pattern: Regex::new(".*").unwrap(),
-        }]);
-        let mut url = "http://example.com/anything".to_string();
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(
-            action,
-            RewriteAction::Mock {
-                status: 403,
-                body: "forbidden".to_string(),
-                headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
-            }
-        );
-    }
-
-    #[test]
-    fn mock_carries_headers_through_request_and_response() {
-        let e = engine(vec![RewriteRule {
-            kind: RewriteKind::Mock {
-                status: 200,
-                body: "{}".to_string(),
-                headers: vec![
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    ("X-Mock".to_string(), "yes".to_string()),
-                ],
-            },
-            pattern: Regex::new(".*").unwrap(),
-        }]);
-        let expected = RewriteAction::Mock {
-            status: 200,
-            body: "{}".to_string(),
-            headers: vec![
-                ("Content-Type".to_string(), "application/json".to_string()),
-                ("X-Mock".to_string(), "yes".to_string()),
-            ],
-        };
-
-        let mut url = "http://example.com/".to_string();
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_request(&mut url, &mut headers, &mut body);
-        assert_eq!(action, expected);
-
-        let mut status = 200u16;
-        let mut headers = Vec::new();
-        let mut body: Option<String> = None;
-        let action = e.apply_response("http://example.com/", &mut status, &mut headers, &mut body);
-        assert_eq!(action, expected);
-    }
+/// 序列化头块 → 头列表；无法解析的行丢弃。
+fn block_to_headers(block: &str) -> Vec<(String, String)> {
+    block
+        .split("\r\n")
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            let (name, value) = (name.trim(), value.trim());
+            (!name.is_empty()).then(|| (name.to_string(), value.to_string()))
+        })
+        .collect()
 }

@@ -444,7 +444,7 @@ pub(super) fn parse_surge_map_local(cfg: &mut super::ImportedConfig, line: &str)
         pattern,
         kind: RewriteKind::Mock {
             status,
-            body,
+            body: body.into_bytes(),
             headers,
         },
     });

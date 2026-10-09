@@ -10,8 +10,12 @@ pub mod ca_trust;
 pub mod config;
 mod intercept;
 pub mod proxy;
+#[cfg(test)]
+mod proxy_tests;
 pub mod recorder;
 pub mod rewrite;
+#[cfg(test)]
+mod rewrite_tests;
 pub mod script_hook;
 pub mod upstream;
 

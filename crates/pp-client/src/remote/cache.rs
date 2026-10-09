@@ -98,15 +98,24 @@ impl TryFrom<CachedRewriteRule> for RewriteRule {
     fn try_from(cached: CachedRewriteRule) -> Result<Self, Self::Error> {
         Ok(RewriteRule {
             pattern: regex::Regex::new(&cached.pattern)?,
-            kind: cached.kind.into(),
+            kind: cached.kind.try_into()?,
         })
     }
 }
 
 /// Cache serialization of rewrite rule kind.
+///
+/// 兼容说明：`Reject` 保留 unit 形式（映射为 404 空 body）以读取旧缓存；
+/// 富语义的拒绝规则用 [`CachedRewriteKind::RejectResponse`]；`BodyRewrite` 的
+/// `body_pattern` 以 `#[serde(default)]` 追加，旧缓存缺字段时回退 `None`
+/// （复用 URL pattern 的旧行为）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CachedRewriteKind {
     UrlRewrite {
+        target: String,
+    },
+    Redirect {
+        status: u16,
         target: String,
     },
     HeaderRewrite {
@@ -114,8 +123,21 @@ pub enum CachedRewriteKind {
         name: String,
         value: Option<String>,
     },
+    HeaderValueRewrite {
+        phase: CachedPhase,
+        name: String,
+        value_pattern: String,
+        replacement: String,
+    },
+    HeaderBlockRewrite {
+        phase: CachedPhase,
+        block_pattern: String,
+        replacement: String,
+    },
     BodyRewrite {
         phase: CachedPhase,
+        #[serde(default)]
+        body_pattern: Option<String>,
         replacement: String,
     },
     Mock {
@@ -124,6 +146,11 @@ pub enum CachedRewriteKind {
         headers: Vec<(String, String)>,
     },
     Reject,
+    RejectResponse {
+        status: u16,
+        body: Vec<u8>,
+        content_type: Option<String>,
+    },
 }
 
 #[cfg(feature = "mitm")]
@@ -133,13 +160,42 @@ impl From<&RewriteKind> for CachedRewriteKind {
             RewriteKind::UrlRewrite { target } => CachedRewriteKind::UrlRewrite {
                 target: target.clone(),
             },
+            RewriteKind::Redirect { status, target } => CachedRewriteKind::Redirect {
+                status: *status,
+                target: target.clone(),
+            },
             RewriteKind::HeaderRewrite { phase, name, value } => CachedRewriteKind::HeaderRewrite {
                 phase: CachedPhase::from(*phase),
                 name: name.clone(),
                 value: value.clone(),
             },
-            RewriteKind::BodyRewrite { phase, replacement } => CachedRewriteKind::BodyRewrite {
+            RewriteKind::HeaderValueRewrite {
+                phase,
+                name,
+                value_pattern,
+                replacement,
+            } => CachedRewriteKind::HeaderValueRewrite {
                 phase: CachedPhase::from(*phase),
+                name: name.clone(),
+                value_pattern: value_pattern.as_str().to_string(),
+                replacement: replacement.clone(),
+            },
+            RewriteKind::HeaderBlockRewrite {
+                phase,
+                block_pattern,
+                replacement,
+            } => CachedRewriteKind::HeaderBlockRewrite {
+                phase: CachedPhase::from(*phase),
+                block_pattern: block_pattern.as_str().to_string(),
+                replacement: replacement.clone(),
+            },
+            RewriteKind::BodyRewrite {
+                phase,
+                body_pattern,
+                replacement,
+            } => CachedRewriteKind::BodyRewrite {
+                phase: CachedPhase::from(*phase),
+                body_pattern: body_pattern.as_ref().map(|p| p.as_str().to_string()),
                 replacement: replacement.clone(),
             },
             RewriteKind::Mock {
@@ -148,26 +204,69 @@ impl From<&RewriteKind> for CachedRewriteKind {
                 headers,
             } => CachedRewriteKind::Mock {
                 status: *status,
-                body: body.clone(),
+                body: String::from_utf8_lossy(body).into_owned(),
                 headers: headers.clone(),
             },
-            RewriteKind::Reject => CachedRewriteKind::Reject,
+            RewriteKind::Reject {
+                status: 404,
+                body,
+                content_type: None,
+            } if body.is_empty() => CachedRewriteKind::Reject,
+            RewriteKind::Reject {
+                status,
+                body,
+                content_type,
+            } => CachedRewriteKind::RejectResponse {
+                status: *status,
+                body: body.clone(),
+                content_type: content_type.clone(),
+            },
         }
     }
 }
 
 #[cfg(feature = "mitm")]
-impl From<CachedRewriteKind> for RewriteKind {
-    fn from(kind: CachedRewriteKind) -> Self {
-        match kind {
+impl TryFrom<CachedRewriteKind> for RewriteKind {
+    type Error = regex::Error;
+
+    fn try_from(kind: CachedRewriteKind) -> Result<Self, Self::Error> {
+        Ok(match kind {
             CachedRewriteKind::UrlRewrite { target } => RewriteKind::UrlRewrite { target },
+            CachedRewriteKind::Redirect { status, target } => {
+                RewriteKind::Redirect { status, target }
+            }
             CachedRewriteKind::HeaderRewrite { phase, name, value } => RewriteKind::HeaderRewrite {
                 phase: phase.into(),
                 name,
                 value,
             },
-            CachedRewriteKind::BodyRewrite { phase, replacement } => RewriteKind::BodyRewrite {
+            CachedRewriteKind::HeaderValueRewrite {
+                phase,
+                name,
+                value_pattern,
+                replacement,
+            } => RewriteKind::HeaderValueRewrite {
                 phase: phase.into(),
+                name,
+                value_pattern: regex::Regex::new(&value_pattern)?,
+                replacement,
+            },
+            CachedRewriteKind::HeaderBlockRewrite {
+                phase,
+                block_pattern,
+                replacement,
+            } => RewriteKind::HeaderBlockRewrite {
+                phase: phase.into(),
+                block_pattern: regex::Regex::new(&block_pattern)?,
+                replacement,
+            },
+            CachedRewriteKind::BodyRewrite {
+                phase,
+                body_pattern,
+                replacement,
+            } => RewriteKind::BodyRewrite {
+                phase: phase.into(),
+                body_pattern: body_pattern.map(|p| regex::Regex::new(&p)).transpose()?,
                 replacement,
             },
             CachedRewriteKind::Mock {
@@ -176,11 +275,20 @@ impl From<CachedRewriteKind> for RewriteKind {
                 headers,
             } => RewriteKind::Mock {
                 status,
-                body,
+                body: body.into_bytes(),
                 headers,
             },
-            CachedRewriteKind::Reject => RewriteKind::Reject,
-        }
+            CachedRewriteKind::Reject => RewriteKind::reject(),
+            CachedRewriteKind::RejectResponse {
+                status,
+                body,
+                content_type,
+            } => RewriteKind::Reject {
+                status,
+                body,
+                content_type,
+            },
+        })
     }
 }
 

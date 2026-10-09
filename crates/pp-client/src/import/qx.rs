@@ -99,7 +99,7 @@ pub(super) fn parse_qx_rewrite(
         "reject" | "reject-200" | "reject-dict" => {
             cfg.rewrites.push(pp_mitm::RewriteRule {
                 pattern,
-                kind: RewriteKind::Reject,
+                kind: RewriteKind::reject(),
             });
         }
         "url-response-body" | "url-request-header" => {
@@ -128,6 +128,7 @@ pub(super) fn parse_qx_rewrite(
                 pattern,
                 kind: RewriteKind::BodyRewrite {
                     phase,
+                    body_pattern: None,
                     replacement: (*replacement).to_string(),
                 },
             });

@@ -11,7 +11,7 @@ fn merge_imported_keeps_rewrites_hostnames_and_skips_source_empty_scripts() {
     let imported = ImportedConfig {
         rewrites: vec![pp_mitm::RewriteRule {
             pattern: Regex::new(r"^https?://example\.com/").unwrap(),
-            kind: RewriteKind::Reject,
+            kind: RewriteKind::reject(),
         }],
         scripts: vec![pp_mitm::ScriptRule {
             name: "hook-0".into(),
@@ -73,7 +73,7 @@ fn merge_imported_appends_to_existing_import_cache() {
     let first = ImportedConfig {
         rewrites: vec![pp_mitm::RewriteRule {
             pattern: Regex::new(r"^https?://a\.com/").unwrap(),
-            kind: RewriteKind::Reject,
+            kind: RewriteKind::reject(),
         }],
         scripts: vec![],
         script_urls: vec![],

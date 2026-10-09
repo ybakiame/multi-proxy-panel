@@ -34,9 +34,9 @@ fn qx_rewrite_local_all_rule_types() {
         cfg.rewrites[2].kind,
         RewriteKind::UrlRewrite { .. }
     ));
-    assert!(matches!(cfg.rewrites[3].kind, RewriteKind::Reject));
-    assert!(matches!(cfg.rewrites[4].kind, RewriteKind::Reject));
-    assert!(matches!(cfg.rewrites[5].kind, RewriteKind::Reject));
+    assert!(matches!(cfg.rewrites[3].kind, RewriteKind::Reject { .. }));
+    assert!(matches!(cfg.rewrites[4].kind, RewriteKind::Reject { .. }));
+    assert!(matches!(cfg.rewrites[5].kind, RewriteKind::Reject { .. }));
     assert!(matches!(
         cfg.rewrites[6].kind,
         RewriteKind::BodyRewrite {
@@ -249,7 +249,7 @@ hostname = %APPEND% *.example.com, -exclude.example.com
             headers,
         } => {
             assert_eq!(*status, 200);
-            assert_eq!(body, "<h1>offline</h1>");
+            assert_eq!(body, b"<h1>offline</h1>");
             // data-type=text → Content-Type: text/plain (appended when no explicit header=)
             assert_eq!(
                 headers,
@@ -293,7 +293,7 @@ fn map_local_iqiyi_sample_with_explicit_header() {
             headers,
         } => {
             assert_eq!(*status, 200);
-            assert_eq!(body, "{}");
+            assert_eq!(body, b"{}");
             assert_eq!(
                 headers,
                 &vec![("Content-Type".to_string(), "application/json".to_string())]
@@ -329,7 +329,7 @@ fn map_local_invalid_header_and_unknown_data_type_warn() {
             headers,
         } => {
             assert_eq!(*status, 418);
-            assert_eq!(body, "x");
+            assert_eq!(body, b"x");
             // explicit Content-Type takes priority: data-type=text text/plain not appended;
             // "broken" without colon is dropped.
             assert_eq!(
@@ -349,7 +349,7 @@ fn map_local_invalid_header_and_unknown_data_type_warn() {
             headers,
         } => {
             assert_eq!(*status, 200);
-            assert_eq!(body, "y");
+            assert_eq!(body, b"y");
             assert!(
                 headers.is_empty(),
                 "unknown data-type should not append Content-Type"
