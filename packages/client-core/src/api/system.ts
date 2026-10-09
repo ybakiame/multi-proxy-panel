@@ -94,8 +94,8 @@ export function coreVersion(): Promise<string> {
 /**
  * Notify the Kotlin VpnPlugin that notification preferences have changed (Android only).
  */
-export function notifyPrefsChanged(showTraffic: boolean, showSelection: boolean): Promise<void> {
-  return invoke<void>("notify_prefs_changed", { showTraffic, showSelection });
+export function notifyPrefsChanged(showSelection: boolean): Promise<void> {
+  return invoke<void>("notify_prefs_changed", { showSelection });
 }
 
 /**

@@ -6,8 +6,14 @@ pub enum PanelError {
     #[error("database error: {0}")]
     Database(#[from] sea_orm::DbErr),
 
+    /// gRPC 错误。tonic::Status 为 176 字节（实测），是 PanelError 唯一的
+    /// 大 variant；装箱使 PanelError 降至 64 字节，满足 clippy::result_large_err
+    /// （128 字节阈值），各 crate 不再需要 lint 豁免。
+    ///
+    /// 手工 `From` 实现保持 `?` 转换 ergonomics（`#[from]` 只能生成
+    /// `From<Box<Status>>`，会破坏所有 `Result<_, Status>` 的 `?` 用法）。
     #[error("gRPC error: {0}")]
-    Grpc(#[from] tonic::Status),
+    Grpc(Box<tonic::Status>),
 
     #[error("configuration error: {0}")]
     Config(String),
@@ -56,3 +62,9 @@ pub enum PanelError {
 }
 
 pub type PanelResult<T> = Result<T, PanelError>;
+
+impl From<tonic::Status> for PanelError {
+    fn from(status: tonic::Status) -> Self {
+        Self::Grpc(Box::new(status))
+    }
+}

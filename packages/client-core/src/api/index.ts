@@ -22,8 +22,19 @@ export function toErrorMessage(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 export type { MitmScriptDialect, ClientConfig, ClientStatus, SaveConfigView } from "./types";
-export { getConfig, saveConfig, startProxy, stopProxy, proxyStatus, setRuleMode, listTraffic, getMitmCa } from "./core";
-export type { TrafficRecord, MitmCaView } from "./core";
+export {
+  getConfig,
+  saveConfig,
+  startProxy,
+  stopProxy,
+  proxyStatus,
+  setRuleMode,
+  listTraffic,
+  getMitmCa,
+  getMitmCaTrustStatus,
+  installMitmCa,
+} from "./core";
+export type { TrafficRecord, MitmCaView, MitmCaTrustStatus, MitmCaTrustView } from "./core";
 
 // ---------------------------------------------------------------------------
 // Subscriptions
@@ -89,15 +100,14 @@ export { listTasks, runTask } from "./tasks";
 // Cores
 // ---------------------------------------------------------------------------
 
-export type { CoreSource, LocalCoreView } from "./cores";
+export type { LocalCoreView, RemoteCoreChannel } from "./cores";
 export {
   listCores,
-  listRemoteCoreVersions,
+  listRemoteCoreChannels,
   listDownloadedVersions,
   downloadCore,
   setActiveCore,
   deleteCore,
-  detectSystemCores,
 } from "./cores";
 
 // ---------------------------------------------------------------------------
@@ -113,6 +123,21 @@ export { proxiesList, proxiesSelect, proxiesTestDelay, proxiesTestGroup } from "
 
 export type { ConnectionView, ActiveConnections } from "./connections";
 export { connectionsActive, connectionsClosed, connectionsClose } from "./connections";
+
+// ---------------------------------------------------------------------------
+// Traffic Stats
+// ---------------------------------------------------------------------------
+
+export type {
+  TodaySummary,
+  DailyStatRow,
+  ConnRecordRow,
+  DailySort,
+  RecordSort,
+  DailyQuery,
+  RecordsQuery,
+} from "./stats";
+export { statsToday, statsDaily, statsRecords, statsClear } from "./stats";
 
 // ---------------------------------------------------------------------------
 // Local Override

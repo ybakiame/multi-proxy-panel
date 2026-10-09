@@ -4,6 +4,20 @@
 
 ---
 
+## Agent Development Protocol
+
+This repository consumes the Agent Development Protocol through:
+
+`.protocol/agent-development-protocol/`
+
+When performing protocol adoption, conformance, or protocol maintenance:
+
+1. initialize the submodule if necessary;
+2. read `.protocol/agent-development-protocol/ADOPT.md`;
+3. treat this repository's AGENTS.md, README.md, and docs/ as project-specific authority;
+4. do not treat generic protocol documentation as project documentation;
+5. do not modify the protocol submodule during ordinary project work unless the task explicitly targets protocol maintenance.
+
 ## 1. 项目概述
 
 ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
@@ -11,8 +25,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
-- **Desktop** (`apps/desktop`): 桌面客户端（Linux/Windows/macOS，Tauri 壳 + React 前端 + 独立 cargo 项目），含 MITM / 脚本引擎 / 核心管理等桌面专属能力
-- **Mobile** (`apps/mobile`): 移动客户端（Android，Tauri 壳 + 移动 UI + 独立 cargo 项目），核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM（见 ADR-0003）
+- **Client** (`apps/client`): 客户端（Linux/Windows/macOS/Android，Tauri 壳 + React 前端，单包双入口单壳双目标，见 ADR-0007）：前端 `src/desktop`（HeroUI）/ `src/mobile`（**Konsta UI**，iOS/Material 双主题）经 vite mode 构建期分发；壳 `src-tauri` 为独立 cargo 项目，经 target 依赖表与 cfg 适配层区分桌面/移动目标。桌面端含 MITM / 脚本引擎 / 核心管理等专属能力；Android 端核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM
 - **`packages/client-core`** (`@pp/client-core`): desktop/mobile 共享前端库（api 的 invoke 封装 + hooks + atoms + 纯工具），两端 UI 一律经它调用 Tauri 命令
 
 ---
@@ -23,7 +36,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
-- 前端应用（`apps/panel` 管理系统、`apps/desktop` / `apps/mobile` Tauri 双客户端）与共享前端库（`packages/*`）不是 Cargo workspace 成员（双客户端各自 `src-tauri/` 为退出根 workspace 的独立 cargo 项目），由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）
+- 前端应用（`apps/panel` 管理系统、`apps/client` Tauri 客户端）与共享前端库（`packages/*`）不是 Cargo workspace 成员（客户端 `src-tauri/` 为退出根 workspace 的独立 cargo 项目），由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）
 
 ### 2.2 常用构建命令
 
@@ -53,22 +66,23 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 
 # Rust 全量门禁（推荐提交前执行；scripts/check-rust-gates.sh）
-# = fmt --check + clippy + test + desktop/mobile 壳（独立 cargo 项目）clippy
-#   + 有 NDK 时 mobile 壳 aarch64-linux-android 交叉编译检查
+# = fmt --check + clippy + test + 客户端壳（apps/client/src-tauri，独立 cargo
+#   项目）host clippy + 有 NDK 时 aarch64-linux-android 交叉编译检查
 bun run verify:rust
 # 快速版（跳过测试，pre-commit 钩子同款）
 bun run verify:rust:fast
 ```
 
-> **双壳盲区提醒**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是退出根
-> workspace 的独立 cargo 项目，根目录 `cargo clippy/test --workspace` **覆盖不到**；
-> Android 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。涉及 Rust
+> **壳层盲区提醒**：`apps/client/src-tauri` 是退出根 workspace 的独立 cargo 项目，
+> 根目录 `cargo clippy/test --workspace` **覆盖不到**；Android 专属代码
+> （`#[cfg(target_os = "android")]`，`mobile` 适配层与 `core_bridge`）在 host（桌面
+> 目标）编译下也不可见，且 Android 构建图经 target 依赖表裁剪（无 pp-mitm）。涉及 Rust
 > 的提交前务必跑 `bun run verify:rust`，不要只跑 `-p <crate>` 的包级测试——跨 crate 的
 > 字段/签名变更（如 `PanelFeatures` 增字段）在包级测试下无法暴露。
 
 ### 2.3 前端构建（Bun workspaces）
 
-前端应用（`apps/panel`、`apps/desktop`、`apps/mobile`）与共享前端库（`packages/*`，含 `@pp/client-core`）都是 Bun workspaces 成员，依赖在**仓库根目录**统一安装（单一 `bun.lock`）：
+前端应用（`apps/panel`、`apps/client`）与共享前端库（`packages/*`，含 `@pp/client-core`）都是 Bun workspaces 成员，依赖在**仓库根目录**统一安装（单一 `bun.lock`）：
 
 ```bash
 # 根目录一次安装全部前端依赖
@@ -77,8 +91,8 @@ bun install
 # 按 app 执行脚本（--filter 用各 app package.json 的 name）
 bun run --filter pp-web dev          # panel 开发模式
 bun run --filter pp-web build        # panel 发布构建（产物 apps/panel/dist/）
-bun run --filter pp-client-ui dev    # desktop 开发模式
-bun run --filter pp-client-mobile-ui dev  # mobile 开发模式
+bun run --filter pp-client-app dev   # client 桌面开发模式（vite mode=desktop，端口 1420）
+bun run --filter pp-client-app dev:android  # client 移动开发模式（vite mode=android，端口 1430）
 ```
 
 前端代码检查与格式化已集成 oxc 工具链（也可 `cd apps/panel` 后直接 `bun run <script>`）：
@@ -92,7 +106,7 @@ bun run --filter pp-web format
 bun run --filter pp-web verify
 ```
 
-提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-ui` / `--filter pp-client-mobile-ui` / `--filter @pp/client-core`）并全部通过。
+提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-app` / `--filter @pp/client-core`）并全部通过。
 
 > **Android（移动端）构建**：APK 打包涉及 NDK 交叉编译、`panel-core` AAR 与 GEO 数据，完整步骤见 `docs/development.md` 的「Android 客户端构建」章节，不在此重复。
 
@@ -100,10 +114,10 @@ bun run --filter pp-web verify
 
 仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**本地检查**：
 - `scripts/check-file-size.sh`：文件规模门禁（业务 >500 行 / 测试 >1000 行拦截，>400 行告警，规则见 `.agents/rules/code-organization.md`）
-- 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + desktop/mobile 壳 clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
-- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / desktop / mobile / client-core 全覆盖）
+- 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + 客户端壳 host clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
+- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / client / client-core 全覆盖）
 
-Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（双壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
+Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（客户端壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
 
 ---
 
@@ -147,6 +161,13 @@ pub use models::*;
 ### 3.3 错误处理
 
 - 所有 crate 统一使用 `PanelError` / `PanelResult<T>`（定义于 `pp-common`）
+- `PanelError` 体积纪律：新增大 variant（>64 字节）必须装箱（`Box<T>`），保证
+  `PanelError` 不超过 clippy `result_large_err` 的 128 字节阈值（有
+  `pp-common/tests/size_check.rs` 回归守护）；**禁止新增
+  `#[allow(clippy::result_large_err)]` 豁免**——唯一保留的豁免是 pp-proto 生成代码
+  （tonic codegen 返回 `Result<_, Status>`，上游签名固定无法装箱）；自定义函数
+  即使面对 tonic::Status 也应装箱返回（`Box<Status>`，`From<T> for Box<T>` 使
+  `map_err(Status)?` 自动装箱，参考 pp-hub `grpc/agent_service/register.rs`）
 - gRPC handler 内部可使用 `anyhow::Result` 简化传播
 - HTTP handler 使用 `Result<T, StatusCode>`，将业务错误映射为 HTTP 状态码
 - 禁止裸 `unwrap()` / `expect()`，仅在测试或 `main` 的初始化阶段允许
@@ -169,8 +190,8 @@ pub use models::*;
 
 ### 3.6 Protobuf / gRPC
 
-- `.proto` 文件位于 `proto/hub_agent.proto`
-- 生成代码位于 `crates/pp-proto/src/lib.rs`（由 `build.rs` 自动生成）
+- `.proto` 文件位于 `proto/`：`proto/hub_agent.proto`（Hub↔Agent 控制面）与 `proto/singbox_daemon.proto`
+- 生成代码位于 `crates/pp-proto/src/lib.rs`（由 `crates/pp-proto/build.rs` 编译 `proto/` 下全部 `.proto` 自动生成）
 - **禁止直接修改** `crates/pp-proto/src/lib.rs`，应修改 `.proto` 后重新构建
 - proto 中的枚举值与 Rust 枚举通过显式 `match` 转换（参见 `pp-agent/src/client.rs` 的 `core_type_from_i32`）
 
@@ -180,17 +201,25 @@ pub use models::*;
 
 ### 4.1 Hub-State 设计
 
-`AppState` 是 Hub 的核心共享状态：
+`AppState` 是 Hub 的核心共享状态（完整定义见 `crates/pp-hub/src/state.rs`）：
 
 ```rust
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub config: HubConfig,
+    pub rate_limiter: RateLimiter,
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
+    pub metrics_handle: Option<Arc<MetricsHandle>>,
+    pub api_key_cache: ApiKeyCache,
+    pub binary_waiters: /* 等待 Agent 回复的核心二进制请求 */,
 }
 ```
 
 - `db`: Sea-ORM 数据库连接
+- `config`: Hub 运行配置
+- `rate_limiter`: 请求限流器
 - `agents`: 内存中的 Agent 连接表，用于向指定节点推送消息
+- `metrics_handle` / `api_key_cache` / `binary_waiters`: 指标采集句柄、API Key 缓存、核心二进制请求等待表
 
 **注意**：`AppState` 使用 `Arc<AppState>` 传递，本身已实现 `Clone`（浅拷贝）。
 
@@ -259,19 +288,24 @@ pp-subscription::generate_subscription(format)
 Base64 / JSON / Clash YAML / SingBox JSON / V2RayNG
 ```
 
-### 4.5 客户端双应用架构（desktop / mobile 分离）
+### 4.5 客户端单壳双目标架构（apps/client）
 
-客户端自 ADR-0003 起按平台拆为两个独立 Tauri 应用，共用两层共享载体：
+客户端自 ADR-0007 起合并为单一 Tauri 应用 `apps/client`（前身为 ADR-0003 的
+desktop/mobile 双应用），平台差异全部为**编译期事实**：
 
 | 载体 | 形态 | 职责 |
 |------|------|------|
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）、hooks、atoms、纯工具；两端 UI 禁止直接 `invoke()` |
-| `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现，双壳以全路径注册；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
-| `apps/desktop/src-tauri` | 桌面壳 | 注册共享命令 + 桌面专属命令（mitm / core_mgmt / remote 等），含 WSL workaround |
-| `apps/mobile/src-tauri` | 移动壳 | 注册共享命令 + Android 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）；依赖表天然不含 `pp-mitm`，无需 feature hack |
+| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
+| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题，设置页可切换，默认 iOS） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src-tauri` | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表使 Android 构建图不含 `pp-mitm` |
+| `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
 | `crates/pp-client`（`CoreEngineBridge`） | 核心引擎层 | 桌面侧 spawn sing-box 子进程；Android 侧经 Kotlin 桥由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心 |
 
-`get_capabilities` 的 `is_android` 保留为**运行时功能开关**（desktop UI 已不再消费，UI 分离后平台差异转为编译期事实）。详见 ADR-0003。
+`get_capabilities` 的 `is_android` 保留为**运行时功能开关**（UI 平台差异已是编译期
+事实）。Tauri 配置：桌面基线 `tauri.conf.json` + Android overlay
+`tauri.android.conf.json`（RFC 7396 合并：devUrl/构建命令/bundle 差异）。
+详见 ADR-0003（分离）与 ADR-0007（合并回摆）。
 
 ---
 
@@ -314,21 +348,21 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 
 ## 6. 常见修改任务
 
-### 5.1 添加新的数据库实体
+### 6.1 添加新的数据库实体
 
 1. 在 `crates/pp-db/src/migration/` 中创建新迁移文件
 2. 在 `crates/pp-db/src/migration/mod.rs` 注册迁移
 3. 运行 `cargo run --bin proxy-panel -- init-db`
 4. （可选）生成实体：`sea-orm-cli generate entity -o src/entities`
 
-### 5.2 添加新的 HTTP API 端点
+### 6.2 添加新的 HTTP API 端点
 
 1. 在 `crates/pp-hub/src/routes/` 新建或修改路由模块
 2. 在 `crates/pp-hub/src/routes/mod.rs` 导出
 3. 在 `crates/pp-hub/src/main.rs` 的 Router 中注册路由
 4. 如需新业务逻辑，在 `crates/pp-hub/src/service/` 添加 service 方法
 
-### 5.3 添加新的 gRPC 消息类型
+### 6.3 添加新的 gRPC 消息类型
 
 1. 修改 `proto/hub_agent.proto`
 2. 在 `AgentMessage` 或 `HubMessage` 的 `oneof payload` 中添加新字段
@@ -336,13 +370,13 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 4. 在 `pp-hub/src/grpc/agent_service.rs` 添加处理逻辑
 5. 在 `pp-agent/src/client.rs` 添加发送/接收逻辑
 
-### 5.4 添加新的订阅格式
+### 6.4 添加新的订阅格式
 
 1. 在 `crates/pp-subscription/src/formats/` 新建模块
 2. 在 `crates/pp-subscription/src/formats/mod.rs` 导出
 3. 在 `crates/pp-subscription/src/generator.rs` 的 `SubscriptionFormat` 和 `generate_subscription` 中添加分支
 
-### 5.5 添加新的协议支持
+### 6.5 添加新的协议支持
 
 1. 在 `pp-common/src/protocol.rs` 的 `ProtocolType` 中添加变体
 2. 在 `pp-config/src/singbox.rs` 和/或 `pp-config/src/mihomo.rs` 实现对应的 `build_inbound`
@@ -354,9 +388,11 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 ## 7. 测试策略
 
 - 单元测试：各 crate 的 `src/` 中内联 `#[cfg(test)]` 模块
-- 集成测试：尚未设置，计划添加 `tests/` 目录
+- 集成测试：`crates/pp-client/tests/real_core_e2e.rs` 是真实 sing-box 全链路 e2e，默认 `#[ignore]`，需手动运行 `cargo test -p pp-client --test real_core_e2e -- --include-ignored`（需真实 sing-box 二进制，见文件头注释）
 - 数据库测试：使用 `tokio-test` + 内存 SQLite
 - gRPC 测试：使用 `tonic` 的内存通道
+- 前端验证能力：`apps/panel`、`apps/client`、`packages/client-core` **没有单元测试运行器**，其 `verify` = 构建 + oxlint + oxfmt；前端改动的自动化边界即该 verify + 手动验证
+- 权威门禁：`.github/workflows/ci.yml`（Rust fmt/clippy/test + 客户端壳双目标 + 前端三包 verify）；涉及 Rust 的提交前本地跑 `bun run verify:rust`
 
 ---
 
@@ -394,11 +430,70 @@ grpcurl -plaintext localhost:50052 list proxypanel.HubAgent
 | 构建流程变化 | `README.md`, `docs/development.md` |
 | 部署方式变化 | `docs/deployment.md` |
 | 代码规范变化 | `AGENTS.md` |
+| 架构决策变化 | 新增 ADR 到 `docs/adr/` 并更新 `docs/adr/README.md` 索引 |
+| 客户端架构变化 | `docs/architecture.md`、`AGENTS.md` §4.5、相关 ADR |
+| 新增/调整编码代理适配器 | `docs/adapters/README.md` 与对应适配器配置 |
+| 用户可见的行为/功能变化 | `CHANGELOG.md`（格式见 `docs/contributing.md`） |
+| 协议采纳状态变化 | `docs/adoption/`（inventory / mapping / report） |
 
 ---
 
-## 10. 联系方式与资源
+## 10. 变更工作流
+
+适用于本仓库的变更类型与对应工作流（完整阶段说明见
+[docs/development.md](docs/development.md#变更工作流workflows)）：
+
+| 工作流 | 适用场景 | 等价入口 |
+|--------|----------|----------|
+| 功能开发 `feature` | 新增用户可见能力或接口 | 分支 → 实现 → 测试 → 文档 → 提交 |
+| 缺陷修复 `bugfix` | 修复既有行为错误 | 复现 → 定位根因 → 最小修复 → 回归验证 |
+| 重构 `refactor` | 行为不变的结构调整 | 测试基线 → 分步重构 → 行为不变验证 |
+| 文档 `docs` | 仅文档/说明变更 | 证据核对 → 编辑 → 链接与命令校验 |
+| 协议采纳 `adoption` | 首次/复跑 Agent Development Protocol 采纳 | 发现 → 映射 → 生成 → 协调 → 校验 → 报告（两遍制：Pass 1 审计只读，Pass 2 生成） |
+
+每个工作流都必须给出：使用时机、上下文发现、计划、实现、验证、文档、最终复查、
+完成定义（§11）与停止/升级条件（§11）。不要为不存在的变更类型创建空工作流文档。
+
+---
+
+## 11. 完成定义（Definition of Done）与升级条件
+
+### 完成定义
+
+一个变更只有在以下全部成立时才算完成：
+
+- [ ] 请求的变更已实现，且范围限于一个逻辑变更单元
+- [ ] 遵循了 §10 中对应的工作流
+- [ ] 验证按变更类型执行并记录结果：
+  - Rust：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`，以及 `bun run verify:rust`（覆盖客户端壳双目标）
+  - 前端：对应包的 `bun run --filter <pkg> verify`
+  - 文档：文档链接与命令校验通过；采纳相关文档同步更新 `docs/adoption/`
+- [ ] 行为变更附带测试或明确记录为何无法自动化（前端无测试运行器时以 verify + 手动验证记录为准）
+- [ ] §9 中受影响的文档已同步
+- [ ] 未包含无关文件改动；`git diff` 已复查
+- [ ] 提交符合 §5（原子化 + Conventional Commits）
+- [ ] 涉及架构或流程决策时，已新增/更新 ADR（见 `docs/adr/README.md`）
+
+### 停止 / 升级条件
+
+遇到以下情况必须停止并向人类请求决策，不得静默猜测或自行放宽规则：
+
+- 实现与文档、或两份文档之间冲突，且权威来源不明确（实现 + 已接受 ADR 通常是更高权威）
+- 变更会改动架构边界、公开接口或构建/部署契约而没有 ADR
+- 变更会引入新的强制门禁、流程或运维职责
+- 涉及数据迁移、删除数据或不可逆操作
+- 除协议维护任务外需要改动 `.protocol/agent-development-protocol/` 子模块
+- 需要把厂商/代理特有要求写入项目契约（应放入 `docs/adapters/`）
+- 需求本身存在歧义，或验收标准无法确定
+
+---
+
+## 12. 联系方式与资源
 
 - 仓库: `https://github.com/ybakiame/multi-proxy-panel`
 - Issues: 使用 GitHub Issues
-- 文档目录: `docs/`
+- 文档索引: `docs/index.md`
+- ADR 索引与约定: `docs/adr/README.md`
+- 编码代理适配器: `docs/adapters/README.md`
+- 协议采纳记录: `docs/adoption/`（`audit-pass1.md`、`adoption-report.md`）
+- 变更日志: `CHANGELOG.md`

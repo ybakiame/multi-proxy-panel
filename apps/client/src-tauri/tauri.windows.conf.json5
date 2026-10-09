@@ -1,0 +1,21 @@
+// Windows 打包 overlay（ADR-0008 D5）：与基线 tauri.conf.json 经 RFC 7396 合并，
+// 仅在 Windows 安装包构建时经 `tauri build --config src-tauri/tauri.windows.conf.json5`
+// 激活（Tauri 主配置 schema 不接受注释字段，故本文件使用 JSON5）。
+//
+// resources/seed/ 由 scripts/fetch-seed-core.ts 生成（版本与哈希锁定于
+// seed-manifest.json）；beforeBuildCommand 覆写为「前端构建 + 种子抓取」，
+// 种子抓取幂等（已是最新则跳过），架构取 SEED_ARCH 环境变量（CI 按矩阵注入），
+// 缺省按宿主架构。
+{
+  "build": {
+    "beforeBuildCommand": "bun run build && bun run fetch-seed",
+  },
+  "bundle": {
+    "resources": {
+      "resources/seed/sing-box.exe": "seed/sing-box.exe",
+      "resources/seed/wintun.dll": "seed/wintun.dll",
+      "resources/seed/manifest.json": "seed/manifest.json",
+      "resources/seed/licenses/*": "seed/licenses/",
+    },
+  },
+}

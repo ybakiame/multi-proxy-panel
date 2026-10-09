@@ -5,27 +5,30 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-
-/** Core source: `downloaded` (downloaded) / `system` (system detected). */
-export type CoreSource = "downloaded" | "system";
+import type { CoreChannel } from "../coreChannels";
 
 /** Local core view (aligned with Rust `LocalCoreView`; 仅 sing-box 单核心). */
 export interface LocalCoreView {
   version: string;
   path: string;
-  source: CoreSource;
   /** Whether this is the currently active core (`core_binary` matches). */
   active: boolean;
 }
 
-/** List locally available cores (downloaded + system detected, with active flag). */
+/** Remote channel latest version view (aligned with Rust `RemoteChannelView`). */
+export interface RemoteCoreChannel {
+  channel: CoreChannel;
+  version: string;
+}
+
+/** List locally available cores (downloaded / installer-seeded, with active flag). */
 export function listCores(): Promise<LocalCoreView[]> {
   return invoke<LocalCoreView[]>("list_cores");
 }
 
-/** List recent 10 remote releases (GitHub releases). */
-export function listRemoteCoreVersions(): Promise<string[]> {
-  return invoke<string[]>("list_remote_core_versions");
+/** List the latest remote version per release channel (稳定版 / 测试版 / 预发布版). */
+export function listRemoteCoreChannels(): Promise<RemoteCoreChannel[]> {
+  return invoke<RemoteCoreChannel[]>("list_remote_core_channels");
 }
 
 /** List downloaded versions (version directory scan, semver descending). */
@@ -46,9 +49,4 @@ export function setActiveCore(path: string): Promise<void> {
 /** Delete a downloaded core (system source / currently in-use core cannot be deleted). */
 export function deleteCore(path: string): Promise<void> {
   return invoke<void>("delete_core", { path });
-}
-
-/** Manually refresh system core detection. */
-export function detectSystemCores(): Promise<LocalCoreView[]> {
-  return invoke<LocalCoreView[]>("detect_system_cores");
 }

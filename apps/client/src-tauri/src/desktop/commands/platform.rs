@@ -1,0 +1,126 @@
+//! Platform, TUN, and rendering compatibility commands.
+//!
+//! 平台能力矩阵（[`pp_client_tauri::capabilities`]：`CapabilitiesView` /
+//! `get_capabilities` / `platform_info`）已随 ADR-0003 M2 迁至共享 crate，壳层在
+//! `lib.rs` 的 `generate_handler!` 中以全路径注册。
+
+use tauri::State;
+
+use crate::desktop::state::AppState;
+
+/// TUN authorization status based on current `core_binary`.
+#[tauri::command]
+pub async fn tun_auth_status(state: State<'_, AppState>) -> Result<String, String> {
+    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+}
+
+/// Execute TUN authorization.
+#[tauri::command]
+pub async fn authorize_tun(state: State<'_, AppState>) -> Result<String, String> {
+    let cfg = ClientConfig::load(&state.data_dir).map_err(|e| format!("读取配置失败: {e}"))?;
+    pp_client::authorize_tun(&cfg.core_binary).map_err(|e| e.to_string())?;
+    Ok(pp_client::tun_auth_status(&cfg.core_binary).as_frontend_str())
+}
+
+/// GPU acceleration detection.
+#[tauri::command]
+pub fn gpu_acceleration() -> bool {
+    let os_release = std::fs::read_to_string("/proc/sys/kernel/osrelease").ok();
+    let libgl_always_software = std::env::var("LIBGL_ALWAYS_SOFTWARE").ok();
+    gpu_acceleration_impl(
+        os_release.as_deref(),
+        std::path::Path::new("/dev/dxg").exists(),
+        libgl_always_software.as_deref(),
+    )
+}
+
+/// Pure logic for GPU acceleration (parameterized for testability).
+pub(crate) fn gpu_acceleration_impl(
+    os_release: Option<&str>,
+    has_dxg: bool,
+    libgl_always_software: Option<&str>,
+) -> bool {
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    if os_release.is_some_and(crate::desktop::is_wsl_osrelease) {
+        return has_dxg && libgl_always_software.is_none_or(|v| v == "0");
+    }
+    libgl_always_software.is_none_or(|v| v != "1")
+}
+
+/// Read toast rendering mode override from `PP_TOAST_MODE`.
+#[tauri::command]
+pub fn toast_mode_override() -> Option<String> {
+    std::env::var("PP_TOAST_MODE")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+}
+
+use pp_client::ClientConfig;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_acceleration_native_linux_has_gpu_unless_forced_software() {
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            Some("0"),
+        ));
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 6.8.0-generic"),
+            false,
+            Some("1"),
+        ));
+        assert!(gpu_acceleration_impl(None, false, None));
+    }
+
+    #[test]
+    fn gpu_acceleration_wsl_requires_dxg_and_no_forced_software() {
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            Some("0"),
+        ));
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            false,
+            None,
+        ));
+        assert!(!gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-microsoft-standard-WSL2"),
+            true,
+            Some("1"),
+        ));
+    }
+
+    #[test]
+    fn gpu_acceleration_osrelease_matches_wsl_ignore_case() {
+        assert!(gpu_acceleration_impl(
+            Some("Linux version 5.15.133.1-MICROSOFT-standard-WSL2"),
+            true,
+            None,
+        ));
+        assert!(gpu_acceleration_impl(Some("microsoft"), true, None));
+        assert!(gpu_acceleration_impl(Some("  wsl2 kernel  "), true, None));
+    }
+}

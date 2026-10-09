@@ -1,0 +1,303 @@
+{
+  "protocol_version": "0.1.0",
+  "artifact": "project-inventory",
+  "authority": "evidence only; not project policy",
+  "audit": {
+    "pass": "Pass 1 — Audit",
+    "audited_at": "2026-10-04",
+    "audited_revision": "1bf847a30fd6436bf4e2f632d37d3e09a308ec30",
+    "working_tree_state": "dirty: AGENTS.md modified (+14 lines, protocol section), root ADOPT.md untracked",
+    "protocol_submodule_path": ".protocol/agent-development-protocol",
+    "protocol_submodule_revision": "310fba5baa384c912e1fd8300e33d72a057908c5",
+    "protocol_version": "0.1.0",
+    "evidence_method": "read-only git/inspection commands and file reads against the audited revision plus the current working tree; no project file was modified"
+  },
+  "project": {
+    "name": "ProxyPanel",
+    "repository": "https://github.com/ybakiame/multi-proxy-panel",
+    "revision": "1bf847a30fd6436bf4e2f632d37d3e09a308ec30 (working tree dirty: AGENTS.md modified, ADOPT.md untracked)",
+    "language": ["Rust", "TypeScript", "Go", "Kotlin", "Shell", "Nix"],
+    "framework": [
+      "axum",
+      "tonic",
+      "Sea-ORM",
+      "tokio",
+      "React 19",
+      "Vite 8",
+      "HeroUI 3",
+      "Konsta UI",
+      "Tauri 2",
+      "Bun workspaces"
+    ]
+  },
+  "observations": [
+    {
+      "id": "project.identity",
+      "category": "repository-shape",
+      "value": "ProxyPanel is a Rust workspace implementing a Hub-Agent proxy node management panel (Hub HTTP+gRPC, node Agent driving sing-box/mihomo, React web panel, Tauri client, admin CLI).",
+      "evidence": ["README.md:1-28", "AGENTS.md:23-29", "docs/index.md:21-36", "Cargo.toml:1-30"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "project.revision",
+      "category": "repository-shape",
+      "value": "HEAD is 1bf847a30fd6436bf4e2f632d37d3e09a308ec30; the working tree is dirty (AGENTS.md carries an uncommitted 'Agent Development Protocol' section; root ADOPT.md is untracked).",
+      "evidence": ["git rev-parse HEAD", "git status --porcelain", "git diff AGENTS.md", "ADOPT.md", "AGENTS.md:7-19"],
+      "confidence": "high",
+      "status": "observed",
+      "notes": "The protocol section and root ADOPT.md exist only in the working tree, not in the audited revision."
+    },
+    {
+      "id": "protocol.submodule",
+      "category": "protocol-submodule",
+      "value": "Agent Development Protocol is consumed as a submodule at .protocol/agent-development-protocol, pinned by gitlink to 310fba5baa384c912e1fd8300e33d72a057908c5, protocol version 0.1.0; submodule working tree is clean.",
+      "evidence": [".gitmodules", "git ls-tree HEAD .protocol/agent-development-protocol", ".protocol/agent-development-protocol/protocol-manifest.json:2", ".protocol/agent-development-protocol/CHANGELOG.md:5", "git -C .protocol/agent-development-protocol status --porcelain"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "project.workspace-members",
+      "category": "build-runtime",
+      "value": "Cargo workspace has 13 members (pp-common, pp-db, pp-proto, pp-config, pp-subscription, pp-script, pp-core, pp-hub, pp-agent, pp-cli, pp-mitm, pp-client, pp-client-tauri); edition 2024, rust-version 1.88. Frontends (apps/panel, apps/client, packages/*) are Bun workspace members, not cargo members.",
+      "evidence": ["Cargo.toml:1-30", "package.json:1-18", "AGENTS.md:37-39"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "architecture.hub-agent",
+      "category": "architecture",
+      "value": "Hub exposes REST + gRPC bidi stream; Agent manages sing-box/mihomo processes and connects over gRPC; pp-config translates ProtocolConfig + NodeBinding into core JSON/YAML; pp-subscription generates subscription formats.",
+      "evidence": ["AGENTS.md:23-29", "AGENTS.md:295-330", "docs/architecture.md:21-62", "docs/architecture.md:236-350", "proto/hub_agent.proto", "crates/pp-hub", "crates/pp-agent", "crates/pp-config", "crates/pp-subscription"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "architecture.client-single-shell",
+      "category": "architecture",
+      "value": "Client is a single Tauri app apps/client (desktop + Android targets) per ADR-0007, with sources apps/client/src/desktop and apps/client/src/mobile, an independent cargo shell apps/client/src-tauri, shared crate crates/pp-client-tauri and shared frontend library packages/client-core.",
+      "evidence": ["docs/adr/0007-client-single-shell-merge.md:1-12", "apps/client/src (desktop/, mobile/, main.tsx)", "apps/client/src-tauri", "crates/pp-client-tauri", "packages/client-core", "README.md:70", "README.md:262"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "architecture.doc-drift",
+      "category": "contradiction",
+      "value": "Project documentation and agent infrastructure still describe the pre-ADR-0007 split (apps/desktop + apps/mobile), contradicting ADR-0007 and the actual apps/ tree.",
+      "evidence": ["docs/architecture.md:355", "docs/architecture.md:357", "docs/architecture.md:361-362", "docs/architecture.md:410", "docs/architecture.md:428", "docs/architecture.md:432", "README.md:235-236", "README.md:238", "Cargo.toml:17", ".opencode/rules/coding-standards.md:6-14", ".agents/rules/client-state-management.md:1-3", ".pi/plans/2026-10-01-desktop-sync-windows-build.md:9", "docs/adr/0007-client-single-shell-merge.md:6", "apps/"],
+      "confidence": "high",
+      "status": "observed",
+      "notes": "README.md:70 and README.md:262 are current (apps/client) while README.md:235-236 are stale — the contradiction is intra-document as well."
+    },
+    {
+      "id": "build.commands",
+      "category": "build-runtime",
+      "value": "Documented and scripted commands: cargo build/test/clippy/fmt; bun install at repo root (single bun.lock); bun run verify:rust (scripts/check-rust-gates.sh) and verify:rust:fast; per-app verify (pp-web, pp-client-app, @pp/client-core).",
+      "evidence": ["package.json:9-12", "scripts/check-rust-gates.sh:1-52", "AGENTS.md:41-100", "docs/development.md:102-137", "bun.lock (single root lockfile)"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "validation.ci",
+      "category": "validation",
+      "value": "CI runs three jobs: rust (fmt --check, clippy --workspace -D warnings, cargo test --workspace), client-shells (host clippy of apps/client/src-tauri and aarch64-linux-android cargo check), web (panel verify, client-core verify, client app verify incl. desktop+android builds). Release workflow has web, build and desktop-windows jobs.",
+      "evidence": [".github/workflows/ci.yml:8-120", ".github/workflows/release.yml:13-118", "scripts/check-rust-gates.sh:1-52"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "validation.precommit",
+      "category": "validation",
+      "value": "Husky pre-commit enforces file-size guard, cargo fmt --check plus fast Rust compile gate for staged Rust files, and oxlint/oxfmt for staged frontend files.",
+      "evidence": [".husky/pre-commit:1-31", "scripts/check-file-size.sh", ".agents/rules/code-organization.md:5-15"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "testing.rust",
+      "category": "testing",
+      "value": "83 Rust source files contain inline #[cfg(test)] modules; documentation covers unit/DB/gRPC testing; crates/pp-client/tests/real_core_e2e.rs is an ignored, manually run end-to-end test requiring a real sing-box binary.",
+      "evidence": ["AGENTS.md:373-381", "docs/development.md:521-583", "crates/pp-client/tests/real_core_e2e.rs:1-25", "grep -rl 'cfg(test)' crates --include=*.rs | wc -l => 83"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "testing.frontend",
+      "category": "testing",
+      "value": "No frontend test runner or test script exists in apps/panel, apps/client or packages/client-core; their verify script is build + lint + format only.",
+      "evidence": ["apps/panel/package.json:1-20", "apps/client/package.json:1-20", "packages/client-core/package.json", ".github/workflows/ci.yml:112-120"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "testing.doc-drift",
+      "category": "contradiction",
+      "value": "AGENTS.md:373-381 states integration tests are not set up and plan a tests/ directory, but crates/pp-client/tests/real_core_e2e.rs already exists and docs/development.md's testing section documents only Rust unit/DB tests.",
+      "evidence": ["AGENTS.md:373-381", "crates/pp-client/tests/real_core_e2e.rs", "docs/development.md:521-583"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "conventions.commits-and-review",
+      "category": "conventions",
+      "value": "Atomic-commit and Conventional Commits rules, PR flow, reviewer guidance and release steps are documented in AGENTS.md §5 and docs/contributing.md.",
+      "evidence": ["AGENTS.md:299-345", "docs/contributing.md:100-231", "docs/contributing.md:235-308", "docs/contributing.md:337-376"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "conventions.file-size",
+      "category": "conventions",
+      "value": "File-size thresholds (400 warn / 500 fail for business sources, 1000 for tests) are defined in .agents/rules/code-organization.md and enforced by scripts/check-file-size.sh in the pre-commit hook.",
+      "evidence": [".agents/rules/code-organization.md:5-15", "scripts/check-file-size.sh", ".husky/pre-commit:14-16"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.structure",
+      "category": "documentation",
+      "value": "Project documentation lives in docs/: index.md, architecture.md, development.md, deployment.md, api_reference.md, contributing.md, adr/0001-0007, plans/, research/. There is no docs/README.md, docs/architecture/, docs/workflows/, docs/testing/, docs/decisions/, docs/adapters/ or docs/adoption/ before this audit.",
+      "evidence": ["docs/index.md", "docs/architecture.md", "docs/development.md", "docs/deployment.md", "docs/api_reference.md", "docs/contributing.md", "docs/adr/0001-neutral-fields-for-multi-kernel-protocols.md … 0007-client-single-shell-merge.md", "docs/plans/", "docs/research/", "ls docs/adoption => No such file or directory"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.index-wiring",
+      "category": "documentation",
+      "value": "docs/index.md is the documentation index but is not linked from README.md or AGENTS.md; its project overview omits the client app entirely.",
+      "evidence": ["docs/index.md:9-15", "docs/index.md:21-36", "grep 'index.md' README.md AGENTS.md docs/*.md => no match", "README.md:414"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.version-drift",
+      "category": "contradiction",
+      "value": "docs/index.md, docs/architecture.md and docs/development.md claim React 18 + Vite 6, while apps/panel/package.json declares react ^19.2.7 and vite ^8.2.2 (apps/client declares vite ^8.2.0). README.md:262 says React 19 + Vite 8.",
+      "evidence": ["docs/index.md:71", "docs/architecture.md:126", "docs/development.md:361-362", "apps/panel/package.json:8,54", "apps/client/package.json:58", "README.md:262"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.install-convention-drift",
+      "category": "contradiction",
+      "value": "AGENTS.md:37-39 and §2.3 require installing frontend dependencies once at the repository root (single bun.lock), while README.md:143,290 and docs/index.md:57 instruct running bun install inside apps/panel.",
+      "evidence": ["AGENTS.md:37-39", "AGENTS.md:99-124", "README.md:143", "README.md:290", "docs/index.md:57", "package.json:4-9", "bun.lock"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.changelog-missing",
+      "category": "contradiction",
+      "value": "docs/contributing.md release steps require updating CHANGELOG.md, but no CHANGELOG.md exists at the repository root.",
+      "evidence": ["docs/contributing.md:261", "docs/contributing.md:350", "docs/contributing.md:356-376", "ls CHANGELOG.md => No such file or directory"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.proto-inventory-drift",
+      "category": "contradiction",
+      "value": "AGENTS.md:186 and AGENTS.md:352 reference only proto/hub_agent.proto, but proto/ also contains singbox_daemon.proto which crates/pp-proto/build.rs compiles.",
+      "evidence": ["AGENTS.md:186", "AGENTS.md:352", "proto/hub_agent.proto", "proto/singbox_daemon.proto", "crates/pp-proto/build.rs:12-19", "crates/pp-proto/src/lib.rs"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "docs.appstate-drift",
+      "category": "contradiction",
+      "value": "AGENTS.md §4.1 documents AppState with only db and agents, while crates/pp-hub/src/state.rs declares db, config, rate_limiter, agents, metrics_handle, api_key_cache and binary_waiters.",
+      "evidence": ["AGENTS.md:196-210", "crates/pp-hub/src/state.rs:77-86"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "adr.inventory",
+      "category": "decisions",
+      "value": "Seven ADRs under docs/adr/ use a common Status/Date/Deciders/Scope header; ADR-0007 (Accepted) supersedes ADR-0003 (Status: Superseded by ADR-0007). No ADR index, template or documented ADR convention exists.",
+      "evidence": ["docs/adr/0001-neutral-fields-for-multi-kernel-protocols.md:1-5", "docs/adr/0002-client-rule-management.md:1-8", "docs/adr/0003-desktop-mobile-split.md:1-11", "docs/adr/0004-client-singbox-only.md:1-6", "docs/adr/0005-client-config-slices.md:1-6", "docs/adr/0006-client-traffic-stats.md:1-6", "docs/adr/0007-client-single-shell-merge.md:1-10", "docs/index.md (no adr entry)"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "adr.metadata-drift",
+      "category": "contradiction",
+      "value": "ADR-0002 still has Status: Proposed although its own §8.2 records the v1 implementation as complete; ADR-0006 is dated 2026-12-19, later than ADR-0007 dated 2026-10-03 despite the lower number.",
+      "evidence": ["docs/adr/0002-client-rule-management.md:3", "docs/adr/0002-client-rule-management.md:700", "docs/adr/0006-client-traffic-stats.md:4", "docs/adr/0007-client-single-shell-merge.md:4"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "agent-infra.opencode",
+      "category": "agent-infrastructure",
+      "value": "An opencode adapter is configured: opencode.jsonc defines orchestrator/executor/reviewer agents with models and permissions; .opencode/ holds AGENTS.md, three agent prompt files and rules/coding-standards.md; .opencode/AGENTS.md still contains an unfilled placeholder for the project stack.",
+      "evidence": ["opencode.jsonc:1-66", ".opencode/AGENTS.md:1-15", ".opencode/agents/orchestrator.md", ".opencode/agents/executor.md", ".opencode/agents/reviewer.md", ".opencode/rules/coding-standards.md:1-14"],
+      "confidence": "high",
+      "status": "observed",
+      "notes": ".opencode/rules/coding-standards.md:6-14 still points verification commands at apps/desktop."
+    },
+    {
+      "id": "agent-infra.pi",
+      "category": "agent-infrastructure",
+      "value": "A pi adapter is configured: .pi/master.md orchestrator prompt, .pi/agents/{coder,reviewer,writer}.md with front-matter (model, tools, skills), .pi/subagent-isolation.json model map, .pi/skills/ skill set and .pi/plans/ plans referencing apps/desktop.",
+      "evidence": [".pi/master.md:1-114", ".pi/agents/coder.md:1-13", ".pi/agents/reviewer.md:1-13", ".pi/agents/writer.md:1-13", ".pi/subagent-isolation.json", ".pi/skills/", ".pi/plans/2026-10-01-desktop-sync-windows-build.md:37"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "agent-infra.project-rules-and-skills",
+      "category": "agent-infrastructure",
+      "value": "Project-scoped agent rules live in .agents/rules/ (code-organization, data-migration, package-manager, client-state-management) and bundled skills in .agents/skills/ (heroui-react, heroui-native, heroui-migration) with skills-lock.json; apps/panel/AGENTS.md is a generated HeroUI docs index.",
+      "evidence": [".agents/rules/code-organization.md", ".agents/rules/data-migration.md", ".agents/rules/package-manager.md", ".agents/rules/client-state-management.md:1-3", ".agents/skills/", "skills-lock.json", "apps/panel/AGENTS.md:3-5", "AGENTS.md:96-107"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "agent-infra.no-adapter-docs",
+      "category": "agent-infrastructure",
+      "value": "No docs/adapters/ directory or adapter documentation exists; there is no documented mapping of supported coding agents to workflows, permissions, or conformance evidence.",
+      "evidence": ["docs/ (no adapters/ directory)", ".protocol/agent-development-protocol/docs/conformance.md:61-71", ".protocol/agent-development-protocol/docs/adoption/generation.md:99-103"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "product.no-ai-agent-runtime",
+      "category": "product-scope",
+      "value": "The product contains no AI/LLM agent runtime: crates/pp-agent is a Rust proxy-core process manager communicating over gRPC, and the workspace has no LLM client dependency.",
+      "evidence": ["AGENTS.md:25", "crates/pp-agent/src/client.rs", "crates/pp-agent/src/main.rs", "Cargo.toml:31-60", "proto/hub_agent.proto"],
+      "confidence": "high",
+      "status": "observed",
+      "notes": "The name 'Agent' in pp-agent denotes a proxy node daemon, not an AI agent."
+    },
+    {
+      "id": "product.no-mcp",
+      "category": "product-scope",
+      "value": "No MCP server or client integration exists: no MCP configuration in opencode.jsonc or .opencode/, and no docs/mcp/. apps/panel/AGENTS.md only lists HeroUI's own mcp-server.mdx documentation entry.",
+      "evidence": ["grep -rni mcp opencode.jsonc .opencode/ => no match", "apps/panel/AGENTS.md:4 (HeroUI docs index entry mcp-server.mdx)", "docs/ (no mcp/ directory)"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "product.no-prompt-or-memory-subsystem",
+      "category": "product-scope",
+      "value": "No application-level prompt management or agent memory subsystem exists. State-related material is application state (frontend Jotai/Zustand per .agents/rules/client-state-management.md; Sea-ORM persistence per docs/architecture.md §数据库设计).",
+      "evidence": [".agents/rules/client-state-management.md:5-11", "docs/architecture.md:537-612", "crates/pp-db/src/entities/", "docs/ (no prompts/ or memory/ directory)"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "operations.documentation",
+      "category": "operations",
+      "value": "Operations are substantively documented: docs/deployment.md covers Docker Compose, reverse proxy, CLI lifecycle install/upgrade/rollback/uninstall/status/logs, one-click node install, manual systemd deployment, HA, TLS/token security, Prometheus/Grafana monitoring, backup/restore, upgrades and troubleshooting; install scripts, Dockerfiles, compose file and release workflow exist.",
+      "evidence": ["docs/deployment.md:24-909", "Dockerfile.hub", "Dockerfile.agent", "docker-compose.yml:1-74", "scripts/install-hub.sh", "scripts/install-agent.sh", "crates/pp-cli/src/main.rs:69-131 (InstallTarget Hub/Agent)", "crates/pp-cli/src/ops", ".github/workflows/release.yml"],
+      "confidence": "high",
+      "status": "observed"
+    },
+    {
+      "id": "protocol.adoption-state-absent",
+      "category": "protocol-submodule",
+      "value": "No adoption record existed before this audit: docs/adoption/ did not exist, and no project-inventory.json, protocol-mapping.json or adoption report was present anywhere in the project tree.",
+      "evidence": ["ls docs/adoption => No such file or directory", "glob **/project-inventory.json (none outside .protocol)"],
+      "confidence": "high",
+      "status": "observed"
+    }
+  ]
+}

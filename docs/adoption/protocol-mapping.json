@@ -1,0 +1,373 @@
+{
+  "protocol_version": "0.1.0",
+  "artifact": "protocol-mapping",
+  "authority": "planning / applicability record; not project policy",
+  "audit": {
+    "pass": "Pass 1 — Audit",
+    "audited_at": "2026-10-04",
+    "audited_revision": "1bf847a30fd6436bf4e2f632d37d3e09a308ec30",
+    "protocol_submodule_revision": "310fba5baa384c912e1fd8300e33d72a057908c5",
+    "inventory": "docs/adoption/project-inventory.json",
+    "classification_basis": "substantive capability and protocol intent (canonical_artifact), not recommended-path presence"
+  },
+  "capabilities": [
+    {
+      "id": "project-contract",
+      "status": "Partial",
+      "evidence": [
+        "AGENTS.md:1-423 (build system, code standards, architecture decisions, commit rules, common tasks, testing, doc-sync matrix)",
+        "README.md:1-422 (identity, features, architecture, quickstart, structure, protocols, development, deployment, API, security)",
+        "docs/index.md:1-86 (documentation index)",
+        "docs/contributing.md:100-394 (commit/PR/review/release rules)",
+        "AGENTS.md:7-19 + ADOPT.md (protocol entry point, working tree only)"
+      ],
+      "gaps": [
+        "README.md:235-236 project-structure tree lists removed apps/desktop and apps/mobile while README.md:70 and README.md:262 and the actual apps/ tree use apps/client",
+        "No Definition of Done and no stop/escalation conditions in the project contract (grep across AGENTS.md and docs/ returns none)",
+        "The protocol consumption section in AGENTS.md and root ADOPT.md are uncommitted/untracked, so the contract is not durable at the audited revision",
+        "docs/index.md omits apps/client and is not linked from README.md or AGENTS.md"
+      ],
+      "proposed_actions": [
+        "Reconcile README.md project structure and docs/index.md with apps/client and the post-ADR-0007 layout",
+        "Add an explicit Definition of Done and stop/escalation conditions to AGENTS.md or a linked workflow document",
+        "Commit the protocol entry point only after human review (see ADC-004)"
+      ],
+      "decision_required": false,
+      "decision": "Normalization only; no policy change proposed.",
+      "target_documents": ["AGENTS.md", "README.md", "docs/index.md"]
+    },
+    {
+      "id": "architecture",
+      "status": "Partial",
+      "evidence": [
+        "docs/architecture.md:1-706 (overview, component detail, data flows, client architecture, DB design, gRPC/HTTP, security, extension points)",
+        "apps/client/src (desktop/, mobile/), apps/client/src-tauri, crates/pp-client-tauri, packages/client-core",
+        "docs/adr/0007-client-single-shell-merge.md:1-12",
+        "proto/hub_agent.proto, proto/singbox_daemon.proto, crates/pp-proto/build.rs",
+        "AGENTS.md:23-29, AGENTS.md:260-297"
+      ],
+      "gaps": [
+        "docs/architecture.md:355-362, 410, 428, 432 still document apps/desktop and apps/mobile as the current client layout, contradicting ADR-0007 and the apps/ tree",
+        "docs/architecture.md:126 and docs/development.md:361-362 and docs/index.md:71 claim React 18 + Vite 6 while apps/panel/package.json declares react ^19.2.7 and vite ^8.2.2",
+        "docs/architecture.md does not describe the post-merge client shell (apps/client/src-tauri target dependency table, cfg adaptation layers) that AGENTS.md:278-293 describes",
+        "AGENTS.md:196-210 documents AppState with two fields while crates/pp-hub/src/state.rs:77-86 declares seven"
+      ],
+      "proposed_actions": [
+        "Refresh the client chapters of docs/architecture.md to the apps/client single-shell layout, citing ADR-0007",
+        "Correct the frontend stack versions in docs/architecture.md, docs/development.md and docs/index.md",
+        "Correct the AppState description or mark it as a simplified excerpt"
+      ],
+      "decision_required": false,
+      "decision": "Source of truth is ADR-0007 plus the implementation; stale documentation is corrected in Pass 2 (recorded as contradiction C-01/C-04/C-05).",
+      "target_documents": ["docs/architecture.md", "docs/development.md", "docs/index.md"]
+    },
+    {
+      "id": "workflows",
+      "status": "Partial",
+      "evidence": [
+        "AGENTS.md:299-345 (atomic commits, Conventional Commits format and scope list)",
+        "AGENTS.md:347-393 (recipes: add entity, add HTTP endpoint, add gRPC message, add subscription format, add protocol)",
+        "AGENTS.md:395-406 (documentation sync matrix)",
+        "docs/development.md:102-137 (daily development loop), 265-356 (migration workflow), 437-520 (Android build), 655-687 (code review checklist)",
+        "docs/contributing.md:100-231 (commit rules), 235-308 (PR and review), 337-376 (release)",
+        ".husky/pre-commit:1-31, .github/workflows/ci.yml:1-120, scripts/check-rust-gates.sh:1-52"
+      ],
+      "gaps": [
+        "No workflow document defines the protocol-required phase set (when used, context discovery, planning, implementation, validation, documentation, final review, Definition of Done, stop/escalation conditions)",
+        "No Definition of Done anywhere in the project contract; the closest statements live in agent-adapter files (.opencode/agents/executor.md:34; .agents/rules/code-organization.md:64)",
+        "No explicit stop/escalation conditions for change work",
+        "No per-change-type workflow for feature / bugfix / refactor; only task recipes and contributor process",
+        "No project-level adoption workflow document (only the generic protocol documents under the submodule)"
+      ],
+      "proposed_actions": [
+        "Add workflow documentation containing all required phases, either under docs/workflows/ (protocol-recommended) or by extending docs/development.md + docs/contributing.md under the existing convention — blocked by ADC-001",
+        "State a project Definition of Done and escalation conditions once, then reference them from AGENTS.md",
+        "Document the adoption workflow for future re-runs"
+      ],
+      "decision_required": true,
+      "decision": "Pending ADC-001 (retain existing documentation convention vs adopt protocol-recommended paths).",
+      "target_documents": ["docs/development.md", "docs/contributing.md", "AGENTS.md", "docs/workflows/ (proposed)"]
+    },
+    {
+      "id": "testing",
+      "status": "Partial",
+      "evidence": [
+        "AGENTS.md:373-381 (unit tests inline; DB tests with tokio-test + in-memory SQLite; gRPC tests with tonic in-memory channel)",
+        "docs/development.md:521-583 (run/write tests, test database)",
+        "83 Rust source files containing #[cfg(test)] modules",
+        "crates/pp-client/tests/real_core_e2e.rs:1-25 (ignored/manual e2e requiring a real sing-box binary)",
+        ".github/workflows/ci.yml:8-48 (fmt, clippy, cargo test), 50-97 (client shell host + Android target), 99-120 (frontend verify)",
+        "scripts/check-rust-gates.sh:1-52 and .husky/pre-commit:1-31"
+      ],
+      "gaps": [
+        "AGENTS.md:376 says integration tests are not set up and plan a tests/ directory, contradicting crates/pp-client/tests/real_core_e2e.rs",
+        "docs/development.md:521-583 documents only Rust testing and omits the existing e2e test and its manual invocation",
+        "No frontend test capability at all: apps/panel, apps/client and packages/client-core have no test script and CI runs only build + lint + format",
+        "No documented coverage expectations or regression suite for behavior-changing work"
+      ],
+      "proposed_actions": [
+        "Correct AGENTS.md §7 and docs/development.md to describe the real test surface (unit + ignored e2e + verification commands)",
+        "Record the frontend testing gap explicitly; decide separately whether an automated frontend test gate is required (ADC-005)"
+      ],
+      "decision_required": false,
+      "decision": "Documentation correction only; adding a new mandatory frontend test gate would require ADC-005 approval.",
+      "target_documents": ["AGENTS.md", "docs/development.md", "docs/testing/ (proposed)"]
+    },
+    {
+      "id": "evaluation",
+      "status": "N/A",
+      "evidence": [
+        "AGENTS.md:23-29 and crates/pp-agent (proxy node daemon, not an AI agent)",
+        "Cargo.toml:31-60 (no LLM client dependency)",
+        "docs/plans/2026-10-03-client-merge-evaluation.md:1-5 (an architecture migration assessment, not Agent evaluation)",
+        "grep -rni 'eval|dataset|benchmark' .github scripts .agents => no Agent-evaluation artifacts"
+      ],
+      "gaps": [
+        "No Agent evaluation datasets, metrics, regression suite or eval documentation exists",
+        "Applicability is arguable only for the coding-agent infrastructure (.pi multi-agent, .opencode orchestrator/executor/reviewer), whose behavior is currently unmeasured"
+      ],
+      "proposed_actions": [
+        "Keep N/A while the repository ships no AI/LLM agent runtime",
+        "If ADC-002 decides that coding-agent infrastructure is in scope, reclassify to Missing and add evaluation coverage"
+      ],
+      "decision_required": true,
+      "decision": "Applicability reason: the protocol evaluation capability targets Agent behavior; this project develops no AI agent application, and docs/plans/2026-10-03-client-merge-evaluation.md is an architecture assessment. Pending ADC-002 for the coding-agent-infrastructure boundary.",
+      "target_documents": []
+    },
+    {
+      "id": "operations",
+      "status": "Existing",
+      "evidence": [
+        "docs/deployment.md:24-909 (requirements, Docker Compose, nginx/Caddy, CLI lifecycle, one-click install, manual systemd, HA, security/TLS, monitoring and alerting, backup/restore, upgrade, CI/CD artifacts, troubleshooting)",
+        "docker-compose.yml:1-74 (postgres, hub, agent), Dockerfile.hub, Dockerfile.agent, deploy/",
+        "scripts/install-hub.sh, scripts/install-agent.sh",
+        "crates/pp-cli/src/main.rs:69-131 (install/upgrade/rollback/uninstall/status/logs via InstallTarget Hub/Agent) and crates/pp-cli/src/ops",
+        "crates/pp-hub/src/config.rs:35 (default listen 0.0.0.0:8081) matches docs/index.md:54 and README.md:137-138",
+        ".github/workflows/release.yml:13-118 (web, binaries, Windows NSIS artifacts)"
+      ],
+      "gaps": [
+        "No incident-response/on-call or SLO section (not required by protocol intent for this project)",
+        "docs/index.md and README.md link docs/deployment.md correctly, so no wiring gap was found"
+      ],
+      "proposed_actions": [
+        "Only keep-alive maintenance: re-verify deployment commands during Pass 2 reconciliation"
+      ],
+      "decision_required": false,
+      "decision": "No action required beyond Pass 2 reconciliation.",
+      "target_documents": ["docs/deployment.md"]
+    },
+    {
+      "id": "agents",
+      "status": "N/A",
+      "evidence": [
+        "crates/pp-agent/src/main.rs, crates/pp-agent/src/client.rs (sing-box/mihomo process manager over gRPC)",
+        "proto/hub_agent.proto (HubMessage/AgentMessage control plane)",
+        "AGENTS.md:25, AGENTS.md:103-121",
+        "No LLM/planning/tool-loop code in Cargo.toml:31-60",
+        ".agents/, .opencode/, .pi/ (coding-agent adapters, not a product agent architecture)"
+      ],
+      "gaps": [
+        "Name collision: pp-agent is a proxy node daemon; a path/name-based mapping would wrongly mark this capability Existing"
+      ],
+      "proposed_actions": [
+        "Keep N/A and state the naming distinction in the adopted documentation so future agents do not mis-map it"
+      ],
+      "decision_required": false,
+      "decision": "Applicability reason: the capability documents the project's own AI Agent architecture (planning/execution separation, lifecycle, tool use); ProxyPanel has none. Coding-agent infrastructure is Agent Adapter scope (see agent-adapter and ADC-002).",
+      "target_documents": []
+    },
+    {
+      "id": "tools",
+      "status": "N/A",
+      "evidence": [
+        "Product interfaces are HTTP REST, gRPC and Tauri IPC: docs/api_reference.md, proto/hub_agent.proto, crates/pp-client-tauri",
+        "No tool schema/registry or function-calling contract in the repository",
+        "opencode/pi tool lists are vendor-defined adapter configuration (.pi/agents/coder.md:1-13, .opencode/agents/executor.md)"
+      ],
+      "gaps": [
+        "No project-owned Agent Tool input/output/side-effect contracts (correct for a project with no agent runtime)"
+      ],
+      "proposed_actions": [
+        "Keep N/A; product IPC contracts stay in docs/api_reference.md and proto/, not in a Tool architecture document"
+      ],
+      "decision_required": false,
+      "decision": "Applicability reason: the capability describes Tools invoked by an AI agent; the project defines no such tools.",
+      "target_documents": []
+    },
+    {
+      "id": "prompts",
+      "status": "N/A",
+      "evidence": [
+        "Prompt-like artifacts are coding-agent adapter configuration: .pi/master.md, .pi/agents/{coder,reviewer,writer}.md, .opencode/agents/{orchestrator,executor,reviewer}.md, .agents/skills/*/SKILL.md",
+        ".protocol/agent-development-protocol/AGENTS.md:20-24 and 28-36 (keep Agent Adapter details out of the project contract)",
+        "No prompt templates, prompt versioning or evaluation coverage tied to product behavior"
+      ],
+      "gaps": [
+        "Coding-agent prompts exist but have no versioning, ownership or regression discipline; they are adapter assets, not a project prompt subsystem"
+      ],
+      "proposed_actions": [
+        "Keep N/A for project prompt management; document coding-agent prompts under docs/adapters/ (agent-adapter) if ADC-002 confirms adapter scope"
+      ],
+      "decision_required": false,
+      "decision": "Applicability reason: the capability treats prompts as application behavior of an Agent system; the project ships no such system. Adapter prompts are handled under agent-adapter.",
+      "target_documents": []
+    },
+    {
+      "id": "memory",
+      "status": "N/A",
+      "evidence": [
+        ".agents/rules/client-state-management.md:5-11 (frontend TanStack Query / jotai / zustand state)",
+        "docs/architecture.md:537-612 and crates/pp-db/src/entities (product persistence)",
+        "No memory store, namespace, retrieval or retention documentation"
+      ],
+      "gaps": [
+        "Naming trap: application state and database persistence must not be read as Agent memory"
+      ],
+      "proposed_actions": [
+        "Keep N/A and note the distinction in the adopted documentation"
+      ],
+      "decision_required": false,
+      "decision": "Applicability reason: the capability covers Agent memory; the repository has none. In-repo state concerns are application state and product persistence.",
+      "target_documents": []
+    },
+    {
+      "id": "mcp",
+      "status": "N/A",
+      "evidence": [
+        "grep -rni 'mcp' opencode.jsonc .opencode/ => no match",
+        "No MCP configuration or server/client code; no docs/mcp/",
+        "apps/panel/AGENTS.md:4 lists HeroUI's own mcp-server.mdx documentation entry (vendor doc index, not an integration)"
+      ],
+      "gaps": [
+        "None applicable; no integration exists to document"
+      ],
+      "proposed_actions": [
+        "Keep N/A; re-evaluate if an MCP server/client is ever introduced"
+      ],
+      "decision_required": false,
+      "decision": "Applicability reason: the project neither exposes nor consumes MCP.",
+      "target_documents": []
+    },
+    {
+      "id": "adrs",
+      "status": "Partial",
+      "evidence": [
+        "docs/adr/0001-neutral-fields-for-multi-kernel-protocols.md:1-5",
+        "docs/adr/0002-client-rule-management.md:1-8 and 700",
+        "docs/adr/0003-desktop-mobile-split.md:1-11 (Status: Superseded by ADR-0007)",
+        "docs/adr/0004-client-singbox-only.md:1-6",
+        "docs/adr/0005-client-config-slices.md:1-6",
+        "docs/adr/0006-client-traffic-stats.md:1-6",
+        "docs/adr/0007-client-single-shell-merge.md:1-10 (Accepted, Supersedes ADR-0003)",
+        "AGENTS.md:28, 278-293 reference ADR-0003 and ADR-0007; README.md:70 references ADR-0007"
+      ],
+      "gaps": [
+        "No documented ADR convention, template or index (protocol conformance expects 'ADR conventions')",
+        "docs/index.md does not list docs/adr/, so the decision log is not discoverable from the documentation index",
+        "ADR-0002 Status is still Proposed although its §8.2 records the v1 implementation as complete",
+        "ADR-0006 is dated 2026-12-19, later than ADR-0007 (2026-10-03) and than the audited repository state",
+        "ADR-0004/0005/0006 Scope lines reference removed apps/desktop and apps/mobile paths without a supersession/annotation note (acceptable as historical record, but unmarked)"
+      ],
+      "proposed_actions": [
+        "Add docs/adr/README.md with the ADR convention/template and index — blocked by ADC-001 if protocol-recommended docs/decisions/ is preferred",
+        "Fix ADR-0002 status and ADR-0006 date, or introduce an explicit status vocabulary — ADC-006",
+        "Link docs/adr/ from the documentation index"
+      ],
+      "decision_required": true,
+      "decision": "Pending ADC-001 (ADR directory convention) and ADC-006 (status/date metadata convention).",
+      "target_documents": ["docs/adr/", "docs/index.md", "docs/decisions/ (proposed)"]
+    },
+    {
+      "id": "agent-adapter",
+      "status": "Partial",
+      "evidence": [
+        "opencode.jsonc:1-66 (orchestrator/executor/reviewer, models, permissions, default agent)",
+        ".opencode/AGENTS.md:1-15, .opencode/agents/{orchestrator,executor,reviewer}.md, .opencode/rules/coding-standards.md:1-14",
+        ".pi/master.md:1-114, .pi/agents/{coder,reviewer,writer}.md:1-13, .pi/subagent-isolation.json, .pi/skills/",
+        ".agents/rules/*.md, .agents/skills/, skills-lock.json, apps/panel/AGENTS.md:3-5 (generated HeroUI index)",
+        "AGENTS.md:7-19 (protocol consumption instructions)"
+      ],
+      "gaps": [
+        "No docs/adapters/ documentation: supported agents, their capabilities, permissions/hooks, tool mapping and conformance evidence are undocumented",
+        ".opencode/rules/coding-standards.md:6-14 prescribes verification commands for apps/desktop/src-tauri, a path removed by ADR-0007",
+        ".opencode/AGENTS.md:15 still contains an unfilled project-stack placeholder",
+        ".agents/rules/client-state-management.md:1-3 is titled (apps/desktop) and references removed paths",
+        "Overlapping rule sets (AGENTS.md, .agents/rules/, .opencode/rules/, .pi/*, apps/panel/AGENTS.md) have no stated precedence, risking contradictory agent instructions",
+        "No representative-task or conformance evidence that the adapters can execute the project workflows (protocol conformance §Agent Adapter)"
+      ],
+      "proposed_actions": [
+        "Document each adapter under docs/adapters/ with capabilities, permissions, tool mapping and known limitations — blocked by ADC-001/ADC-002",
+        "Repair stale adapter paths (apps/desktop -> apps/client) and remove the .opencode/AGENTS.md placeholder",
+        "State a precedence order for root contract vs .agents/rules vs vendor adapter rules"
+      ],
+      "decision_required": true,
+      "decision": "Pending ADC-002 (adapter scope and which agents the project officially supports) and ADC-001 (documentation location).",
+      "target_documents": ["docs/adapters/ (proposed)", ".opencode/rules/coding-standards.md", ".opencode/AGENTS.md", ".agents/rules/client-state-management.md", "AGENTS.md"]
+    }
+  ],
+  "open_decisions": [
+    {
+      "id": "ADC-001",
+      "question": "Should the project keep its existing documentation convention (docs/index.md, docs/architecture.md, docs/development.md, docs/deployment.md, docs/adr/) or migrate to the protocol-recommended paths (docs/README.md, docs/architecture/, docs/workflows/, docs/testing/, docs/decisions/)?",
+      "context": "protocol-manifest.json sets allow_existing_convention=true and mapping.md states existing conventions are authoritative unless a human approves a migration; moving documents changes ownership, links and established workflow.",
+      "evidence": ["docs/index.md:9-15", "docs/adr/", ".protocol/agent-development-protocol/protocol-manifest.json:6-18", ".protocol/agent-development-protocol/docs/adoption/mapping.md:63-72", ".protocol/agent-development-protocol/docs/adoption/quickstart.md:112"],
+      "recommendation": "Keep the existing convention and record the mapping evidence; add new documents only where a capability is genuinely absent (for example docs/adapters/).",
+      "affects_capabilities": ["workflows", "adrs", "agent-adapter"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-002",
+      "question": "Is the repository's coding-agent infrastructure (.agents/rules + skills, .opencode orchestrator/executor/reviewer, .pi master/agents/skills) in scope for the protocol capabilities agents/tools/prompts/memory/evaluation, or strictly Agent Adapter scope?",
+      "context": "The protocol separates Project Contract, Project Workflow and Agent Adapter, and requires vendor-specific mechanisms to stay out of the project contract. The repository actively maintains multi-agent coding infrastructure, so the boundary changes several classifications.",
+      "evidence": [".protocol/agent-development-protocol/AGENTS.md:20-24", ".protocol/agent-development-protocol/AGENTS.md:28-36", "AGENTS.md:7-19", ".pi/master.md", "opencode.jsonc", ".agents/rules/"],
+      "recommendation": "Treat it as Agent Adapter scope (current N/A classifications for agents/tools/prompts/memory stand) and document the adapters under docs/adapters/.",
+      "affects_capabilities": ["evaluation", "agents", "tools", "prompts", "memory", "mcp", "agent-adapter"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-003",
+      "question": "Which source of truth wins for the client architecture: docs/architecture.md and README's structure tree (apps/desktop + apps/mobile) or ADR-0007 plus the implementation (apps/client)?",
+      "context": "Reconciliation requires identifying the authoritative source before correcting documentation; the conflict spans project docs, Cargo.toml comments and agent rules.",
+      "evidence": ["docs/architecture.md:355-362", "docs/architecture.md:410", "docs/architecture.md:428", "README.md:235-236", "README.md:70", "README.md:262", "Cargo.toml:17", "docs/adr/0007-client-single-shell-merge.md:6", "apps/"],
+      "recommendation": "ADR-0007 (Accepted, 2026-10-03) plus apps/ is authoritative; update the stale documents in Pass 2 without changing ADR-0003's historical record.",
+      "affects_capabilities": ["architecture", "project-contract", "agent-adapter"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-004",
+      "question": "How should the uncommitted protocol entry point be handled: commit AGENTS.md's 'Agent Development Protocol' section and root ADOPT.md before Pass 2, or keep them uncommitted until the audit is accepted?",
+      "context": "Pass 1 must not modify project files, so the current state is working-tree only; the adoption record's durability and the eventual diff depend on this choice.",
+      "evidence": ["git status --porcelain (M AGENTS.md, ?? ADOPT.md)", "git diff AGENTS.md (+14 lines)", "ADOPT.md:1-12"],
+      "recommendation": "Commit them as one docs(chore) change after the audit is accepted, before Pass 2 generation, so Pass 2 has a clean base.",
+      "affects_capabilities": ["project-contract"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-005",
+      "question": "Should the project Definition of Done require automated frontend tests, given that apps/panel, apps/client and packages/client-core currently have no test runner and CI runs only build + lint + format?",
+      "context": "Declaring a new mandatory validation gate changes project process and is explicitly listed as requiring approval; documenting the current state does not.",
+      "evidence": ["apps/panel/package.json:1-20", "apps/client/package.json:1-20", "packages/client-core/package.json", ".github/workflows/ci.yml:112-120", ".protocol/agent-development-protocol/docs/adoption/mapping.md:97-105"],
+      "recommendation": "Document the gap and the current gate without adding a new mandatory gate; decide on frontend testing as a separate project decision.",
+      "affects_capabilities": ["testing", "workflows"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-006",
+      "question": "What ADR metadata convention should apply, and how should existing drift be repaired (ADR-0002 Status: Proposed although implemented; ADR-0006 dated 2026-12-19, after ADR-0007)?",
+      "context": "The protocol expects ADR conventions; the current ADRs use a consistent header but no documented status vocabulary, and two records contradict implementation or chronology.",
+      "evidence": ["docs/adr/0002-client-rule-management.md:3", "docs/adr/0002-client-rule-management.md:700", "docs/adr/0006-client-traffic-stats.md:4", "docs/adr/0007-client-single-shell-merge.md:4", ".protocol/agent-development-protocol/docs/conformance.md:16"],
+      "recommendation": "Add docs/adr/README.md defining Status (Proposed/Accepted/Superseded/Deprecated), required fields and the index; correct ADR-0002 status and ADR-0006 date in a dedicated docs commit.",
+      "affects_capabilities": ["adrs"],
+      "status": "open"
+    },
+    {
+      "id": "ADC-007",
+      "question": "How should the release-documentation drift be resolved: docs/contributing.md requires updating a root CHANGELOG.md that does not exist — create the changelog or correct the release instructions?",
+      "context": "The release process references a missing artifact; creating it introduces a new maintained document, while removing the step changes documented process.",
+      "evidence": ["docs/contributing.md:261", "docs/contributing.md:349-354", "docs/contributing.md:356-376", "ls CHANGELOG.md => No such file"],
+      "recommendation": "Decide explicitly; either add CHANGELOG.md with a starting point at workspace version 0.4.5 or drop the step from docs/contributing.md.",
+      "affects_capabilities": ["project-contract", "operations"],
+      "status": "open"
+    }
+  ]
+}

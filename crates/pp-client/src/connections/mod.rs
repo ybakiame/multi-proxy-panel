@@ -1,13 +1,16 @@
 //! Connection views and Clash API operations.
 //!
 //! Provides [`clash_get_connections`], [`clash_close_connection`], and a background
-//! polling tracker that maintains an in-memory ring buffer of closed connections.
+//! tracker (WebSocket push preferred, HTTP polling fallback) that maintains an
+//! in-memory ring buffer of closed connections and feeds a [`crate::stats::StatsStore`]
+//! sink with per-snapshot deltas for persistent traffic statistics.
 
 mod clash;
 mod tracker;
+mod ws;
 
 pub use clash::{clash_close_connection, clash_get_connections};
-pub use tracker::{ConnectionTrackerHandle, start_connection_tracker};
+pub use tracker::{ConnectionTrackerHandle, TrackerBatch, start_connection_tracker};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +21,12 @@ pub struct ConnectionView {
     pub id: String,
     /// Target host: `metadata.host` when available, otherwise `destination_ip:port`.
     pub host: String,
+    /// Aggregation target: request domain when known, otherwise the destination IP.
+    pub target: String,
+    /// Destination IP (`metadata.destinationIP`, empty when unknown).
+    pub destination_ip: String,
+    /// Leaf outbound tag (`chains[0]`, i.e. the final outbound the traffic exits from).
+    pub outbound: String,
     /// Network protocol, e.g. `tcp` / `udp`.
     pub network: String,
     /// Proxy chain as a human-readable string (`chains` reversed, joined by ` → `).
@@ -49,6 +58,23 @@ pub struct ActiveConnections {
 mod tests {
     use super::*;
     use crate::connections::clash::parse_connections_response;
+
+    fn make_conn(id: &str, host: &str, upload: u64, download: u64, start: u64) -> ConnectionView {
+        ConnectionView {
+            id: id.into(),
+            host: host.into(),
+            target: host.into(),
+            destination_ip: String::new(),
+            outbound: "Proxy".into(),
+            network: "tcp".into(),
+            chain: "Proxy".into(),
+            rule: "DOMAIN".into(),
+            rule_payload: host.into(),
+            upload,
+            download,
+            start,
+        }
+    }
 
     #[test]
     fn parse_connections_response_builds_views() {
@@ -91,6 +117,9 @@ mod tests {
 
         let c1 = conns.iter().find(|c| c.id == "conn-1").unwrap();
         assert_eq!(c1.host, "example.com");
+        assert_eq!(c1.target, "example.com");
+        assert_eq!(c1.destination_ip, "93.184.216.34");
+        assert_eq!(c1.outbound, "DIRECT");
         assert_eq!(c1.network, "tcp");
         assert_eq!(c1.chain, "Proxy → DIRECT");
         assert_eq!(c1.rule, "DOMAIN");
@@ -101,6 +130,9 @@ mod tests {
 
         let c2 = conns.iter().find(|c| c.id == "conn-2").unwrap();
         assert_eq!(c2.host, "8.8.8.8:53");
+        assert_eq!(c2.target, "8.8.8.8");
+        assert_eq!(c2.destination_ip, "8.8.8.8");
+        assert_eq!(c2.outbound, "DIRECT");
         assert_eq!(c2.network, "udp");
         assert_eq!(c2.chain, "DIRECT");
         assert_eq!(c2.rule, "MATCH");
@@ -125,57 +157,85 @@ mod tests {
     fn tracker_detects_closed_connections() {
         use crate::connections::tracker::TrackerState;
 
-        let mut tracker = TrackerState::new();
+        let mut tracker = TrackerState::new(0);
 
-        let conn_a = ConnectionView {
-            id: "a".into(),
-            host: "a.com".into(),
-            network: "tcp".into(),
-            chain: "Proxy".into(),
-            rule: "DOMAIN".into(),
-            rule_payload: "a.com".into(),
-            upload: 100,
-            download: 200,
-            start: 1,
-        };
-        let conn_b = ConnectionView {
-            id: "b".into(),
-            host: "b.com".into(),
-            network: "udp".into(),
-            chain: "DIRECT".into(),
-            rule: "MATCH".into(),
-            rule_payload: "".into(),
-            upload: 50,
-            download: 100,
-            start: 2,
-        };
+        let conn_a = make_conn("a", "a.com", 100, 200, 1);
+        let conn_b = make_conn("b", "b.com", 50, 100, 2);
 
         // First snapshot: a + b.
-        tracker.update(vec![conn_a.clone(), conn_b.clone()]);
+        let batch = tracker.update(vec![conn_a.clone(), conn_b.clone()], 10);
         assert_eq!(tracker.last_seen.len(), 2);
         assert!(tracker.closed.is_empty());
+        assert!(batch.closed.is_empty());
+        // 两条均为 tracker 启动后的新连接：全量入账 + new_conn 计数。
+        assert_eq!(batch.deltas.len(), 2);
+        assert!(batch.deltas.iter().all(|d| d.new_conn));
 
         // Second snapshot: only b → a is closed.
-        tracker.update(vec![conn_b.clone()]);
+        let batch = tracker.update(vec![conn_b.clone()], 20);
         assert_eq!(tracker.last_seen.len(), 1);
         assert_eq!(tracker.closed.len(), 1);
         assert_eq!(tracker.closed[0].id, "a");
+        assert_eq!(batch.closed.len(), 1);
+        assert_eq!(batch.closed[0].id, "a");
 
         // Third snapshot: b + c → nothing closed.
-        let conn_c = ConnectionView {
-            id: "c".into(),
-            host: "c.com".into(),
-            network: "tcp".into(),
-            chain: "Proxy".into(),
-            rule: "DOMAIN".into(),
-            rule_payload: "c.com".into(),
-            upload: 10,
-            download: 20,
-            start: 3,
-        };
-        tracker.update(vec![conn_b.clone(), conn_c.clone()]);
+        let conn_c = make_conn("c", "c.com", 10, 20, 25);
+        let batch = tracker.update(vec![conn_b.clone(), conn_c.clone()], 30);
         assert_eq!(tracker.last_seen.len(), 2);
         assert_eq!(tracker.closed.len(), 1);
+        assert!(batch.closed.is_empty());
+        // b 无增量；c 为新连接。
+        assert_eq!(batch.deltas.len(), 1);
+        assert_eq!(batch.deltas[0].target, "c.com");
+        assert!(batch.deltas[0].new_conn);
+    }
+
+    #[test]
+    fn tracker_delta_accounting() {
+        use crate::connections::tracker::TrackerState;
+
+        let mut tracker = TrackerState::new(100);
+
+        // 快照一：新连接（start >= started_at）全量入账。
+        let batch = tracker.update(vec![make_conn("a", "a.com", 100, 200, 150)], 160);
+        assert_eq!(batch.deltas.len(), 1);
+        assert_eq!(batch.deltas[0].upload, 100);
+        assert_eq!(batch.deltas[0].download, 200);
+        assert!(batch.deltas[0].new_conn);
+
+        // 快照二：仅差量入账。
+        let batch = tracker.update(vec![make_conn("a", "a.com", 130, 260, 150)], 170);
+        assert_eq!(batch.deltas.len(), 1);
+        assert_eq!(batch.deltas[0].upload, 30);
+        assert_eq!(batch.deltas[0].download, 60);
+        assert!(!batch.deltas[0].new_conn);
+
+        // 快照三：无增量不产生 delta。
+        let batch = tracker.update(vec![make_conn("a", "a.com", 130, 260, 150)], 180);
+        assert!(batch.deltas.is_empty());
+
+        // 快照四：计数器回退（如核心重启复用 ID）→ 饱和减法记 0，不出负账。
+        let batch = tracker.update(vec![make_conn("a", "a.com", 10, 10, 150)], 190);
+        assert!(batch.deltas.is_empty());
+    }
+
+    #[test]
+    fn tracker_preexisting_connection_baselines_only() {
+        use crate::connections::tracker::TrackerState;
+
+        // tracker 启动前已存在的连接（start < started_at）：只建基线，不入账不计数，
+        // 避免 App 重启但核心未重启时把历史流量重复计入今日。
+        let mut tracker = TrackerState::new(1000);
+        let batch = tracker.update(vec![make_conn("old", "old.com", 999, 999, 10)], 1100);
+        assert!(batch.deltas.is_empty());
+
+        // 后续差量正常入账。
+        let batch = tracker.update(vec![make_conn("old", "old.com", 1050, 1100, 10)], 1200);
+        assert_eq!(batch.deltas.len(), 1);
+        assert_eq!(batch.deltas[0].upload, 51);
+        assert_eq!(batch.deltas[0].download, 101);
+        assert!(!batch.deltas[0].new_conn);
     }
 
     #[test]
@@ -183,43 +243,31 @@ mod tests {
         use crate::connections::tracker::TrackerState;
 
         const CAPACITY: usize = 500;
-        let mut tracker = TrackerState::new();
+        let mut tracker = TrackerState::new(0);
 
         // Fill buffer to capacity.
         for i in 0..CAPACITY {
-            let conn = ConnectionView {
-                id: format!("conn-{i}"),
-                host: format!("host-{i}"),
-                network: "tcp".into(),
-                chain: "DIRECT".into(),
-                rule: "MATCH".into(),
-                rule_payload: "".into(),
-                upload: i as u64,
-                download: i as u64,
-                start: i as u64,
-            };
-            tracker.last_seen.insert(conn.id.clone(), conn.clone());
+            let conn = make_conn(
+                &format!("conn-{i}"),
+                &format!("host-{i}"),
+                i as u64,
+                i as u64,
+                i as u64,
+            );
+            tracker.last_seen.insert(conn.id.clone(), conn);
             // Immediately remove by updating with empty vec.
-            tracker.update(vec![]);
+            tracker.update(vec![], i as i64);
         }
 
         assert_eq!(tracker.closed.len(), CAPACITY);
         assert_eq!(tracker.closed[0].id, "conn-0");
 
         // One more eviction.
-        let extra = ConnectionView {
-            id: "extra".into(),
-            host: "extra".into(),
-            network: "tcp".into(),
-            chain: "DIRECT".into(),
-            rule: "MATCH".into(),
-            rule_payload: "".into(),
-            upload: 999,
-            download: 999,
-            start: 999,
-        };
-        tracker.last_seen.insert(extra.id.clone(), extra.clone());
-        tracker.update(vec![]);
+        tracker.last_seen.insert(
+            "extra".into(),
+            make_conn("extra", "extra.com", 999, 999, 999),
+        );
+        tracker.update(vec![], 1000);
 
         assert_eq!(tracker.closed.len(), CAPACITY);
         assert_eq!(tracker.closed[0].id, "conn-1");
@@ -227,33 +275,24 @@ mod tests {
     }
 
     #[test]
-    fn tracker_clears_last_seen_on_poll_failure() {
+    fn tracker_keeps_last_seen_across_failures() {
         use crate::connections::tracker::TrackerState;
 
-        let mut tracker = TrackerState::new();
-        let conn = ConnectionView {
-            id: "x".into(),
-            host: "x.com".into(),
-            network: "tcp".into(),
-            chain: "DIRECT".into(),
-            rule: "MATCH".into(),
-            rule_payload: "".into(),
-            upload: 1,
-            download: 2,
-            start: 1,
-        };
-        tracker.update(vec![conn.clone()]);
+        // 快照获取失败时不再清空 last_seen：恢复后的差分能补上故障窗口内的流量，
+        // 且不会把存活连接误判为关闭。
+        let mut tracker = TrackerState::new(0);
+        tracker.update(vec![make_conn("x", "x.com", 1, 2, 1)], 10);
         assert_eq!(tracker.last_seen.len(), 1);
 
-        // Simulate poll failure: clear last_seen.
-        tracker.last_seen.clear();
-        assert!(tracker.last_seen.is_empty());
-        assert!(tracker.closed.is_empty());
+        // （故障窗口：外部不发生 update 调用，last_seen 保持不变）
 
-        // Next snapshot with same conn should NOT mark it as closed.
-        tracker.update(vec![conn.clone()]);
+        // 恢复后的快照正常差分。
+        let batch = tracker.update(vec![make_conn("x", "x.com", 5, 9, 1)], 30);
         assert_eq!(tracker.last_seen.len(), 1);
         assert!(tracker.closed.is_empty());
+        assert_eq!(batch.deltas.len(), 1);
+        assert_eq!(batch.deltas[0].upload, 4);
+        assert_eq!(batch.deltas[0].download, 7);
     }
 
     #[tokio::test]

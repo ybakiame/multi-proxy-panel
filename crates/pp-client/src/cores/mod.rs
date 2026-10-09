@@ -1,4 +1,4 @@
-//! Core version management: download local cores + detect system-installed cores + active selection.
+//! Core version management: download local cores and list installed versions.
 //!
 //! The client only supports the sing-box core.
 //!
@@ -20,40 +20,39 @@
 use std::path::{Path, PathBuf};
 
 use pp_common::{CoreType, PanelError, PanelResult};
-use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 use crate::config::ClientConfig;
 
+mod channel;
 mod download;
+mod seed;
 #[cfg(test)]
 mod tests;
 mod version;
 
+pub use channel::{CoreChannel, RemoteChannelVersion, channel_of_version};
+pub use seed::seed_bundled_core;
 pub use version::infer_core_type;
 
-/// GitHub API request timeout (seconds).
+/// GitHub API request timeout (seconds) — applied per-request to release metadata
+/// calls only; the binary download itself has no total timeout (see below).
 const HTTP_TIMEOUT_SECS: u64 = 30;
 
-/// Core source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CoreSource {
-    /// Downloaded from GitHub Releases to `data_dir/cores` by this module.
-    Downloaded,
-    /// System-installed core detected via PATH.
-    System,
-}
+/// TCP connect timeout (seconds) for all requests (fast fail on dead networks).
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 
-/// A locally available sing-box core (downloaded or system-installed).
+/// A locally available sing-box core (downloaded to `data_dir/cores`, or seeded
+/// from the installer bundle on first run — seeding lands in the same versioned
+/// directory and is indistinguishable from a download).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalCore {
     pub version: String,
     pub path: PathBuf,
-    pub source: CoreSource,
 }
 
 /// Client core inventory: manages download directory scanning, remote version listing,
-/// download installation, system detection, and active matching.
+/// download installation, and deletion.
 #[derive(Debug, Clone)]
 pub struct ClientCoreInventory {
     data_dir: PathBuf,
@@ -80,8 +79,13 @@ impl ClientCoreInventory {
                 "删除遗留 mihomo 核心目录失败"
             );
         }
+        // 超时纪律：connect_timeout 覆盖全部请求；30s 总超时只按请求施加于
+        // release 元数据 API（响应体小），**不**施加于核心二进制下载——
+        // reqwest 的 Client 级 .timeout() 会把 body 流式下载计入总时长，
+        // 慢速直连网络下 ~30MB 的核心包必然超时被砍（实测 WSL 直连 GitHub
+        // 延迟高，30s 内下不完）。
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
+            .connect_timeout(std::time::Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
             .no_proxy()
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -110,7 +114,7 @@ impl ClientCoreInventory {
     }
 
     /// Specific core version directory: `data_dir/cores/sing-box/<version>`.
-    fn core_dir(&self, version: &str) -> PathBuf {
+    pub(super) fn core_dir(&self, version: &str) -> PathBuf {
         self.cores_dir().join(version::binary_name()).join(version)
     }
 
@@ -127,11 +131,7 @@ impl ClientCoreInventory {
                 let version = entry.file_name().to_string_lossy().into_owned();
                 let bin = path.join(version::binary_name_on_disk());
                 if bin.is_file() {
-                    out.push(LocalCore {
-                        version,
-                        path: bin,
-                        source: CoreSource::Downloaded,
-                    });
+                    out.push(LocalCore { version, path: bin });
                 }
             }
         }
@@ -145,51 +145,10 @@ impl ClientCoreInventory {
         let mut versions: Vec<String> = self
             .list_installed()
             .into_iter()
-            .filter(|c| c.source == CoreSource::Downloaded)
             .map(|c| c.version)
             .collect();
         versions.sort_by(|a, b| version::compare_core_versions(b, a));
         versions
-    }
-
-    /// List recent 10 remote release versions (strip `v` prefix).
-    pub async fn list_remote_versions(&self) -> PanelResult<Vec<String>> {
-        let (owner, repo) = CoreType::SingBox.github_repo();
-        let url = format!(
-            "{}/repos/{}/{}/releases?per_page=10",
-            self.api_base, owner, repo
-        );
-        // GitHub API URL is wrapped by configured proxy prefix (shares GitHub access strategy
-        // with remote resource fetching); injected mock service addresses (non-GitHub domains)
-        // are not affected.
-        let url = crate::apply_github_proxy_prefix(&url, &self.github_proxy_prefix());
-        let resp = self
-            .client
-            .get(&url)
-            .header("User-Agent", "proxy-panel-client")
-            .send()
-            .await
-            .map_err(|e| PanelError::Core(format!("GitHub API request failed: {e}")))?;
-        if !resp.status().is_success() {
-            return Err(PanelError::Core(format!(
-                "GitHub API returned status {}",
-                resp.status()
-            )));
-        }
-        let releases: Vec<serde_json::Value> = resp
-            .json()
-            .await
-            .map_err(|e| PanelError::Core(format!("Failed to parse GitHub releases: {e}")))?;
-        let mut versions = Vec::new();
-        for release in releases {
-            if let Some(tag) = release.get("tag_name").and_then(|v| v.as_str()) {
-                let version = tag.strip_prefix('v').unwrap_or(tag);
-                if !version.is_empty() {
-                    versions.push(version.to_string());
-                }
-            }
-        }
-        Ok(versions)
     }
 
     /// Download specified core version and save to `cores_dir/sing-box/<version>/`.
@@ -210,7 +169,6 @@ impl ClientCoreInventory {
             return Ok(LocalCore {
                 version,
                 path: on_disk,
-                source: CoreSource::Downloaded,
             });
         }
 
@@ -253,6 +211,14 @@ impl ClientCoreInventory {
         let path = result;
         download::set_executable(&path)?;
 
+        // Windows：sing-box TUN 依赖 wintun.dll 与核心可执行文件同目录（核心不内嵌）。
+        // 核心下载成功后随附下载对应架构的 wintun.dll；失败不阻塞核心安装（TUN
+        // 启动时会报「Unable to load library」，错误信息足够明确）。
+        #[cfg(target_os = "windows")]
+        if let Err(e) = download::ensure_wintun(&self.client, &dir).await {
+            tracing::warn!(error = %e, "wintun.dll 下载失败，TUN 模式将不可用");
+        }
+
         // Version probe verification: output must contain target version; on failure clean up
         // directory to avoid leaving partial artifacts.
         if let Err(e) = version::verify_version(&path, &version) {
@@ -265,69 +231,7 @@ impl ClientCoreInventory {
             path = %path.display(),
             "Core download complete"
         );
-        Ok(LocalCore {
-            version,
-            path,
-            source: CoreSource::Downloaded,
-        })
-    }
-
-    /// Look up system-installed sing-box cores via PATH (append `.exe` on Windows),
-    /// try `version` / `--version` / `-v` in sequence and parse version number; on parse failure
-    /// record as `unknown`.
-    pub fn detect_system_cores(&self) -> Vec<LocalCore> {
-        let Some(path_value) = std::env::var_os("PATH") else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for dir in std::env::split_paths(&path_value) {
-            if !dir.is_dir() {
-                continue;
-            }
-            let candidate = dir.join(version::binary_name_on_disk());
-            if !candidate.is_file() || out.iter().any(|c: &LocalCore| c.path == candidate) {
-                continue;
-            }
-            let version = version::parse_version_from_output(&version::binary_output(&candidate))
-                .unwrap_or_else(|| "unknown".to_string());
-            out.push(LocalCore {
-                version,
-                path: candidate,
-                source: CoreSource::System,
-            });
-        }
-        out
-    }
-
-    /// Match installed / system core by `config.core_binary`; returns `None` when not set.
-    pub fn active_core(&self, config: &ClientConfig) -> Option<LocalCore> {
-        if config.core_binary.as_os_str().is_empty() {
-            return None;
-        }
-        self.list_installed()
-            .into_iter()
-            .chain(self.detect_system_cores())
-            .find(|c| paths_equal(&c.path, &config.core_binary))
-    }
-
-    /// Preferred local binary:
-    ///
-    /// 1. The highest version among downloaded cores (semantic version sorting, prerelease lower
-    ///    than same-base stable, e.g. `1.14.0-beta.4` < `1.14.0` but `> 1.13.15`);
-    /// 2. Fallback to first system core detected in PATH when no downloaded cores;
-    /// 3. Neither → `None` (command layer prompts user to download from core management).
-    pub fn preferred_binary(&self) -> Option<PathBuf> {
-        let downloaded = self
-            .list_installed()
-            .into_iter()
-            .max_by(|a, b| version::compare_core_versions(&a.version, &b.version));
-        if let Some(core) = downloaded {
-            return Some(core.path);
-        }
-        self.detect_system_cores()
-            .into_iter()
-            .next()
-            .map(|c| c.path)
+        Ok(LocalCore { version, path })
     }
 
     /// Delete a downloaded core (only cores within `cores_dir`).
@@ -436,6 +340,7 @@ impl ClientCoreInventory {
         let resp = self
             .client
             .get(&url)
+            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
             .header("User-Agent", "proxy-panel-client")
             .send()
             .await

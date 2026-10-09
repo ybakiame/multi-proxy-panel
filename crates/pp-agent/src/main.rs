@@ -7,6 +7,7 @@ use tracing_subscriber::prelude::*;
 
 mod acme;
 mod client;
+mod core_api;
 mod logger;
 mod persist;
 mod reporter;

@@ -1,0 +1,31 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { installLogCapture } from "@pp/client-core";
+import App from "@app/App";
+import "@app/index.css";
+
+// 挂载 React 前先接入日志管道：应用早期（模块初始化/渲染）的 console 错误
+// 也能被捕获转发到后端。
+installLogCapture();
+
+// QueryClient 模块级单例（双端一致）：默认配置 retry 1 / 失焦不重拉 / 30s stale，
+// 供各页面 Query 轮询共享同一缓存。
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    },
+  },
+});
+
+// `@app` 由 vite mode alias 构建期分发到 src/desktop 或 src/mobile（见 vite.config.ts）。
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  </React.StrictMode>,
+);

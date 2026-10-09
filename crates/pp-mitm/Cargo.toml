@@ -30,6 +30,8 @@ futures = { workspace = true }
 hyper = "1"
 hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
 rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+sha2 = { workspace = true }
 tokio-rustls = { workspace = true }
 tower = { workspace = true }
 webpki-roots = "0.26"

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pp_client::ClientState;
+use pp_client::StatsStore;
 use tokio::sync::Mutex;
 use tracing_appender::non_blocking::WorkerGuard;
 
@@ -20,6 +21,8 @@ pub struct AppState {
     pub client: Arc<Mutex<Option<ClientState>>>,
     /// 数据目录（配置、证书、核心二进制统一存放于此）。
     pub data_dir: PathBuf,
+    /// 流量统计存储（懒打开；打开失败时降级为 `None`，统计命令报错、tracker 仅内存态）。
+    stats: tokio::sync::OnceCell<Option<Arc<StatsStore>>>,
     /// 日志非阻塞写入线程的保活 guard。
     ///
     /// 被 Drop 后滚动文件停止接收日志（见 [`crate::logs::init_logging`]），因此必须随
@@ -33,7 +36,24 @@ impl AppState {
         Self {
             client: Arc::new(Mutex::new(None)),
             data_dir,
+            stats: tokio::sync::OnceCell::new(),
             _log_guard: log_guard,
         }
+    }
+
+    /// 获取（首次调用时打开）流量统计存储；打开失败返回 `None` 并记录告警。
+    pub async fn stats_store(&self) -> Option<Arc<StatsStore>> {
+        self.stats
+            .get_or_init(|| async {
+                match StatsStore::open(&self.data_dir).await {
+                    Ok(store) => Some(Arc::new(store)),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "流量统计存储打开失败，统计功能降级为不可用");
+                        None
+                    }
+                }
+            })
+            .await
+            .clone()
     }
 }

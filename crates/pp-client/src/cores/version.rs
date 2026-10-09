@@ -75,7 +75,7 @@ pub(super) fn ext_ok(is_windows: bool, name: &str) -> bool {
 /// order: `version` → `--version` → `-v`, compatible with both old and new cores.
 pub(super) fn binary_output(binary: &Path) -> String {
     for arg in ["version", "--version", "-v"] {
-        if let Ok(output) = Command::new(binary).arg(arg).output() {
+        if let Ok(output) = pp_common::no_window(Command::new(binary).arg(arg)).output() {
             let text = format!(
                 "{}{}",
                 String::from_utf8_lossy(&output.stdout),

@@ -1,0 +1,8 @@
+# 仓库级 cargo 配置（cargo 沿当前工作目录向上发现，对本仓库所有 crate/壳生效）。
+[env]
+# 交叉编译（如 Android）时必须禁止 lzma-sys / bzip2-sys（zip 依赖）通过 pkg-config
+# 链接 host 系统库：探测到的是 host 架构的 liblzma/libbz2，与目标架构不符，最终链接报
+# `liblzma.so is incompatible with aarch64linux`。设为 1 后两者一律回退 vendored 源码，
+# 由目标 CC 静态编译（host 构建同样走 vendored，消除「host 有/无系统库」的行为差异）。
+LIBLZMA_NO_PKG_CONFIG = "1"
+BZIP2_NO_PKG_CONFIG = "1"

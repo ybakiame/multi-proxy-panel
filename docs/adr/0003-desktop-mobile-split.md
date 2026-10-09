@@ -1,6 +1,8 @@
 # ADR-0003: 客户端 Desktop / Mobile 双应用分离架构
 
-- **Status:** Accepted（实施未启动）
+- **Status:** Superseded by ADR-0007（2026-10-03 合并回摆为 apps/client 单壳双目标；
+  本 ADR 的分离收益——UI 分目录、共享命令层、消灭前端运行时平台判断——由编译期
+  机制保留，见 ADR-0007 §2 与合并评估 docs/plans/2026-10-03-client-merge-evaluation.md）
 - **Date:** 2026-09-05
 - **Deciders:** ProxyPanel Contributors
 - **Scope:** `apps/desktop`、`apps/android`、`apps/mobile`（新）、`packages/client-core`（新）、`crates/pp-client-tauri`（新）

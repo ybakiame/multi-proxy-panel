@@ -30,7 +30,7 @@ export interface DnsServerPreset {
 export const DNS_SERVER_PRESETS: readonly DnsServerPreset[] = [
   // ---- 内置默认（与运行配置的内置 DNS 一致；删除内置默认后可从目录一键找回） ----
   {
-    isp: "内置默认（直连）",
+    isp: "内置默认（直连 DNS）",
     serverType: "https",
     server: "223.5.5.5",
     serverPort: 443,
@@ -38,7 +38,7 @@ export const DNS_SERVER_PRESETS: readonly DnsServerPreset[] = [
     group: "builtin",
   },
   {
-    isp: "内置默认（经代理）",
+    isp: "内置默认（代理DNS）",
     serverType: "udp",
     server: "8.8.8.8",
     serverPort: 53,

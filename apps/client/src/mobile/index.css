@@ -1,0 +1,10 @@
+@import "tailwindcss";
+/* Konsta UI 主题：含 @custom-variant dark（.dark 类变体）、iOS/Material 配色
+   token（--color-primary、--color-ios-*-surface 等）与组件样式。 */
+@import "konsta/react/theme.css";
+
+html,
+body,
+#root {
+  height: 100%;
+}

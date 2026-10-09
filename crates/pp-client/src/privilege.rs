@@ -74,8 +74,46 @@ fn platform_tun_auth_status(core_binary: &Path) -> TunAuthStatus {
 
 #[cfg(target_os = "windows")]
 fn platform_tun_auth_status(_core_binary: &Path) -> TunAuthStatus {
-    // 简化实现：不做管理员令牌检测，一律提示需要授权（以管理员身份重启）。
-    TunAuthStatus::NeedsAuth
+    // 检测当前进程令牌是否属于 Administrators 组（即是否已提升）。
+    if is_process_elevated() {
+        TunAuthStatus::Authorized
+    } else {
+        TunAuthStatus::NeedsAuth
+    }
+}
+
+/// 当前进程是否以管理员身份运行（Windows）：`CheckTokenMembership` 查询
+/// Administrators 组 SID。API 失败时保守返回 `false`（按未授权处理）。
+#[cfg(target_os = "windows")]
+fn is_process_elevated() -> bool {
+    use windows_sys::Win32::Security::{
+        AllocateAndInitializeSid, CheckTokenMembership, FreeSid, SECURITY_NT_AUTHORITY,
+    };
+
+    unsafe {
+        let mut sid: *mut core::ffi::c_void = std::ptr::null_mut();
+        if AllocateAndInitializeSid(
+            &SECURITY_NT_AUTHORITY,
+            2,
+            0x20, // SECURITY_BUILTIN_DOMAIN_RID
+            0x22, // DOMAIN_ALIAS_RID_ADMINS
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut sid,
+        ) == 0
+        {
+            return false;
+        }
+        let mut is_member = 0i32;
+        // 传空句柄表示检查当前进程令牌。
+        let ok = CheckTokenMembership(std::ptr::null_mut(), sid, &mut is_member);
+        FreeSid(sid);
+        ok != 0 && is_member != 0
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -165,9 +203,43 @@ fn platform_authorize_tun(core_binary: &Path) -> PanelResult<()> {
 
 #[cfg(target_os = "windows")]
 fn platform_authorize_tun(_core_binary: &Path) -> PanelResult<()> {
-    Err(PanelError::Client(
-        "TUN 授权不支持自动提权：请以管理员身份重启应用后重试".to_string(),
-    ))
+    // Windows 无法对单个二进制提权：以管理员身份重启应用自身（UAC runas），
+    // 新进程将具备 TUN 所需的管理员令牌。当前进程由命令层退出。
+    relaunch_elevated()
+}
+
+/// 以管理员身份重启当前应用（`ShellExecuteW` verb=`runas` 触发 UAC 确认框）。
+#[cfg(target_os = "windows")]
+fn relaunch_elevated() -> PanelResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let exe = std::env::current_exe()
+        .map_err(|e| PanelError::Client(format!("无法获取当前可执行文件路径：{e}")))?;
+    let to_wide =
+        |s: &std::ffi::OsStr| -> Vec<u16> { s.encode_wide().chain(std::iter::once(0)).collect() };
+    let verb: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
+    let file = to_wide(exe.as_os_str());
+    // 返回值 > 32 表示成功；否则为错误码（如 2 = 文件未找到，5 = 用户取消 UAC）。
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (result as usize) > 32 {
+        Ok(())
+    } else {
+        Err(PanelError::Client(format!(
+            "以管理员身份重启失败（错误码 {}）：请在 UAC 弹窗中点击「是」",
+            result as usize
+        )))
+    }
 }
 
 #[cfg(target_os = "android")]

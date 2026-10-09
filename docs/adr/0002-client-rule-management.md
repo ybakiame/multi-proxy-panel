@@ -1,6 +1,6 @@
 # ADR-0002: 客户端规则管理交互重设计（本地 Override 层 + 规则卡片 + 规则集订阅）
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
 - **Deciders:** ProxyPanel Contributors
 - **Scope:** 阶段④ — 客户端规则管理交互重设计（基于 `docs/research/client-audit-2026-08.md` 阶段③决策）

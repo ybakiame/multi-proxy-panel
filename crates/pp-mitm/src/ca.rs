@@ -6,6 +6,7 @@
 
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -113,8 +114,16 @@ fn generate_ca_material() -> PanelResult<CaMaterial> {
     })
 }
 
-/// 以 Unix 0600 权限写入文件（创建/覆盖）。
+/// 写入私钥/证书文件（创建/覆盖）。
+///
+/// Unix 下以 0600 权限写入；Windows 无 POSIX 权限位，使用普通写入（ACL 由
+/// 用户目录继承，收紧留待后续）。
 fn write_private(path: &Path, contents: &str) -> PanelResult<()> {
+    write_private_impl(path, contents)
+}
+
+#[cfg(unix)]
+fn write_private_impl(path: &Path, contents: &str) -> PanelResult<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -129,9 +138,25 @@ fn write_private(path: &Path, contents: &str) -> PanelResult<()> {
     Ok(())
 }
 
+#[cfg(not(unix))]
+fn write_private_impl(path: &Path, contents: &str) -> PanelResult<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|e| PanelError::Mitm(format!("create {:?}: {e}", path)))?;
+    file.write_all(contents.as_bytes())
+        .map_err(|e| PanelError::Mitm(format!("write {:?}: {e}", path)))?;
+    file.sync_all()
+        .map_err(|e| PanelError::Mitm(format!("sync {:?}: {e}", path)))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
@@ -148,6 +173,7 @@ mod tests {
         assert!(!first.key_pem.contains("PUBLIC KEY"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn file_ca_store_writes_private_files_with_0600() {
         let dir = tempdir().unwrap();

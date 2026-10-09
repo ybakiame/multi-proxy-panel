@@ -20,7 +20,6 @@ pub struct QuickJsEngine {
 
 impl QuickJsEngine {
     /// 构造签名约定（与未来 `engine-jsc` 后端保持一致的形状）。
-    #[allow(clippy::result_large_err)]
     pub fn new(
         host: Arc<ScriptHost>,
         dialect: ScriptDialect,

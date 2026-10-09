@@ -10,6 +10,12 @@ import { invoke } from "@tauri-apps/api/core";
 export interface ConnectionView {
   id: string;
   host: string;
+  /** 聚合目标：域名（有请求域名时）或目的 IP。 */
+  target: string;
+  /** 目的 IP。 */
+  destination_ip: string;
+  /** 叶子出站 tag（chains[0]，最终出站）。 */
+  outbound: string;
   network: string;
   chain: string;
   rule: string;

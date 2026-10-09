@@ -1,0 +1,66 @@
+[package]
+name = "pp-client-app"
+version = "0.1.0"
+edition = "2021"
+description = "ProxyPanel 客户端壳（Tauri 2 命令层，单壳双目标：Linux/Windows/macOS + Android）"
+license = "AGPL-3.0-or-later"
+authors = ["ProxyPanel Contributors"]
+repository = "https://github.com/ybakiame/multi-proxy-panel"
+rust-version = "1.86"
+
+# lib 供 `src/main.rs` 的 bin target 调用 `run()`；cdylib/staticlib 为 Tauri 2 移动端
+# （Android/iOS）构建要求：gradle 侧的 tauri rust 插件以 `cargo build --lib` 产出
+# 共享库并由 `tauri::mobile_entry_point` 注入 JNI 入口。
+[lib]
+name = "pp_client_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# 双端共有依赖（全平台）。pp-client-tauri 基线为 scripts-only 形态（无 pp-mitm）；
+# Android 构建图即止步于此——I3 不变式：Android 不含 MITM。
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+pp-client-tauri = { path = "../../../crates/pp-client-tauri" }
+
+# 桌面（Linux/Windows/macOS）目标才激活的依赖：MITM / 脚本引擎 / 核心管理等桌面
+# 专属能力的完整链路。同名依赖出现在两张表是合法 cargo 语义：target 命中时 feature
+# 并集生效（desktop 构建 pp-client-tauri 带 mitm）；Android 构建不命中本表，
+# pp-mitm 不进入构建图（M0-① 实证：cargo tree --target aarch64-linux-android
+# -i pp-mitm 无输出）。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+pp-client-tauri = { path = "../../../crates/pp-client-tauri", features = ["mitm"] }
+pp-client = { path = "../../../crates/pp-client" }
+pp-common = { path = "../../../crates/pp-common" }
+pp-mitm = { path = "../../../crates/pp-mitm" }
+pp-script = { path = "../../../crates/pp-script" }
+# 自动更新（ADR-0008 D2）：仅桌面目标；Android 走应用商店/手动 APK 分发。
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+# 桌面数据目录主目录解析（Windows 上 HOME 通常不存在，需 Known Folder 回退）。
+dirs = "7"
+base64 = "0.22"
+chrono = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = "1"
+
+# 退出根 workspace，作为独立 cargo 项目构建（避免与根 workspace 冲突）。
+[workspace]
+
+# release 体积优化：strip 符号 + LTO + 单 codegen unit（双端皆受益）。
+# Android 另需 opt-level="z"（APK 中 lib/*.so 占 96%+ 体积）：不写入本表以免
+# 桌面 release 运行时性能受损，由 `apps/client/package.json` 的 android:build 脚本
+# 以 CARGO_PROFILE_RELEASE_OPT_LEVEL=z 环境变量注入。
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

@@ -1,9 +1,6 @@
 //! cron/event 脚本调度器：管理按 cron 表达式定时执行的脚本任务（QX/Surge/Loon 的
 //! task/cron 签到类脚本），支持注册/移除、手动触发、到期批量执行与后台循环。
 
-// tonic::Status is inherently large; these gRPC-facing helpers return it by value.
-#![allow(clippy::result_large_err)]
-
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -86,7 +83,6 @@ impl ScriptScheduler {
     }
 
     /// 注册任务：校验并解析 cron 表达式；同名任务重复注册报错。
-    #[allow(clippy::result_large_err)]
     pub fn add_task(&mut self, task: TaskScript) -> PanelResult<()> {
         let schedule = Schedule::from_str(&task.cron_expr).map_err(|e| {
             PanelError::Validation(format!("invalid cron expression '{}': {e}", task.cron_expr))

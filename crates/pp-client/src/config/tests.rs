@@ -34,7 +34,6 @@ fn default_config_has_sane_defaults() {
     assert_eq!(cfg.rule_mode, "rule");
     assert_eq!(cfg.normalized_rule_mode(), "rule");
     // VPN notification defaults.
-    assert!(cfg.vpn_notify_show_traffic);
     assert!(cfg.vpn_notify_show_selection);
 }
 
@@ -123,7 +122,6 @@ fn serde_missing_new_fields_defaults() {
     assert_eq!(cfg.rule_mode, "rule");
     assert_eq!(cfg.normalized_rule_mode(), "rule");
     // Old client.json missing VPN notification fields should parse with default true.
-    assert!(cfg.vpn_notify_show_traffic);
     assert!(cfg.vpn_notify_show_selection);
 }
 

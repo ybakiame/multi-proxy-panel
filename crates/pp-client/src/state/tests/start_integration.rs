@@ -52,6 +52,9 @@ async fn start_rolls_back_when_mitm_build_fails() {
     cfg.active_subscription_id = Some(sub_id);
     cfg.system_proxy_enabled = true;
     cfg.mitm_enabled = true;
+    // 空白名单时 MITM 链不启动（修复后行为）；本测试要走到 MITM 构建失败分支，
+    // 需提供有效白名单。
+    cfg.mitm.hostnames = vec!["example.com".to_string()];
     cfg.save().unwrap();
     // ca_dir occupied by regular file → FileCaStore cannot write CA → build_mitm_proxy fails.
     std::fs::write(dir.path().join("certs"), b"i am a file").unwrap();
@@ -65,6 +68,72 @@ async fn start_rolls_back_when_mitm_build_fails() {
     let status = state.status().await;
     assert!(status.mitm_addr.is_none());
     assert!(!status.core_running);
+}
+
+/// MITM enabled but effective whitelist empty (no local hostnames, no remote cache) →
+/// MITM chain is skipped: start succeeds, MITM not running, composed config has a single
+/// mixed inbound and no pp-mitm outbound / match-all route rule.
+#[tokio::test]
+async fn start_with_empty_mitm_whitelist_skips_mitm_chain() {
+    let body = r#"{
+            "log": {"level": "info"},
+            "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 1}],
+            "outbounds": [{"type": "direct", "tag": "direct"}]
+        }"#;
+    let addr = spawn_server(StatusCode::OK, body).await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let capture = dir.path().join("core-config-capture.json");
+    let core_bin = fake_core_capturing_args(&dir, &capture);
+    let sub_id = add_local_subscription(&dir, &format!("http://{addr}/sub"));
+    let mut cfg = ClientConfig::new(
+        dir.path().to_path_buf(),
+        format!("http://{addr}"),
+        "tok",
+        core_bin,
+    );
+    cfg.active_subscription_id = Some(sub_id);
+    cfg.mitm_enabled = true;
+    // Explicitly leave cfg.mitm.hostnames empty and no remote cache: effective whitelist is empty.
+    cfg.clash_api_enabled = false;
+    cfg.save().unwrap();
+
+    let mock = Arc::new(MockSystemProxy::new());
+    let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+    state.start().await.unwrap();
+
+    // MITM not started, core still running.
+    let status = state.status().await;
+    assert!(
+        status.mitm_addr.is_none(),
+        "empty whitelist should skip MITM chain"
+    );
+    assert!(status.core_running);
+
+    // Composed config: single mixed inbound, no pp-mitm outbound, no match-all route rule.
+    let mut attempts = 0;
+    while !capture.exists() && attempts < 100 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        attempts += 1;
+    }
+    let core_config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&capture).unwrap()).unwrap();
+    let inbounds = core_config["inbounds"].as_array().unwrap();
+    assert_eq!(inbounds.len(), 1);
+    assert_eq!(inbounds[0]["tag"], "mixed-in");
+    let outbounds = core_config["outbounds"].as_array().unwrap();
+    assert!(
+        !outbounds.iter().any(|o| o["tag"] == "pp-mitm"),
+        "config must not contain pp-mitm outbound"
+    );
+    if let Some(rules) = core_config["route"]["rules"].as_array() {
+        assert!(
+            !rules.iter().any(|r| r["outbound"] == "pp-mitm"),
+            "config must not contain a route rule sending traffic to pp-mitm"
+        );
+    }
+
+    state.stop().await;
 }
 
 /// Full integration server (no external network):
@@ -220,6 +289,9 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
     cfg.clash_api_port = clash_addr.port();
     cfg.clash_api_secret = "sekret".to_string();
     cfg.rule_mode = "global".to_string();
+    // 空白名单时 MITM 链不启动（修复后行为）；本测试断言含 MITM 白名单规则，
+    // 需提供有效白名单。
+    cfg.mitm.hostnames = vec!["example.com".to_string()];
     cfg.save().unwrap();
 
     let mock = Arc::new(MockSystemProxy::new());
@@ -587,6 +659,9 @@ async fn start_with_profile_applies_template_groups_and_js_override() {
     );
     cfg.active_subscription_id = Some(sub.id);
     cfg.mitm_enabled = true;
+    // 空白名单时 MITM 链不启动（修复后行为）；本测试断言 MITM 链注入，
+    // 需提供有效白名单。
+    cfg.mitm.hostnames = vec!["example.com".to_string()];
     // 本测试只验证模板分组 + JS override + 合成配置注入，断言不依赖 Clash API；
     // 无真实 Clash API 服务，关闭以免启动阻塞在 readiness 等待 + 模式推送重试。
     cfg.clash_api_enabled = false;

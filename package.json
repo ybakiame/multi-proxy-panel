@@ -3,8 +3,7 @@
   "private": true,
   "workspaces": [
     "apps/panel",
-    "apps/desktop",
-    "apps/mobile",
+    "apps/client",
     "packages/*"
   ],
   "scripts": {

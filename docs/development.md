@@ -115,7 +115,7 @@ git checkout -b feature/your-feature
 cargo fmt --all
 
 # 5. 静态检查 + 测试 + 双壳编译门禁（推荐一条命令，等价于下面 6/7 两条再加双壳检查）
-bun run verify:rust        # = cargo fmt --check + clippy + test + desktop/mobile 壳 clippy + Android target 检查
+bun run verify:rust        # = cargo fmt --check + clippy + test + 客户端壳（apps/client/src-tauri）clippy + Android target 检查
 # 或快速版（跳过测试）：bun run verify:rust:fast
 
 # 6. 静态检查（仅根 workspace；注意不覆盖 apps/*/src-tauri 双壳）
@@ -129,11 +129,81 @@ git add .
 git commit -m "feat: your feature description"
 ```
 
-> **注意**：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 是**独立 cargo 项目**，
-> 不在根 workspace 内，根目录的 `cargo clippy/test --workspace` 覆盖不到它们；Android
-> 专属代码（`#[cfg(target_os = "android")]`）在 host 编译下也不可见。提交涉及 Rust 的
-> 改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），它补齐双壳
-> clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
+> **注意**：`apps/client/src-tauri` 是**独立 cargo 项目**（单壳双目标），
+> 不在根 workspace 内，根目录的 `cargo clippy/test --workspace` 覆盖不到；Android
+> 专属代码（`#[cfg(target_os = "android")]`）在 host（桌面目标）编译下也不可见。
+> 提交涉及 Rust 的改动前请运行 `bun run verify:rust`（`scripts/check-rust-gates.sh`），
+> 它补齐壳层 host clippy 与（装有 NDK 时的）`aarch64-linux-android` 交叉编译检查。
+
+### 变更工作流（Workflows）
+
+本节定义仓库实际执行的变更工作流。每个工作流都必须覆盖：使用时机、上下文发现、计划、
+实现、验证、文档、最终复查；完成定义与停止/升级条件统一见 `AGENTS.md` §11。
+
+#### 功能开发（feature）
+
+- **使用时机**：新增用户可见能力、接口、协议支持或数据模型。先判断是否触及架构边界
+  （架构边界变更需先有 ADR，见 `docs/adr/README.md`）。
+- **上下文发现**：读 `AGENTS.md` §1/§3/§4 与对应模块文档（`docs/architecture.md`、
+  `docs/api_reference.md`），确认现有约定与可复用结构；查 `docs/adr/` 是否已有相关决策。
+- **计划**：拆分为一个逻辑变更单元（大改动拆多个原子提交），列出受影响 crate / app、
+  接口与数据变更、文档同步项（`AGENTS.md` §9）。
+- **实现**：遵循 §3 代码规范与 §6 常见修改任务；数据库变更走 Migration + `UPGRADE_STEPS`
+  （见 `.agents/rules/data-migration.md`）。
+- **验证**：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、
+  `cargo test --workspace`；涉及 Rust 提交前跑 `bun run verify:rust`；前端改动跑对应包
+  `bun run --filter <pkg> verify`。
+- **文档**：更新 §9 表格中受影响文档；用户可见变更写入 `CHANGELOG.md`。
+- **最终复查**：`git diff` 逐项复查，确认无无关改动、无半成品；提交遵循 §5。
+
+#### 缺陷修复（bugfix）
+
+- **使用时机**：既有行为与预期/文档不符。
+- **上下文发现**：复现问题，确定受影响版本、模块与触发条件；收集日志
+  （见本文「调试技巧」）。
+- **计划**：在不扩大改动面的前提下定位根因；若根因涉及架构缺陷，转 feature 并评估 ADR。
+- **实现**：最小修复；禁止顺带重构无关代码或格式化无关文件（原子化提交）。
+- **验证**：为缺陷补充回归测试（无法自动化的前端场景记录手动验证步骤）；运行受影响
+  crate 测试与 CI 同款命令。
+- **文档**：若行为或配置语义变化，同步 `docs/` 与 `CHANGELOG.md`（`### Fixed`）。
+- **最终复查**：确认修复能通过原始复现步骤，且未掩盖相邻问题。
+
+#### 重构（refactor）
+
+- **使用时机**：不改变外部行为的结构调整（拆分文件、提取模块、去重）。
+- **上下文发现**：确认现有测试覆盖范围作为行为基线；文件规模规则见
+  `.agents/rules/code-organization.md`。
+- **计划**：分步拆分，每步保持可编译；不扩大 `pub` 可见性。
+- **实现**：纯结构变更，不夹带语义修改。
+- **验证**：`cargo test --workspace`（或前端 `verify`）结果与重构前一致；纯重构必须
+  行为不变。
+- **文档**：仅当公开路径/模块结构变化时更新 `docs/architecture.md` 等文档。
+- **最终复查**：确认 diff 中无语义变化；一个拆分一个提交。
+
+#### 文档（docs）
+
+- **使用时机**：仅修改说明性内容（README、docs/、AGENTS.md、CHANGELOG）。
+- **上下文发现**：相关内容以**实现与已接受 ADR** 为准（`AGENTS.md` §11 停止条件）；
+  采集代码/配置证据，避免凭印象改写。
+- **计划**：列出涉及的文档、交叉引用与需要同步的索引（`docs/index.md`、`docs/adr/README.md`）。
+- **实现**：保留既有项目知识，不整篇重写；不把厂商/代理特有内容写入项目契约。
+- **验证**：校验文档内链接与相对路径可解析、命令真实存在（例如 `bun run verify:rust`、
+  `scripts/check-rust-gates.sh`）；必要时抽检实现位置。
+- **文档**：同步更新 `docs/index.md` 与 `AGENTS.md` §9 相关行。
+- **最终复查**：确认没有引入未经验证的断言；一次逻辑变更一个提交。
+
+#### 协议采纳（adoption）
+
+- **使用时机**：首次采纳 Agent Development Protocol，或仓库发生重大变化后复跑采纳。
+- **上下文发现**：只读发现仓库证据（结构、构建、验证、约定、代理组件、既有文档与 ADR）。
+- **计划**：两遍制——Pass 1 只产出 `docs/adoption/project-inventory.json`、
+  `protocol-mapping.json` 与审计报告；Pass 2 在人工确认开放决策后生成文档。
+- **实现**：只生成有证据支撑的 ProxyPanel 文档；不拷贝 Protocol 文档，不改动子模块。
+- **验证**：JSON 产物对照 `.protocol/agent-development-protocol/schemas/` 校验；执行
+  链接/命令校验与适用项目验证；对照 `docs/conformance.md` 做符合性检查。
+- **文档**：产出 `docs/adoption/adoption-report.json` 与 `adoption-report.md`，记录开放
+  决策、接受的缺口与已知限制。
+- **最终复查**：确认无未解决的实质矛盾；Pass 1 与 Pass 2 的写入边界各自成立。
 
 ### 启动开发环境
 
@@ -160,11 +230,17 @@ RUST_LOG=proxy_panel_agent=debug \
 
 **终端 3 — 启动前端开发服务器:**
 
+前端依赖在**仓库根目录**统一安装（单一 `bun.lock`，Bun workspaces）：
+
 ```bash
-cd apps/panel
+# 仓库根目录一次安装所有前端依赖
 bun install
-bun run dev
+
+# panel 管理系统（Vite 开发服务器，端口 5173）
+bun run --filter pp-web dev
 ```
+
+也可 `cd apps/panel && bun run dev`（依赖仍由根目录 `bun install` 提供）。
 
 访问 `http://localhost:5173`（Vite 开发服务器，带热重载）。
 首次打开页面会要求输入 **API Key**，可从 Hub 启动日志中找到 Bootstrap API Key：
@@ -190,22 +266,81 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 
 ### CI (`.github/workflows/ci.yml`)
 
-在每次 push 到 `main`/`master` 或提交 Pull Request 时触发，包含三个并行 Job：
+在每次 push 到 `main`/`master` 或提交 Pull Request 时触发。首置 `changes` job 经
+paths-filter 按变更路径分片（ADR-0009 D2），各门禁 job 仅在相关路径变更时运行
+（共享 crate 与根 manifest 变更会同时触发两侧门禁；跳过的 job 在必需检查中按成功计）：
 
-| Job | 说明 |
-|-----|------|
-| `rust` | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`) |
-| `client-shells` | 双壳独立 cargo 项目门禁：`apps/desktop/src-tauri` 与 `apps/mobile/src-tauri` 的 clippy（host），以及 mobile 壳 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，NDK 用 runner 预装版本以环境变量覆盖 `.cargo/config.toml` 的本机绝对路径） |
-| `web` | `pp-web`（panel）、`@pp/client-core`、`pp-client-ui`（desktop）、`pp-client-mobile-ui`（mobile）四个前端包分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
+| Job | 触发路径 | 说明 |
+|-----|------|------|
+| `rust` | crates/、proto/、根 Cargo 清单、工具链、CI 自身 | 检查代码格式化 (`cargo fmt --check`)、运行 Clippy (`cargo clippy --workspace --all-targets -- -D warnings`)、执行测试 (`cargo test --workspace`)、客户端/服务端依赖边界断言（ADR-0009 D1） |
+| `client-shells` | 壳（`apps/client/src-tauri`）+ 其 Rust 依赖链 + 共享 crate | 客户端壳（独立 cargo 项目）门禁：host（桌面目标）clippy 与 `aarch64-linux-android` 交叉编译检查（覆盖 host 不可见的 `cfg(target_os = "android")` 路径，并实证 Android 构建图无 pp-mitm；工具链环境变量由 runner 预装 NDK 注入） |
+| `web` | `apps/panel` / `packages/client-core` / `apps/client`（排除 src-tauri）分别门控 | `pp-web`（panel）、`@pp/client-core`、`pp-client-app`（客户端，verify 内含 desktop/android 双 mode 构建）三个前端包按变更范围分别执行 `bun run verify`（构建/类型 + oxc Linter + 格式检查） |
 
 ### Release (`.github/workflows/release.yml`)
 
-在推送 `v*` 标签或手动触发时执行，包含四个阶段：
+在推送 `v*` 标签或手动触发时执行，包含五个阶段：
 
 1. **`web`** — 构建前端产物
 2. **`build`** — 在 x86_64 与 aarch64  runner 上交叉编译 Release 二进制，打包为 `proxy-panel-{hub,agent}-linux-{arch}.tar.gz`
-3. **`release`** — 汇总 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
-4. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+3. **`desktop-windows`** — 在 windows-latest 上按 x86_64 / aarch64 矩阵经 tauri-action 构建客户端 Windows NSIS 安装包（`apps/client`），构建前抓取种子核心（ADR-0008 D5），并注入 updater 签名密钥产出 `.nsis.zip` 更新包与 `.sig`
+4. **`release`** — 汇总 tar.gz 与 Windows 安装包、稳定版 tag 下生成 updater 清单 `latest.json`、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease）
+5. **`docker`** — 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+
+### Desktop Test Build (`.github/workflows/desktop-test.yml`)
+
+仅手动触发（Actions 页选择该工作流 → Run workflow）的桌面端测试构建：与
+Release 的 `desktop-windows` 同参数构建 Windows NSIS 安装包，但只上传 artifact
+（保留 7 天），不创建 Release。触发时可选目标架构（x86_64 / aarch64 / both）
+与是否注入 updater 签名密钥（默认不签名，避免与正式发布更新包混淆）。
+
+### Windows 桌面端构建
+
+客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS，x86_64 / aarch64 双架构）。
+打包决策见 [ADR-0008](adr/0008-windows-desktop-packaging.md)。
+
+```bash
+# Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
+cd apps/client && bun install
+
+# Windows overlay（tauri.windows.conf.json5）会把 beforeBuildCommand 覆写为
+# 「前端构建 + 种子核心抓取」（幂等，已是最新则跳过；交叉构建经 SEED_ARCH
+# 环境变量指定目标架构，缺省按宿主架构），随后自动把种子打入安装包：
+bun run tauri build --config src-tauri/tauri.windows.conf.json5
+# 注意：`bun run tauri build` 与 --config 之间不要再加 `--`（`--` 后的参数会被
+# 透传给 cargo，导致 overlay 静默不生效）。
+# 产物：apps/client/src-tauri/target/release/bundle/nsis/*.exe
+#       （设置 TAURI_SIGNING_PRIVATE_KEY 时另有 .nsis.zip 更新包与 .sig）
+```
+
+种子抓取也可手动执行：`bun run fetch-seed amd64`（或 `arm64`）。不带 `--config`
+的普通 `bun run tauri build` 仍可构建（安装包不含种子核心，首启回退为运行时下载
+核心），Linux/macOS 构建不受 Windows overlay 影响。
+
+Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
+
+```bash
+cargo xwin clippy --manifest-path apps/client/src-tauri/Cargo.toml \
+  --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+```
+
+**种子核心**：安装包内置 sing-box（版本锁定于 `seed-manifest.json`）+ `wintun.dll`，
+首启且无已装核心时自动释放到 `数据目录/cores/sing-box/<version>/`，之后与运行时下载的
+核心无差别、升级仍走核心管理的下载通道。许可证合规：sing-box（GPL-3.0）与 wintun 的
+许可证文本随包内 `seed/licenses/` 分发。
+
+**自动更新**（ADR-0008 D2）：设置页「关于应用 → 检查更新」经 GitHub Releases 的
+`latest.json` 检查新版本（ed25519 签名校验，密钥对经
+`bun run tauri signer generate` 生成，私钥配置为 CI secrets
+`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。预发布 tag
+（含 `-`）不进入自动更新。
+
+**TUN 模式**：sing-box 的 Windows TUN 依赖 `wintun.dll` 与 `sing-box.exe` 同目录——安装包
+种子核心已内置；运行时下载的核心则由客户端自动从 wintun.net 官方发布拉取对应架构的 dll
+（失败不阻塞核心安装，TUN 启动时会报 `Unable to load library`）。TUN 需要管理员权限：
+「配置 → 入站管理 → TUN 入站」的授权按钮会以管理员身份重启应用（UAC 确认）。
+
+**未签名安装包会触发 SmartScreen 警告**（无代码签名证书，ADR-0008 D3 决策为维持不签名），
+属预期行为；自动更新的完整性由 updater 的 ed25519 签名校验独立保障。
 
 提交 PR 前请确保本地已通过 `cargo clippy --workspace --all-targets -- -D warnings` 和 `cargo test --workspace`（后端）以及 `bun run verify`（前端）。
 
@@ -333,13 +468,17 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 
 ### 技术栈
 
-- **框架**: React 18 + TypeScript
-- **构建工具**: Vite 6
-- **UI 库**: HeroUI
+- **框架**: React 19 + TypeScript
+- **构建工具**: Vite 8
+- **UI 库**: HeroUI 3（`@heroui/react` / `@heroui/styles`）
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7
 - **国际化**: react-i18next
 - **HTTP 客户端**: Axios
+- **包管理器**: Bun workspaces（依赖在仓库根目录安装，单一 `bun.lock`）
+
+> 客户端 `apps/client` 使用同一套 React 19 / Vite 8 / Tailwind v4，但桌面 UI 为 HeroUI、
+> 移动 UI 为 Konsta（`apps/client/src/{desktop,mobile}`，见 ADR-0007）。
 
 ### 项目结构
 
@@ -411,7 +550,7 @@ export function MyPage() {
 
 ## Android 客户端构建
 
-`apps/mobile` 是 Tauri 2 安卓应用（Rust 壳 + React 前端），核心代理能力由 `apps/mobile/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供。
+`apps/client` 的 Android 目标（Tauri 2 移动应用形态：Rust 壳 mobile 适配层 + Konsta 移动 UI）核心代理能力由 `apps/client/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供；`tauri android` 子命令经 `tauri.android.conf.json` overlay 切换 devUrl 与构建命令。
 
 ### 构建链路总览
 
@@ -437,42 +576,51 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 构建固定 NDK 28；按本机实际路径
 
 # 1. GEO 数据（APK 内置避免首启无代理下载失败）
-./apps/mobile/scripts/update-android-geodata.sh
+./apps/client/scripts/update-android-geodata.sh
 
 # 2. 构建 panelcore.aar（gomobile bind sing-box libbox）
-./apps/mobile/scripts/build-panel-core.sh
+./apps/client/scripts/build-panel-core.sh
 
 # 3. 打包 APK（debug）
-cd apps/mobile
-bun run tauri android build --debug --apk --target aarch64
+cd apps/client
+bun run android:build --debug --apk
 
-# 发布构建（双架构 + 签名 keystore 配置后）
-bun run tauri android build --apk --target aarch64 --target x86_64
+# 发布构建（签名 keystore 配置后）
+bun run android:build --apk
 ```
 
-产物：`apps/mobile/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+> `android:build` / `android:dev` 是 package.json 里固定 `--target aarch64` 的封装：
+> 不带 `--target` 时 tauri CLI 默认构建全部 4 个 ABI（arm64/armv7/x86/x86_64），
+> 但 `abiFilters` 打包时只保留 arm64-v8a，其余纯属浪费编译时间。
+
+产物：`apps/client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 
 > 注意：`panelcore.aar` 与 GEO 数据均为本地产物、不入库；克隆仓库后必须先跑步骤 1+2 才能打包。
 
-### ⚠️ 关键隐藏配置：`.cargo/config.toml`
+### ⚠️ Android 交叉编译环境：工具链变量与 pkg-config 守卫
 
-`apps/mobile/.cargo/config.toml` 是 Android 交叉编译的**必需**配置，缺失会导致难以排查的构建失败：
+Android target 的构建需要两组配置，缺失会导致难以排查的构建失败：
 
-- `CC_*` / `AR_*` / `linker`：cc-rs 编译 C 依赖（ring / aws-lc-sys 等）需要 NDK 工具链
-- `BINDGEN_EXTRA_CLANG_ARGS_*`：`rquickjs-sys` 的 bindgen 需要 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
+**1. NDK 工具链环境变量**（`CC_*` / `AR_*` / `CARGO_TARGET_*_LINKER` / `BINDGEN_EXTRA_CLANG_ARGS_*`，仅 aarch64）：
 
-要点：
+- cc-rs 编译 C 依赖（ring / aws-lc-sys / lzma-sys vendored 等）需要 `CC_*` / `AR_*`
+- `rquickjs-sys` 的 bindgen 需要 `BINDGEN_EXTRA_CLANG_ARGS_*` 指定 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
+- cargo 配置不支持环境变量展开，若在 `.cargo/config.toml` 写死 NDK 绝对路径会变成「个人目录入仓库」的灾难。因此改为全部由环境注入：
+  - **nix dev shell**：`flake.nix` 导出（指向 nix store 的 NDK 28.0.13004108）
+  - **非 nix / CI**：`source apps/client/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
+  - `tauri android build` 自身会按 `NDK_HOME` 注入 linker 与 RUSTFLAGS，与上述两者保持一致
 
-- cargo 只沿**当前工作目录**向上查找 `.cargo/config.toml`；tauri CLI 从前端项目根（`apps/mobile`）调 cargo，所以配置必须放 `apps/mobile/.cargo/`（`src-tauri/.cargo/` 下的副本仅供裸 `cargo check --target aarch64-linux-android` 用）
-- 配置值不支持环境变量展开，NDK 绝对路径按本机写死；NDK 版本变更需同步修改
-- **迁移/新建 app 目录时务必随迁该配置**（本次 apps/mobile 迁移就曾因遗漏导致构建失败）
+**2. pkg-config 守卫**：仓库根 `.cargo/config.toml` 设置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`，禁止 `lzma-sys` / `bzip2-sys`（zip 依赖）用 pkg-config 链接宿主系统库，强制 vendored 静态编译；否则交叉编译时会链接 host 架构的 `.so`，报 `liblzma.so is incompatible with aarch64linux`（nix dev shell 的 `PKG_CONFIG_PATH` 含 host 版 xz/bzip2，必现）。放在仓库根是因为 cargo 只沿**当前工作目录**向上发现配置：tauri CLI 从 `apps/client` 调 cargo、裸 cargo 在 `src-tauri`，根配置对两者同时生效。
 
 ### 常见问题
 
 | 症状 | 原因 | 处理 |
 |------|------|------|
 | `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
-| `gnu/stubs-32.h not found` | 缺 `.cargo/config.toml` 的 bindgen sysroot | 见上一节 |
+| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | nix 下进 `nix develop`；非 nix `source apps/client/scripts/android-ndk-env.sh`（见上一节） |
+| `liblzma.so / libbz2.so is incompatible with aarch64linux` | `lzma-sys` / `bzip2-sys` 经 pkg-config 链接了 host x86_64 系统库 | 配置已内置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`；若改过配置需 `cargo clean -p lzma-sys -p bzip2-sys` 后重构建 |
+| 进了 `nix develop` 仍用主机 NDK | 交互 bash 会 source `~/.bashrc`，其中无条件导出的 `ANDROID_HOME`/`NDK_HOME` 覆盖了 flake | rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫（见 nix-flake.md §4.6） |
+| `lintVitalAnalyzeUniversalRelease` 崩溃（`findFirCompiledSymbol`） | AGP 9.3.1 lint 分析构建脚本的自身 bug | 已在 `gen/android/app/build.gradle.kts` 设 `lint { checkReleaseBuilds = false }` |
 | `invalid reference to os.checkPidfdOnce` | gomobile fork 版本过旧（v0.1.8）与 Go 工具链不匹配 | 升级 gomobile 到 v0.1.12（脚本已内置）；工具链由 `GOTOOLCHAIN=auto` 自动切换 |
 | `unknown relocation (315) ... libcronet.a` | NDK 版本过低（< 28），`with_naive_outbound` 的 cronet 预编译库无法链接 | 安装并指定 NDK 28.0.13004108（`ANDROID_NDK_HOME`） |
 | Gradle 下载依赖超时 | 网络受限 | 配代理（`~/.gradle/gradle.properties` 的 `systemProp.http(s).proxy*`） |
@@ -502,6 +650,33 @@ cargo test --workspace -- --ignored
 # 显示输出
 cargo test --workspace -- --nocapture
 ```
+
+**集成测试（e2e）:**
+
+`crates/pp-client/tests/real_core_e2e.rs` 是真实 sing-box 核心的全链路集成测试
+（reqwest → 核心 mixed 入口 → 白名单路由 → pp-mitm → 回流 → direct）。它默认
+`#[ignore]`，且需要真实 sing-box 二进制（找不到二进制时测试直接返回、不算失败）：
+
+```bash
+cargo test -p pp-client --test real_core_e2e -- --include-ignored --nocapture
+```
+
+二进制路径解析顺序见测试文件头：环境变量 `PROXYPANEL_TEST_SINGBOX`，或
+`target/test-cores/sing-box`。
+
+**前端验证能力（当前边界）:**
+
+`apps/panel`、`apps/client`、`packages/client-core` **没有单元测试运行器**，各自的
+`verify` 只包含构建 + oxlint + oxfmt：
+
+```bash
+bun run --filter pp-web verify            # panel：tsc 构建 + lint + format:check
+bun run --filter pp-client-app verify     # client：desktop + android 双 mode 构建 + lint + format
+bun run --filter @pp/client-core verify   # 共享库：typecheck + lint + format
+```
+
+因此前端改动以对应包 `verify` + 手动验证为准；引入自动化前端测试属于流程变更，需先经
+项目决策（见 `docs/adoption/adoption-report.md` 中接受的前端测试缺口）。
 
 ### 编写测试
 
@@ -620,19 +795,20 @@ SELECT * FROM clients; # 查看客户端
 
 ## 代码审查清单
 
-提交 PR 前，请确认以下事项：
+提交 PR 前，请确认以下事项（与 `AGENTS.md` §11 完成定义一致）：
 
 ### 功能性
 
-- [ ] 新功能有对应的测试覆盖
+- [ ] 新功能有对应的测试覆盖；前端改动至少执行对应包 `verify` 并记录手动验证步骤
 - [ ] 手动测试通过（至少运行一次完整流程）
 - [ ] 错误路径已处理（如数据库连接失败、网络超时）
 
 ### 代码质量
 
-- [ ] `cargo fmt --all` 已执行
+- [ ] `cargo fmt --all --check` 已执行
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` 无警告
 - [ ] `cargo test --workspace` 全部通过
+- [ ] 涉及 Rust 时 `bun run verify:rust` 通过（覆盖客户端壳双目标）
 - [ ] 无裸 `unwrap()` / `expect()`（初始化代码除外）
 - [ ] 新增公开的 API 有文档注释 (`///`)
 
@@ -646,8 +822,8 @@ SELECT * FROM clients; # 查看客户端
 
 - [ ] README.md 已更新（如添加新功能或变更使用方式）
 - [ ] AGENTS.md 已更新（如变更架构或规范）
-- [ ] `docs/` 下相关文档已更新
-- [ ] 变更日志已记录（如项目使用 CHANGELOG）
+- [ ] `docs/` 下相关文档已更新（含 `docs/index.md` / `docs/adr/README.md` 索引）
+- [ ] `CHANGELOG.md` 已记录用户可见变更
 
 ---
 

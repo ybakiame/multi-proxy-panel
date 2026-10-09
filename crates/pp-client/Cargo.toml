@@ -22,6 +22,7 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 flate2 = "1.0"
+futures = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 rustls = { workspace = true }
@@ -31,13 +32,24 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+sqlx = { workspace = true }
 tar = "0.4"
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 urlencoding = "2"
 uuid = { workspace = true }
 zip = "2.2"
+
+# Windows：TUN 提权（管理员令牌检测 + ShellExecute runas 重启）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 axum = { workspace = true }

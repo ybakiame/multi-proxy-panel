@@ -2,8 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::ClientConfig;
-use crate::cores::{ClientCoreInventory, CoreSource, version};
+use crate::cores::{ClientCoreInventory, version};
 
 async fn spawn_server(app: axum::Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -26,30 +25,8 @@ fn write_executable(path: &Path, content: &[u8]) {
     }
 }
 
-/// Global PATH lock: environment variables are process-level state, parallel tests must be
-/// mutually exclusive to avoid interfering with each other.
-static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Execute closure under specified PATH (mutually exclusive serialization, single-threaded
-/// modification/restoration of environment variables within test).
-fn with_patched_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
-    let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let old = std::env::var_os("PATH");
-    // Under Rust 2024 std::env's set_var/remove_var is marked unsafe (concurrent modification
-    // of environment variables is undefined behavior); PATH_LOCK guarantees serialized access
-    // within the test process.
-    unsafe {
-        std::env::set_var("PATH", path);
-    }
-    let result = f();
-    match old {
-        Some(v) => unsafe { std::env::set_var("PATH", v) },
-        None => unsafe { std::env::remove_var("PATH") },
-    }
-    result
-}
-
 /// Construct tar.gz with several entries.
+#[cfg(unix)]
 fn build_tgz(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     {
@@ -82,7 +59,6 @@ fn list_installed_scans_versioned_dirs() {
     assert_eq!(cores.len(), 1);
     let sb = &cores[0];
     assert_eq!(sb.version, "1.13.15");
-    assert_eq!(sb.source, CoreSource::Downloaded);
     assert_eq!(sb.path, dir.path().join("cores/sing-box/1.13.15/sing-box"));
 }
 
@@ -128,13 +104,17 @@ fn list_downloaded_versions_sorts_semantically_descending() {
     );
 }
 
-// ---------- ② list_remote_versions: mock releases API ----------
+// ---------- ② list_remote_channels: mock releases API ----------
 #[tokio::test]
-async fn list_remote_versions_parses_releases() {
+async fn list_remote_channels_picks_latest_per_channel() {
+    // GitHub releases 按创建时间倒序（最新在前）；每个通道取首个命中。
     let singbox_releases = serde_json::json!([
-        { "tag_name": "v1.13.15" },
-        { "tag_name": "v1.13.14" },
-        { "tag_name": "v1.12.0-alpha.1" },
+        { "tag_name": "v1.14.0-alpha.2", "prerelease": true },
+        { "tag_name": "v1.14.0-alpha.1", "prerelease": true },
+        { "tag_name": "v1.14.0-beta.4", "prerelease": true },
+        { "tag_name": "v1.14.0-rc.1", "prerelease": true },
+        { "tag_name": "v1.13.15", "prerelease": false },
+        { "tag_name": "v1.13.14", "prerelease": false },
     ]);
     let app = axum::Router::new().route(
         "/repos/SagerNet/sing-box/releases",
@@ -143,8 +123,40 @@ async fn list_remote_versions_parses_releases() {
     let base = spawn_server(app).await;
     let inv = ClientCoreInventory::with_api_base(PathBuf::new(), &base);
 
-    let sb = inv.list_remote_versions().await.unwrap();
-    assert_eq!(sb, vec!["1.13.15", "1.13.14", "1.12.0-alpha.1"]);
+    let channels = inv.list_remote_channels().await.unwrap();
+    let pairs: Vec<(crate::cores::CoreChannel, String)> = channels
+        .into_iter()
+        .map(|c| (c.channel, c.version))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            (
+                crate::cores::CoreChannel::Prerelease,
+                "1.14.0-alpha.2".to_string()
+            ),
+            (crate::cores::CoreChannel::Beta, "1.14.0-beta.4".to_string()),
+            (crate::cores::CoreChannel::Stable, "1.13.15".to_string()),
+        ]
+    );
+}
+
+/// 通道分类：无后缀 = 稳定版；beta / rc = 测试版；alpha 及其它后缀 = 预发布版。
+#[test]
+fn channel_of_version_classifies_prerelease_markers() {
+    use crate::cores::{CoreChannel, channel_of_version};
+    assert_eq!(channel_of_version("1.13.15"), CoreChannel::Stable);
+    assert_eq!(channel_of_version("v1.13.15"), CoreChannel::Stable);
+    assert_eq!(channel_of_version("1.14.0-beta.4"), CoreChannel::Beta);
+    assert_eq!(channel_of_version("1.14.0-rc.1"), CoreChannel::Beta);
+    assert_eq!(
+        channel_of_version("1.14.0-alpha.2"),
+        CoreChannel::Prerelease
+    );
+    assert_eq!(
+        channel_of_version("1.14.0-nightly.1"),
+        CoreChannel::Prerelease
+    );
 }
 
 // ---------- ③ download: mock asset download + extract + chmod + --version ----------
@@ -193,7 +205,6 @@ async fn download_singbox_targz_extracts_and_verifies() {
     let core = inv.download("1.13.15").await.unwrap();
 
     assert_eq!(core.version, "1.13.15");
-    assert_eq!(core.source, CoreSource::Downloaded);
     assert_eq!(
         core.path,
         dir.path().join("cores/sing-box/1.13.15/sing-box")
@@ -206,26 +217,6 @@ async fn download_singbox_targz_extracts_and_verifies() {
     // Second download hits cache.
     let again = inv.download("1.13.15").await.unwrap();
     assert_eq!(again.path, core.path);
-}
-
-// ---------- ④ detect_system_cores: fake binary in temp directory added to PATH ----------
-
-#[test]
-fn detect_system_cores_finds_core_on_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let bin = dir.path().join("sing-box");
-    write_executable(&bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n");
-
-    // PATH is modified/restored by with_patched_path with lock, avoiding race with parallel tests.
-    let result = with_patched_path(dir.path(), || {
-        let inv = ClientCoreInventory::new(PathBuf::new());
-        inv.detect_system_cores()
-    });
-
-    let found = result.iter().find(|c| c.path == bin);
-    assert!(found.is_some(), "should find fake sing-box in PATH");
-    assert_eq!(found.unwrap().version, "1.19.9");
-    assert_eq!(found.unwrap().source, CoreSource::System);
 }
 
 // ---------- ⑤ Version probe: `version` / `--version` / `-v` three forms ----------
@@ -258,7 +249,7 @@ fn version_probe_supports_subcommand_and_flags() {
     version::verify_version(&subcmd, "1.14.0-beta.4").unwrap();
     version::verify_version(&flag, "1.13.15").unwrap();
 
-    // detect_system_cores path: output parsing is correct.
+    // 版本探测输出解析正确（同一解析曾服务于系统核心探测，已移除）。
     assert_eq!(
         version::parse_version_from_output(&version::binary_output(&subcmd)),
         Some("1.14.0-beta.4".to_string())
@@ -267,37 +258,6 @@ fn version_probe_supports_subcommand_and_flags() {
         version::parse_version_from_output(&version::binary_output(&flag)),
         Some("1.13.15".to_string())
     );
-}
-
-// ---------- ⑥ active_core: match by config.core_binary ----------
-
-#[test]
-fn active_core_matches_config_binary() {
-    let dir = tempfile::tempdir().unwrap();
-    write_executable(
-        &dir.path().join("cores/sing-box/1.13.15/sing-box"),
-        b"#!/bin/sh\necho 'sing-box version 1.13.15'\n",
-    );
-    let inv = ClientCoreInventory::new(dir.path().to_path_buf());
-    let bin = dir.path().join("cores/sing-box/1.13.15/sing-box");
-
-    let mut cfg = ClientConfig::new(
-        dir.path().to_path_buf(),
-        "http://127.0.0.1:50052",
-        "tok",
-        bin.clone(),
-    );
-    let active = inv.active_core(&cfg);
-    assert!(active.is_some());
-    assert_eq!(active.unwrap().path, bin);
-
-    // Non-matching path → None.
-    cfg.core_binary = PathBuf::from("/nonexistent/sing-box");
-    assert!(inv.active_core(&cfg).is_none());
-
-    // Empty path → None.
-    cfg.core_binary = PathBuf::new();
-    assert!(inv.active_core(&cfg).is_none());
 }
 
 // ---------- ⑦ infer_core_type: file name inference ----------
@@ -345,49 +305,6 @@ fn parses_version_from_output() {
         ),
         Some("1.14.0-beta.4".to_string())
     );
-}
-
-// ---------- ⑧ preferred_binary: downloaded version sorting + system fallback ----------
-
-#[test]
-fn preferred_binary_picks_newest_downloaded_version() {
-    let dir = tempfile::tempdir().unwrap();
-    write_executable(
-        &dir.path().join("cores/sing-box/1.13.15/sing-box"),
-        b"#!/bin/sh\necho 'sing-box version 1.13.15'\n",
-    );
-    write_executable(
-        &dir.path().join("cores/sing-box/1.14.0-beta.4/sing-box"),
-        b"#!/bin/sh\necho 'sing-box version 1.14.0-beta.4'\n",
-    );
-    let inv = ClientCoreInventory::new(dir.path().to_path_buf());
-
-    let bin = inv.preferred_binary();
-    // Semantic version sorting: 1.14.0-beta.4 (base 1.14.0) > 1.13.15.
-    assert_eq!(
-        bin,
-        Some(dir.path().join("cores/sing-box/1.14.0-beta.4/sing-box"))
-    );
-}
-
-#[test]
-fn preferred_binary_falls_back_to_system_core() {
-    let dir = tempfile::tempdir().unwrap();
-    // No downloaded cores → fallback to system PATH detection.
-    let system_bin = dir.path().join("sing-box");
-    write_executable(&system_bin, b"#!/bin/sh\necho 'sing-box version 1.19.9'\n");
-    let inv = ClientCoreInventory::new(dir.path().join("cores"));
-
-    let result = with_patched_path(dir.path(), || inv.preferred_binary());
-    assert_eq!(result, Some(system_bin));
-}
-
-#[test]
-fn preferred_binary_none_when_unavailable() {
-    let dir = tempfile::tempdir().unwrap();
-    let inv = ClientCoreInventory::new(dir.path().to_path_buf());
-    let result = with_patched_path(Path::new("/nonexistent-bin-dir"), || inv.preferred_binary());
-    assert_eq!(result, None);
 }
 
 // ---------- ⑨ delete: local core deletion ----------

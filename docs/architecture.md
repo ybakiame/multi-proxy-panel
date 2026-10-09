@@ -20,36 +20,32 @@
 
 ## 整体架构
 
-ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩展了用户侧客户端（**Desktop / Mobile** 双客户端，见 [客户端架构](#客户端架构)）。系统由四个主要部分组成：用户层（Web 管理界面、订阅客户端、桌面/移动客户端）、Hub、Agent 与 ProxyPanel Client。
+ProxyPanel 采用经典的 **Hub-Agent** 分布式架构，并在此基础上扩展了用户侧客户端（**单一 Tauri 应用 `apps/client`，单壳双目标：桌面 / Android**，见 [客户端架构](#客户端架构)）。系统由四个主要部分组成：用户层（Web 管理界面、订阅客户端、桌面/移动客户端）、Hub、Agent 与 ProxyPanel Client。
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         用户层                               │
-│    Web 浏览器 ────────── 订阅客户端 (Clash/V2RayNG/...)      │
-│    ProxyPanel Desktop (pp-client-ui / Tauri)                 │
-│    ProxyPanel Mobile  (pp-client-mobile-ui / Tauri Android)  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-┌─────────────────────────┐      ┌─────────────────────────┐
-│     ProxyPanel Hub      │      │   公开订阅端点           │
-│   (HTTP API + gRPC)     │      │   /sub/{token}          │
-└─────────────────────────┘      └─────────────────────────┘
-              │                                 ▲
-              │ gRPC 双向流 (长连接)              │ 订阅 (HTTP)
-              ▼                                 │
-┌─────────────────────────────────────────────────────────────┐
-│                    ProxyPanel Agent × N                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  mihomo      │  │  sing-box    │  │  System Info │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph users["用户层"]
+        browser["Web 浏览器"]
+        subClient["订阅客户端（Clash / V2RayNG / ...）"]
+        ppClient["ProxyPanel Client<br/>（pp-client-app / Tauri 2 单壳双目标）"]
+        ppClient --> desktop["桌面目标<br/>（Linux / Windows / macOS）"]
+        ppClient --> android["Android 目标<br/>（VpnService + panelcore.aar）"]
+    end
+    browser --> hub["ProxyPanel Hub<br/>（HTTP API + gRPC）"]
+    subEndpoint["公开订阅端点<br/>/sub/{token}"]
+    subgraph agents["ProxyPanel Agent × N"]
+        mihomo["mihomo"]
+        singbox["sing-box"]
+        sysinfo["System Info"]
+    end
+    hub -- "gRPC 双向流（长连接）" --> agents
+    subClient -- "订阅 (HTTP)" --> subEndpoint
+    ppClient -- "订阅 (HTTP)" --> subEndpoint
 ```
 
-桌面与移动客户端（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动代理核心：桌面端叠加 MITM 与脚本引擎，代理流量直连远端节点；移动端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心并以 VPN 模式接管流量。
+桌面与 Android 目标（详见 [客户端架构](#客户端架构)）经由 `Hub /sub/{token}` 订阅端点拉取节点配置，在本地驱动代理核心：桌面目标叠加 MITM 与脚本引擎，代理流量直连远端节点；Android 目标由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心并以 VPN 模式接管流量。
 
-> **注：MITM 为桌面端能力（移动端受系统限制不支持，mobile 壳依赖表天然不含 `pp-mitm`）。**
+> **注：MITM 为桌面目标能力（Android 受系统限制不支持，`apps/client/src-tauri` 的 Android target 依赖表天然不含 `pp-mitm`）。**
 
 ### 设计原则
 
@@ -123,7 +119,7 @@ pp-agent/
 
 基于 React 的响应式单页应用（SPA）：
 
-- **技术栈**: React 18 + TypeScript + Vite 6 + HeroUI + Tailwind CSS v4 + react-i18next（国际化）
+- **技术栈**: React 19 + TypeScript + Vite 8 + HeroUI 3 + Tailwind CSS v4 + react-i18next（国际化）
 - **构建目标**: 静态 JavaScript / CSS 资源（由 Hub 或 CDN 托管）
 - **通信方式**: 通过 Axios 调用 Hub REST API
 
@@ -237,136 +233,85 @@ trait ConfigBuilder: Send + Sync {
 
 ### 3.1 节点注册流程
 
-```
-Agent 启动
-    │
-    ▼
-生成 agent_id (UUID) + 加载 Token
-    │
-    ▼
-gRPC Stream → Hub
-    │
-    ▼
-RegisterRequest { agent_id, token, hostname, capabilities }
-    │
-    ▼
-Hub 验证 Token → 创建/更新 Node 记录
-    │
-    ▼
-RegisterResponse { success, heartbeat_interval }
-    │
-    ▼
-Agent 进入心跳循环
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant H as Hub
+    A->>A: 启动：生成 agent_id (UUID) + 加载 Token
+    A->>H: 建立 gRPC Stream
+    A->>H: RegisterRequest { agent_id, token, hostname, capabilities }
+    H->>H: 验证 Token → 创建/更新 Node 记录
+    H-->>A: RegisterResponse { success, heartbeat_interval }
+    A->>H: 进入心跳循环
 ```
 
 ### 3.2 配置推送流程
 
-```
-管理员在 Web / API 操作
-    │
-    ▼
-POST /api/v1/nodes/{id}/push { core_type, restart }
-    │
-    ▼
-Hub 查询该节点的所有 active Bindings
-    │
-    ▼
-pp-config BuilderRegistry.build_full_config(inbounds)
-    │
-    ▼
-序列化为 JSON → config_version = SHA-256(config) 前 16 位
-    │
-    ▼
-gRPC Stream → Agent（Hub 侧对调度推送先比对 Agent 注册时上报的版本，一致则跳过）
-    │
-    ▼
-Agent 比对本地快照版本（非 restart 推送且版本一致则跳过应用）
-    │
-    ▼
-Agent → CoreManager.reload() / restart()
-    │
-    ▼
-sing-box/mihomo 加载新配置
+```mermaid
+flowchart TD
+    op["管理员在 Web / API 操作"] --> push["POST /api/v1/nodes/{id}/push { core_type, restart }"]
+    push --> bindings["Hub 查询该节点的所有 active Bindings"]
+    bindings --> build["pp-config BuilderRegistry.build_full_config(inbounds)"]
+    build --> version["序列化为 JSON → config_version = SHA-256(config) 前 16 位"]
+    version --> stream["gRPC Stream → Agent<br/>（Hub 侧对调度推送先比对 Agent 注册时上报的版本，一致则跳过）"]
+    stream --> snapshot["Agent 比对本地快照版本<br/>（非 restart 推送且版本一致则跳过应用）"]
+    snapshot --> reload["Agent → CoreManager.reload() / restart()"]
+    reload --> core["sing-box/mihomo 加载新配置"]
 ```
 
 ### 3.3 订阅服务流程
 
-```
-用户访问 /sub/{token}?format=clash
-    │
-    ▼
-Hub 查找 Subscription 记录
-    │
-    ▼
-获取 Client + Template + active Bindings
-    │
-    ▼
-build_proxy_nodes() — 为每个节点注入客户端凭证
-    │
-    ▼
-generate_subscription(Clash, nodes, base_config)
-    │
-    ▼
-返回 YAML / JSON / Base64 内容
+```mermaid
+flowchart TD
+    req["用户访问 /sub/{token}?format=clash"] --> lookup["Hub 查找 Subscription 记录"]
+    lookup --> fetch["获取 Client + Template + active Bindings"]
+    fetch --> inject["build_proxy_nodes() — 为每个节点注入客户端凭证"]
+    inject --> gen["generate_subscription(Clash, nodes, base_config)"]
+    gen --> resp["返回 YAML / JSON / Base64 内容"]
 ```
 
 ### 3.4 流量上报流程
 
-```
-sing-box/mihomo 运行中
-    │
-    ▼
-pp-core 采集流量统计（API / 日志解析）
-    │
-    ▼
-Agent 定期打包为 TrafficReport
-    │
-    ▼
-gRPC Stream → Hub
-    │
-    ▼
-Hub 将流量数据写入 traffic_records（按小时聚合）
+```mermaid
+flowchart TD
+    core["sing-box/mihomo 运行中"] --> collect["pp-core 采集流量统计（API / 日志解析）"]
+    collect --> pack["Agent 定期打包为 TrafficReport"]
+    pack --> stream["gRPC Stream → Hub"]
+    stream --> store["Hub 将流量数据写入 traffic_records（按小时聚合）"]
 ```
 
 ### 3.5 主机指标上报流程
 
-```
-Agent 指标定时器 (默认 60s)
-    │
-    ▼
-sysinfo 采集 CPU、内存、负载
-    │
-    ▼
-打包为 HostMetrics
-    │
-    ▼
-gRPC Stream → Hub
-    │
-    ▼
-Hub 写入 host_metrics 表
+```mermaid
+flowchart TD
+    timer["Agent 指标定时器（默认 60s）"] --> collect["sysinfo 采集 CPU、内存、负载"]
+    collect --> pack["打包为 HostMetrics"]
+    pack --> stream["gRPC Stream → Hub"]
+    stream --> store["Hub 写入 host_metrics 表"]
 ```
 
 ---
 
 ## 客户端架构
 
-客户端自 ADR-0003 起按平台拆为**两个独立 Tauri 应用**（Desktop / Mobile），共用一层前端共享库与一层 Rust 共享命令 crate。
+客户端自 ADR-0007 起是**单一 Tauri 应用** `apps/client`（单包双入口、单壳双目标），平台差异全部为**编译期事实**；前端共享库与 Rust 共享命令层各自单份实现（ADR-0003 的分离收益由编译期机制保留）。
 
-**桌面客户端**（`apps/desktop`）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
+**桌面目标**（`apps/client/src/desktop` + 壳的 `desktop/` 适配层）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
 
-**移动客户端**（`apps/mobile`）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（mobile 壳依赖表天然不含 `pp-mitm`，无需 feature hack）。
+**Android 目标**（`apps/client/src/mobile` + 壳的 `mobile/` 适配层）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（`apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`）。
 
 | 载体 | 类型 | 职责 |
 |------|------|------|
-| `apps/desktop`（`pp-client-ui`） | 桌面客户端（UI + 壳） | 桌面 UI + Rust 壳：全路径注册共享命令与桌面专属命令（mitm / core_mgmt / remote 等），含 WSL workaround |
-| `apps/mobile`（`pp-client-mobile-ui`） | 移动客户端（UI + Android 壳） | 移动 UI + Rust 壳：全路径注册共享命令与 Android 专属 `core_bridge` 三命令（`request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed`）+ vpn 插件 |
+| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
+| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src-tauri`（`pp-client-app`） | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表裁剪 Android 构建图 |
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）/ hooks / atoms / 纯工具；两端 UI 禁止直接 `invoke()` |
-| `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
+| `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
 | `pp-script` | 脚本引擎层 | QuickJS 运行时 + QX/Surge/Loon 三方言 API 适配 + cron 调度 |
-| `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面专属） |
+| `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面目标专属，Android 构建图不含） |
 | `pp-client` | 客户端核心库 / 引擎层 | 订阅同步、核心配置合成、系统代理、生命周期编排；`CoreEngineBridge` 抽象——桌面 spawn sing-box 子进程 / Android 经 Kotlin 桥驱动 Go 引擎 |
 
-> `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（desktop 上 mitm 等仍可能因环境禁用）；UI 分离后平台差异转为编译期事实，desktop UI 已不再消费该字段。
+> `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（桌面目标上 mitm 等仍可能因环境禁用）；UI 平台差异是编译期事实，desktop UI 已不再消费该字段。Tauri 配置为桌面基线 `tauri.conf.json` + Android overlay `tauri.android.conf.json`（RFC 7396 合并：devUrl / 构建命令 / bundle 差异）。
 
 ### pp-script — 脚本引擎层
 
@@ -382,10 +327,11 @@ Hub 写入 host_metrics 表
 
 本地 HTTPS 中间人代理，基于 hudsucker 0.25：
 
-> **注：MITM 为桌面端能力（移动客户端不提供，mobile 壳依赖表不含本 crate）。**
+> **注：MITM 为桌面目标能力（Android 不提供，`apps/client/src-tauri` 的 Android target 依赖表不含本 crate）。**
 
 - **CA 管理**: [`CaStore`] trait 抽象 CA 材料，[`FileCaStore`] 为基于本地目录的默认实现，首次调用用 **rcgen** 生成自签证书（`ca.crt` / `ca.key`，文件权限 **0600**）
-- **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）/ `should_intercept_tls`，白名单外流量整体透传
+- **hudsucker 封装**: 白名单双钩子 passthrough——`should_intercept_connect`（CONNECT 按主机名白名单判定是否拦截）+ `should_intercept_tls`（TLS ClientHello 按 SNI 二次判定），白名单外流量整体盲隧道透传；库层空白名单语义为「全拦截」，但产品层（pp-client）在空白名单时不启动 MITM 链（见下）
+- **CA 系统信任**（`ca_trust.rs`）: 一键将 CA 安装到系统信任库 + 信任状态检测——Windows `certutil -user -addstore Root`（CurrentUser 存储，免 UAC）/ macOS `security add-trusted-cert`（osascript 提权）/ Linux `pkexec install + update-ca-certificates`；检测按平台分别走 certutil 输出匹配、`security verify-cert` 退出码、anchors 目录 SHA-256 指纹比对
 - **`RewriteEngine`**（`rewrite.rs`）: URL / Header / Body / Reject / Mock 五类重写动作
 - **`ScriptHookEngine`**（`script_hook.rs`）: 将 http-request / http-response 类型脚本按 URL 规则挂载到流量路径，成功时回写输出，脚本**超时或抛异常时 no-op（透传原值）**并记录警告
 - **流量抓包**: [`TrafficRecorder`] trait + [`MemoryRecorder`] 环形缓冲实现（`recorder.rs`）
@@ -393,53 +339,60 @@ Hub 写入 host_metrics 表
 
 ### pp-client — 客户端核心库（引擎层）
 
-承载客户端核心业务逻辑，经共享命令层供双端壳调用（desktop 为全功能形态；mobile 以 `scripts-only` 形态复用不含 MITM 的部分）：
+承载客户端核心业务逻辑，经共享命令层供单壳的桌面 / Android 目标调用（桌面为全功能形态；Android 以不含 MITM 的部分复用）：
 
 - **配置**: `ClientConfig`（`client.json`）定义客户端配置，含 `mixed_port`（默认 17890）与 MITM 配置
 - **订阅同步**（`subscription.rs`）: 拉取 `?format=singbox` / `?format=clash` 订阅（Clash 节点经 `node_convert::mihomo_to_singbox` 转换为 sing-box 节点），解析 `subscription-userinfo` 响应头（upload / download / total / expire）
-- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地 sing-box 启动配置，构建 **MITM 链路**——双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则
+- **核心配置合成**（`core_config.rs`）: 将订阅配置合成为本地 sing-box 启动配置，构建 **MITM 链路**——双 mixed inbound（主入口 `main-in` + 回流入口 `mitm-return`），route 规则前插 `inbound = [main-in]` 白名单规则；**空白名单（含仅排除项）时不启动 MITM 链、不注入路由与 `pp-mitm` outbound**，避免无域名条件的 match-all 规则把全部流量送进 MITM
 - **MITM 编排**（`mitm.rs`）: MITM 上游指向本机核心回流 mixed 入站端口（默认 `mixed_port + 1`），解密后的流量回流核心继续正常路由
 - **核心进程**（`runner.rs`）: `CoreRunner` 封装 pp-core 的 `CoreManagerFactory`，管理 sing-box 子进程
 - **系统代理**（`sysproxy.rs`）: `SystemProxy` trait + 平台实现——macOS `networksetup`、Windows `reg add`（Internet Settings）、Linux `gsettings`（GNOME），命令构造为纯函数便于单测断言，可注入 `MockSystemProxy`
 - **远程订阅**（`remote.rs`）: `RemoteManager` 定时拉取远程脚本 / 重写片段，写本地缓存（`data_dir/remote_cache/<name>.json`），运行期 `load_cached` 合并
 - **导入**（`import.rs`）: 把 QX / Surge / Loon 的 rewrite / script / task / mitm 片段经 `parse_import` 解析为 pp-mitm 规则与 pp-script 任务，未知行跳过并记 warning
 - **生命周期编排**（`state.rs`）: `ClientState` 编排启动链（订阅 → MITM → 合成配置 → 核心 → 系统代理），任一步失败**逆序回滚**，notifier / sysproxy 可注入
+- **连接追踪**（`connections/`）: Clash API `/connections` 采集器——**WebSocket 推送优先**（`?interval=1000` 全量快照推送，瞬时失败按退避重连，仅当服务端拒绝 upgrade 时永久回退 2s HTTP 轮询），快照差分维护活跃/已关闭连接视图（环形缓冲 500 条）
+- **流量统计**（`stats/`）: 客户端本地 SQLite（`<data_dir>/stats.db`，sqlx 直连 + `PRAGMA user_version` 轻量版本管理，不依赖 pp-db/sea-orm）。tracker 每轮快照差分产出字节增量（`StatDelta`）增量 upsert 日聚合表 `daily_stats`（`date + target(域名/IP) + destination_ip + rule + rule_payload + outbound` 六元主键），长连接流量随快照渐进入账；关闭连接写入明细表 `conn_records`（保留 7 天，聚合保留 90 天，打开时清理）。防重复计数：仅 `start ≥ tracker 启动时间` 的连接全量入账并计 conn_count，早前存活连接只建基线
 
-### apps/desktop — 桌面客户端（UI + 壳）
+### apps/client — 客户端（单壳双目标，UI + 壳）
 
-- **技术栈**: Tauri 2.11（独立 cargo 项目，**退出根 workspace**）+ React 19 / Vite 8 / TypeScript 7 / Tailwind CSS 4 / HeroUI 3.2，Bun 作为包管理器
-- **页面**: 仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
+由 ADR-0003 的 desktop / mobile 双应用合并而来（ADR-0007 回摆为单应用）：
+
+- **桌面目标**: Tauri 2（独立 cargo 项目 `apps/client/src-tauri`，包名 `pp-client-app`，**退出根 workspace**）+ 桌面 UI（React 19 / Vite 8 / Tailwind CSS 4 / HeroUI 3.2），Bun 作为包管理器；页面为仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
 - **通知**: `tauri-plugin-notification` 桌面通知
-- **壳**: 注册共享层命令（`pp-client-tauri`）+ 桌面专属命令（mitm / core_mgmt / remote / tun 授权 / gpu_acceleration 等）；含 WSL WebKitGTK workaround；数据目录解析为桌面语义（`~/.proxy-panel-client`）
+- **壳**: 注册共享层命令（`pp-client-tauri`）+ 平台专属命令——桌面：mitm / core_mgmt / remote / tun 授权 / gpu_acceleration 等，含 WSL WebKitGTK workaround；Android：`core_bridge` 三命令与 vpn 插件注册
+- **数据目录**: 桌面解析为桌面语义（`~/.proxy-panel-client`）；Android 使用应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
 
-### pp-client-tauri — 双端共享命令层
+### Android 目标（同一 `apps/client` 的移动目标）
 
-Desktop/Mobile 壳共享的 Tauri 命令实现与辅助（ADR-0003 §3.2）：
+- **技术栈**: 同一壳的移动目标（`tauri.android.conf.json` overlay）+ 移动 UI（React 19 / Tailwind CSS 4 / **Konsta UI**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
+- **核心引擎**: 内置 Go 模块 `panel-core`（`apps/client/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
+- **无 MITM**: `apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`（ADR-0003 §3.5 的依赖图隔离思路由 ADR-0007 §2 保留）
+- **构建**: 交叉编译与 AAR 打包见 `docs/development.md`「Android 客户端构建」
 
-- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard），数据目录由壳层注入（desktop 桌面路径 / mobile Android 应用私有目录）
+### pp-client-tauri — 共享命令层（桌面 / Android）
+
+`apps/client` 单壳的桌面 / Android 目标共享的 Tauri 命令实现与辅助（架构分离源自 ADR-0003 §3.2，合并见 ADR-0007）：
+
+- **共享状态**（`state.rs`）: `AppState`（数据目录 + 日志 guard + 懒打开的流量统计存储 `StatsStore`），数据目录由壳层注入（桌面路径 / Android 应用私有目录）
 - **日志系统**（`logs/`）: 日志初始化、滚动文件查询/导出/清空、前端日志上报
 - **平台能力矩阵**（`capabilities.rs`）: `get_capabilities` / `platform_info`；`is_android` 语义退化为运行时功能开关（desktop UI 已不消费）
-- **通用命令**（`commands/`）: config / subscription / profile / proxies / connections / preview / task / local_override 等 35 条单份实现
+- **通用命令**（`commands/`）: config / subscription / profile / proxies / connections / stats（流量统计：stats_today / stats_daily / stats_records / stats_clear）/ preview / task / local_override 等单份实现
 - **Android 专属**（`core_bridge.rs`，`cfg(target_os = "android")`）: `request_vpn_permission` / `vpn_last_error` / `notify_prefs_changed` + Kotlin VpnPlugin 桥（`vpn_plugin`）
 - 壳层以全路径注册本 crate 命令（Tauri 2 支持跨 crate 注册）
-
-### apps/mobile — 移动客户端（Android）
-
-- **技术栈**: Tauri 2（Android 目标，`pp-client-mobile-ui`，独立 cargo 项目）+ 移动 UI（React），Bun 作为包管理器
-- **壳**: 注册共享命令与 Android 专属 `core_bridge` 三命令；数据目录用 Android 应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
-- **核心引擎**: 内置 Go 模块 `panel-core`（`apps/mobile/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
-- **无 MITM**: mobile 壳 `Cargo.toml` 依赖表不含 `pp-mitm`，Android 禁 MITM 由依赖图天然表达（ADR-0003 §3.5）
-- **构建**: 交叉编译与 AAR 打包见 `docs/development.md`「Android 客户端构建」
 
 ### 客户端流量链路
 
 桌面客户端的流量链路（核心主入口 → MITM → 核心回流）是理解 MITM 挂载方式的关键：
 
-```
-App → 系统代理 → 核心主 mixed inbound (mixed_port)
-   ├─ MITM 白名单域名 → route 规则（inbound=main-in）→ http outbound → pp-mitm（CA 解密+脚本钩子+rewrite+抓包）
-   │     → UpstreamProxy::Http → 核心 mitm-return inbound (mixed_port+1) → 正常路由 → 远端节点
-   └─ 其余流量（含 wss）→ 正常路由 → 远端节点
+```mermaid
+flowchart TD
+    app["App"] --> sysproxy["系统代理"]
+    sysproxy --> mainIn["核心主 mixed inbound<br/>（main-in，mixed_port）"]
+    mainIn -- "MITM 白名单域名<br/>（route 规则 inbound=main-in → http outbound）" --> mitm["pp-mitm<br/>（CA 解密 + 脚本钩子 + rewrite + 抓包）"]
+    mitm -- "UpstreamProxy::Http" --> returnIn["核心回流 inbound<br/>（mitm-return，mixed_port+1）"]
+    returnIn --> route["正常路由"]
+    mainIn -- "其余流量（含 wss）" --> route
+    route --> remote["远端节点"]
 ```
 
 1. App 的请求经系统代理指向核心主 mixed 入站（`main-in`，监听 `mixed_port`）
@@ -451,47 +404,17 @@ App → 系统代理 → 核心主 mixed inbound (mixed_port)
 
 客户端启动时把「订阅节点 + 配置切片 + Profile 覆写」合成为最终 sing-box 启动 JSON 的分层链路（`pp-client`，入口 `state::start`，层序 ⓪→⑤ 与优先级见 ADR-0005 §3.2）：
 
-```
-订阅配置（sing-box JSON / Clash 订阅已转节点）
-   │  build_core_config_v2（profile/）：提取节点 → singbox_template
-   │    （CN 分流基线：log + local(DoH 223.5.5.5)/remote(DoT 8.8.8.8) DNS 与 CN 分流 DNS/路由规则
-   │     + 5 个 MetaCubeX 远程规则集；proxy(select)/auto(url-test)/direct/block 分组）
-   ▼
-⓪ 切片层（本地配置层·构建期注入，ADR-0005）
-   │  apply_config_slices：读取 data_dir/config_slices.json，按**内容驱动**注入（无切片级总开关，
-   │    见 ADR-0005 P4 补记）——DNS 切片、自定义出站切片、Experimental 与 Route 切片
-   │    （自定义出站 tag 强制 slice- 前缀；出站含协议节点与 selector/urltest 分组，v1 禁嵌套
-   │    分组，供规则 Outbound{tag} 引用；Experimental 深合并写入 experimental.cache_file，
-   │    保留 clash_api 等同级键）
-   ▼
-① Profile 覆写层（高级逃生舱口，优先级高于切片层，D2「覆写赢」）
-   │  remote/local YAML 覆写（深合并，remote 为底 local 覆盖）→ remote/local JS 覆写（链式 main）
-   ▼
-Profile 基础配置（含节点与分组）
-   │  compose_singbox_config（core_config/compose.rs）：inbounds 整体替换（mixed 主入口；
-   │    桌面 MITM 时双入站 main-in + mitm-return）、MITM 白名单规则前插、sing-box 1.12+ DNS
-   │    兼容（default_domain_resolver）
-   ▼
-Composed 配置
-   │  apply_local_override（local_override/，ADR-0002）：**全部 enabled** 本地规则（场景模板
-   │    已移除，不再按模板引用过滤）/ 规则集前插到 route.rules 头部、rule_set 引用注册
-   │    （引用采集同时覆盖规则卡与已渲染 DNS 规则的 rule_set，见 ADR-0005 P2 补记）、
-   │    final 规则写 route.final
-   ▼
-   │  apply_panel_features（core_config/singbox.rs，设置页最高优先级）：TUN inbound 按设置整段替换、
-   │    experimental.clash_api（含 default_mode）、出站模式基础 clash_mode 规则前插、
-   │    Android DNS 强制注入 inject_android_dns（DNS 切片 FollowSystem 模式整体覆盖切片正文，
-   │    Takeover 模式跳过强制注入使切片正文生效，见 ADR-0005 D1；DNS mode 跨平台统一——桌面
-   │    FollowSystem 保留模板 DNS、Takeover 同样注入切片正文，见 ADR-0005 P4 补记）、
-   │    IPv6 开关关闭（默认）时把 dns.strategy 覆写为 ipv4_only、
-   │    所有非 Takeover 模式在 dns.rules 头部注入 HTTPS/SVCB（+AAAA）预定义丢弃规则、
-   │    FakeIP 开关开启（opt-in）时注入 fakeip DNS server 并把非 CN A 查询
-   │    （rule_set = geolocation-!cn）路由到 fakeip，
-   │    FakeIP 关闭（realip，默认）时在 hijack-dns 后注入 route resolve 规则、并为引用了
-   │    远程规则集的配置注入 experimental.cache_file 离线缓存
-   │    （IPv6 策略覆写与 FakeIP 注入在 Takeover 下均跳过，见 ADR-0005 P3/P4 补记）
-   ▼
-最终 sing-box JSON ──► CoreRunner 启动（config_version = SHA-256 前 16 位）
+```mermaid
+flowchart TD
+    sub["订阅配置<br/>（sing-box JSON / Clash 订阅已转节点）"] --> tpl["build_core_config_v2（profile/）<br/>提取节点 → singbox_template（CN 分流基线）"]
+    tpl --> slices["⓪ 切片层（构建期注入，ADR-0005）<br/>apply_config_slices：DNS / 自定义出站 / Experimental / Route 切片"]
+    slices --> profile["① Profile 覆写层（高级逃生舱口，优先级高于切片）<br/>remote/local YAML 深合并 → remote/local JS 覆写"]
+    profile --> base["Profile 基础配置（含节点与分组）"]
+    base --> compose["compose_singbox_config（core_config/compose.rs）<br/>inbounds 整体替换 + MITM 白名单前插 + DNS 兼容"]
+    compose --> composed["Composed 配置"]
+    composed --> override["apply_local_override（ADR-0002）<br/>全部 enabled 本地规则/规则集前插 + rule_set 注册 + final"]
+    override --> features["apply_panel_features（core_config/singbox.rs，最高优先级）<br/>TUN / Clash API / 出站模式 / DNS / IPv6 / FakeIP"]
+    features --> final["最终 sing-box JSON → CoreRunner 启动<br/>（config_version = SHA-256 前 16 位）"]
 ```
 
 各阶段职责一句话：
@@ -508,9 +431,15 @@ Composed 配置
 
 **规则优先级语义**（最终 `route.rules` 自前向后的匹配顺序）：
 
+```mermaid
+flowchart LR
+    mode["模式开关<br/>（clash_mode 基础规则）"] --> local["本地规则"]
+    local --> mitm["MITM 白名单（桌面）"]
+    mitm --> sub["订阅/模板规则<br/>（含 CN 分流基线）"]
+    sub --> final["final"]
 ```
-模式开关（clash_mode 基础规则）> 本地规则 > MITM 白名单（桌面）> 订阅/模板规则（含 CN 分流基线）> final
-```
+
+（自左向右为 `route.rules` 的匹配顺序，越靠前优先级越高。）
 
 - 各层在更早阶段把自己的规则前插到头部：compose 前插 MITM 白名单 → local_override 前插本地规则 → panel features 前插模式开关，因此后执行者反而排在更前、优先级更高
 - CN 分流基线规则（2 条：合并后的私有/国内直连 + 非中国大陆代理）物化进 local_override 统一规则列表（可修改不可删除，ADR-0005 2026-09 补记），与用户规则同一排序、同一注入阶段；`route.final`（模板默认 `proxy`）仍是最终兜底
@@ -536,57 +465,104 @@ Composed 配置
 
 ### E-R 关系图
 
-```
-┌─────────────┐       ┌──────────────────┐       ┌─────────────────┐
-│    Users    │       │      Nodes       │       │ ProtocolConfigs │
-├─────────────┤       ├──────────────────┤       ├─────────────────┤
-│ id (PK)     │       │ id (PK)          │       │ id (PK)         │
-│ username    │       │ name             │       │ name            │
-│ password_hash│      │ hostname         │       │ protocol_type   │
-│ role        │       │ address          │       │ core_type       │
-│ status      │       │ token_hash       │       │ listen_port     │
-└─────────────┘       │ cores_available  │       │ listen_address  │
-       │              │ labels           │       │ settings (JSON) │
-       │              │ status           │       │ tls_settings    │
-       │              └──────────────────┘       └─────────────────┘
-       │                      │                          │
-       │                      │     ┌──────────────┐     │
-       │                      └────►│ NodeBindings │◄────┘
-       │                            ├──────────────┤
-       │                            │ id (PK)      │
-       │                            │ node_id (FK) │
-       │                            │ protocol_config_id (FK)
-       │                            │ override_settings
-       │                            │ is_active    │
-       │                            └──────────────┘
-       │
-       ▼
-┌─────────────┐       ┌──────────────────┐       ┌─────────────────┐
-│   Clients   │       │  Subscriptions   │       │SubscriptionTemplates
-├─────────────┤       ├──────────────────┤       ├─────────────────┤
-│ id (PK)     │◄──────│ client_id (FK)   │       │ id (PK)         │
-│ user_id (FK)│       │ template_id (FK) │──────►│ name            │
-│ name        │       │ token (unique)   │       │ format          │
-│ email       │       │ url_path         │       │ base_config     │
-│ traffic_limit│      │ expire_at        │       │ filter_rules    │
-│ traffic_used │      │ is_active        │       │ custom_headers  │
-│ status      │       └──────────────────┘       └─────────────────┘
-└─────────────┘
-       │
-       ▼
-┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-│ TrafficRecords  │   │   HostMetrics   │   │   SystemLogs    │
-├─────────────────┤   ├─────────────────┤   ├─────────────────┤
-│ id (PK)         │   │ id (PK)         │   │ id (PK)         │
-│ node_id (FK)    │   │ node_id (FK)    │   │ level           │
-│ protocol_config_id│  │ timestamp       │   │ source          │
-│ client_id (FK)  │   │ cpu_percent     │   │ message         │
-│ hour_bucket     │   │ mem_used        │   │ metadata (JSON) │
-│ upload_bytes    │   │ mem_total       │   │ created_at      │
-│ download_bytes  │   │ disk_used       │   └─────────────────┘
-└─────────────────┘   │ net_rx          │
-                      │ load_avg*       │
-                      └─────────────────┘
+```mermaid
+erDiagram
+    USERS ||--o{ CLIENTS : "user_id"
+    NODES ||--o{ NODE_BINDINGS : "node_id"
+    PROTOCOL_CONFIGS ||--o{ NODE_BINDINGS : "protocol_config_id"
+    CLIENTS ||--o{ SUBSCRIPTIONS : "client_id"
+    SUBSCRIPTION_TEMPLATES ||--o{ SUBSCRIPTIONS : "template_id"
+    NODES ||--o{ TRAFFIC_RECORDS : "node_id"
+    PROTOCOL_CONFIGS ||--o{ TRAFFIC_RECORDS : "protocol_config_id"
+    CLIENTS ||--o{ TRAFFIC_RECORDS : "client_id"
+    NODES ||--o{ HOST_METRICS : "node_id"
+
+    USERS {
+        uuid id PK
+        string username
+        string password_hash
+        string role
+        string status
+    }
+    NODES {
+        uuid id PK
+        string name
+        string hostname
+        string address
+        string token_hash
+        json cores_available
+        json labels
+        string status
+    }
+    PROTOCOL_CONFIGS {
+        uuid id PK
+        string name
+        string protocol_type
+        string core_type
+        int listen_port
+        string listen_address
+        json settings
+        json tls_settings
+    }
+    NODE_BINDINGS {
+        uuid id PK
+        uuid node_id FK
+        uuid protocol_config_id FK
+        json override_settings
+        bool is_active
+    }
+    CLIENTS {
+        uuid id PK
+        uuid user_id FK
+        string name
+        string email
+        bigint traffic_limit
+        bigint traffic_used
+        string status
+    }
+    SUBSCRIPTIONS {
+        uuid client_id FK
+        uuid template_id FK
+        string token UK
+        string url_path
+        timestamp expire_at
+        bool is_active
+    }
+    SUBSCRIPTION_TEMPLATES {
+        uuid id PK
+        string name
+        string format
+        json base_config
+        json filter_rules
+        json custom_headers
+    }
+    TRAFFIC_RECORDS {
+        uuid id PK
+        uuid node_id FK
+        uuid protocol_config_id FK
+        uuid client_id FK
+        timestamp hour_bucket
+        bigint upload_bytes
+        bigint download_bytes
+    }
+    HOST_METRICS {
+        uuid id PK
+        uuid node_id FK
+        timestamp timestamp
+        float cpu_percent
+        bigint mem_used
+        bigint mem_total
+        bigint disk_used
+        bigint net_rx
+        string load_avg
+    }
+    SYSTEM_LOGS {
+        string level
+        string source
+        string message
+        json metadata
+        timestamp created_at
+    }
 ```
 
 ### 表说明

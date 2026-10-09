@@ -28,65 +28,49 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 
 ## 系统架构
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           ProxyPanel Hub                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │   HTTP API   │  │  gRPC Stream │  │   Web App    │              │
-│  │   (Axum)     │  │   (Tonic)    │  │  (React)     │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │    Business Layer   │                                │
-│              │  (Services / State) │                                │
-│              └─────────────────────┘                                │
-│                          │                                          │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │   Database (Sea-ORM)│                                │
-│              │ PostgreSQL / SQLite │                                │
-│              └─────────────────────┘                                │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │ gRPC (双向流)
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        ProxyPanel Agent (Node)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ gRPC Client  │  │   Reporter   │  │   Monitor    │              │
-│  │              │  │(Traffic/Logs)│  │(Host Metrics)│              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────┐                                │
-│              │    Core Supervisor  │                                │
-│              │ sing-box / mihomo  │                                │
-│              └─────────────────────┘                                │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph hub["ProxyPanel Hub"]
+        direction TB
+        api["HTTP API (Axum)"]
+        grpc["gRPC Stream (Tonic)"]
+        web["Web App (React)"]
+        biz["Business Layer<br/>(Services / State)"]
+        db[("Database (Sea-ORM)<br/>PostgreSQL / SQLite")]
+        api --> biz
+        grpc --> biz
+        web --> biz
+        biz --> db
+    end
+    subgraph agent["ProxyPanel Agent (Node)"]
+        direction TB
+        gc["gRPC Client"]
+        rep["Reporter<br/>(Traffic / Logs)"]
+        mon["Monitor<br/>(Host Metrics)"]
+        sup["Core Supervisor<br/>sing-box / mihomo"]
+        gc --> sup
+        rep --> sup
+        mon --> sup
+    end
+    hub -- "gRPC（双向流）" --> agent
 ```
 
-客户端分桌面（`apps/desktop`，`pp-client-ui`）与移动（`apps/mobile`，`pp-client-mobile-ui`）两个独立 Tauri 应用，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
+客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：桌面 UI（HeroUI）与移动 UI（Konsta）经 vite mode 构建期分发，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      ProxyPanel Client (Desktop)                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ pp-script    │  │ pp-mitm      │  │ pp-core      │              │
-│  │ 脚本引擎     │  │ MITM 引擎    │  │ 核心子进程    │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│         │                │                  │                       │
-│         └────────────────┼──────────────────┘                       │
-│                          ▼                                          │
-│              ┌─────────────────────────────┐                        │
-│              │    pp-client (ClientState)   │                        │
-│              │  订阅同步 / 配置合成 / 系统代理 │                        │
-│              └─────────────────────────────┘                        │
-└─────────────────────────────────────────────────────────────────────┘
-            │ 订阅 (HTTP)                           │ 本地代理流量
-            ▼                                        ▼
-   Hub /sub/{token} 公开订阅端点            远端代理节点 (sing-box / mihomo)
+```mermaid
+flowchart TB
+    subgraph client["ProxyPanel Client (Desktop)"]
+        direction TB
+        script["pp-script<br/>脚本引擎"]
+        mitm["pp-mitm<br/>MITM 引擎"]
+        core["pp-core<br/>核心子进程"]
+        state["pp-client (ClientState)<br/>订阅同步 / 配置合成 / 系统代理"]
+        script --> state
+        mitm --> state
+        core --> state
+    end
+    client -- "订阅 (HTTP)" --> subEndpoint["Hub /sub/{token} 公开订阅端点"]
+    client -- "本地代理流量" --> remote["远端代理节点 (sing-box / mihomo)"]
 ```
 
 ## 快速开始
@@ -139,10 +123,13 @@ Hub 将监听：
 
 ### 6. 构建 Web 前端
 
+前端依赖在**仓库根目录**统一安装（Bun workspaces，单一 `bun.lock`）：
+
 ```bash
-cd apps/panel
 bun install
-bun run build
+
+# panel 发布构建（产物 apps/panel/dist/）
+bun run --filter pp-web build
 ```
 
 产物位于 `apps/panel/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
@@ -150,9 +137,10 @@ bun run build
 开发模式热重载：
 
 ```bash
-cd apps/panel
-bun run dev
+bun run --filter pp-web dev
 ```
+
+也可 `cd apps/panel && bun run dev`（依赖仍由根目录 `bun install` 提供）。
 
 ### 7. 使用 CLI 安装 Agent（推荐）
 
@@ -189,20 +177,23 @@ cargo run --release --bin proxy-panel-agent \
   --token "your-agent-token"
 ```
 
-### 9. 构建桌面客户端（可选）
+### 9. 构建客户端（可选）
 
-桌面客户端为独立的 Tauri 项目（退出根 workspace），使用 Bun 作为包管理器：
+客户端为单一 Tauri 项目 `apps/client`（壳退出根 workspace，包名 `pp-client-app`），使用 Bun 作为包管理器；依赖已在上一步于仓库根目录统一安装：
 
 ```bash
-cd apps/desktop
-bun install
-bun run tauri dev      # 开发模式（Vite 热重载 + Tauri 窗口）
-bun run tauri build    # 发布构建（产物位于 src-tauri/target/release/）
+cd apps/client
+bun run tauri dev      # 桌面开发模式（Vite 热重载 + Tauri 窗口）
+bun run tauri build    # 桌面发布构建（产物位于 src-tauri/target/release/）
+bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/development.md）
+bun run android:build  # Android APK 构建
 ```
 
-#### Android（移动客户端）构建
+支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（x86_64 / ARM64 双架构，`bundle/nsis/*.exe`），内置 sing-box 种子核心与 `wintun.dll`（首启免联网即可用，ADR-0008），并支持自动更新（设置页「关于应用 → 检查更新」）。TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启）。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包；本地完整打包流程见 [docs/development.md](docs/development.md#windows-桌面端构建)。
 
-Android 客户端自 desktop 拆分独立为 `apps/mobile`（Tauri 2 移动应用）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
+#### Android（移动端目标）构建
+
+Android 为 `apps/client` 的移动目标（Tauri 2，`tauri.android.conf.json` overlay）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
 
 ## 项目结构
 
@@ -211,7 +202,8 @@ proxy-panel/
 ├── Cargo.toml              # Workspace 根配置
 ├── docker-compose.yml      # 开发环境编排
 ├── proto/
-│   └── hub_agent.proto     # Hub-Agent gRPC 协议定义
+│   ├── hub_agent.proto         # Hub-Agent gRPC 协议定义
+│   └── singbox_daemon.proto    # sing-box 守护进程协议定义
 ├── crates/
 │   ├── pp-common/          # 共享类型、错误、工具函数
 │   ├── pp-db/              # Sea-ORM 实体与迁移
@@ -228,12 +220,12 @@ proxy-panel/
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
-│   ├── desktop/            # 客户端：Tauri 2 桌面应用（Linux/Windows/macOS，React 前端 + 独立 cargo 项目）
-│   └── mobile/             # 客户端：Tauri 2 移动应用（Android）+ 安卓核心 Go 模块（panel-core）与构建脚本
+│   └── client/             # 客户端：单一 Tauri 2 应用（单包双入口/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
 ├── packages/
 │   └── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
-├── docs/                   # 项目文档
-└── scripts/                # 辅助脚本
+├── docs/                   # 项目文档（索引见 docs/index.md）
+├── scripts/                # 辅助脚本
+└── CHANGELOG.md            # 变更日志
 ```
 
 ## 主要 Crate 说明
@@ -248,15 +240,14 @@ proxy-panel/
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
 | `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
 | `pp-config` | 配置抽象：将通用协议配置转译为 sing-box JSON 或 mihomo YAML | 库 |
-| `pp-core` | 核心进程管理：启动、停止、重载、流量采集 | 库 |
+| `pp-core` | 核心进程管理：启动、停止、重载 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
 | `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
 | `pp-mitm` | HTTPS MITM 引擎（桌面端专属，移动端不支持）：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
 | `pp-client` | 客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
 | `pp-client-tauri` | 双端共享 Tauri 命令层：state / logs / capabilities / 35 条通用命令单份实现，Android 专属 core_bridge（cfg 门控） | 库 |
 | `@pp/client-core` | desktop/mobile 共享前端库：api 的 invoke 封装 + hooks + atoms + 纯工具（bun workspaces 成员） | 库 |
-| `apps/desktop` | Tauri 2 桌面客户端（React 19 + Vite 8 + HeroUI，bun workspaces 成员；壳为退出根 workspace 的独立 cargo 项目） | 桌面应用 |
-| `apps/mobile` | Tauri 2 移动客户端（Android：移动 UI + 壳 + Go 核心 `panel-core`，bun workspaces 成员） | Android 应用 |
+| `apps/client` | Tauri 2 客户端（React 19 + Vite 8，单包双入口：桌面 HeroUI / 移动 Konsta + Go 核心 `panel-core`；壳为退出根 workspace 的独立 cargo 项目） | 桌面（Linux/Windows/macOS）+ Android 应用 |
 
 ## 支持的协议
 
@@ -269,7 +260,7 @@ proxy-panel/
 
 ## 开发指南
 
-详见 [docs/development.md](docs/development.md)。
+完整文档索引见 [docs/index.md](docs/index.md)；开发流程、变更工作流与测试细节见 [docs/development.md](docs/development.md)。
 
 快速命令：
 
@@ -283,8 +274,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 # 格式化代码
 cargo fmt --all
 
-# 构建前端
-cd apps/panel && bun install && bun run build
+# Rust 全量门禁（含客户端壳双目标）
+bun run verify:rust
+
+# 前端：根目录安装依赖后按包构建/校验
+bun install
+bun run --filter pp-web build
 
 # 生成实体（修改迁移后）
 cd crates/pp-db && sea-orm-cli generate entity -o src/entities
@@ -408,7 +403,7 @@ Hub 提供完整的 REST API，详见 [docs/api_reference.md](docs/api_reference
 
 ## 贡献指南
 
-欢迎提交 Issue 和 PR！请阅读 [docs/contributing.md](docs/contributing.md) 了解详情。
+欢迎提交 Issue 和 PR！请阅读 [docs/contributing.md](docs/contributing.md) 了解详情；变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 

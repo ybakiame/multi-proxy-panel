@@ -12,6 +12,7 @@ export const CONFIG_KEY = ["config"] as const;
 export const PROXY_STATUS_KEY = ["proxy_status"] as const;
 export const TRAFFIC_KEY = ["traffic"] as const;
 export const MITM_CA_KEY = ["mitmCa"] as const;
+export const MITM_CA_TRUST_KEY = ["mitmCaTrust"] as const;
 
 export const REMOTES_KEY = ["remotes"] as const;
 export const TASKS_KEY = ["tasks"] as const;
@@ -29,7 +30,8 @@ export const SUBSCRIPTIONS_KEY = ["subscriptions"] as const;
 export const subscriptionNodeTagsKey = (id: string) => ["subscription_node_tags", id] as const;
 export const CORES_KEY = ["cores"] as const;
 export const CORES_LIST_KEY = ["cores_list"] as const;
-export const REMOTE_VERSIONS_KEY = ["remote_core_versions"] as const;
+/** 远端核心各通道最新版本（稳定版 / 测试版 / 预发布版）。 */
+export const REMOTE_CHANNELS_KEY = ["remote_core_channels"] as const;
 export const VPN_ERROR_KEY = ["vpnLastError"] as const;
 /** sing-box 核心版本（Android，经 libbox.Version() 读取）。 */
 export const CORE_VERSION_KEY = ["core_version"] as const;
@@ -41,6 +43,12 @@ export const NOTIF_PERM_KEY = ["notification_permission"] as const;
 export const PROXIES_KEY = ["proxies_list"] as const;
 export const CONNECTIONS_KEY = ["connections_active"] as const;
 export const CLOSED_CONNECTIONS_KEY = ["connections_closed"] as const;
+
+export const STATS_TODAY_KEY = ["stats_today"] as const;
+/** 日聚合查询（按查询条件参数化）。 */
+export const statsDailyKey = (query: unknown) => ["stats_daily", query] as const;
+/** 连接明细查询（按查询条件参数化）。 */
+export const statsRecordsKey = (query: unknown) => ["stats_records", query] as const;
 
 export const LOGS_KEY = ["logs"] as const;
 export const LOG_FILES_KEY = ["log_files"] as const;

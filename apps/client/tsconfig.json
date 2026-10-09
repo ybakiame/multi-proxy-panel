@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      // vite mode alias `@app` 的 tsc 侧声明（构建期分发见 vite.config.ts）：
+      // tsc 按顺序取首个存在的目录（desktop）；两端目录均在 include 内全量检查。
+      "@app/*": ["./src/desktop/*", "./src/mobile/*"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,6 +1,6 @@
 //! Compatibility and utility free functions for [`ClientState`].
 
-#[cfg(any(test, target_os = "android"))]
+#[cfg(any(all(test, unix), target_os = "android"))]
 use crate::config::ClientConfig;
 
 /// Android startup forced override: desktop-exclusive features have no corresponding implementation on Android
@@ -21,7 +21,7 @@ use crate::config::ClientConfig;
 /// Only called by [`ClientState::start`] on Android builds; compiled on desktop builds for unit test verification.
 ///
 /// [`core_config::PanelFeatures`]: crate::core_config::PanelFeatures
-#[cfg(any(test, target_os = "android"))]
+#[cfg(any(all(test, unix), target_os = "android"))]
 pub(crate) fn apply_android_overrides(config: &mut ClientConfig) {
     config.mitm_enabled = false;
     config.system_proxy_enabled = false;
@@ -35,7 +35,7 @@ pub(crate) fn apply_android_overrides(config: &mut ClientConfig) {
 /// Recursively redact credential fields in config (for Android troubleshooting disk write): when object key is
 /// "uuid" / "password" / "server" and value is string, replace with "***",
 /// other structures (including detour / dns levels) are preserved as-is.
-#[cfg(any(test, target_os = "android"))]
+#[cfg(any(all(test, unix), target_os = "android"))]
 pub(crate) fn redact_config_credentials(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {

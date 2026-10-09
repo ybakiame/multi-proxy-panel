@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-updater",
+  "description": "桌面端自动更新（ADR-0008 D2）：检查更新 + 下载安装 + 重启；Android 不注册 updater/process 插件，故按 platforms 门控于桌面。",
+  "windows": ["main"],
+  "platforms": ["linux", "macOS", "windows"],
+  "permissions": ["updater:default", "process:allow-restart"]
+}

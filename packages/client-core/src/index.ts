@@ -19,11 +19,25 @@ export * from "./atoms/ui";
 export * from "./hooks/useCapabilities";
 export * from "./hooks/useClientConfig";
 export * from "./hooks/useCoreVersion";
+export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
+export * from "./hooks/useSettingsPersist";
+export * from "./hooks/useRuleSetMarket";
 
 // 纯逻辑工具。
+export * from "./coreChannels";
+export * from "./dnsSlice";
+export * from "./dnsValidate";
 export * from "./env";
+export * from "./localOverrideGuards";
 export * from "./logCapture";
 export * from "./metaCubeCatalog";
+export * from "./outboundForm";
+export * from "./outboundOptions";
+export * from "./groupForm";
+export * from "./pendingRestart";
+export * from "./ruleSetOptions";
+export * from "./routeSlice";
 export * from "./rules";
+export * from "./theme";
 export * from "./toast";
