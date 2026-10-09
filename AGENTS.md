@@ -307,6 +307,12 @@ desktop/mobile 双应用），平台差异全部为**编译期事实**：
 `tauri.android.conf.json`（RFC 7396 合并：devUrl/构建命令/bundle 差异）。
 详见 ADR-0003（分离）与 ADR-0007（合并回摆）。
 
+核心进程生命周期为 ADR-0012 纵深防御四层：OS 级父子绑定（Windows Job Object /
+Linux PR_SET_PDEATHSIG，pp-common `spawn_guarded`）+ PID 文件启动收割
+（pp-core `lifecycle`，exe 校验防 PID 复用误杀）+ ExitRequested 退出清理
+（src-tauri desktop 适配层）+ 端口占用前置诊断（pp-client `port_guard`，报错
+指明占用者）。Android 核心由 VPN 服务托管，不参与上述机制。
+
 ---
 
 ## 5. Git 提交规范（代理必读）
