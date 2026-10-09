@@ -1,6 +1,6 @@
 //! MITM commands: traffic recording and CA certificate.
 
-use pp_mitm::{CaStore, TrafficRecorder};
+use pp_mitm::{CaStore, CaTrustView, TrafficRecorder};
 use serde::Serialize;
 use tauri::State;
 
@@ -78,6 +78,32 @@ pub(crate) fn get_mitm_ca_impl(data_dir: &std::path::Path) -> Result<MitmCaView,
             .into_owned(),
         pem: material.cert_pem,
     })
+}
+
+/// 确保 CA 已生成并返回 `ca.crt` 绝对路径（install / status 命令共用）。
+fn ensure_ca_path(data_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let view = get_mitm_ca_impl(data_dir)?;
+    Ok(std::path::PathBuf::from(view.path))
+}
+
+/// Install MITM CA into the system trust store.
+///
+/// Windows 写 CurrentUser Root 存储（免 UAC）；macOS / Linux 弹系统授权框。
+/// 返回安装后的信任状态（供前端直接回写缓存）。
+#[tauri::command]
+pub fn install_mitm_ca(state: State<'_, AppState>) -> Result<CaTrustView, String> {
+    let ca_path = ensure_ca_path(&state.data_dir)?;
+    pp_mitm::install_ca(&ca_path).map_err(|e| format!("安装 CA 到系统信任库失败: {e}"))?;
+    Ok(pp_mitm::ca_trust_status(&ca_path))
+}
+
+/// Detect whether the MITM CA is trusted by the system trust store.
+///
+/// 检测失败返回 status=unknown 而非报错。
+#[tauri::command]
+pub fn mitm_ca_trust_status(state: State<'_, AppState>) -> Result<CaTrustView, String> {
+    let ca_path = ensure_ca_path(&state.data_dir)?;
+    Ok(pp_mitm::ca_trust_status(&ca_path))
 }
 
 #[cfg(test)]

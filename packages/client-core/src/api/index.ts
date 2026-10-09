@@ -22,8 +22,19 @@ export function toErrorMessage(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 export type { MitmScriptDialect, ClientConfig, ClientStatus, SaveConfigView } from "./types";
-export { getConfig, saveConfig, startProxy, stopProxy, proxyStatus, setRuleMode, listTraffic, getMitmCa } from "./core";
-export type { TrafficRecord, MitmCaView } from "./core";
+export {
+  getConfig,
+  saveConfig,
+  startProxy,
+  stopProxy,
+  proxyStatus,
+  setRuleMode,
+  listTraffic,
+  getMitmCa,
+  getMitmCaTrustStatus,
+  installMitmCa,
+} from "./core";
+export type { TrafficRecord, MitmCaView, MitmCaTrustStatus, MitmCaTrustView } from "./core";
 
 // ---------------------------------------------------------------------------
 // Subscriptions

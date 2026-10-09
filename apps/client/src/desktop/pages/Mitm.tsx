@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { Alert, Button, Card, Table, TextArea } from "@heroui/react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { getMitmCa, listTraffic } from "@pp/client-core";
-import type { TrafficRecord } from "@pp/client-core";
-import { MITM_CA_KEY, TRAFFIC_KEY } from "@pp/client-core";
+import { Alert, Button, Card, Chip, Table, TextArea } from "@heroui/react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getMitmCa, getMitmCaTrustStatus, installMitmCa, listTraffic } from "@pp/client-core";
+import type { MitmCaTrustStatus, TrafficRecord } from "@pp/client-core";
+import { MITM_CA_KEY, MITM_CA_TRUST_KEY, TRAFFIC_KEY } from "@pp/client-core";
 import { useClientConfig, useSaveConfig } from "@pp/client-core";
+import { toastError, toastSuccess, toErrorMessage } from "@pp/client-core";
+
+/** 信任状态 Chip 配色与文案。 */
+const TRUST_CHIP: Record<MitmCaTrustStatus, { color: "success" | "warning" | "default"; label: string }> = {
+  trusted: { color: "success", label: "已信任" },
+  not_trusted: { color: "warning", label: "未信任" },
+  unknown: { color: "default", label: "未知" },
+};
 
 interface HostnameEditorProps {
   initialHostnames: string;
@@ -88,6 +96,27 @@ export default function Mitm() {
     staleTime: Infinity,
   });
 
+  // 系统信任库信任状态
+  const queryClient = useQueryClient();
+  const { data: trust } = useQuery({
+    queryKey: MITM_CA_TRUST_KEY,
+    queryFn: getMitmCaTrustStatus,
+  });
+
+  // 一键安装到系统信任库：成功后回写信任状态缓存；失败 toast 错误信息。
+  const installMutation = useMutation({
+    mutationFn: installMitmCa,
+    onSuccess: (view) => {
+      queryClient.setQueryData(MITM_CA_TRUST_KEY, view);
+      if (view.status === "trusted") {
+        toastSuccess("CA 已安装到系统信任库");
+      } else {
+        toastError(`安装完成但信任状态为「${TRUST_CHIP[view.status].label}」：${view.detail}`);
+      }
+    },
+    onError: (err) => toastError(toErrorMessage(err)),
+  });
+
   // RFC3339 时间戳转为本地可读时间；解析失败时原样展示。
   const formatTime = (iso: string) => {
     const date = new Date(iso);
@@ -130,7 +159,7 @@ export default function Mitm() {
           <Card>
             <Card.Header>
               <Card.Title>CA 状态</Card.Title>
-              <Card.Description>证书由 Agent 内置 ACME 自动签发与管理</Card.Description>
+              <Card.Description>证书由客户端本地自签生成（rcgen），仅用于本机 MITM 流量解密</Card.Description>
             </Card.Header>
             <Card.Content>
               <dl className="flex flex-col gap-3 text-sm">
@@ -166,23 +195,38 @@ export default function Mitm() {
                       {mitmCa?.path ?? "-"}
                     </dd>
                   </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="shrink-0 text-muted">系统信任状态</dt>
+                    <dd className="flex min-w-0 items-center gap-2">
+                      <Chip size="sm" variant="soft" color={TRUST_CHIP[trust?.status ?? "unknown"].color}>
+                        {TRUST_CHIP[trust?.status ?? "unknown"].label}
+                      </Chip>
+                      {trust && (
+                        <span className="min-w-0 truncate text-xs text-muted" title={trust.detail}>
+                          {trust.detail}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
                   <div className="flex items-center gap-3">
+                    <Button
+                      variant="primary"
+                      isPending={installMutation.isPending}
+                      onPress={() => installMutation.mutate()}
+                    >
+                      安装到系统信任库
+                    </Button>
                     <Button variant="secondary" onPress={() => void handleCopyCaPem()}>
                       复制证书 PEM
                     </Button>
                     {caCopied && <span className="text-sm text-success">已复制到剪贴板</span>}
                   </div>
+                  <p className="text-xs text-muted">
+                    macOS / Linux 安装时会弹系统授权框；Windows 写入当前用户信任库，无需管理员权限
+                  </p>
                 </dl>
                 <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-muted">
                   <li>桌面端：双击 ca.crt 导入系统/用户信任库；Firefox 使用自带证书管理器，需单独导入</li>
-                  <li>
-                    Android 7+：应用默认不信任用户证书，仅安装「用户证书」对多数 App 无效；需 root 后将 CA 写入
-                    /system/etc/security/cacerts/ 或目标 App 声明信任用户 CA
-                  </li>
-                  <li>
-                    iOS：安装描述文件后，必须到「设置 → 通用 → 关于本机 →
-                    证书信任设置」开启对该证书的完全信任，否则握手会被拒绝（CertificateUnknown）
-                  </li>
                 </ul>
               </div>
             </Card.Content>

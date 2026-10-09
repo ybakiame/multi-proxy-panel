@@ -12,6 +12,7 @@ export const CONFIG_KEY = ["config"] as const;
 export const PROXY_STATUS_KEY = ["proxy_status"] as const;
 export const TRAFFIC_KEY = ["traffic"] as const;
 export const MITM_CA_KEY = ["mitmCa"] as const;
+export const MITM_CA_TRUST_KEY = ["mitmCaTrust"] as const;
 
 export const REMOTES_KEY = ["remotes"] as const;
 export const TASKS_KEY = ["tasks"] as const;

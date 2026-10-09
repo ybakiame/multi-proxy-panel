@@ -140,6 +140,10 @@ pub fn run() {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::get_mitm_ca,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            desktop::commands::install_mitm_ca,
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            desktop::commands::mitm_ca_trust_status,
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::list_remotes,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             desktop::commands::add_remote,

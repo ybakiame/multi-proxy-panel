@@ -28,6 +28,16 @@ export interface MitmCaView {
   pem: string;
 }
 
+/** MITM CA 系统信任状态（aligned with Rust `CaTrustStatus`，serde snake_case）。 */
+export type MitmCaTrustStatus = "trusted" | "not_trusted" | "unknown";
+
+/** MITM CA 信任状态视图（aligned with Rust `CaTrustView`）。 */
+export interface MitmCaTrustView {
+  status: MitmCaTrustStatus;
+  /** 状态说明（面向用户的一行描述）。 */
+  detail: string;
+}
+
 export function getConfig(): Promise<ClientConfig> {
   return invoke<ClientConfig>("get_config");
 }
@@ -60,4 +70,14 @@ export function listTraffic(): Promise<TrafficRecord[]> {
 /** Get MITM CA certificate (auto-generated if not exists), for client trust guidance display. */
 export function getMitmCa(): Promise<MitmCaView> {
   return invoke<MitmCaView>("get_mitm_ca");
+}
+
+/** Detect whether the MITM CA is trusted by the system trust store (never rejects on detection failure — status becomes "unknown"). */
+export function getMitmCaTrustStatus(): Promise<MitmCaTrustView> {
+  return invoke<MitmCaTrustView>("mitm_ca_trust_status");
+}
+
+/** Install MITM CA into the system trust store (macOS/Linux 弹系统授权框；Windows 免管理员). Returns the trust status after install. */
+export function installMitmCa(): Promise<MitmCaTrustView> {
+  return invoke<MitmCaTrustView>("install_mitm_ca");
 }
