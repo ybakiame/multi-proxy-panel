@@ -17,6 +17,9 @@ pub mod rewrite;
 #[cfg(test)]
 mod rewrite_tests;
 pub mod script_hook;
+
+#[cfg(test)]
+mod script_hook_tests;
 pub mod upstream;
 
 pub use ca::*;

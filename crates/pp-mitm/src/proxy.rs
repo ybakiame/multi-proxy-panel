@@ -25,7 +25,7 @@ use crate::config::MitmConfig;
 use crate::intercept::should_intercept_host;
 use crate::recorder::{TrafficRecord, TrafficRecorder};
 use crate::rewrite::{RewriteAction, RewriteEngine, apply_header};
-use crate::script_hook::ScriptHookEngine;
+use crate::script_hook::{HookOutcome, ScriptHookEngine};
 use crate::upstream::{UpstreamConnector, UpstreamProxy};
 
 /// 依据上游策略决定 WebSocket 连接器。
@@ -230,11 +230,30 @@ impl HttpHandler for Handler {
         }
 
         if let Some(hooks) = &self.hooks {
-            hooks
-                .run_request_hooks(&url, &method, &mut headers, &mut body)
-                .await;
+            match hooks
+                .run_request_hooks(&mut url, &method, &mut headers, &mut body)
+                .await
+            {
+                HookOutcome::Mock(mock) => {
+                    return mock_response(
+                        mock.status,
+                        mock.body.unwrap_or_default().into_bytes(),
+                        mock.headers,
+                    )
+                    .into();
+                }
+                // $done({abort:true})：以 502 表达断开语义。
+                HookOutcome::Abort => {
+                    return mock_response(502, b"aborted by script".to_vec(), Vec::new()).into();
+                }
+                HookOutcome::Continue => {}
+            }
         }
 
+        // URL 可能被 UrlRewrite 或 $done({url}) 改写：回写请求行 URI。
+        if let Ok(uri) = http::Uri::try_from(url.as_str()) {
+            parts.uri = uri;
+        }
         parts.headers = vec_to_headers(&headers);
         let body = body.map(Body::from).unwrap_or(rebuilt);
         Request::from_parts(parts, body).into()
@@ -279,9 +298,23 @@ impl HttpHandler for Handler {
         }
 
         if let Some(hooks) = &self.hooks {
-            hooks
+            match hooks
                 .run_response_hooks(&url, &mut status, &mut headers, &mut body)
-                .await;
+                .await
+            {
+                // $done({response:{...}})：整体替换响应。
+                HookOutcome::Mock(mock) => {
+                    status = mock.status;
+                    headers = mock.headers;
+                    body = mock.body;
+                }
+                HookOutcome::Abort => {
+                    status = 502;
+                    headers = Vec::new();
+                    body = None;
+                }
+                HookOutcome::Continue => {}
+            }
         }
 
         if self.config.record_enabled
