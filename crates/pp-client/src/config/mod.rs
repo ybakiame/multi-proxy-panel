@@ -18,7 +18,11 @@ mod tests;
 pub struct MitmClientConfig {
     /// 存放 MITM CA（`ca.crt` / `ca.key`）的目录，默认 `data_dir/certs`。
     pub ca_dir: PathBuf,
-    /// 需要拦截的主机名列表，空列表表示全拦截。
+    /// 需要拦截的主机名列表（可含 `-` / `!` 前缀排除项）。
+    ///
+    /// 空白名单（无白名单条目，仅含排除项亦视为空）时 MITM 链不启动、不拦截任何流量
+    /// （见 `ClientState::start_mitm_chain`）；这与 pp-mitm 库「空=全拦截」的内部
+    /// 语义不同，产品层已兜底。
     pub hostnames: Vec<String>,
     /// 脚本钩子使用的脚本方言。
     pub script_dialect: pp_script::ScriptDialect,
@@ -59,6 +63,9 @@ pub struct ClientConfig {
     /// 本地 mixed 入站端口。
     pub mixed_port: u16,
     /// 是否启用 MITM。
+    ///
+    /// 开启后仍要求存在有效白名单（本地 `mitm.hostnames` 或远程订阅缓存中的非排除项），
+    /// 空白名单时 MITM 链不启动、不拦截任何流量（行为等同关闭）。
     pub mitm_enabled: bool,
     /// MITM 配置（客户端视图）。
     pub mitm: MitmClientConfig,

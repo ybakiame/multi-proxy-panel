@@ -106,6 +106,34 @@ fn compose_singbox_with_mitm_chain_creates_route_when_missing() {
     assert_eq!(rules[0]["outbound"], "pp-mitm");
 }
 
+#[test]
+fn compose_singbox_with_empty_whitelist_leaves_config_untouched() {
+    let sub = sample_subscription();
+    for hostnames in [
+        Vec::new(),
+        vec![
+            "-excluded.example.org".to_string(),
+            "!blocked.example.com".to_string(),
+        ],
+    ] {
+        let chain = MitmChain {
+            proxy_addr: "127.0.0.1:34567".parse().unwrap(),
+            return_port: 17891,
+            hostnames,
+        };
+        let cfg = compose_singbox_config(&sub, 17890, Some(chain)).unwrap();
+
+        // 无 mitm-return inbound（订阅原样保留 hub-in）。
+        assert_eq!(cfg["inbounds"], sub["inbounds"]);
+        // 无 pp-mitm outbound。
+        assert_eq!(cfg["outbounds"], sub["outbounds"]);
+        // 无 match-all 路由规则（route 除 default_domain_resolver 注入外不变）。
+        assert_eq!(cfg["route"]["final"], "n1");
+        assert!(cfg["route"].get("rules").is_none());
+        assert!(cfg["log"] == sub["log"]);
+    }
+}
+
 /// sing-box 1.12+ requires `route.default_domain_resolver` to point to a declared tag of
 /// DNS server, otherwise real sing-box rejects config (legacy resolver missing).
 #[test]

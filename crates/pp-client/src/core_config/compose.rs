@@ -17,6 +17,11 @@ use super::MitmChain;
 /// - route.rules prepend a whitelist rule: `inbound = [main-in]`, `*.` prefix hostnames go to
 ///   `domain_suffix`, rest go to `domain`, `outbound = "pp-mitm"`
 ///
+/// MITM chain with an empty effective whitelist (no non-exclusion hostname) leaves the config
+/// completely untouched: no route rule (a conditionless `inbound = [main-in]` rule would match
+/// all traffic), no `pp-mitm` outbound, no `mitm-return` inbound. This is a defensive guard —
+/// the normal entry `ClientState::start_mitm_chain` already skips the chain in that case.
+///
 /// Both paths perform sing-box 1.12+ DNS compatibility adaptation: when subscription contains
 /// `dns.servers`, ensure `route.default_domain_resolver` exists (pointing to first DNS server tag,
 /// auto-generated when missing), otherwise current sing-box rejects config.
@@ -41,6 +46,25 @@ pub fn compose_singbox_config(
         obj.insert("inbounds".to_string(), Value::Array(vec![mixed_inbound]));
         return Ok(Value::Object(obj));
     };
+
+    // `-` / `!` prefix are exclusions (not intercepted), not generated into core routing rules:
+    // corresponding domain traffic goes direct, not sent to MITM inbound.
+    let mut domain = Vec::new();
+    let mut domain_suffix = Vec::new();
+    for hostname in &chain.hostnames {
+        if hostname.starts_with('-') || hostname.starts_with('!') {
+            continue;
+        }
+        match hostname.strip_prefix("*.") {
+            Some(suffix) => domain_suffix.push(Value::String(suffix.to_string())),
+            None => domain.push(Value::String(hostname.clone())),
+        }
+    }
+    // Empty effective whitelist: a route rule without domain conditions would hijack all
+    // main-in traffic into MITM. Leave the config untouched instead.
+    if domain.is_empty() && domain_suffix.is_empty() {
+        return Ok(Value::Object(obj));
+    }
 
     let main_in = json!({
         "type": "mixed",
@@ -77,19 +101,6 @@ pub fn compose_singbox_config(
         .remove("route")
         .and_then(|r| r.as_object().cloned())
         .unwrap_or_default();
-    let mut domain = Vec::new();
-    let mut domain_suffix = Vec::new();
-    for hostname in &chain.hostnames {
-        // `-` / `!` prefix are exclusions (not intercepted), not generated into core routing rules:
-        // corresponding domain traffic goes direct, not sent to MITM inbound.
-        if hostname.starts_with('-') || hostname.starts_with('!') {
-            continue;
-        }
-        match hostname.strip_prefix("*.") {
-            Some(suffix) => domain_suffix.push(Value::String(suffix.to_string())),
-            None => domain.push(Value::String(hostname.clone())),
-        }
-    }
     let mut rule = serde_json::Map::new();
     rule.insert("inbound".to_string(), json!(["main-in"]));
     if !domain.is_empty() {

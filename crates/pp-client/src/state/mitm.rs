@@ -40,6 +40,12 @@ impl ClientState {
                 hostnames.push(extra.clone());
             }
         }
+        // 有效白名单为空（无任何非排除项）时不启动 MITM 链：否则核心路由规则会退化为
+        // 无域名条件的 main-in 全量匹配，CA 未被系统信任时全站 TLS 握手失败、网络不可用。
+        if !has_effective_whitelist(&hostnames) {
+            tracing::info!("MITM enabled but whitelist is empty, skipping MITM chain");
+            return Ok(None);
+        }
         let rewrite = RewriteEngine {
             rules: merged.rewrites,
         };
@@ -91,5 +97,41 @@ impl ClientState {
         if let Some(m) = self.mitm.take() {
             m.shutdown();
         }
+    }
+}
+
+/// 有效白名单判定：剔除 `-` / `!` 前缀排除项后是否仍有条目。
+///
+/// 排除项仅在存在白名单条目时有意义；仅含排除项的名单同样视为空。
+pub(crate) fn has_effective_whitelist(hostnames: &[String]) -> bool {
+    hostnames
+        .iter()
+        .any(|h| !h.starts_with('-') && !h.starts_with('!'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_effective_whitelist;
+
+    #[test]
+    fn empty_whitelist_is_not_effective() {
+        assert!(!has_effective_whitelist(&[]));
+    }
+
+    #[test]
+    fn exclusion_only_whitelist_is_not_effective() {
+        assert!(!has_effective_whitelist(&[
+            "-excluded.example.com".to_string(),
+            "!blocked.example.com".to_string(),
+        ]));
+    }
+
+    #[test]
+    fn whitelist_with_inclusion_is_effective() {
+        assert!(has_effective_whitelist(&["example.com".to_string()]));
+        assert!(has_effective_whitelist(&[
+            "-excluded.example.com".to_string(),
+            "*.example.com".to_string(),
+        ]));
     }
 }

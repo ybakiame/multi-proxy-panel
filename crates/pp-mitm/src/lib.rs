@@ -8,6 +8,7 @@
 pub mod ca;
 pub mod ca_trust;
 pub mod config;
+mod intercept;
 pub mod proxy;
 pub mod recorder;
 pub mod rewrite;
