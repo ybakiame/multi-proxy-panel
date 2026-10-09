@@ -1,6 +1,7 @@
 //! Windows 平台进程原语实现。
 //!
-//! 句柄类型说明：windows-sys 中 `HANDLE` 为 `isize`，空句柄以 `0` 判断。
+//! 句柄类型说明：windows-sys 0.61 中 `HANDLE` 为 `*mut c_void`，空句柄以
+//! `.is_null()` 判断。
 
 use std::io;
 use std::path::PathBuf;
@@ -56,7 +57,7 @@ fn bind_to_job(child: &std::process::Child) -> io::Result<JobGuard> {
     unsafe {
         // SAFETY: 全空默认属性的匿名 Job；错误路径均关闭句柄。
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        if job == 0 {
+        if job.is_null() {
             return Err(io::Error::last_os_error());
         }
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
@@ -86,7 +87,7 @@ pub fn is_process_alive(pid: u32) -> bool {
     unsafe {
         // SAFETY: 仅查询打开随即关闭。
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h == 0 {
+        if h.is_null() {
             return false;
         }
         CloseHandle(h);
@@ -100,7 +101,7 @@ pub fn process_exe_path(pid: u32) -> Option<PathBuf> {
     unsafe {
         // SAFETY: 查询打开；缓冲区定长，len 为 in/out 参数。
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h == 0 {
+        if h.is_null() {
             return None;
         }
         let mut buf = vec![0u16; 1024];
@@ -120,7 +121,7 @@ pub fn kill_process(pid: u32) -> io::Result<()> {
     unsafe {
         // SAFETY: 终止后关闭句柄；失败透传 OS 错误。
         let h = OpenProcess(PROCESS_TERMINATE, 0, pid);
-        if h == 0 {
+        if h.is_null() {
             return Err(io::Error::last_os_error());
         }
         let ok = TerminateProcess(h, 1);
