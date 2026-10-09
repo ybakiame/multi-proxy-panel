@@ -72,6 +72,24 @@ export function getMitmCa(): Promise<MitmCaView> {
   return invoke<MitmCaView>("get_mitm_ca");
 }
 
+/** Derived hostname entry: hostname + contributing sources (remote names / 「本地导入」). */
+export interface DerivedHostname {
+  hostname: string;
+  sources: string[];
+}
+
+/** MITM whitelist view: script/rewrite-derived (read-only) + manual config (advanced supplement). */
+export interface MitmWhitelistView {
+  derived: DerivedHostname[];
+  manual: string[];
+  excluded: string[];
+}
+
+/** Get the MITM whitelist view (derived part mirrors the effective runtime scope). */
+export function getMitmWhitelist(): Promise<MitmWhitelistView> {
+  return invoke<MitmWhitelistView>("get_mitm_whitelist");
+}
+
 /** Detect whether the MITM CA is trusted by the system trust store (never rejects on detection failure — status becomes "unknown"). */
 export function getMitmCaTrustStatus(): Promise<MitmCaTrustView> {
   return invoke<MitmCaTrustView>("mitm_ca_trust_status");

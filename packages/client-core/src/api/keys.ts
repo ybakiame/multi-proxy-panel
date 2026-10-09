@@ -11,6 +11,7 @@ export const CAPABILITIES_KEY = ["capabilities"] as const;
 export const CONFIG_KEY = ["config"] as const;
 export const PROXY_STATUS_KEY = ["proxy_status"] as const;
 export const TRAFFIC_KEY = ["traffic"] as const;
+export const MITM_WHITELIST_KEY = ["mitmWhitelist"] as const;
 export const MITM_CA_KEY = ["mitmCa"] as const;
 export const MITM_CA_TRUST_KEY = ["mitmCaTrust"] as const;
 

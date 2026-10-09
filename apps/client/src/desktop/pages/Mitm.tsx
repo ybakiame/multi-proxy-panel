@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Alert, Button, Card, Chip, Table, TextArea } from "@heroui/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getMitmCa, getMitmCaTrustStatus, installMitmCa, listTraffic } from "@pp/client-core";
+import { getMitmCa, getMitmCaTrustStatus, getMitmWhitelist, installMitmCa, listTraffic } from "@pp/client-core";
 import type { MitmCaTrustStatus, TrafficRecord } from "@pp/client-core";
-import { MITM_CA_KEY, MITM_CA_TRUST_KEY, TRAFFIC_KEY } from "@pp/client-core";
+import { MITM_CA_KEY, MITM_CA_TRUST_KEY, MITM_WHITELIST_KEY, TRAFFIC_KEY } from "@pp/client-core";
 import { useClientConfig, useSaveConfig } from "@pp/client-core";
 import { toastError, toastSuccess, toErrorMessage } from "@pp/client-core";
 
@@ -38,27 +38,21 @@ function HostnameEditor({ initialHostnames, onSave }: HostnameEditorProps) {
   };
 
   return (
-    <Card>
-      <Card.Header>
-        <Card.Title>Hostname 白名单</Card.Title>
-        <Card.Description>每行一个域名，仅对命中域名做中间人抓包</Card.Description>
-      </Card.Header>
-      <Card.Content>
-        <TextArea
-          aria-label="Hostname 白名单"
-          value={hostnames}
-          onChange={(event) => setHostnames(event.target.value)}
-          placeholder={"example.com\n*.example.com"}
-          rows={6}
-          fullWidth
-        />
-      </Card.Content>
-      <Card.Footer>
+    <div className="flex flex-col gap-3">
+      <TextArea
+        aria-label="手动补充域名"
+        value={hostnames}
+        onChange={(event) => setHostnames(event.target.value)}
+        placeholder={"example.com\n*.example.com\n-exclude.example.com"}
+        rows={4}
+        fullWidth
+      />
+      <div className="flex items-center gap-3">
         <Button variant="primary" isPending={saveMutation.isPending} onPress={handleSave}>
-          保存白名单
+          保存
         </Button>
         {saved && <span className="text-sm text-success">已保存</span>}
-      </Card.Footer>
+      </div>
 
       {error && (
         <Alert status="danger">
@@ -69,6 +63,51 @@ function HostnameEditor({ initialHostnames, onSave }: HostnameEditorProps) {
           </Alert.Content>
         </Alert>
       )}
+    </div>
+  );
+}
+
+/** 派生白名单（只读）：远程 Snippet / 本地导入声明的 hostname，附来源标注。 */
+function DerivedWhitelist() {
+  const { data: whitelist } = useQuery({
+    queryKey: MITM_WHITELIST_KEY,
+    queryFn: getMitmWhitelist,
+  });
+  const derived = whitelist?.derived ?? [];
+
+  return (
+    <Card>
+      <Card.Header>
+        <Card.Title>Hostname 白名单</Card.Title>
+        <Card.Description>由已启用的远程 Snippet 与本地导入自动派生，仅对命中域名做中间人抓包</Card.Description>
+      </Card.Header>
+      <Card.Content>
+        {derived.length === 0 ? (
+          <div className="flex flex-col gap-1 py-4 text-center">
+            <span className="text-sm text-muted">暂无派生域名</span>
+            <span className="text-xs text-muted/80">
+              在「脚本」页添加 Surge / Loon / QX Snippet 后，其 hostname 会自动出现在这里
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {derived.map((item) => (
+              <div key={item.hostname} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-mono" title={item.hostname}>
+                  {item.hostname}
+                </span>
+                <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                  {item.sources.map((source) => (
+                    <Chip key={source} size="sm" variant="soft">
+                      {source}
+                    </Chip>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card.Content>
     </Card>
   );
 }
@@ -142,6 +181,7 @@ export default function Mitm() {
       .map((item) => item.trim())
       .filter(Boolean);
     await saveConfigMutation.mutateAsync({ ...config, mitm_hostnames: list });
+    await queryClient.invalidateQueries({ queryKey: MITM_WHITELIST_KEY });
   };
 
   const caDir = config ? `${config.data_dir}/certs` : "-";
@@ -232,7 +272,19 @@ export default function Mitm() {
             </Card.Content>
           </Card>
 
-          <HostnameEditor key={hostnamesKey} initialHostnames={hostnamesKey} onSave={handleSaveHostnames} />
+          <DerivedWhitelist />
+
+          <Card>
+            <Card.Header>
+              <Card.Title>手动补充（高级）</Card.Title>
+              <Card.Description>
+                一般无需手动填写；每行一个域名，`-` 前缀为排除项，与派生白名单合并生效
+              </Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <HostnameEditor key={hostnamesKey} initialHostnames={hostnamesKey} onSave={handleSaveHostnames} />
+            </Card.Content>
+          </Card>
         </div>
 
         <Card>

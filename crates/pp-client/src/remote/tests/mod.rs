@@ -47,3 +47,5 @@ mod fetch;
 mod icon;
 #[cfg(test)]
 mod import;
+#[cfg(test)]
+mod sources;

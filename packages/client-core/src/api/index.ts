@@ -33,8 +33,10 @@ export {
   getMitmCa,
   getMitmCaTrustStatus,
   installMitmCa,
+  getMitmWhitelist,
 } from "./core";
 export type { TrafficRecord, MitmCaView, MitmCaTrustStatus, MitmCaTrustView } from "./core";
+export type { DerivedHostname, MitmWhitelistView } from "./core";
 
 // ---------------------------------------------------------------------------
 // Subscriptions

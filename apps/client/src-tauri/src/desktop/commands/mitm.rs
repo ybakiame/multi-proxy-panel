@@ -49,6 +49,57 @@ pub async fn list_traffic(state: State<'_, AppState>) -> Result<Vec<TrafficRecor
     Ok(records.iter().map(TrafficRecordView::from_record).collect())
 }
 
+/// 派生白名单条目视图。
+#[derive(Debug, Clone, Serialize)]
+pub struct DerivedHostnameView {
+    pub hostname: String,
+    pub sources: Vec<String>,
+}
+
+/// MITM 白名单视图：脚本/重写派生（只读）+ 手动配置（高级补充）。
+#[derive(Debug, Clone, Serialize)]
+pub struct MitmWhitelistView {
+    /// 来自远程 Snippet / 本地导入的派生域名（含来源标注）。
+    pub derived: Vec<DerivedHostnameView>,
+    /// 手动配置的包含项。
+    pub manual: Vec<String>,
+    /// 手动配置的排除项（保留 `-` / `!` 前缀原样）。
+    pub excluded: Vec<String>,
+}
+
+/// 获取 MITM 白名单视图：派生部分读取远程缓存（与实际生效范围一致），
+/// 手动部分来自客户端配置。客户端未初始化时返回空视图。
+#[tauri::command]
+pub async fn get_mitm_whitelist(state: State<'_, AppState>) -> Result<MitmWhitelistView, String> {
+    let lock = state.client.lock().await;
+    let Some(client) = lock.as_ref() else {
+        return Ok(MitmWhitelistView {
+            derived: Vec::new(),
+            manual: Vec::new(),
+            excluded: Vec::new(),
+        });
+    };
+    let (excluded, manual): (Vec<String>, Vec<String>) = client
+        .config
+        .mitm
+        .hostnames
+        .iter()
+        .cloned()
+        .partition(|h| h.starts_with('-') || h.starts_with('!'));
+    let derived = pp_client::remote::collect_hostname_sources(&client.config.data_dir)
+        .into_iter()
+        .map(|d| DerivedHostnameView {
+            hostname: d.hostname,
+            sources: d.sources,
+        })
+        .collect();
+    Ok(MitmWhitelistView {
+        derived,
+        manual,
+        excluded,
+    })
+}
+
 /// External view of MITM CA certificate.
 #[derive(Debug, Clone, Serialize)]
 pub struct MitmCaView {

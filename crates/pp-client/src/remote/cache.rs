@@ -74,6 +74,76 @@ impl CachedRemoteConfig {
     }
 }
 
+/// 派生白名单条目：hostname + 来源列表（远程资源名 / 「本地导入」）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DerivedHostname {
+    pub hostname: String,
+    pub sources: Vec<String>,
+}
+
+/// 本地导入的固定缓存文件名（`RemoteManager::merge_imported` 写入目标）。
+const IMPORTED_CACHE_FILE: &str = "imported.json";
+
+/// 本地导入来源展示名。
+const IMPORTED_SOURCE: &str = "本地导入";
+
+/// 读取 `data_dir/remote_cache/*.json`，聚合每个 hostname 的来源列表（按 hostname 排序）。
+///
+/// 与运行时 `RemoteManager::load_cached` 同语义（读取全部缓存文件），使派生白名单
+/// 视图与 MITM 实际生效范围一致。来源标注：缓存文件名经 `safe_name` 反查远程资源名；
+/// `imported.json` 标注「本地导入」；无法匹配的以文件名原样标注。
+pub fn collect_hostname_sources(data_dir: &std::path::Path) -> Vec<DerivedHostname> {
+    use std::collections::BTreeMap;
+
+    let remotes = super::RemoteManager::new(data_dir.to_path_buf())
+        .load()
+        .unwrap_or_default();
+    let source_of = |stem: &str| -> String {
+        if stem == IMPORTED_CACHE_FILE.trim_end_matches(".json") {
+            return IMPORTED_SOURCE.to_string();
+        }
+        remotes
+            .iter()
+            .find(|r| super::safe_name(&r.name) == stem)
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| stem.to_string())
+    };
+
+    let cache_dir = data_dir.join("remote_cache");
+    let mut paths: Vec<std::path::PathBuf> = match std::fs::read_dir(&cache_dir) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("json"))
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
+    paths.sort();
+
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for path in paths {
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let source = source_of(stem);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(cached) = serde_json::from_str::<CachedRemoteConfig>(&text) else {
+            continue;
+        };
+        for hostname in cached.hostnames {
+            let sources = map.entry(hostname).or_default();
+            if !sources.contains(&source) {
+                sources.push(source.clone());
+            }
+        }
+    }
+    map.into_iter()
+        .map(|(hostname, sources)| DerivedHostname { hostname, sources })
+        .collect()
+}
+
 /// Cache serialization of a rewrite rule (regex stored as string, recompiled on readback).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedRewriteRule {
