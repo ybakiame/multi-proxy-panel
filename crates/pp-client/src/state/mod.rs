@@ -76,6 +76,11 @@ pub struct ClientState {
     /// (for desktop test compilation and unified construction path) and allows dead_code.
     #[cfg_attr(target_os = "android", allow(dead_code))]
     tun_auth_check: Arc<dyn Fn(&Path) -> TunAuthStatus + Send + Sync>,
+    /// 端口占用探测函数（ADR-0012 D4；默认 [`crate::port_guard::ensure_ports_available`]）。
+    ///
+    /// 测试可注入覆盖：集成测试的 mock Clash API 服务器本身就占用
+    /// clash_api_port（模拟核心的 API 端），需绕过真实探测。
+    port_probe: crate::port_guard::PortProbe,
     /// Number of rules in the composed config (written after successful start, cleared on stop; returned by status()).
     rule_count: u64,
     /// 本次启动未能本地化的内置 CN 规则集 tag（降级启动；空 = 完整分流）。后台重试补齐
@@ -122,6 +127,7 @@ impl ClientState {
             connection_tracker: None,
             stats_store: None,
             tun_auth_check: Arc::new(tun_auth_status),
+            port_probe: Arc::new(crate::port_guard::ensure_ports_available),
             rule_count: 0,
             missing_rule_sets: Vec::new(),
         }
@@ -136,6 +142,14 @@ impl ClientState {
     /// 注入流量统计存储（壳层在 `start` 前调用；未注入时连接统计仅保留内存态）。
     pub fn set_stats_store(&mut self, store: Arc<crate::stats::StatsStore>) {
         self.stats_store = Some(store);
+    }
+
+    /// 注入端口占用探测函数（测试用；生产默认 [`crate::port_guard::ensure_ports_available`]）。
+    pub fn set_port_probe(
+        &mut self,
+        probe: impl Fn(&[(u16, &str)]) -> PanelResult<()> + Send + Sync + 'static,
+    ) {
+        self.port_probe = Arc::new(probe);
     }
 
     /// Scheduled task scheduler (remote subscription task scripts); `None` when not started or no tasks.

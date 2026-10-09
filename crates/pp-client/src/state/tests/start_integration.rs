@@ -296,6 +296,9 @@ async fn start_pushes_rule_mode_via_clash_api_when_enabled() {
 
     let mock = Arc::new(MockSystemProxy::new());
     let mut state = ClientState::with_system_proxy(cfg, mock.clone());
+    // mock Clash API 服务器占用 clash_api_port（模拟核心的 API 端），注入空
+    // 探测绕过端口占用诊断（ADR-0012 D4）。
+    state.set_port_probe(|_| Ok(()));
     state.start().await.unwrap();
 
     // Push persisted mode via Clash API during startup (rule_mode=global).

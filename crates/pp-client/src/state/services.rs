@@ -39,7 +39,7 @@ impl ClientState {
             if self.mitm.is_some() {
                 ports.push((self.config.mixed_port.saturating_add(1), "MITM 回流入站"));
             }
-            if let Err(e) = crate::port_guard::ensure_ports_available(&ports) {
+            if let Err(e) = (self.port_probe)(&ports) {
                 self.rollback_mitm_started().await;
                 return Err(e);
             }

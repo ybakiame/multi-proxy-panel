@@ -9,6 +9,10 @@
 
 use pp_common::{PanelError, PanelResult};
 
+/// 端口探测函数类型（[`ClientState`](crate::state::ClientState) 经
+/// `set_port_probe` 注入，生产默认为 [`ensure_ports_available`]）。
+pub type PortProbe = std::sync::Arc<dyn Fn(&[(u16, &str)]) -> PanelResult<()> + Send + Sync>;
+
 /// 探测端口占用：全部被探测端口可绑定（127.0.0.1）时返回 `Ok`；
 /// 任一被占用即返回错误，消息指明占用者进程名与 PID（反查失败时退化为
 /// 通用提示）。
