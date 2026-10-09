@@ -40,6 +40,11 @@
   CA 说明文案（移除与本页无关的 Android / iOS 条目、更正证书来源为客户端本地自签）。
 - 补充 `LICENSE` 文件（GNU AGPL-3.0 完整文本，对应 `Cargo.toml` / `package.json` 声明的
   `AGPL-3.0-or-later`）；此前 README 的许可证链接指向不存在的文件。
+- **客户端核心生命周期管理**（ADR-0012，纵深防御四层）：OS 级父子绑定（Windows Job
+  Object / Linux PR_SET_PDEATHSIG，父进程被杀核心即被 OS 回收）、PID 文件 + 启动收割
+  （exe 路径校验防 PID 复用误杀）、退出事件清理（ExitRequested 时停止核心并恢复系统
+  代理）、端口占用前置诊断（mixed / Clash API / MITM 回流端口被外部进程占用时报错并
+  指明进程名与 PID，替代原始核心 FATAL）。
 
 ### Changed
 
