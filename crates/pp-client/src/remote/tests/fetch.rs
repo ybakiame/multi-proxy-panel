@@ -77,11 +77,9 @@ async fn fetch_snippet_aggregates_and_recompiles_cached_rules() {
     assert_eq!(report.rewrites, 1);
     assert_eq!(report.scripts, 1);
     assert_eq!(report.tasks, 1);
-    assert!(
-        report.warnings.is_empty(),
-        "warnings: {:?}",
-        report.warnings
-    );
+    // url-and-header 的 header 部分无法表达，记一条偏差（见 import::qx）。
+    assert_eq!(report.warnings.len(), 1, "warnings: {:?}", report.warnings);
+    assert!(report.warnings[0].contains("url-and-header"));
 
     // cache file generated
     assert!(dir.path().join("remote_cache/rules.json").exists());

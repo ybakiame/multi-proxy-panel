@@ -1,6 +1,8 @@
 use super::*;
 use pp_mitm::RewriteKind;
 
+mod dialect_ext;
+
 #[test]
 fn qx_rewrite_local_all_rule_types() {
     let content = r#"
@@ -20,20 +22,26 @@ fn qx_rewrite_local_all_rule_types() {
 "#;
     let cfg = parse_import(content, ScriptDialect::QuantumultX).unwrap();
 
-    // 8 rewrites: UrlRewrite x3, Reject x3, BodyRewrite x2
+    // 8 rewrites: UrlRewrite x1, Redirect x2, Reject x3, BodyRewrite x1, HeaderBlockRewrite x1
     assert_eq!(cfg.rewrites.len(), 8);
     assert!(matches!(
         cfg.rewrites[0].kind,
         RewriteKind::UrlRewrite { .. }
     ));
-    assert!(matches!(
-        cfg.rewrites[1].kind,
-        RewriteKind::UrlRewrite { .. }
-    ));
-    assert!(matches!(
-        cfg.rewrites[2].kind,
-        RewriteKind::UrlRewrite { .. }
-    ));
+    match &cfg.rewrites[1].kind {
+        RewriteKind::Redirect { status, target } => {
+            assert_eq!(*status, 307);
+            assert_eq!(target, "https://target.example.com/");
+        }
+        other => panic!("unexpected kind: {other:?}"),
+    }
+    match &cfg.rewrites[2].kind {
+        RewriteKind::Redirect { status, target } => {
+            assert_eq!(*status, 302);
+            assert_eq!(target, "https://new.example.com/$1");
+        }
+        other => panic!("unexpected kind: {other:?}"),
+    }
     assert!(matches!(cfg.rewrites[3].kind, RewriteKind::Reject { .. }));
     assert!(matches!(cfg.rewrites[4].kind, RewriteKind::Reject { .. }));
     assert!(matches!(cfg.rewrites[5].kind, RewriteKind::Reject { .. }));
@@ -46,7 +54,7 @@ fn qx_rewrite_local_all_rule_types() {
     ));
     assert!(matches!(
         cfg.rewrites[7].kind,
-        RewriteKind::BodyRewrite {
+        RewriteKind::HeaderBlockRewrite {
             phase: Phase::Request,
             ..
         }
@@ -58,7 +66,7 @@ fn qx_rewrite_local_all_rule_types() {
         other => panic!("unexpected kind: {other:?}"),
     }
     match &cfg.rewrites[7].kind {
-        RewriteKind::BodyRewrite { replacement, .. } => assert_eq!(replacement, "MASKED"),
+        RewriteKind::HeaderBlockRewrite { replacement, .. } => assert_eq!(replacement, "MASKED"),
         other => panic!("unexpected kind: {other:?}"),
     }
 
@@ -74,13 +82,14 @@ fn qx_rewrite_local_all_rule_types() {
     assert_eq!(cfg.scripts[1].kind, ScriptKind::HttpRequest);
     assert!(cfg.scripts[1].requires_body);
     assert_eq!(cfg.script_urls[1].1, "https://example.com/req.js");
-    assert_eq!(cfg.scripts[2].kind, ScriptKind::HttpResponse);
+    // script-echo-response 在请求阶段合成响应（不经网络），映射 HttpRequest 无需 body。
+    assert_eq!(cfg.scripts[2].kind, ScriptKind::HttpRequest);
     assert!(!cfg.scripts[2].requires_body);
     assert_eq!(cfg.script_urls[2].1, "https://example.com/echo.js");
 
-    // 302/307 and BodyRewrite deviations are recorded
+    // url-and-header 的 header 部分丢弃，记入偏差
     assert!(!cfg.warnings.is_empty());
-    assert!(cfg.warnings.iter().any(|w| w.contains("url-307")));
+    assert!(cfg.warnings.iter().any(|w| w.contains("url-and-header")));
 }
 
 #[test]
@@ -393,9 +402,9 @@ hostname = *.example.com
     assert_eq!(cfg.rewrites.len(), 1);
     assert_eq!(cfg.hostnames, vec!["*.example.com".to_string()]);
     assert_eq!(cfg.task_scripts.len(), 0);
-    // Unknown lines and unparseable task lines are recorded in warnings;
+    // Unknown lines x2, unparseable task line x1, url-and-header header 丢弃偏差 x1；
     // comments / blank lines are silently skipped
-    assert_eq!(cfg.warnings.len(), 3);
+    assert_eq!(cfg.warnings.len(), 4);
 }
 
 #[test]

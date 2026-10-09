@@ -27,18 +27,22 @@ use pp_mitm::Phase;
 #[cfg(all(test, feature = "mitm"))]
 use pp_script::ScriptKind;
 
+#[cfg(feature = "mitm")]
+mod loon;
 mod meta;
 #[cfg(feature = "mitm")]
 mod qx;
 #[cfg(feature = "mitm")]
-mod surge_loon;
+mod surge;
 mod utils;
 
+#[cfg(feature = "mitm")]
+use loon::*;
 pub use meta::*;
 #[cfg(feature = "mitm")]
 use qx::*;
 #[cfg(feature = "mitm")]
-use surge_loon::*;
+use surge::*;
 #[cfg(feature = "mitm")]
 use utils::*;
 
@@ -96,9 +100,18 @@ pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<Import
             section = name;
             continue;
         }
+        // 任意位置的裸 `hostname = ...` 行（QX snippet 常写在顶层、不在 [mitm] 内）
+        // 都按 MITM 白名单解析；各 section 内的同名键也由 parse_mitm_hostnames 键名门槛拦截。
+        if line
+            .find('=')
+            .is_some_and(|eq| line[..eq].trim().eq_ignore_ascii_case("hostname"))
+        {
+            parse_mitm_hostnames(&mut cfg, line);
+            continue;
+        }
         match section.as_str() {
             "rewrite_local" | "rewrite_remote" => {
-                parse_qx_rewrite(&mut cfg, &mut hook_index, line);
+                parse_qx_rewrite(&mut cfg, &mut hook_index, dialect, line);
             }
             "task_local" => parse_qx_task(&mut cfg, dialect, line),
             "mitm" => parse_mitm_hostnames(&mut cfg, line),
@@ -116,7 +129,10 @@ pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<Import
             "argument" => parse_loon_argument(&mut cfg, line),
             "url rewrite" => parse_surge_url_rewrite(&mut cfg, line),
             "header rewrite" => parse_surge_header_rewrite(&mut cfg, line),
+            "body rewrite" => parse_surge_body_rewrite(&mut cfg, line),
             "map local" => parse_surge_map_local(&mut cfg, line),
+            // Loon `[Rewrite]`（注意与 Surge `[URL Rewrite]` 不同名）。
+            "rewrite" => parse_loon_rewrite(&mut cfg, line),
             // Other sections (e.g., QX `[task_remote]` / Surge `[General]`) are skipped entirely.
             _ => {}
         }
@@ -129,7 +145,8 @@ pub fn parse_import(content: &str, dialect: ScriptDialect) -> PanelResult<Import
 ///
 /// `-` / `!` prefixes are exclusions (normalized to `-`), kept in `cfg.hostnames`
 /// alongside whitelist entries; downstream (`build_mitm_proxy` / core routing rules)
-/// filters by prefix. Surge's `%APPEND%` prefix is stripped.
+/// filters by prefix. Surge's `%APPEND%` prefix is stripped. 键名非 `hostname` 的
+/// `[mitm]` 行（如 `skip_validating_cert` / `p12` / `passphrase`）直接忽略。
 #[cfg(feature = "mitm")]
 fn parse_mitm_hostnames(cfg: &mut ImportedConfig, line: &str) {
     let Some(eq) = line.find('=') else {
@@ -140,6 +157,10 @@ fn parse_mitm_hostnames(cfg: &mut ImportedConfig, line: &str) {
         );
         return;
     };
+    if !line[..eq].trim().eq_ignore_ascii_case("hostname") {
+        // `[mitm]` 内的其他配置键（证书、跳过校验等）不映射为白名单。
+        return;
+    }
     for entry in line[eq + 1..].split(',') {
         let entry = entry.trim();
         if entry.is_empty() {

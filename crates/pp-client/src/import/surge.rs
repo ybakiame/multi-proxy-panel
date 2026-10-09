@@ -1,11 +1,10 @@
-//! Surge / Loon dialect parsing (`[Script]`, `[URL Rewrite]`, `[Header Rewrite]`,
-//! `[Map Local]`, `[Argument]`).
+//! Surge dialect parsing (`[Script]`, `[URL Rewrite]`, `[Header Rewrite]`,
+//! `[Body Rewrite]`, `[Map Local]`).
 
 use pp_mitm::{Phase, RewriteKind};
 use pp_script::{ScriptDialect, ScriptKind};
 
 use super::utils::*;
-use super::{ArgKind, ArgSpec, ConfigMeta};
 
 /// Surge / Loon `[Script]` line parsing: `name = type=...,pattern=...,script-path=...`.
 ///
@@ -119,176 +118,12 @@ pub(super) fn parse_surge_script(
     }
 }
 
-/// Loon `[Script]` line parsing: `http-request|http-response ^pattern param=value,...`.
+/// Surge / Loon `[URL Rewrite]` line parsing.
 ///
-/// Loon vs Surge syntax differences: type is the first token, no `name =` prefix,
-/// script name taken from `tag=`, `argument=` parameter preserved as-is (can contain
-/// `[{key},...]` template), `engine` / `binary-body-mode` and other parameters ignored.
-pub(super) fn parse_loon_script(cfg: &mut super::ImportedConfig, line: &str) {
-    let tokens: Vec<&str> = line.split_whitespace().collect();
-    if tokens.len() < 2 {
-        cfg.warn(
-            "script",
-            line,
-            "unrecognized line (expected '<type> ^pattern params...')",
-        );
-        return;
-    }
-    let kind = match tokens[0] {
-        "http-request" => ScriptKind::HttpRequest,
-        "http-response" => ScriptKind::HttpResponse,
-        other => {
-            cfg.warn(
-                "script",
-                line,
-                &format!("unrecognized script type '{other}'"),
-            );
-            return;
-        }
-    };
-    let pattern_src = tokens[1];
-    let params = parse_kv_params(&tokens[2..].join(" "));
-    let Some(pattern) = compile_pattern(pattern_src, cfg, "script", line) else {
-        return;
-    };
-    let Some(script_path) = params.get("script-path") else {
-        cfg.warn("script", line, "missing 'script-path' parameter");
-        return;
-    };
-    if !is_remote_url(script_path) {
-        cfg.warn("script", line, "local script path not supported, skipped");
-        return;
-    }
-    let name = params
-        .get("tag")
-        .map(|t| strip_quotes(t).to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| derive_name_from_url(script_path));
-    let requires_body = parse_bool(
-        params
-            .get("requires-body")
-            .or_else(|| params.get("require-body")),
-    );
-    // `argument=` parameter preserved as-is (template placeholder replaced at runtime);
-    // default max_size matches Surge.
-    let argument = params.get("argument").cloned();
-    cfg.script_urls.push((name.clone(), script_path.clone()));
-    cfg.scripts.push(pp_mitm::ScriptRule {
-        name,
-        kind,
-        pattern,
-        requires_body,
-        max_size: 131072,
-        source: String::new(),
-        argument,
-    });
-}
-
-/// Loon `[Argument]` section line parsing: `Key = input/select,"default","opt2",...,tag=...,desc=...`.
-///
-/// `input` followed by a single quoted default value; `select` followed by first quoted value as
-/// default, rest as options; `tag=` as separate field, `desc=` goes to description. Results merged
-/// into [`ConfigMeta::arguments`] by key (when `#!arguments=` already declared,补齐 fields).
-pub(super) fn parse_loon_argument(cfg: &mut super::ImportedConfig, line: &str) {
-    let Some(eq) = line.find('=') else {
-        cfg.warn(
-            "argument",
-            line,
-            "unrecognized line (expected 'Key = kind,...')",
-        );
-        return;
-    };
-    let key = line[..eq].trim();
-    if key.is_empty() {
-        cfg.warn("argument", line, "empty argument key");
-        return;
-    }
-    let segments = split_kv_segments(line[eq + 1..].trim());
-    let Some(kind_src) = segments.first() else {
-        cfg.warn("argument", line, "missing argument kind");
-        return;
-    };
-    let kind = match kind_src.trim().to_ascii_lowercase().as_str() {
-        "input" => ArgKind::Input,
-        "select" => ArgKind::Select,
-        other => {
-            cfg.warn(
-                "argument",
-                line,
-                &format!("unrecognized argument kind '{other}'"),
-            );
-            return;
-        }
-    };
-    // Remaining segments: quoted values (default / options) and tag= / desc= parameters.
-    let mut values: Vec<String> = Vec::new();
-    let mut tag: Option<String> = None;
-    let mut desc: Option<String> = None;
-    for seg in &segments[1..] {
-        let seg = seg.trim();
-        if seg.is_empty() {
-            continue;
-        }
-        // Quoted values checked before key=value, to avoid `=` inside values (e.g., `"a=b"`) being misjudged.
-        if seg.starts_with('"') {
-            values.push(strip_quotes(seg).to_string());
-            continue;
-        }
-        if let Some((k, v)) = seg.split_once('=') {
-            match k.trim().to_ascii_lowercase().as_str() {
-                "tag" => tag = Some(strip_quotes(v.trim()).to_string()),
-                "desc" => desc = Some(strip_quotes(v.trim()).to_string()),
-                _ => {} // other key=value (e.g., enable) ignored
-            }
-        }
-    }
-    let (default_value, options) = match kind {
-        ArgKind::Select => {
-            let mut it = values.into_iter();
-            (it.next().unwrap_or_default(), it.collect())
-        }
-        ArgKind::Input => (values.into_iter().next().unwrap_or_default(), Vec::new()),
-    };
-    merge_argument_spec(
-        &mut cfg.meta,
-        ArgSpec {
-            key: key.to_string(),
-            default_value,
-            description: desc,
-            kind,
-            options,
-            tag,
-        },
-    );
-}
-
-/// Merge Loon `[Argument]` section parsed parameter declaration into [`ConfigMeta`] by key.
-///
-/// When `#!arguments=` (or `#!arguments-desc=`) already declared the same key,补齐 new fields;
-/// otherwise append the whole spec.
-pub(super) fn merge_argument_spec(meta: &mut ConfigMeta, spec: ArgSpec) {
-    if let Some(existing) = meta.arguments.iter_mut().find(|a| a.key == spec.key) {
-        existing.kind = spec.kind;
-        if !spec.default_value.is_empty() {
-            existing.default_value = spec.default_value;
-        }
-        if spec.description.is_some() {
-            existing.description = spec.description;
-        }
-        if !spec.options.is_empty() {
-            existing.options = spec.options;
-        }
-        if spec.tag.is_some() {
-            existing.tag = spec.tag;
-        }
-    } else {
-        meta.arguments.push(spec);
-    }
-}
-
-/// Surge / Loon `[URL Rewrite]` line parsing: `pattern target [header-arg]` → `UrlRewrite`.
-///
-/// Third segment request-header parameter cannot be expressed, deviation recorded.
+/// - `pattern target` → `UrlRewrite`
+/// - `pattern target 302|307` → `Redirect`（尾部 mode token，QX 兼容写法）
+/// - `pattern - reject` → `Reject`（`-` 占位 target + reject mode）
+/// - `pattern target header` → `UrlRewrite` + 偏差（request-header 参数无法表达）
 pub(super) fn parse_surge_url_rewrite(cfg: &mut super::ImportedConfig, line: &str) {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     if tokens.len() < 2 {
@@ -302,25 +137,45 @@ pub(super) fn parse_surge_url_rewrite(cfg: &mut super::ImportedConfig, line: &st
     let Some(pattern) = compile_pattern(tokens[0], cfg, "url rewrite", line) else {
         return;
     };
-    if tokens.len() > 2 {
-        cfg.warn(
-            "url rewrite",
-            line,
-            "request-header argument cannot be expressed, only URL rewritten",
-        );
-    }
-    cfg.rewrites.push(pp_mitm::RewriteRule {
-        pattern,
-        kind: RewriteKind::UrlRewrite {
+    let kind = match tokens.last() {
+        Some(&"reject") => RewriteKind::reject(),
+        Some(mode @ (&"302" | &"307")) => RewriteKind::Redirect {
+            status: if *mode == "307" { 307 } else { 302 },
             target: tokens[1].to_string(),
         },
-    });
+        _ => {
+            if tokens.len() > 2 {
+                cfg.warn(
+                    "url rewrite",
+                    line,
+                    "request-header argument cannot be expressed, only URL rewritten",
+                );
+            }
+            RewriteKind::UrlRewrite {
+                target: tokens[1].to_string(),
+            }
+        }
+    };
+    cfg.rewrites.push(pp_mitm::RewriteRule { pattern, kind });
 }
 
-/// Surge / Loon `[Header Rewrite]` line parsing:
-/// `pattern header-replace Name Value` / `pattern header-del Name` → `HeaderRewrite{Request}`.
+/// Surge / Loon `[Header Rewrite]` line parsing.
+///
+/// 可带 `http-request` / `http-response` 阶段前缀（Surge 4.x 语法），缺省按 Request 阶段
+/// （兼容旧解析行为）。`header-replace` / `header-add` → `HeaderRewrite`（set），
+/// `header-del` → `HeaderRewrite`（删除），`header-replace-regex Name <regex> <repl>` →
+/// `HeaderValueRewrite`。
 pub(super) fn parse_surge_header_rewrite(cfg: &mut super::ImportedConfig, line: &str) {
     let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 3 {
+        cfg.warn("header rewrite", line, "unrecognized line");
+        return;
+    }
+    let (phase, tokens) = match tokens[0] {
+        "http-request" => (Phase::Request, &tokens[1..]),
+        "http-response" => (Phase::Response, &tokens[1..]),
+        _ => (Phase::Request, &tokens[..]),
+    };
     if tokens.len() < 3 {
         cfg.warn("header rewrite", line, "unrecognized line");
         return;
@@ -329,20 +184,12 @@ pub(super) fn parse_surge_header_rewrite(cfg: &mut super::ImportedConfig, line: 
         return;
     };
     match tokens[1] {
-        "header-replace" => {
-            if tokens.len() < 4 {
-                cfg.warn("header rewrite", line, "missing header name/value");
-                return;
-            }
+        "header-replace" | "header-add" => {
             let name = tokens[2].to_string();
             let value = Some(tokens[3..].join(" "));
             cfg.rewrites.push(pp_mitm::RewriteRule {
                 pattern,
-                kind: RewriteKind::HeaderRewrite {
-                    phase: Phase::Request,
-                    name,
-                    value,
-                },
+                kind: RewriteKind::HeaderRewrite { phase, name, value },
             });
         }
         "header-del" => {
@@ -350,9 +197,32 @@ pub(super) fn parse_surge_header_rewrite(cfg: &mut super::ImportedConfig, line: 
             cfg.rewrites.push(pp_mitm::RewriteRule {
                 pattern,
                 kind: RewriteKind::HeaderRewrite {
-                    phase: Phase::Request,
+                    phase,
                     name,
                     value: None,
+                },
+            });
+        }
+        "header-replace-regex" => {
+            if tokens.len() < 5 {
+                cfg.warn(
+                    "header rewrite",
+                    line,
+                    "header-replace-regex missing name/regex/replacement",
+                );
+                return;
+            }
+            let Some(value_pattern) = compile_pattern(tokens[3], cfg, "header rewrite", line)
+            else {
+                return;
+            };
+            cfg.rewrites.push(pp_mitm::RewriteRule {
+                pattern,
+                kind: RewriteKind::HeaderValueRewrite {
+                    phase,
+                    name: tokens[2].to_string(),
+                    value_pattern,
+                    replacement: tokens[4..].join(" "),
                 },
             });
         }
@@ -362,6 +232,52 @@ pub(super) fn parse_surge_header_rewrite(cfg: &mut super::ImportedConfig, line: 
             &format!("unrecognized header action '{other}'"),
         ),
     }
+}
+
+/// Surge `[Body Rewrite]` section line parsing:
+/// `http-request|http-response pattern <regex> <replacement>` → `BodyRewrite{body_pattern}`。
+///
+/// `jq` 形态（`http-response pattern jq <expr>`）无引擎可表达，记 warning 跳过。
+pub(super) fn parse_surge_body_rewrite(cfg: &mut super::ImportedConfig, line: &str) {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 4 {
+        cfg.warn("body rewrite", line, "unrecognized line");
+        return;
+    }
+    let phase = match tokens[0] {
+        "http-request" => Phase::Request,
+        "http-response" => Phase::Response,
+        other => {
+            cfg.warn(
+                "body rewrite",
+                line,
+                &format!("unrecognized phase '{other}'"),
+            );
+            return;
+        }
+    };
+    let Some(pattern) = compile_pattern(tokens[1], cfg, "body rewrite", line) else {
+        return;
+    };
+    if tokens[2] == "jq" {
+        cfg.warn(
+            "body rewrite",
+            line,
+            "jq body rewrite not supported, skipped",
+        );
+        return;
+    }
+    let Some(body_pattern) = compile_pattern(tokens[2], cfg, "body rewrite", line) else {
+        return;
+    };
+    cfg.rewrites.push(pp_mitm::RewriteRule {
+        pattern,
+        kind: RewriteKind::BodyRewrite {
+            phase,
+            body_pattern: Some(body_pattern),
+            replacement: tokens[3..].join(" "),
+        },
+    });
 }
 
 /// Surge / Loon `[Map Local]` line parsing:

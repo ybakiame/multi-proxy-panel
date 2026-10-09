@@ -160,6 +160,40 @@ pub(super) fn split_tokens_keep_quoted(line: &str) -> Vec<String> {
     tokens
 }
 
+/// Percent-decode (Loon `argument=` values are frequently URL-encoded JSON).
+///
+/// 无 `%` 时原样返回；非法序列按字节原样保留；结果按 UTF-8 lossy 转换。
+#[cfg(feature = "mitm")]
+pub(super) fn percent_decode(s: &str) -> String {
+    if !s.contains('%') {
+        return s.to_string();
+    }
+    fn hex_val(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2]))
+        {
+            out.push(h * 16 + l);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Comment (`#` / `;` prefix) or blank line.
 #[cfg(feature = "mitm")]
 pub(super) fn is_comment_or_blank(line: &str) -> bool {
