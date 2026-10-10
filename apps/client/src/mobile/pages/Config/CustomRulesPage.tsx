@@ -4,41 +4,26 @@ import { InlineAlert } from "../../components/InlineAlert";
 import { Button, Card, Spinner } from "../../components/ui";
 import {
   buildSaveInput,
-  CONFIG_SLICES_KEY,
-  configSlicesGet,
   LOCAL_OVERRIDE_KEY,
   localOverrideGet,
   localOverrideSave,
   markRestartRequired,
-  outboundTag,
-  PROXIES_KEY,
-  proxiesList,
   ruleSummary,
-  subscriptionNodeTags,
-  subscriptionNodeTagsKey,
   toastError,
   toastSuccess,
   toErrorMessage,
-  useClientConfig,
   useProxyStatus,
+  useRuleOutboundOptions,
   viewToInput,
 } from "@pp/client-core";
-import type {
-  ConfigSlices,
-  CoreLocalOverrideInput,
-  LocalOverrideView,
-  LocalRuleInput,
-  LocalRuleView,
-  NodeTagView,
-  ProxyList,
-} from "@pp/client-core";
+import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
 import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
 import type { BaselineView } from "@pp/client-core";
 import { SubPageShell } from "../../components/SubPageShell";
 import { isLocalOverrideView } from "@pp/client-core";
 import { RuleDeleteConfirm } from "./RuleDeleteConfirm";
 import { RuleEditSheet } from "./RuleEditSheet";
-import type { OutboundOption, RuleSetOption } from "./RuleEditSheet";
+import type { RuleSetOption } from "./RuleEditSheet";
 import { buildRuleSetOptions } from "@pp/client-core";
 import { RuleListSection } from "./RuleListSection";
 
@@ -64,27 +49,9 @@ export default function CustomRulesPage() {
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
   });
-  // 指定出站候选数据源（复用各页同 key 缓存，不在 Sheet 内新起重型查询）：
-  // 切片出站读 config_slices；订阅节点读生效订阅的本地缓存（静态源，不依赖核心运行）；
-  // 模板分组读运行中核心的 proxies_list（PROXIES_KEY，与首页 / 代理页共享缓存，未运行时不发起）。
-  const { data: slices } = useQuery<ConfigSlices>({
-    queryKey: CONFIG_SLICES_KEY,
-    queryFn: configSlicesGet,
-  });
-  const { data: config } = useClientConfig();
-  const activeSubscriptionId = config?.active_subscription_id ?? null;
-  const { data: subscriptionNodes } = useQuery<NodeTagView[]>({
-    queryKey: subscriptionNodeTagsKey(activeSubscriptionId ?? ""),
-    queryFn: () => subscriptionNodeTags(activeSubscriptionId ?? ""),
-    enabled: !!activeSubscriptionId,
-    retry: false,
-  });
-  const { data: proxyList } = useQuery<ProxyList>({
-    queryKey: PROXIES_KEY,
-    queryFn: proxiesList,
-    enabled: coreRunning,
-    retry: false,
-  });
+  // 指定出站候选（订阅节点 + 模板分组 + 切片出站并集）：数据装配已下沉
+  // client-core（ADR-0011 D1），桌面 Rules 页同源消费。
+  const { options: outboundOptions, subscriptionCacheAvailable } = useRuleOutboundOptions();
   // 内置基线视图（还原模板数据源：缺失的内置规则按它补回）。
   const { data: baseline } = useQuery<BaselineView>({
     queryKey: BASELINE_VIEW_KEY,
@@ -92,9 +59,6 @@ export default function CustomRulesPage() {
     staleTime: Infinity,
     retry: false,
   });
-  // 生效订阅存在但缓存为空（从未同步 / 缓存丢失）：给「先同步订阅」引导文案。
-  const subscriptionCacheAvailable = !!activeSubscriptionId && (subscriptionNodes?.length ?? 0) > 0;
-
   // 结构守卫（见 localOverrideGuards.ts）：异构/异常缓存视为未加载，渲染空态而非崩溃。
   const overrideData = isLocalOverrideView(rawOverride) ? rawOverride : null;
   const currentCore = overrideData ? overrideData.singbox : null;
@@ -111,34 +75,6 @@ export default function CustomRulesPage() {
    * 注入与否由引用它的规则决定。
    */
   const ruleSetOptions = useMemo<RuleSetOption[]>(() => buildRuleSetOptions(overrideData), [overrideData]);
-
-  /**
-   * 指定出站候选 tag 并集（ADR-0005 §3.1）：静态订阅节点 + 运行中模板分组 + 切片出站
-   * （enabled），按 tag 去重。
-   *
-   * - 静态订阅节点：`subscription_node_tags`（生效订阅的本地缓存），不依赖核心运行；
-   * - 模板分组：`proxiesList.groups`（`PROXIES_KEY`，经 Clash API 读取运行中核心），
-   *   核心未运行时无数据；订阅节点不在其中（已由静态源覆盖）；
-   * - 切片出站：tag 由名称生成（`outboundTag`），仅列启用项（父切片总开关由注入层判定）。
-   */
-  const outboundOptions = useMemo<OutboundOption[]>(() => {
-    const options: OutboundOption[] = [];
-    const seen = new Set<string>();
-    const push = (value: string, label: string, hint?: string) => {
-      const tag = value.trim();
-      if (tag === "" || seen.has(tag)) return;
-      seen.add(tag);
-      options.push({ value: tag, label, hint });
-    };
-    for (const node of subscriptionNodes ?? []) push(node.tag, node.name.trim() || node.tag, "订阅节点");
-    for (const group of proxyList?.groups ?? []) push(group.name, group.name, "模板分组");
-    for (const item of slices?.outbounds.items ?? []) {
-      if (!item.enabled) continue;
-      const tag = outboundTag(item.name);
-      push(tag, item.name, tag);
-    }
-    return options;
-  }, [subscriptionNodes, proxyList, slices]);
 
   const toastRuleSaved = (base: string) => {
     markRestartRequired("rules", coreRunning);

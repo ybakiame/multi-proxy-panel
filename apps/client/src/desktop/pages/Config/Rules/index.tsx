@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { localOverrideGet, localOverrideSave, toErrorMessage, useProxyStatus } from "@pp/client-core";
 import { LOCAL_OVERRIDE_KEY } from "@pp/client-core";
+import { useRuleOutboundOptions } from "@pp/client-core";
 import { BASELINE_VIEW_KEY, baselineViewGet } from "@pp/client-core";
 import type { BaselineView } from "@pp/client-core";
 import type { CoreLocalOverrideInput, LocalOverrideView, LocalRuleInput, LocalRuleView } from "@pp/client-core";
@@ -29,6 +30,10 @@ export default function Rules() {
     queryKey: LOCAL_OVERRIDE_KEY,
     queryFn: localOverrideGet,
   });
+
+  // 指定出站候选（订阅节点 + 模板分组 + 切片出站并集）：与移动端同源的消费共享
+  // hook（ADR-0011 D1/D3），数据装配见 client-core useRuleOutboundOptions。
+  const { options: outboundOptions, subscriptionCacheAvailable } = useRuleOutboundOptions();
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<LocalRuleView | null>(null);
@@ -249,6 +254,8 @@ export default function Rules() {
         initial={editingRule}
         onSave={(r) => void handleSaveRule(r)}
         ruleSetOptions={(overrideData?.custom_rule_sets ?? []).map((rs) => ({ value: rs.tag, label: rs.tag }))}
+        outboundOptions={outboundOptions}
+        subscriptionCacheAvailable={subscriptionCacheAvailable}
       />
 
       <AlertDialog.Backdrop

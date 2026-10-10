@@ -13,16 +13,8 @@ import { BottomSheet, Button, Switch, inputClassName } from "../../components/ui
 import type { RuleSetOption } from "@pp/client-core";
 
 export type { RuleSetOption } from "@pp/client-core";
-
-/** 指定出站动作的可选出站 tag（订阅节点 / 模板出站 / 切片出站并集）。 */
-export interface OutboundOption {
-  /** 写入 `outbound:<tag>` 的 tag。 */
-  value: string;
-  /** 下拉显示名（切片出站用名称，订阅节点/模板出站用 tag）。 */
-  label: string;
-  /** 可选说明行（切片 tag / 来源标注）。 */
-  hint?: string;
-}
+export type { RuleOutboundOption as OutboundOption } from "@pp/client-core";
+import type { RuleOutboundOption as OutboundOption } from "@pp/client-core";
 
 /** 移动可编辑匹配类型：与 desktop RuleEditModal 对齐但按平台收敛——不含 `process_name`（仅 desktop），app_package 标注 Android 专属。 */
 const MATCH_TYPE_OPTIONS = [

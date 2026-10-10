@@ -1,17 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/react";
-import type { LocalRuleInput, LocalRuleView } from "@pp/client-core";
-import { parseRuleSetTags } from "@pp/client-core";
+import type { LocalRuleInput, LocalRuleView, RuleOutboundOption } from "@pp/client-core";
+import { buildOutboundAction, isOutboundAction, outboundTagFromAction, parseRuleSetTags } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
-
-/**
- * 桌面端规则动作列表：过滤掉「指定出站」。
- *
- * 共享的 `RULE_ACTIONS` 已新增 `outbound`（供移动端规则卡片消费），但桌面表单尚无
- * 出站 tag 选择器，直接展示会出现可保存却被后端拒绝的无效项。桌面出站选择器随 D3
- * 后置实现，届时再放开此项。
- */
-const DESKTOP_RULE_ACTIONS = RULE_ACTIONS.filter((opt) => opt.id !== "outbound");
 
 /** 规则集选择器选项（rule_set 匹配目标）：规则集是纯资源无启停，全部可用。 */
 export interface RuleSetOption {
@@ -30,6 +21,10 @@ export interface RuleEditModalProps {
   onSave: (rule: LocalRuleInput) => void;
   /** 规则集选择器候选（仅 `rule_set` 匹配类型使用）；空数组时提示先添加规则集。 */
   ruleSetOptions?: RuleSetOption[];
+  /** 指定出站动作的候选 tag（订阅节点 + 模板分组 + 切片出站并集，经共享 hook 装配）。 */
+  outboundOptions?: RuleOutboundOption[];
+  /** 生效订阅是否存在节点缓存：候选为空时据此区分「先同步订阅」与「先添加切片出站」引导。 */
+  subscriptionCacheAvailable?: boolean;
 }
 
 /** 规则表单内容，key 由调用方控制，确保 initial 变化时重新挂载、状态重置。 */
@@ -38,11 +33,15 @@ function RuleEditForm({
   onSave,
   onClose,
   ruleSetOptions,
+  outboundOptions,
+  subscriptionCacheAvailable,
 }: {
   initial?: LocalRuleView | null;
   onSave: (rule: LocalRuleInput) => void;
   onClose: () => void;
   ruleSetOptions: RuleSetOption[];
+  outboundOptions: RuleOutboundOption[];
+  subscriptionCacheAvailable: boolean;
 }) {
   const [matchType, setMatchType] = useState(initial?.match_type ?? "domain");
   const [target, setTarget] = useState(initial?.target ?? "");
@@ -84,6 +83,33 @@ function RuleEditForm({
     return [...ruleSetOptions, ...stale.map((tag) => ({ value: tag, label: tag, hint: "当前无此规则集（原值保留）" }))];
   }, [matchType, ruleSetOptions, ruleSetTags]);
 
+  const handleActionChange = useCallback(
+    (id: string) => {
+      // 切到「指定出站」保留已选 tag（重新切回不丢选择）；其余动作直接写入 id。
+      if (id === "outbound") {
+        if (!isOutboundAction(action)) setAction(buildOutboundAction(""));
+      } else {
+        setAction(id);
+      }
+    },
+    [action],
+  );
+
+  const isOutbound = isOutboundAction(action);
+  const selectedOutboundTag = outboundTagFromAction(action);
+
+  /**
+   * 指定出站候选：编辑已有 outbound 规则时若其原 tag 不在候选中（订阅缓存为空 /
+   * 出站已删除），追加「原值保留」项，与移动端语义一致。
+   */
+  const effectiveOutboundOptions = useMemo<RuleOutboundOption[]>(() => {
+    const tag = selectedOutboundTag;
+    if (!isOutbound || tag === "" || outboundOptions.some((opt) => opt.value === tag)) {
+      return outboundOptions;
+    }
+    return [...outboundOptions, { value: tag, label: tag, hint: "当前无此出站（原值保留）" }];
+  }, [isOutbound, selectedOutboundTag, outboundOptions]);
+
   /** 切换规则集勾选：追加保持点击顺序；取消移除该项。 */
   const toggleRuleSetTag = useCallback((tag: string) => {
     setRuleSetTags((tags) => (tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags, tag]));
@@ -109,7 +135,9 @@ function RuleEditForm({
   }, [initial, matchType, target, ruleSetTags, action, name, noResolve, invert, note, onSave, onClose]);
 
   const isFinal = matchType === "final";
-  const canSave = isFinal ? true : matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0;
+  const targetOk = isFinal || (matchType === "rule_set" ? ruleSetTags.length > 0 : target.trim().length > 0);
+  const actionOk = !isOutbound || selectedOutboundTag.trim().length > 0;
+  const canSave = targetOk && actionOk;
 
   return (
     <>
@@ -190,8 +218,8 @@ function RuleEditForm({
           <Label>路由动作</Label>
           <Select
             aria-label="路由动作"
-            value={action}
-            onChange={(value) => setAction(String(value ?? "proxy"))}
+            value={isOutbound ? "outbound" : action}
+            onChange={(value) => handleActionChange(String(value ?? "proxy"))}
             fullWidth
           >
             <Select.Trigger>
@@ -200,7 +228,7 @@ function RuleEditForm({
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                {DESKTOP_RULE_ACTIONS.map((opt) => (
+                {RULE_ACTIONS.map((opt) => (
                   <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
                     {opt.label}
                     <ListBox.ItemIndicator />
@@ -210,6 +238,48 @@ function RuleEditForm({
             </Select.Popover>
           </Select>
         </div>
+
+        {isOutbound && (
+          <div className="flex flex-col gap-1">
+            <Label>出站</Label>
+            {effectiveOutboundOptions.length === 0 ? (
+              <span className="text-xs text-muted">
+                {subscriptionCacheAvailable
+                  ? "暂无可用出站，可先在 配置→自定义出站 添加"
+                  : "未找到订阅节点缓存，请先同步订阅"}
+              </span>
+            ) : (
+              <>
+                <Select
+                  aria-label="出站"
+                  value={selectedOutboundTag}
+                  onChange={(value) => setAction(buildOutboundAction(String(value ?? "")))}
+                  placeholder="请选择出站"
+                  fullWidth
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {effectiveOutboundOptions.map((opt) => (
+                        <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate">{opt.label}</span>
+                            {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
+                          </span>
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                <span className="text-xs text-muted">命中该规则的流量将转发到所选出站</span>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <Label htmlFor="rule-name">规则名称（可选）</Label>
@@ -268,7 +338,15 @@ function RuleEditForm({
   );
 }
 
-export function RuleEditModal({ isOpen, onClose, initial, onSave, ruleSetOptions = [] }: RuleEditModalProps) {
+export function RuleEditModal({
+  isOpen,
+  onClose,
+  initial,
+  onSave,
+  ruleSetOptions = [],
+  outboundOptions = [],
+  subscriptionCacheAvailable = false,
+}: RuleEditModalProps) {
   // key 确保 initial 变化时表单重新挂载、状态重置
   const formKey = initial?.id ?? "__new__";
 
@@ -291,6 +369,8 @@ export function RuleEditModal({ isOpen, onClose, initial, onSave, ruleSetOptions
             onSave={onSave}
             onClose={onClose}
             ruleSetOptions={ruleSetOptions}
+            outboundOptions={outboundOptions}
+            subscriptionCacheAvailable={subscriptionCacheAvailable}
           />
         </Modal.Dialog>
       </Modal.Container>

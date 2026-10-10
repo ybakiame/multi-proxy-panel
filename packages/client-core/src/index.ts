@@ -21,6 +21,7 @@ export * from "./hooks/useClientConfig";
 export * from "./hooks/useCoreVersion";
 export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
+export * from "./hooks/useRuleOutboundOptions";
 export * from "./hooks/useSettingsPersist";
 export * from "./hooks/useRuleSetMarket";
 
@@ -36,6 +37,7 @@ export * from "./outboundForm";
 export * from "./outboundOptions";
 export * from "./groupForm";
 export * from "./pendingRestart";
+export * from "./ruleOutboundOptions";
 export * from "./ruleSetOptions";
 export * from "./routeSlice";
 export * from "./rules";
