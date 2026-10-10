@@ -20,42 +20,29 @@
 
 ## 环境准备
 
-### 必需工具
+### 统一 Nix 开发环境
 
-| 工具 | 版本 | 用途 |
-|------|------|------|
-| Rust | 1.88+ | 后端与核心开发 |
-| PostgreSQL | 15+ | 开发数据库 |
-| Docker & Compose | 最新 | 基础设施快速启动 |
-| Node.js & npm | 20+ | 构建 Web 前端 |
-| sea-orm-cli | 1.1+ | 数据库实体生成 |
-| grpcurl | 最新 | gRPC 接口调试 |
-
-### 安装 Rust 工具链
+本地编译、运行、测试与提交统一进入仓库 `flake.nix` / `flake.lock` 环境。
+不再安装宿主机 Go/Bun/JDK/Android SDK/NDK 或通过 apt/brew 补齐构建系统库。
+环境清单与 Nix 安装方法见 [Nix 开发环境](../nix-flake.md)；Rust 版本由
+`rust-toolchain.toml` 经 flake 提供的 rustup 管理。
 
 ```bash
-# 项目已包含 rust-toolchain.toml，自动安装正确版本
-cd proxy-panel
-rustc --version  # 应显示 1.88+
-
-# 安装额外组件
-cargo install sea-orm-cli
+nix develop
+# 自动化不加载用户 shell rc，防止主机 SDK/NDK 覆盖 flake：
+nix develop --command bash --noprofile --norc -c 'bun run --filter pp-client-app verify'
 ```
 
-### 安装系统依赖
-
-**Ubuntu/Debian:**
+若 Nix 下载连接失败，可设置本机 HTTP 代理后重试（此工作区示例）：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y libssl-dev pkg-config protobuf-compiler
+export http_proxy="http://127.0.0.1:7899"
+export https_proxy="http://127.0.0.1:7899"
+nix develop
 ```
 
-**macOS:**
-
-```bash
-brew install protobuf
-```
+下文本地命令均假定已进入该环境。数据库与设备由外部服务提供；Windows 安装包由
+已有 GitHub Actions Windows runner 构建，不把 runner 的平台工具链作为本地开发指引。
 
 ---
 
@@ -66,6 +53,7 @@ brew install protobuf
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
+nix develop
 ```
 
 ### 2. 启动基础设施
@@ -298,30 +286,10 @@ Release 的 `desktop-windows` 同参数构建 Windows NSIS 安装包，但只上
 客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS，x86_64 / aarch64 双架构）。
 打包决策见 [ADR-0008](adr/0008-windows-desktop-packaging.md)。
 
-```bash
-# Windows 本机（需 Visual Studio Build Tools 的 MSVC 工具链 + WebView2）
-cd apps/client && bun install
-
-# Windows overlay（tauri.windows.conf.json5）会把 beforeBuildCommand 覆写为
-# 「前端构建 + 种子核心抓取」（幂等，已是最新则跳过；交叉构建经 SEED_ARCH
-# 环境变量指定目标架构，缺省按宿主架构），随后自动把种子打入安装包：
-bun run tauri build --config src-tauri/tauri.windows.conf.json5
-# 注意：`bun run tauri build` 与 --config 之间不要再加 `--`（`--` 后的参数会被
-# 透传给 cargo，导致 overlay 静默不生效）。
-# 产物：apps/client/src-tauri/target/release/bundle/nsis/*.exe
-#       （设置 TAURI_SIGNING_PRIVATE_KEY 时另有 .nsis.zip 更新包与 .sig）
-```
-
-种子抓取也可手动执行：`bun run fetch-seed amd64`（或 `arm64`）。不带 `--config`
-的普通 `bun run tauri build` 仍可构建（安装包不含种子核心，首启回退为运行时下载
-核心），Linux/macOS 构建不受 Windows overlay 影响。
-
-Linux 主机上可用 `cargo xwin` 做编译验证（不产出安装包）：
-
-```bash
-cargo xwin clippy --manifest-path apps/client/src-tauri/Cargo.toml \
-  --target x86_64-pc-windows-msvc --all-targets -- -D warnings
-```
+Windows 安装包使用 [Desktop Test Build](../.github/workflows/desktop-test.yml) 或 Release
+工作流构建。测试构建可通过 `gh workflow run desktop-test.yml --ref dev -f arch=both -f sign=false` 触发，完成后下载对应 Windows artifact 在真机安装。
+Windows overlay（`tauri.windows.conf.json5`）在 runner 中装配前端、种子核心与 NSIS；
+不再提供宿主机本地 MSVC / cargo-xwin 环境安装指引。
 
 **种子核心**：安装包内置 sing-box（版本锁定于 `seed-manifest.json`）+ `wintun.dll`，
 首启且无已装核心时自动释放到 `数据目录/cores/sing-box/<version>/`，之后与运行时下载的
@@ -564,7 +532,7 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 
 | 工具 | 版本要求 | 说明 |
 |------|----------|------|
-| Go | **1.25.5+**（脚本优先探测 `~/go-sdk/go`） | sing-box 1.15.0-alpha.5 要求 `go >= 1.25.5`；脚本由 `GOTOOLCHAIN=auto` 自动切换到满足要求的工具链（gomobile 同步升级到 **v0.1.12**，SagerNet fork，规避上游 x/mobile 在 go1.24+ 的 `os.checkPidfdOnce` 链接错误） |
+| Go | **1.25.5+**（由 flake 提供） | sing-box 1.15.0-alpha.5 要求 `go >= 1.25.5`；使用 Nix 环境中的 Go 工具链（gomobile 同步升级到 **v0.1.12**，SagerNet fork，规避上游 x/mobile 在 go1.24+ 的 `os.checkPidfdOnce` 链接错误） |
 | JDK | 17 或 21（`JAVA_HOME`） | gomobile 生成 Java 绑定 + Gradle |
 | Android SDK + NDK | **NDK 28.0.13004108**（`ANDROID_HOME` / `ANDROID_NDK_HOME`） | 官方 sing-box 构建固定版本；`with_naive_outbound` 的 cronet 预编译库在 NDK 27 下 arm64 链接会报 `unknown relocation (315)`，必须 NDK 28 |
 | gh CLI | 已登录 | GEO 脚本读取 MetaCubeX/meta-rules-dat 的 latest release 元数据 |
@@ -573,7 +541,7 @@ tauri android build         # 3. Rust 交叉编译 + Gradle 打包 APK
 ### 完整步骤
 
 ```bash
-export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.0.13004108  # sing-box 构建固定 NDK 28；按本机实际路径
+nix develop  # flake 统一提供 Go/JDK/SDK/NDK 与交叉编译变量
 
 # 1. GEO 数据（APK 内置避免首启无代理下载失败）
 ./apps/client/scripts/update-android-geodata.sh
@@ -607,7 +575,7 @@ Android target 的构建需要两组配置，缺失会导致难以排查的构�
 - `rquickjs-sys` 的 bindgen 需要 `BINDGEN_EXTRA_CLANG_ARGS_*` 指定 NDK sysroot，否则误用宿主机 `/usr/include`，报 `gnu/stubs-32.h not found`
 - cargo 配置不支持环境变量展开，若在 `.cargo/config.toml` 写死 NDK 绝对路径会变成「个人目录入仓库」的灾难。因此改为全部由环境注入：
   - **nix dev shell**：`flake.nix` 导出（指向 nix store 的 NDK 28.0.13004108）
-  - **非 nix / CI**：`source apps/client/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
+  - **仅 CI runner**：`source apps/client/scripts/android-ndk-env.sh`（从 `ANDROID_NDK_HOME` / `NDK_HOME` / `$ANDROID_HOME/ndk/<最新>` 推导）
   - `tauri android build` 自身会按 `NDK_HOME` 注入 linker 与 RUSTFLAGS，与上述两者保持一致
 
 **2. pkg-config 守卫**：仓库根 `.cargo/config.toml` 设置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`，禁止 `lzma-sys` / `bzip2-sys`（zip 依赖）用 pkg-config 链接宿主系统库，强制 vendored 静态编译；否则交叉编译时会链接 host 架构的 `.so`，报 `liblzma.so is incompatible with aarch64linux`（nix dev shell 的 `PKG_CONFIG_PATH` 含 host 版 xz/bzip2，必现）。放在仓库根是因为 cargo 只沿**当前工作目录**向上发现配置：tauri CLI 从 `apps/client` 调 cargo、裸 cargo 在 `src-tauri`，根配置对两者同时生效。
@@ -617,11 +585,11 @@ Android target 的构建需要两组配置，缺失会导致难以排查的构�
 | 症状 | 原因 | 处理 |
 |------|------|------|
 | `Failed to transform panelcore.aar` | AAR 未构建（或路径不对） | 先跑 `build-panel-core.sh` |
-| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | nix 下进 `nix develop`；非 nix `source apps/client/scripts/android-ndk-env.sh`（见上一节） |
+| `gnu/stubs-32.h not found` | bindgen 缺少 NDK sysroot（工具链环境变量未注入） | 本地重新进入 `nix develop`；该适配脚本仅供 CI runner |
 | `liblzma.so / libbz2.so is incompatible with aarch64linux` | `lzma-sys` / `bzip2-sys` 经 pkg-config 链接了 host x86_64 系统库 | 配置已内置 `LIBLZMA_NO_PKG_CONFIG` / `BZIP2_NO_PKG_CONFIG`；若改过配置需 `cargo clean -p lzma-sys -p bzip2-sys` 后重构建 |
-| 进了 `nix develop` 仍用主机 NDK | 交互 bash 会 source `~/.bashrc`，其中无条件导出的 `ANDROID_HOME`/`NDK_HOME` 覆盖了 flake | rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫（见 nix-flake.md §4.6） |
+| 进了 `nix develop` 仍用主机 NDK | 交互 bash 会 source `~/.bashrc`，其中无条件导出的 `ANDROID_HOME`/`NDK_HOME` 覆盖了 flake | rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫（见 [nix-flake.md](../nix-flake.md) §4.6） |
 | `lintVitalAnalyzeUniversalRelease` 崩溃（`findFirCompiledSymbol`） | AGP 9.3.1 lint 分析构建脚本的自身 bug | 已在 `gen/android/app/build.gradle.kts` 设 `lint { checkReleaseBuilds = false }` |
-| `invalid reference to os.checkPidfdOnce` | gomobile fork 版本过旧（v0.1.8）与 Go 工具链不匹配 | 升级 gomobile 到 v0.1.12（脚本已内置）；工具链由 `GOTOOLCHAIN=auto` 自动切换 |
+| `invalid reference to os.checkPidfdOnce` | gomobile fork 版本过旧（v0.1.8）与 Go 工具链不匹配 | 升级 gomobile 到 v0.1.12（脚本已内置）；使用 flake 的 Go 工具链 |
 | `unknown relocation (315) ... libcronet.a` | NDK 版本过低（< 28），`with_naive_outbound` 的 cronet 预编译库无法链接 | 安装并指定 NDK 28.0.13004108（`ANDROID_NDK_HOME`） |
 | Gradle 下载依赖超时 | 网络受限 | 配代理（`~/.gradle/gradle.properties` 的 `systemProp.http(s).proxy*`） |
 | mihomo 首启失败 | GEO 数据缺失 | 跑 `update-android-geodata.sh` 后重新打包 |
@@ -831,15 +799,8 @@ SELECT * FROM clients; # 查看客户端
 
 ### Q: 编译失败，提示 protobuf 相关错误？
 
-确保已安装 `protobuf-compiler`：
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install protobuf-compiler
-
-# macOS
-brew install protobuf
-```
+在仓库根目录进入 `nix develop`，然后执行 `protoc --version`。
+protobuf 编译器由 flake 提供，无需安装宿主机包。
 
 ### Q: Web 前端编译后无法访问？
 

@@ -35,6 +35,21 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 ### 2.1 工具链
 
+本地编译、运行、测试和提交钩子统一在仓库 `flake.nix` 开发环境中执行，不使用宿主机
+Go/Bun/JDK/SDK/NDK 或系统库。先 `nix develop`，自动化使用
+`nix develop --command bash --noprofile --norc -c '<命令>'`，避免用户 shell rc 覆盖环境。
+Rust 版本仍由 `rust-toolchain.toml` 经 flake 的 rustup 管理。
+如 Nix 下载连接失败，可按本机代理配置重试（此工作区代理为 `http://127.0.0.1:7899`）：
+
+```bash
+export http_proxy="http://127.0.0.1:7899"
+export https_proxy="http://127.0.0.1:7899"
+nix develop
+```
+
+详见 [Nix 开发环境](nix-flake.md)。下文构建命令均假定已进入该环境；Windows 安装包
+由已有 GitHub Actions Windows runner 构建，`android-ndk-env.sh` 仅供该类 CI 适配。
+
 - Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链
 - 前端应用（`apps/panel` 管理系统、`apps/client` Tauri 客户端）与共享前端库（`packages/*`）不是 Cargo workspace 成员（客户端 `src-tauri/` 为退出根 workspace 的独立 cargo 项目），由根目录 `package.json` 的 **Bun workspaces** 统一管理；Bun 1.3+（见各 app 的 `packageManager` 字段）

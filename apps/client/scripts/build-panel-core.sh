@@ -9,18 +9,9 @@ set -euo pipefail
 # 用法:
 #   ./apps/client/scripts/build-panel-core.sh [OUTPUT_AAR]
 #
-# 环境要求:
-#   - Go 工具链（sing-box 1.15.0-alpha.5 要求 go >= 1.25.5；脚本优先探测
-#     ~/go-sdk/go（go1.25.5），由 GOTOOLCHAIN=auto 自动切换到满足要求的
-#     工具链；gomobile fork 已同步升级到 v0.1.12）
-#   - JDK 17 或 21（javac/jar，gomobile 生成 Java 绑定）
-#   - Android SDK + NDK（含 clang 交叉编译工具链）
-#   - 可设置的环境变量:
-#       GO_ROOT     Go SDK 根目录（优先；其次 ~/go-sdk，最后 PATH）
-#       GOPATH      Go module 缓存与工具安装目录（默认 ~/go-work）
-#       JAVA_HOME   JDK 17 或 21 根目录
-#       ANDROID_HOME        Android SDK 根目录（默认 ~/Android/Sdk）
-#       ANDROID_NDK_HOME    NDK 根目录
+# 环境要求：先进入仓库 nix develop；Go/JDK/Android SDK/NDK 均由 flake 提供。
+# 不探测 ~/go-sdk、GO_ROOT 或主机 Android SDK。GOPATH 只用于缓存与工具安装。
+# SagerNet gomobile fork 固定为 v0.1.12，对齐 sing-box 1.15.0-alpha.5。
 #
 # 构建说明:
 #   - 使用 SagerNet 维护的 gomobile fork（v0.1.12，对齐 sing-box 1.15.0-alpha.5
@@ -62,34 +53,13 @@ OUTPUT_AAR="${1:-$REPO_ROOT/apps/client/src-tauri/gen/android/app/libs/panelcore
 # 环境默认值
 GOPATH="${GOPATH:-$HOME/go-work}"
 GOMOBILE_TAG="v0.1.12"
-ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+: "${ANDROID_HOME:?请先进入仓库 nix develop（SDK 由 flake 提供）}"
 SING_BOX_VERSION="v1.15.0-alpha.5"
 SING_BOX_VERSION_NUM="${SING_BOX_VERSION#v}"
 
-# 探测 Go 工具链（GO_ROOT 优先，其次 ~/go-sdk，最后 PATH）
-if [[ -n "${GO_ROOT:-}" ]]; then
-    if [[ -x "$GO_ROOT/bin/go" ]]; then
-        GO_BIN="$GO_ROOT/bin/go"
-    elif [[ -x "$GO_ROOT/go/bin/go" ]]; then
-        GO_BIN="$GO_ROOT/go/bin/go"
-    else
-        echo "error: GO_ROOT=$GO_ROOT 下未找到 go 工具链" >&2
-        exit 1
-    fi
-elif [[ -x "$HOME/go-sdk/go/bin/go" ]]; then
-    GO_BIN="$HOME/go-sdk/go/bin/go"
-elif command -v go >/dev/null 2>&1; then
-    GO_BIN="$(command -v go)"
-    echo "warning: 使用 PATH 中的 go（$(dirname "$GO_BIN")），系统 go1.26.x 与 gomobile v0.1.8 不兼容，推荐 ~/go-sdk/go" >&2
-else
-    echo "error: go 工具链未找到（可设置 GO_ROOT 或安装 ~/go-sdk/go）" >&2
-    exit 1
-fi
-if [[ ! -x "$GO_BIN" ]]; then
-    echo "error: go 工具链未找到（可设置 GO_ROOT 或加入 PATH）" >&2
-    exit 1
-fi
-export PATH="$(dirname "$GO_BIN"):$PATH"
+# 只使用开发环境 PATH 中的 Go，不回退宿主机 SDK。
+GO_BIN="$(command -v go)"
+[[ -x "$GO_BIN" ]] || { echo "error: 请先进入仓库 nix develop" >&2; exit 1; }
 
 # 检查环境变量
 : "${JAVA_HOME:?请设置 JAVA_HOME（JDK 17 或 21）}"

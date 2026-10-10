@@ -77,6 +77,11 @@ flowchart TB
 
 ### 环境要求
 
+本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)（`flake.nix` / `flake.lock`）。
+以下开发命令均在 `nix develop` 内执行，Go/Bun/JDK/Android SDK/NDK 与系统库使用 flake
+提供的版本；Rust 经该环境的 rustup 按 `rust-toolchain.toml` 管理。Windows 安装包使用
+GitHub Actions 的 `desktop-test` / Release 工作流构建，真机下载安装包测试。
+
 - Rust 1.88+（参见 `rust-toolchain.toml`）
 - PostgreSQL 15+ (或 SQLite 用于开发)
 - Bun 1.3+ (构建 Web 前端，见 `apps/panel/package.json` 的 packageManager 字段)
@@ -87,6 +92,7 @@ flowchart TB
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd proxy-panel
+nix develop
 ```
 
 ### 2. 启动数据库
@@ -189,7 +195,7 @@ bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/de
 bun run android:build  # Android APK 构建
 ```
 
-支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（x86_64 / ARM64 双架构，`bundle/nsis/*.exe`），内置 sing-box 种子核心与 `wintun.dll`（首启免联网即可用，ADR-0008），并支持自动更新（设置页「关于应用 → 检查更新」）。TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启）。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包；本地完整打包流程见 [docs/development.md](docs/development.md#windows-桌面端构建)。
+支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（x86_64 / ARM64 双架构，`bundle/nsis/*.exe`），内置 sing-box 种子核心与 `wintun.dll`（首启免联网即可用，ADR-0008），并支持自动更新（设置页「关于应用 → 检查更新」）。TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启）。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包；构建流程见 [docs/development.md](docs/development.md#windows-桌面端构建)。
 
 #### Android（移动端目标）构建
 

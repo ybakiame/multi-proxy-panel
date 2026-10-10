@@ -36,7 +36,7 @@ step "4/5 客户端壳 cargo clippy（apps/client/src-tauri，host=桌面目标�
 cargo clippy --manifest-path apps/client/src-tauri/Cargo.toml --all-targets -- -D warnings
 
 # Android 交叉编译检查：需要 NDK 工具链环境（nix dev shell 由 flake.nix 导出；
-# 非 nix 环境由 apps/client/scripts/android-ndk-env.sh 补齐）与 rust 目标。
+# CI runner 由 apps/client/scripts/android-ndk-env.sh 补齐；本地统一 nix develop）与 rust 目标。
 if rustup target list --installed 2>/dev/null | grep -q '^aarch64-linux-android$' \
     && [[ -n "${ANDROID_HOME:-}" || -n "${ANDROID_SDK_ROOT:-}" || -n "${ANDROID_NDK_ROOT:-}" || -n "${NDK_HOME:-}" ]]; then
     if [[ -z "${CC_aarch64_linux_android:-}" ]]; then
