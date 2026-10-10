@@ -118,9 +118,8 @@ export function Overlay(props: OverlayProps) {
 - M5：入口 `src/App.tsx`、样式 `src/index.css`、路由 `src/routes.tsx` 单源化；旧
   `src/desktop`、`src/mobile` 与 vite/tsc `@app` alias 已移除。配置入口、DNS、出站、
   路由、规则、规则集/市场、Experimental 共用实现。订阅规范路径为 `/subscriptions`。
-- 仪表盘、订阅、设置、入站目前仍有**页内平台实现**：分别涉及 VPN 授权与
-  桌面进程控制、订阅生效/覆写交互、核心管理/VPN 通知、
-  TUN 提权/Android 恒启用。它们位于同一页面目录，由页面入口编译期选择，未声称所有
+- 仪表盘、订阅、设置目前仍有**页内平台实现**：分别涉及 VPN 授权与
+  桌面进程控制、订阅生效/覆写交互、核心管理/VPN 通知。它们位于同一页面目录，由页面入口编译期选择，未声称所有
   页面逻辑已完全去重；后续按页继续收敛。因此 M5/M6 尚未全部关闭。
 - 保留桌面 Clash API 的启用开关、可选密钥和面板 UI 选择；Android 恒启用/必填密钥的
   自动纠正仅在移动构建执行。平台行为沿用既有 ADR，不把移动约束扩散至桌面。
@@ -137,3 +136,9 @@ export function Overlay(props: OverlayProps) {
 今日汇总、搜索/排序、当前视图查询、轮询与清空流程共用；`StatsLists` 消费 DataList
 呈现桌面表格/移动卡片。桌面保留表头排序与 IP/网络/链路字段，默认明细按开始时间
 排序；移动继续采用 500 条渲染上限与合计默认排序。移除整页和查询逻辑双份实现。
+
+### 按页收敛：入站（2026-10-10）
+
+端口、协议栈、自动路由与 IPv6 字段和防抖保存合一；`DesktopTunControls` 仅提供
+桌面可选 TUN 与授权查询/操作，Android 编译裁剪。桌面保留 mixed/gvisor/system
+选项，移动保持 go/mixed/system 与 VPN 恒启用，不改变核心合成边界。

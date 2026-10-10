@@ -61,9 +61,9 @@ export interface UseSettingsConfigReturn {
 }
 
 /**
- * 移动端设置页视图模型（ADR-0011 试点）：保存引擎复用 client-core 共享的
+ * 共用设置字段视图模型（ADR-0011 试点）：保存引擎复用 client-core 共享的
  * [`useSettingsPersist`]（persist 串行链 + 字段级防抖 + 卸载 flush——该引擎
- * 即由此 hook 的语义抽取单源化），本 hook 只保留移动端专属逻辑：VPN 通知
+ * 即由此 hook 的语义抽取单源化），本 hook 同时提供平台专属字段逻辑：VPN 通知
  * 偏好与通知栏热更新、密钥必填校验与随机生成。
  *
  * 表单草稿经 config 渲染期同步（adjust-state-during-render，prevConfig 以
