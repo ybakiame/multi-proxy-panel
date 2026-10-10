@@ -1,6 +1,6 @@
 import { Switch, inputClassName } from "@pp/ui";
 
-/** 移动设置页输入框统一样式（复用 ui.tsx 的 `inputClassName`，等宽字体变体）。 */
+/** 共用设置输入框样式（复用 @pp/ui 的 `inputClassName`，等宽字体变体）。 */
 export const settingsInputClass = `${inputClassName} font-mono`;
 
 export const settingsLabelClass = "text-sm font-medium text-zinc-900 dark:text-zinc-100";

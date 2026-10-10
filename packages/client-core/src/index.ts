@@ -19,6 +19,7 @@ export * from "./atoms/ui";
 export * from "./hooks/useCapabilities";
 export * from "./hooks/useClientConfig";
 export * from "./hooks/useCoreVersion";
+export * from "./hooks/useDashboardState";
 export * from "./hooks/useDnsServers";
 export * from "./hooks/useProxyStatus";
 export * from "./hooks/useRuleOutboundOptions";

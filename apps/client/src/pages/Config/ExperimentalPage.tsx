@@ -23,7 +23,7 @@ import { DesktopClashApiSettings } from "./DesktopClashApiCard";
 import { ClashApiCard } from "./ClashApiCard";
 import { isConfigSlices } from "@pp/client-core";
 
-/** 文本输入样式（复用 ui.tsx 的 `inputClassName`）。 */
+/** 文本输入样式（复用 @pp/ui 的 `inputClassName`）。 */
 const INPUT_CLASS = inputClassName;
 
 /**

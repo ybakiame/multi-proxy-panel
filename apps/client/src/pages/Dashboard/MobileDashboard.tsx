@@ -1,31 +1,23 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { InlineAlert } from "@pp/ui";
 import { Button } from "@pp/ui";
 import {
-  PROXY_STATUS_KEY,
-  SUBSCRIPTIONS_KEY,
   VPN_ERROR_KEY,
-  listSubscriptions,
   requestVpnPermission,
-  startProxy,
-  stopProxy,
   toErrorMessage,
   toastError,
   toastSuccess,
-  useCapabilities,
-  useClientConfig,
-  useProxyStatus,
   vpnLastError,
 } from "@pp/client-core";
-import type { ClientStatus, SubscriptionView } from "@pp/client-core";
+import { useDashboardState } from "@pp/client-core";
 import { CurrentNodeCard } from "../../components/mobile/CurrentNodeCard";
 import { PageShell } from "../../components/PageShell";
 import { StartStopFab } from "../../components/mobile/StartStopFab";
 import { StatusCard } from "../../components/mobile/StatusCard";
 import { SubscriptionSheet } from "../../components/mobile/SubscriptionSheet";
-import { TodayStatsCard } from "../../components/mobile/TodayStatsCard";
+import { TodayStatsCard } from "../../components/TodayStatsCard";
 import { TrafficCard } from "../../components/mobile/TrafficCard";
 
 /** start_proxy 未获系统 VPN 授权时的错误前缀（Kotlin `vpn_not_authorized` reject，与 desktop 识别一致）。 */
@@ -49,31 +41,26 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 配置预览等开发者入口已迁移至设置页「开发者工具」分组。
  */
 export default function Dashboard() {
-  const queryClient = useQueryClient();
-  const { data: config } = useClientConfig();
-  const { data: status } = useProxyStatus();
-  const { data: capabilities } = useCapabilities();
-  // capabilities 异步返回前为 undefined（移动壳仅 Android 目标）。
-  const isAndroid = capabilities?.is_android ?? false;
-  const running = status?.core_running ?? false;
-
-  // ---- 数据：订阅列表 ----
-  const { data: subscriptions = [] } = useQuery<SubscriptionView[]>({
-    queryKey: SUBSCRIPTIONS_KEY,
-    queryFn: listSubscriptions,
-    refetchInterval: 5000,
-  });
-  const activeSub = subscriptions.find((sub) => sub.id === config?.active_subscription_id) ?? null;
-  // 门禁：无生效订阅不可启动（mobile 无核心选择门禁）。
-  const canStart = activeSub !== null;
-  // 规则模式：优先取运行状态，其次配置，默认 rule。
-  const ruleMode = status?.rule_mode ?? config?.rule_mode ?? "rule";
-
   // ---- 局部 UI 状态 ----
   const [sheetOpen, setSheetOpen] = useState(false);
   // 最近启停/授权的同步错误（展示于主操作卡片内）；`vpn_not_authorized` 由下方
   // 「需要 VPN 授权」引导接管，自动授权/重试链路期间主按钮呈 busy 态。
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const {
+    queryClient,
+    config,
+    status,
+    capabilities,
+    subscriptions,
+    activeSub,
+    running,
+    ruleMode,
+    startMutation,
+    stopMutation,
+  } = useDashboardState({ onActionError: setActionError, onActionSuccess: () => setActionError(null) });
+  const isAndroid = capabilities?.is_android ?? false;
+  const canStart = activeSub !== null;
 
   // Android 后台启动失败兜底：2s 轮询 vpn_last_error（与 proxy_status 同频）。
   const { data: vpnErrorData } = useQuery<string | null>({
@@ -86,21 +73,6 @@ export default function Dashboard() {
   const vpnError = vpnErrorData ?? null;
 
   const reportError = (err: unknown) => setActionError(toErrorMessage(err));
-  const writeStatus = (next: ClientStatus) => {
-    queryClient.setQueryData(PROXY_STATUS_KEY, next);
-    setActionError(null);
-  };
-
-  const startMutation = useMutation({
-    mutationFn: startProxy,
-    onSuccess: writeStatus,
-    onError: reportError,
-  });
-  const stopMutation = useMutation({
-    mutationFn: stopProxy,
-    onSuccess: writeStatus,
-    onError: reportError,
-  });
   // 系统 VPN 授权（request_vpn_permission → VpnService.prepare）。
   const vpnAuthMutation = useMutation({
     mutationFn: requestVpnPermission,

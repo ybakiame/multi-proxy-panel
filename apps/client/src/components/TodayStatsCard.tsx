@@ -4,7 +4,7 @@ import { ChevronRightIcon } from "@heroicons/react/24/outline";
 import { STATS_TODAY_KEY, statsToday } from "@pp/client-core";
 import type { TodaySummary } from "@pp/client-core";
 import { Card } from "@pp/ui";
-import { formatBytes } from "./TrafficCard";
+import { formatBytes } from "../pages/Stats/utils";
 
 interface TodayStatsCardProps {
   /** 核心是否运行（运行中 5 秒轮询刷新；未运行不轮询，仅展示持久化数据）。 */
@@ -34,10 +34,10 @@ export function TodayStatsCard({ running }: TodayStatsCardProps) {
 
   const proxiedTotal = (data?.proxied_upload_bytes ?? 0) + (data?.proxied_download_bytes ?? 0);
   const metrics: Array<[string, string]> = [
-    ["总上行", formatBytes(data?.upload_bytes ?? 0)],
-    ["总下行", formatBytes(data?.download_bytes ?? 0)],
-    ["连接数", String(data?.connection_count ?? 0)],
-    ["目标数", String(data?.target_count ?? 0)],
+    ["总上行", data ? formatBytes(data.upload_bytes) : "-"],
+    ["总下行", data ? formatBytes(data.download_bytes) : "-"],
+    ["连接数", data ? String(data.connection_count) : "-"],
+    ["目标数", data ? String(data.target_count) : "-"],
   ];
 
   return (
@@ -50,13 +50,13 @@ export function TodayStatsCard({ running }: TodayStatsCardProps) {
       <Card>
         <Card.Header>
           <Card.Title>今日流量</Card.Title>
-          <Card.Description>已代理流量（排除直连与拦截），点击进入详情</Card.Description>
+          <Card.Description>{data ? `${data.date} · ` : ""}已代理流量（排除直连与拦截），点击进入详情</Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
           <span className="text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatBytes(proxiedTotal)}
+            {data ? formatBytes(proxiedTotal) : "-"}
           </span>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {metrics.map(([label, value]) => (
               <div key={label} className="flex flex-col gap-0.5">
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">{label}</span>

@@ -90,8 +90,8 @@ export function Overlay(props: OverlayProps) {
 | **M2** Overlay 族 ✅(2026-10-10) | Base UI Dialog/Select 封装 + ~~自研 BottomSheet~~（实际采用 Base UI 1.9 原生 Drawer，获得滑动关闭手势）；建 a11y 对照清单（焦点陷阱/Esc/aria 属性逐项核对） | 清单全绿；桌面 Modal/移动 Sheet 各一处试点 |
 | **M3** 桌面迁移 ✅(2026-10-10) | 全桌面换 import（T0/T1/T2），自研 Table 9 处，删 `@heroui/*` 依赖 | 桌面 verify 绿；HeroUI 依赖移除 |
 | **M4** 移动迁移 ✅(2026-10-10) | 壳层惯用法自研（TabBar/Navbar/FAB/Segmented/List），删 `konsta` 依赖 | 移动 verify 绿；Konsta 依赖移除 |
-| **M5** 页面树合一（主体完成，页内差异待进一步收敛） | 试点 Config/Rules 合一 → Shell/路由表合一 → 推广全部页面；删 `src/desktop`、`src/mobile` 树 | 单一 `src/pages` + `@pp/ui` 分发；vite `@app` alias 退役 |
-| **M6** 收尾（结构文档已同步） | vite 配置简化、ADR-0013 落定、AGENTS.md §4.5/架构文档/CHANGELOG 同步 | 文档与实现一致 |
+| **M5** 页面树合一 ✅(2026-10-10) | 试点 Config/Rules 合一 → Shell/路由表合一 → 推广全部页面；删 `src/desktop`、`src/mobile` 树 | 单一 `src/pages` + `@pp/ui` 分发；vite `@app` alias 退役 |
+| **M6** 收尾 ✅(2026-10-10) | vite 配置简化、ADR-0013 落定、AGENTS.md §4.5/架构文档/CHANGELOG 同步 | 文档与实现一致 |
 
 ## §6 风险与对策
 
@@ -109,7 +109,7 @@ export function Overlay(props: OverlayProps) {
 2. 移动 `CustomRulesPage` 删除页面内实现，改消费共享 hook（D3 单一权威）
 3. 桌面 `Rules/index.tsx` 接入共享 hook；`RuleEditModal` 删除 `DESKTOP_RULE_ACTIONS` 过滤，新增出站 `Select`（空候选引导文案与移动对齐）
 
-## 实施进展（2026-10-10，M3–M5）
+## 实施进展（2026-10-10，M3–M6）
 
 - M3/M4：补齐 Checkbox / Radio / Tabs / Avatar / Meter / TextArea / Table / Segmented /
   Navbar / FAB / ToastRegion；客户端全部改用 `@pp/ui`，移除 HeroUI/Konsta 依赖与 CSS。
@@ -152,3 +152,15 @@ export function Overlay(props: OverlayProps) {
 订阅查询、增删改/启停、生效、刷新和失败处理共用；共享 Dialog/Sheet 表单保留
 桌面模板关联、UA 快选与预览，移动编辑未展示的模板绑定也保持原值。桌面表格与
 移动卡片只负责呈现，删除经确认，保存失败不关闭表单。移除旧页面/CRUD 双份实现。
+
+### 按页收敛：仪表盘与最终收尾（2026-10-10）
+
+运行数据、订阅查询与启停状态回写下沉 `client-core/useDashboardState`；今日流量卡与
+出站模式控件共用。仅仪表盘的完整控制布局保留入口内 `IS_MOBILE` 分支：桌面要核心
+选择/系统代理/MITM，移动要 VPN 授权重试/FAB/运行时节点卡，符合 §4 的少数布局例外。
+桌面运行配置区独立为呈现组件，不再复制数据源或启停 mutation。
+
+M5/M6 的实现与文档出口已完成：旧页面树、别名和客户端旧 UI 依赖移除；全部共享路由
+按页复查，计划、ADR、架构说明与变更日志同步。浏览器 mock 回归与对应三包 verify 通过。
+真实 Tauri WebView、系统提权、Android VPN/手势与原生导出仍需设备验收；Material 波纹
+按既定决策后置，不属于本轮实现遗漏。

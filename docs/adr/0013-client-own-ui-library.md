@@ -65,8 +65,11 @@ ADR-0011 对比过 U1（Konsta 全端单 UI 树，暂缓——桌面观感退让
 
 ## Implementation status（2026-10-10）
 
-M3/M4 已完成：客户端仅依赖 `@pp/ui`，HeroUI/Konsta 与对应 CSS 已移除。入口、路由和
-页面目录统一于 `src/App.tsx`、`src/routes.tsx`、`src/pages`，`@app` alias 已退役。
-Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental / 日志 / 统计 / 入站 / 设置主页 / 订阅已共用实现；部分平台能力和
-交互差异仍保留页内编译期分支，M5 的全面去重与 M6 的最终关闭仍待后续按页完成。
-参见 [实施进展](../plans/2026-10-10-client-ui-library-design.md)。
+M3–M6 的实现与文档迁移已完成：客户端仅依赖 `@pp/ui`，HeroUI/Konsta 与对应 CSS
+已移除。入口、路由和页面目录统一于 `src/App.tsx`、`src/routes.tsx`、`src/pages`，
+`@app` alias 已退役。配置、日志、统计、入站、设置与订阅已逐页收敛；仪表盘数据与
+启停回写由 `client-core/useDashboardState` 共用，今日统计和规则模式控件共用。
+仅仪表盘保留 D5 允许的完整控制布局分支；VPN 授权、桌面 TUN/核心管理等能力组件
+继续按编译期事实分发。真实 WebView/VPN/提权/手势验收仍需设备环境，Material 波纹后置。
+参见 [实施进展](../plans/2026-10-10-client-ui-library-design.md) 与
+[验证记录](../testing/2026-10-10-client-ui-refactor.md)。

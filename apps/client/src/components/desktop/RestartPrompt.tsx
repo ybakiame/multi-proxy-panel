@@ -16,7 +16,7 @@ import {
 
 /**
  * 全局配置变更重启提示（桌面端；设计：docs/plans/2026-09-30-mobile-restart-prompt-design.md，
- * 移动端实现见 apps/mobile/src/components/RestartPrompt.tsx）。
+ * 移动端实现见 apps/client/src/components/mobile/RestartPrompt.tsx）。
  *
  * - 消费 client-core `usePendingRestartStore`（各保存成功路径上报脏顶级配置域）；
  * - 弹窗一次：脏标记非空 + 核心运行中 + 未 dismissed → AlertDialog 列出变更项，

@@ -306,7 +306,7 @@ flowchart TD
 | `apps/client/src/routes.tsx` / `App.tsx` | 单一路由表与入口 | sharedRoutes + `IS_MOBILE` 平台路由；订阅规范路径 `/subscriptions`，`/nodes` 与旧规则路径保留重定向；`@app` alias 已移除 |
 | `apps/client/src-tauri`（`pp-client-app`） | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表裁剪 Android 构建图 |
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）/ hooks / atoms / 纯工具；两端 UI 禁止直接 `invoke()` |
-| `packages/ui`（`@pp/ui`） | 自研前端组件库（ADR-0013） | Base UI 行为层 + Tailwind v4 语义令牌（`tokens.css`），`IS_MOBILE` 编译期分发桌面/移动呈现；客户端已移除 HeroUI/Konsta |
+| `packages/ui`（`@pp/ui`） | 自研前端组件库（ADR-0013） | Base UI 行为层 + Tailwind v4 语义令牌（`tokens.css`），`IS_MOBILE` 编译期分发桌面/移动呈现；客户端已移除 HeroUI/Konsta；仪表盘数据与启停回写共用 `client-core/useDashboardState` |
 | `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
 | `pp-script` | 脚本引擎层 | QuickJS 运行时 + QX/Surge/Loon 三方言 API 适配 + cron 调度 |
 | `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面目标专属，Android 构建图不含） |

@@ -18,7 +18,7 @@ interface ConfigEntry {
 }
 
 /**
- * 配置管理入口页（分段配置切片编辑，语义对齐移动端 `apps/mobile/src/pages/Config`）。
+ * 双端共用配置管理入口页（分段配置切片编辑）。
  *
  * 入口卡列表（名称对齐 sing-box 顶级字段语义）：DNS 管理（`dns`）、出站管理
  * （`outbounds`）、路由管理（`route`）、入站管理（`inbounds`）、Experimental

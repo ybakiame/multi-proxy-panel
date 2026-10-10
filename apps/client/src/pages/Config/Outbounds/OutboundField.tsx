@@ -9,7 +9,7 @@ import { SelectField as SharedSelectField } from "@pp/ui";
  * 避免逐字段重复（输入框样式对齐 `DnsServerFormSheet` 的 `inputClass`）。
  */
 
-/** 文本输入样式（复用 ui.tsx 的 `inputClassName`）。 */
+/** 文本输入样式（复用 @pp/ui 的 `inputClassName`）。 */
 export const OUTBOUND_INPUT_CLASS = inputClassName;
 
 interface TextFieldProps {

@@ -1,7 +1,7 @@
 # 客户端 UI 迁移验证（2026-10-10）
 
-范围：ADR-0013 M3/M4、M5 的共享配置页面与统一入口/路由。M5 尚有页内平台实现待收敛，
-不将本记录作为所有页面逻辑完全去重的证明。无 Rust 修改。
+范围：ADR-0013 M3–M6 的组件迁移、统一入口/路由与逐页收敛。仪表盘保留计划允许的
+平台控制布局；运行数据、启停回写与通用控件共用。无 Rust 修改。
 
 ## 自动验证
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | `bun run --filter @pp/ui verify` | 通过：类型、lint、格式 |
 | `bun run --filter pp-client-app verify` | 通过：桌面/Android 两套构建、lint、格式 |
-| `bun run --filter @pp/client-core verify` | 通过：类型、lint、格式（本次仅更新 toast 说明） |
+| `bun run --filter @pp/client-core verify` | 通过：类型、lint、格式（共享仪表盘模型与 toast 说明） |
 | `git diff --check` | 通过 |
 
 源码与客户端依赖清单无 HeroUI/Konsta 导入；`@app` alias 已移除。Android 构建产物检查未
@@ -42,8 +42,8 @@ axe-core 4.12.1（wcag2a/wcag2aa）：桌面规则表格、移动规则卡片的
 ## 边界与后续
 
 未运行真实 Tauri WebView、Android 设备上的 VPN 授权/Drawer 手势，亦未对所有页面做
-真实后端数据回归。本次不改命令接口、配置合成或壳层。仪表盘仍保留页内平台实现；后续按页继续去重并做真实设备验证。Material 波纹仍按 ADR
-后置。
+真实后端数据回归。本次不改命令接口、配置合成或壳层；仪表盘的 VPN/桌面控制布局
+按已接受计划保留。Material 波纹仍按 ADR 后置。
 
 ## 日志页合一回归
 
@@ -77,3 +77,10 @@ axe-core 4.12.1（wcag2a/wcag2aa）：桌面规则表格、移动规则卡片的
 生效卡片；共享表单桌面预填覆写甲和 sing-box UA，移动编辑保留未展示的 p1 绑定。
 模拟保存失败时两端表单保持打开，`update_subscription` 参数均包含原 profileId=p1。
 真实订阅拉取与配置预览合成未在 mock 中执行。
+
+## 仪表盘收敛回归
+
+`pp-client-app verify` 与 `@pp/client-core verify` 通过。模拟生效订阅与核心后，桌面
+启动一次成功回写运行状态；移动首次启动返回 `vpn_not_authorized`，按启动→请求授权→
+再启动顺序成功，两端随后停止成功。今日流量卡可通过按钮语义进入统计详情；规则模式
+控件共用，成功回写状态并失效配置缓存。桌面未调用 VPN 授权接口。

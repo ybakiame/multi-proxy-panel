@@ -1,6 +1,6 @@
 import { Card, Chip } from "@pp/ui";
-import { RULE_MODE_LABELS } from "./ruleModes";
-import { RuleModeSwitch } from "./RuleModeSwitch";
+import { RULE_MODE_LABELS } from "../ruleModes";
+import { RuleModeSwitch } from "../RuleModeSwitch";
 
 interface StatusCardProps {
   /** 核心是否运行。 */
