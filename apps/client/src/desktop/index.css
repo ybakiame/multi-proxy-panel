@@ -3,6 +3,10 @@
 @import "@pp/ui/tokens.css";
 @import "@heroui/styles";
 
+/* Tailwind v4 自动探测不跟进 node_modules 符号链接：@pp/ui 组件源里的工具类
+   （bg-overlay / shadow-field …）必须显式 @source 才会生成。 */
+@source "../../../../packages/ui/src";
+
 html,
 body,
 #root {

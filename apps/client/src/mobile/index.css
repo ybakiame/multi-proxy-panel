@@ -1,7 +1,13 @@
 @import "tailwindcss";
-/* Konsta UI 主题：含 @custom-variant dark（.dark 类变体）、iOS/Material 配色
-   token（--color-primary、--color-ios-*-surface 等）与组件样式。 */
+/* Konsta UI 主题：iOS/Material 配色 token（--color-primary、--color-ios-*-surface 等）
+   与组件样式（M4 删 konsta 后移除）。 */
 @import "konsta/react/theme.css";
+/* @pp/ui 语义令牌（ADR-0013 D3）：迁移期与 Konsta 并存；已换装 @pp/ui 的页面
+   （如规则编辑 Sheet）依赖这里的工具类生成与令牌变量。 */
+@import "@pp/ui/tokens.css";
+
+/* 同 desktop/index.css：@pp/ui 为 node_modules 符号链接，v4 自动探测覆盖不到。 */
+@source "../../../../packages/ui/src";
 
 html,
 body,
