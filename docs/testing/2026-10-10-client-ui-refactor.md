@@ -119,3 +119,13 @@ Nix Go 对当前 AAR 内 `jni/arm64-v8a/libgojni.so` 执行 `go version -m` 成�
 
 双服务原先共用依赖缓存，导致桌面 react_compiler-runtime 请求 504。Vite cacheDir
 按 desktop/android 隔离后，两端同时运行，桌面设置页正常渲染且项目链接调用 opener。
+
+## 提交前门禁（2026-10-11）
+
+在项目 Nix 环境执行：`@pp/ui verify`、`@pp/client-core verify`、`pp-client-app verify`、
+`cargo build --workspace` 与 `bun run verify:rust` 全部通过。后者包含工作区 fmt/clippy/test、
+客户端壳 host clippy 与 Nix NDK 下 aarch64-linux-android check，本轮未跳过 Android。
+
+原进程回收测试按 PATH 启动 Nix sleep，却用 /usr/bin/sleep 校验身份；测试辅助函数改为
+启动和校验同一个 PATH 文件，8 条 pp-core 测试及完整工作区测试通过，生产逻辑未修改。
+客户端前端、Tauri 配置、壳清单及对应锁文件版本统一为 0.1.1。

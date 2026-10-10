@@ -1,6 +1,6 @@
 [package]
 name = "pp-client-app"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "ProxyPanel 客户端壳（Tauri 2 命令层，单壳双目标：Linux/Windows/macOS + Android）"
 license = "AGPL-3.0-or-later"
