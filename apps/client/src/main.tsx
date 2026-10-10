@@ -1,3 +1,6 @@
+// 浏览器调试 mock 必须先于所有 @pp/client-core / @app 导入执行（env.ts 的
+// isTauriEnv 在模块加载时求值），故保持为首行 import。
+import "./browser-debug";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
