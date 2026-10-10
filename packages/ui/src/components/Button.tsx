@@ -68,7 +68,7 @@ export function Button({
       disabled={isDisabled || isPending || rest.disabled}
       onClick={onPress}
       className={cx(
-        "inline-flex cursor-pointer items-center justify-center gap-2 font-medium transition-colors",
+        "inline-flex cursor-pointer items-center justify-center gap-2 shrink-0 whitespace-nowrap font-medium transition-colors",
         "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
         "disabled:cursor-not-allowed disabled:opacity-50",
         IS_MOBILE && "active:scale-[0.98]",

@@ -20,9 +20,19 @@ export const inputClassName = INPUT_BASE;
 export const textareaClassName = cx(INPUT_BASE, "h-auto min-h-24 py-2");
 
 interface InputProps extends Omit<ComponentProps<typeof BaseInput>, "className"> {
+  fullWidth?: boolean;
+  isDisabled?: boolean;
   className?: string;
 }
 
-export function Input({ className, ...rest }: InputProps) {
-  return <BaseInput className={cx(INPUT_BASE, className)} {...rest} />;
+export function Input({ className, fullWidth: _fullWidth, isDisabled, ...rest }: InputProps) {
+  return <BaseInput disabled={isDisabled} className={cx(INPUT_BASE, className)} {...rest} />;
+}
+
+export function TextArea({
+  className,
+  fullWidth: _fullWidth,
+  ...rest
+}: ComponentProps<"textarea"> & { fullWidth?: boolean }) {
+  return <textarea className={cx(textareaClassName, className)} {...rest} />;
 }

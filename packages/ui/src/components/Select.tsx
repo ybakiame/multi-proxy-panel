@@ -1,27 +1,12 @@
-/**
- * Select（T2）——下拉选择器（Base UI Select），目标桌面表单形态
- * （移动端后续以 action sheet 形态另行评估，M4 前移动页面继续用 Konsta）。
- *
- * 复合 API 对齐 HeroUI v3 桌面用法：
- *   <Select aria-label value onChange placeholder fullWidth>
- *     <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
- *     <Select.Popover>
- *       <ListBox>
- *         <ListBox.Item id="x" textValue="X">X</ListBox.Item>
- *       </ListBox>
- *     </Select.Popover>
- *   </Select>
- * 样式规格镜像 @heroui/styles select.css（trigger=rounded-field/bg-field/shadow-field，
- * popover=min-w-anchor/bg-overlay/shadow-overlay）。
- *
- * 与 HeroUI 的差异：value 为 string（空值用 undefined），onChange 回传 string | undefined。
- */
+/** 桌面复合下拉接口；跨平台表单使用 SelectField（dropdown / Drawer picker）。 */
 import { Select as BaseSelect } from "@base-ui/react/select";
-import { createContext, useContext, type ReactNode } from "react";
+import { Children, isValidElement, createContext, useContext, type ReactNode } from "react";
 import { CheckIcon, ChevronUpDownIcon } from "../icons.tsx";
 import { cx } from "../utils.ts";
 
 interface SelectContextValue {
+  id?: string;
+  className?: string;
   placeholder?: string;
   ariaLabel?: string;
   fullWidth?: boolean;
@@ -30,6 +15,7 @@ interface SelectContextValue {
 const SelectContext = createContext<SelectContextValue>({});
 
 export interface SelectRootProps {
+  id?: string;
   value?: string;
   /** 值变化回调（清空时回传 undefined，对齐 HeroUI onChange 语义）。 */
   onChange?: (value: string | undefined) => void;
@@ -41,7 +27,18 @@ export interface SelectRootProps {
   children?: ReactNode;
 }
 
+function collectItems(children: ReactNode): { value: string; label: string }[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement<{ children?: ReactNode; id?: string; textValue?: string }>(child)) return [];
+    if (child.type === ListBoxItem && child.props.id !== undefined)
+      return [{ value: child.props.id, label: child.props.textValue ?? child.props.id }];
+    return collectItems(child.props.children);
+  });
+}
+
 function SelectRoot({
+  id,
+  className,
   value,
   onChange,
   placeholder,
@@ -51,8 +48,9 @@ function SelectRoot({
   children,
 }: SelectRootProps) {
   return (
-    <SelectContext.Provider value={{ placeholder, ariaLabel, fullWidth }}>
+    <SelectContext.Provider value={{ id, className, placeholder, ariaLabel, fullWidth }}>
       <BaseSelect.Root
+        items={collectItems(children)}
         value={value ?? null}
         onValueChange={(v: string | null) => onChange?.(v ?? undefined)}
         disabled={isDisabled}
@@ -64,16 +62,18 @@ function SelectRoot({
 }
 
 function Trigger({ className, children }: { className?: string; children?: ReactNode }) {
-  const { ariaLabel, fullWidth } = useContext(SelectContext);
+  const { id, className: rootClassName, ariaLabel, fullWidth } = useContext(SelectContext);
   return (
     <BaseSelect.Trigger
+      id={id}
       aria-label={ariaLabel}
       className={cx(
-        "flex min-h-9 cursor-pointer items-center justify-between gap-2 rounded-field border border-border bg-field px-3 py-2",
+        "flex min-h-9 cursor-pointer items-center justify-between gap-2 rounded-field border border-border bg-field-background px-3 py-2",
         "text-sm text-field-foreground shadow-field outline-none transition-colors",
         "hover:bg-field-hover hover:border-field-border-hover",
         "focus-visible:border-focus data-[placeholder]:text-muted data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
         fullWidth ? "w-full" : "min-w-40",
+        rootClassName,
         className,
       )}
     >

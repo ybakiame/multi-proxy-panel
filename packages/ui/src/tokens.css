@@ -3,8 +3,8 @@
  *
  * 设计要点：
  * - 沿用 HeroUI v3 语义令牌命名（bg-surface / text-muted / border-border …），
- *   浅色/深色取值镜像 @heroui/styles themes/default/variables.css —— 迁移期
- *   与该包并存时同 key 同值不冲突，桌面迁移得以「换 import 不换 class」；
+ *   浅色/深色以既有样式为基线；主色与 muted 按浏览器对比度检查调整，
+ *   保持桌面迁移「换 import 不换 class」；
  * - `--color-primary` 为 @pp/ui 自有令牌：HeroUI 未定义它（桌面现存
  *   `bg-primary` 等类为静默死工具类），此处桌面映射 accent、移动端按
  *   [data-ui-style] 域取品牌蓝（对齐 Konsta brand-primary #007aff 现状）；
@@ -75,6 +75,7 @@
   --color-danger-soft-hover: var(--danger-soft-hover);
 
   /* 表单域 */
+  --color-field: var(--field-background);
   --color-field-background: var(--field-background);
   --color-field-foreground: var(--field-foreground);
   --color-field-placeholder: var(--field-placeholder);
@@ -101,7 +102,7 @@
 
     --background: oklch(0.9702 0 0);
     --foreground: oklch(0.2103 0.0059 285.89);
-    --muted: oklch(0.5517 0.0138 285.94);
+    --muted: oklch(0.51 0.0138 285.94);
 
     --surface: oklch(100% 0 0);
     --surface-secondary: oklch(0.9524 0.0013 286.37);
@@ -117,7 +118,7 @@
     --primary: var(--accent);
     --primary-foreground: var(--accent-foreground);
 
-    --accent: oklch(0.6204 0.195 253.83);
+    --accent: oklch(0.52 0.195 253.83);
     --accent-foreground: oklch(0.9911 0 0);
     --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
     --accent-soft: color-mix(in oklab, var(--accent) 15%, transparent);
@@ -174,6 +175,8 @@
   /* 取值镜像 @heroui/styles themes/default/variables.css dark 域 */
   .dark {
     color-scheme: dark;
+    --accent: oklch(0.7 0.14 253.83);
+    --accent-foreground: oklch(0.21 0.006 285.89);
 
     --background: oklch(12% 0.005 285.823);
     --foreground: oklch(0.9911 0 0);
@@ -223,7 +226,51 @@
      （brand-primary #007aff，Material 主题亦由该色派生 tonal 调色板）。 */
   [data-ui-style="ios"],
   [data-ui-style="material"] {
-    --primary: oklch(0.5623 0.2093 259.82); /* #007aff */
+    --primary: oklch(0.5 0.2093 259.82); /* #007aff */
     --primary-foreground: oklch(100% 0 0);
+  }
+}
+
+/* 移动形态：同一令牌域覆盖 portal 中的控件、卡片及导航。 */
+@layer base {
+  [data-ui-style="ios"] {
+    --background: #f2f2f7;
+    --field-radius: 0.75rem;
+  }
+  .dark[data-ui-style="ios"] {
+    --primary: oklch(0.7 0.14 259.82);
+    --primary-foreground: oklch(0.21 0.006 285.89);
+    --background: #000;
+    --surface: #1c1c1e;
+    --overlay: #1c1c1e;
+  }
+  [data-ui-style="material"] {
+    --background: #f7f8fc;
+    --field-radius: 1rem;
+    --surface-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+  }
+  .dark[data-ui-style="material"] {
+    --primary: oklch(0.7 0.14 259.82);
+    --primary-foreground: oklch(0.21 0.006 285.89);
+    --background: #111318;
+    --surface: #1d2027;
+    --overlay: #1d2027;
+  }
+  [data-ui-style="ios"] .pp-tabbar-items {
+    border-radius: 9999px;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
+  }
+  [data-ui-style="material"] .pp-tabbar {
+    padding-inline: 0;
+    background: var(--surface);
+  }
+  [data-ui-style="material"] .pp-tabbar-items {
+    border-top: 1px solid var(--separator);
+  }
+  [data-ui-style="material"] .pp-tabbar-items a {
+    border-radius: 1rem;
+  }
+  [data-ui-style="material"] header h1 {
+    text-align: left;
   }
 }

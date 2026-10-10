@@ -92,7 +92,9 @@ function ModalDialog({ className, children }: ModalSectionProps) {
     <div
       className={cx(
         "pointer-events-auto relative flex w-full flex-col bg-overlay shadow-overlay outline-none",
-        IS_MOBILE ? "max-h-[85vh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]" : "max-h-full rounded-3xl p-6",
+        IS_MOBILE
+          ? "max-h-[85vh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
+          : "max-h-full rounded-3xl p-6 sm:max-w-xl",
         className,
       )}
     >

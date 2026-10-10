@@ -21,11 +21,15 @@ interface SwitchContextValue {
   checked: boolean;
   disabled: boolean;
   onChange?: (value: boolean) => void;
+  ariaLabel?: string;
 }
 
 const SwitchContext = createContext<SwitchContextValue>({ checked: false, disabled: false });
 
 interface SwitchRootProps {
+  size?: "sm" | "md" | "lg";
+  "aria-label"?: string;
+  onValueChange?: (value: boolean) => void;
   /** 选中态（等价 HeroUI `isSelected`）。 */
   isSelected?: boolean;
   /** 变更回调（等价 HeroUI `onChange`，参数为新布尔值）。 */
@@ -35,11 +39,25 @@ interface SwitchRootProps {
   children?: ReactNode;
 }
 
-function SwitchRoot({ isSelected = false, onChange, isDisabled = false, className, children }: SwitchRootProps) {
+function SwitchRoot({
+  isSelected = false,
+  onChange,
+  onValueChange,
+  isDisabled = false,
+  className,
+  children,
+  "aria-label": ariaLabel,
+}: SwitchRootProps) {
   return (
-    <SwitchContext.Provider value={{ checked: isSelected, disabled: isDisabled, onChange }}>
+    <SwitchContext.Provider
+      value={{ checked: isSelected, disabled: isDisabled, onChange: onChange ?? onValueChange, ariaLabel }}
+    >
       <span className={cx("inline-flex items-center", isDisabled && "cursor-not-allowed opacity-50", className)}>
-        {children}
+        {children ?? (
+          <SwitchControl>
+            <SwitchThumb />
+          </SwitchControl>
+        )}
       </span>
     </SwitchContext.Provider>
   );
@@ -51,13 +69,14 @@ interface SwitchSectionProps {
 }
 
 function SwitchContent({ className, children }: SwitchSectionProps) {
-  return <span className={cx("flex items-center gap-2 text-sm text-foreground", className)}>{children}</span>;
+  return <label className={cx("flex items-center gap-2 text-sm text-foreground", className)}>{children}</label>;
 }
 
 function SwitchControl({ className, children }: SwitchSectionProps) {
-  const { checked, disabled, onChange } = useContext(SwitchContext);
+  const { checked, disabled, onChange, ariaLabel } = useContext(SwitchContext);
   return (
     <BaseSwitch.Root
+      aria-label={ariaLabel}
       checked={checked}
       disabled={disabled}
       onCheckedChange={(next) => onChange?.(next)}

@@ -3,21 +3,26 @@
  * 复合结构对齐桌面 HeroUI `Card` / 移动适配层同名 API：
  * `Card` + `Card.Header/Title/Description/Content/Footer`。
  */
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { IS_MOBILE } from "../platform.ts";
 import { cx } from "../utils.ts";
 
-interface CardSectionProps {
+interface CardSectionProps extends ComponentProps<"div"> {
   className?: string;
   children?: ReactNode;
 }
 
-function CardRoot({ className, children }: CardSectionProps) {
+function CardRoot({ className, children, ...rest }: CardSectionProps) {
   // 桌面：HeroUI 表面卡（圆角 xl + surface 阴影）；移动：iOS 分组卡
   // （大圆角、无阴影，Konsta Card 迁移后的等价形态）。
   return (
     <div
-      className={cx("bg-surface text-foreground", IS_MOBILE ? "rounded-2xl" : "rounded-xl shadow-surface", className)}
+      {...rest}
+      className={cx(
+        "bg-surface text-foreground",
+        IS_MOBILE ? "rounded-2xl shadow-surface" : "rounded-xl shadow-surface",
+        className,
+      )}
     >
       {children}
     </div>
