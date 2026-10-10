@@ -1,4 +1,4 @@
-import { Button, Chip, Meter, Switch, Table } from "@pp/ui";
+import { Button, Chip, Meter, Table } from "@pp/ui";
 import type { ProfileView, SubscriptionView } from "@pp/client-core";
 import { formatLabel, formatColor, usageText, usagePercent, usageColor, formatExpire } from "./utils";
 
@@ -7,7 +7,6 @@ interface SubscriptionTableProps {
   profiles: ProfileView[];
   busy: boolean;
   refreshingId: string | null;
-  onToggle: (sub: SubscriptionView) => void;
   onRefresh: (id: string) => void;
   onRemove: (id: string) => void;
   onEdit: (sub: SubscriptionView) => void;
@@ -19,7 +18,6 @@ export function SubscriptionTable({
   profiles,
   busy,
   refreshingId,
-  onToggle,
   onRefresh,
   onRemove,
   onEdit,
@@ -29,7 +27,7 @@ export function SubscriptionTable({
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
         <span className="text-sm text-muted">暂无订阅</span>
-        <span className="text-xs text-muted/80">点击「添加订阅」添加首个订阅源，启用后重启代理应用生效</span>
+        <span className="text-xs text-muted/80">点击「添加订阅」添加首个订阅源，选择生效订阅后重启代理应用生效</span>
       </div>
     );
   }
@@ -46,7 +44,6 @@ export function SubscriptionTable({
             <Table.Column>用量</Table.Column>
             <Table.Column>到期时间</Table.Column>
             <Table.Column>覆写</Table.Column>
-            <Table.Column>启用</Table.Column>
             <Table.Column>操作</Table.Column>
           </Table.Header>
           <Table.Body>
@@ -100,21 +97,7 @@ export function SubscriptionTable({
                       <span className="text-muted">-</span>
                     )}
                   </Table.Cell>
-                  <Table.Cell>
-                    <Switch
-                      aria-label={`启用 ${sub.name}`}
-                      isSelected={sub.enabled}
-                      isDisabled={busy}
-                      onChange={() => void onToggle(sub)}
-                    >
-                      <Switch.Content>
-                        <Switch.Control>
-                          <Switch.Thumb />
-                        </Switch.Control>
-                        <span className="sr-only">{sub.enabled ? "启用" : "停用"}</span>
-                      </Switch.Content>
-                    </Switch>
-                  </Table.Cell>
+
                   <Table.Cell>
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="tertiary" isDisabled={busy} onPress={() => onPreview(sub)}>

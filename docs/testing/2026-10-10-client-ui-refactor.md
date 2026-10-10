@@ -91,3 +91,11 @@ axe-core 4.12.1（wcag2a/wcag2aa）：桌面规则表格、移动规则卡片的
 VisualViewport 高度由 844 缩至 320：抽屉底部偏移 524px、最大高度 304px，
 聚焦 User-Agent 后内部滚动 96px，输入框底部为 226px，处于键盘上方。
 恢复 844 后偏移归零。自动化仅覆盖视口变化与焦点滚动，真实 Android 输入法待设备验收。
+
+## 订阅开关移除与 URL 回归
+
+在项目 `nix develop` 环境执行 `pp-client-app verify`、`@pp/client-core verify` 通过。
+双端订阅页无启用开关/列，桌面与移动首页候选包含旧 `enabled=false` 条目；选择时
+依次调用 `set_subscription_enabled(enabled=true)`、`set_active_subscription`。
+移动 600 字符 URL 的 clientWidth=330、scrollWidth=4537、textOverflow=ellipsis；
+390px 视口内 document.scrollWidth=390，无横向溢出。存储字段保留，未执行启动迁移。

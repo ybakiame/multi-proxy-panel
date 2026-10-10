@@ -12,8 +12,7 @@ import {
   markRestartRequired,
   refreshSubscription,
   removeSubscription,
-  setActiveSubscription,
-  setSubscriptionEnabled,
+  activateSubscription,
   toErrorMessage,
   toastError,
   toastSuccess,
@@ -31,7 +30,7 @@ import ConfigPreviewModal from "../../components/desktop/ConfigPreviewModal";
 import { SubscriptionTable } from "./desktop/SubscriptionTable";
 import { SubscriptionRow } from "../../components/mobile/SubscriptionRow";
 
-/** 双端共享订阅 CRUD、启停、生效与刷新；桌面保留覆写和配置预览。 */
+/** 双端共享订阅 CRUD、生效与刷新；桌面保留覆写和配置预览。 */
 export default function Subscriptions() {
   const queryClient = useQueryClient();
   const { data: config } = useClientConfig();
@@ -59,7 +58,7 @@ export default function Subscriptions() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<SubscriptionView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SubscriptionView | null>(null);
-  // 当前生效切换 / 启停的写操作按卡禁用（savingId 单飞，避免同卡并发写）。
+  // 当前生效切换的写操作按卡禁用（savingId 单飞，避免同卡并发写）。
   const [savingId, setSavingId] = useState<string | null>(null);
   // 单卡刷新中集合（支持跨卡并发刷新）。
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
@@ -81,9 +80,6 @@ export default function Subscriptions() {
   const editMutation = useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: SubscriptionDraft }) =>
       updateSubscription(id, draft.name, draft.url, draft.profileId, draft.userAgent || undefined),
-  });
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSubscriptionEnabled(id, enabled),
   });
   const removeMutation = useMutation({
     mutationFn: (id: string) => removeSubscription(id),
@@ -129,39 +125,15 @@ export default function Subscriptions() {
   };
 
   const handleActivate = async (sub: SubscriptionView) => {
-    if (savingId !== null || sub.id === activeId) return;
-    if (!sub.enabled) {
-      toastWarning("该订阅已停用，请先启用后再设为生效");
-      return;
-    }
+    if (savingId !== null || (sub.id === activeId && sub.enabled)) return;
     setSavingId(sub.id);
     try {
-      await setActiveSubscription(sub.id);
+      await activateSubscription(sub);
+      invalidateSubs();
       // 核心运行中切换生效订阅：节点集变更需重启核心才生效，上报全局重启提示。
       markRestartRequired("subscription", coreRunning);
       toastSuccess(`已将「${sub.name}」设为生效订阅`);
       invalidateConfig();
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    }
-    setSavingId(null);
-  };
-
-  const handleToggle = async (sub: SubscriptionView) => {
-    if (savingId !== null) return;
-    const nextEnabled = !sub.enabled;
-    const isActive = sub.id === activeId;
-    setSavingId(sub.id);
-    try {
-      await toggleMutation.mutateAsync({ id: sub.id, enabled: nextEnabled });
-      invalidateSubs();
-      if (!nextEnabled && isActive) {
-        // Rust 侧停用当前生效订阅时同步清空 active_subscription_id。
-        toastWarning("生效订阅已停用，请重新选择生效订阅");
-        invalidateConfig();
-      } else {
-        toastSuccess(nextEnabled ? `已启用「${sub.name}」` : `已停用「${sub.name}」`);
-      }
     } catch (err) {
       toastError(toErrorMessage(err));
     }
@@ -302,7 +274,6 @@ export default function Subscriptions() {
                   busy={savingId !== null || refreshingAll}
                   refreshing={refreshingIds.has(sub.id)}
                   onActivate={() => void handleActivate(sub)}
-                  onToggle={() => void handleToggle(sub)}
                   onRefresh={() => void handleRefresh(sub)}
                   onEdit={() => openEdit(sub)}
                   onDelete={() => setPendingDelete(sub)}
@@ -315,7 +286,6 @@ export default function Subscriptions() {
               profiles={profiles}
               busy={savingId !== null || refreshingAll}
               refreshingId={refreshingIds.values().next().value ?? null}
-              onToggle={(sub) => void handleToggle(sub)}
               onRefresh={(id) => {
                 const sub = subscriptions.find((s) => s.id === id);
                 if (sub) void handleRefresh(sub);

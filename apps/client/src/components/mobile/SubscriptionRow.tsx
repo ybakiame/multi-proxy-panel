@@ -1,6 +1,6 @@
 import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import type { ReactNode } from "react";
-import { Chip, Spinner, Switch } from "@pp/ui";
+import { Chip, Spinner } from "@pp/ui";
 import type { SubscriptionView } from "@pp/client-core";
 
 interface SubscriptionRowProps {
@@ -12,7 +12,6 @@ interface SubscriptionRowProps {
   /** 本卡单条刷新进行中（刷新按钮显示 loading）。 */
   refreshing: boolean;
   onActivate: () => void;
-  onToggle: () => void;
   onRefresh: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -50,9 +49,9 @@ function IconButton({
 /**
  * 订阅卡片（ADR-0003 M5.6，移动单列布局）。
  *
- * - 卡片主体点击 → 设为生效（停用订阅由页面层 toast 引导先启用）；
+ * - 卡片主体点击 → 设为生效；
  * - 展示：名称（截断）+「生效中」chip、URL（截断）、节点数、最近拉取失败提示（若有）；
- * - 右上启用 Switch；底部操作：刷新（busy 转圈）/ 编辑 / 删除（危险色）；
+ * - 底部操作：刷新（busy 转圈）/ 编辑 / 删除（危险色）；
  * - 生效中高亮边框/背景（对齐 ProxyNodeItem 选中态）。
  */
 export function SubscriptionRow({
@@ -61,7 +60,6 @@ export function SubscriptionRow({
   busy,
   refreshing,
   onActivate,
-  onToggle,
   onRefresh,
   onEdit,
   onDelete,
@@ -69,7 +67,7 @@ export function SubscriptionRow({
   const controlsDisabled = busy || refreshing;
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-xl border transition-colors ${
+      className={`flex min-w-0 max-w-full flex-col overflow-hidden rounded-xl border transition-colors ${
         isActive ? "border-primary/60 bg-primary/5" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
       }`}
     >
@@ -80,7 +78,7 @@ export function SubscriptionRow({
           disabled={controlsDisabled}
           className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5 pl-1.5 pr-1 text-left disabled:cursor-default"
         >
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex w-full min-w-0 items-center gap-1.5">
             <span className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{sub.name}</span>
             {isActive && (
               <Chip color="accent" className="shrink-0">
@@ -88,17 +86,14 @@ export function SubscriptionRow({
               </Chip>
             )}
           </span>
-          <span className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400" title={sub.url}>
+          <span
+            className="block w-full min-w-0 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400"
+            title={sub.url}
+          >
             {sub.url}
           </span>
           {sub.error && <span className="line-clamp-2 text-xs text-amber-500">{sub.error}</span>}
         </button>
-        <Switch
-          aria-label={`启用 ${sub.name}`}
-          isSelected={sub.enabled}
-          isDisabled={controlsDisabled}
-          onValueChange={() => onToggle()}
-        />
       </div>
       <div className="flex items-center gap-1 border-t border-zinc-100 pl-3 dark:border-zinc-800">
         <span className="mr-auto py-1 text-xs text-zinc-500 dark:text-zinc-400">{sub.node_count} 个节点</span>

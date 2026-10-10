@@ -55,6 +55,7 @@ export {
   removeSubscription,
   setSubscriptionEnabled,
   setActiveSubscription,
+  activateSubscription,
   refreshSubscription,
   subscriptionNodeTags,
   updateSubscription,

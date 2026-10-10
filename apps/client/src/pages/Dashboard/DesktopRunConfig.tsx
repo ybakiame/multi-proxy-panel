@@ -2,7 +2,7 @@ import { Button, Card, Label, ListBox, Select, Switch } from "@pp/ui";
 import type { ClientConfig, LocalCoreView, SubscriptionView } from "@pp/client-core";
 interface Props {
   config: ClientConfig | null | undefined;
-  enabledSubs: SubscriptionView[];
+  subscriptions: SubscriptionView[];
   cores: LocalCoreView[];
   activeCore: LocalCoreView | null;
   gateMessages: string[];
@@ -22,7 +22,7 @@ interface Props {
 /** 桌面运行配置与启动门禁的展示区，查询和操作由仪表盘模型负责。 */
 export function DesktopRunConfig({
   config,
-  enabledSubs,
+  subscriptions,
   cores,
   activeCore,
   gateMessages,
@@ -49,8 +49,8 @@ export function DesktopRunConfig({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="dashboard-subscription">生效订阅</Label>
-            {enabledSubs.length === 0 ? (
-              <span className="text-xs text-muted">先到「订阅」页添加并启用订阅</span>
+            {subscriptions.length === 0 ? (
+              <span className="text-xs text-muted">先到「订阅」页添加订阅</span>
             ) : (
               <Select
                 id="dashboard-subscription"
@@ -66,7 +66,7 @@ export function DesktopRunConfig({
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {enabledSubs.map((sub) => (
+                    {subscriptions.map((sub) => (
                       <ListBox.Item key={sub.id} id={sub.id} textValue={sub.name}>
                         {sub.name} · {sub.node_count} 节点
                       </ListBox.Item>

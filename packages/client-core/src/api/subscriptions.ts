@@ -114,3 +114,9 @@ export function updateSubscription(
 ): Promise<SubscriptionView> {
   return invoke<SubscriptionView>("update_subscription", { id, name, url, profileId, userAgent });
 }
+
+/** 用户选择生效时恢复旧版停用字段；新 UI 不再提供启停开关。 */
+export async function activateSubscription(sub: SubscriptionView): Promise<void> {
+  if (!sub.enabled) await setSubscriptionEnabled(sub.id, true);
+  await setActiveSubscription(sub.id);
+}

@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Alert, Card } from "@pp/ui";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listCores, listProfiles } from "@pp/client-core";
-import { setActiveCore, toErrorMessage } from "@pp/client-core";
+import { activateSubscription, setActiveCore, toErrorMessage } from "@pp/client-core";
 import { CORES_KEY, CONFIG_KEY, PROFILES_KEY } from "@pp/client-core";
 import { SUBSCRIPTIONS_KEY, lastActionErrorAtom } from "@pp/client-core";
 import type { ClientConfig, LocalCoreView, ProfileView } from "@pp/client-core";
@@ -60,7 +60,9 @@ export default function Dashboard() {
 
   const selectSubMutation = useMutation({
     mutationFn: async (id: string) => {
-      await persistConfig({ active_subscription_id: id });
+      const sub = subs.find((item) => item.id === id);
+      if (!sub) throw new Error("订阅不存在，请刷新后重试");
+      await activateSubscription(sub);
     },
     onSuccess: () => {
       setActionError(null);
@@ -184,7 +186,6 @@ export default function Dashboard() {
   const alertError = error ?? actionError;
 
   // 运行门禁：不满足时禁止启动并逐条提示。
-  const enabledSubs = subs.filter((sub) => sub.enabled);
   const activeCore = cores.find((core) => core.active) ?? null;
 
   // 旧版 Hub 直连模式：未选择订阅但 hub_url 与 sub_token 均已配置时放行（deprecated）。
@@ -198,7 +199,7 @@ export default function Dashboard() {
     gateMessages.push("请先选择要使用的订阅");
   }
   if (activeSub && !activeSub.enabled) {
-    gateMessages.push("所选订阅已停用，请在订阅页启用或重新选择");
+    gateMessages.push("请重新选择生效订阅");
   }
   if (!config?.core_binary || !activeCore) {
     gateMessages.push("请先选择要使用的核心");
@@ -246,7 +247,7 @@ export default function Dashboard() {
 
       <DesktopRunConfig
         config={config}
-        enabledSubs={enabledSubs}
+        subscriptions={subs}
         cores={cores}
         activeCore={activeCore}
         gateMessages={gateMessages}
