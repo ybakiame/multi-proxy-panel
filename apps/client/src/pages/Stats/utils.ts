@@ -26,3 +26,11 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [value, delayMs]);
   return debounced;
 }
+
+/** 规则展示：类型 + 载荷（无载荷时仅类型，无规则时占位）。 */
+export function formatRule(rule: string, payload: string): string {
+  if (rule === "" && payload === "") {
+    return "—";
+  }
+  return payload === "" ? rule : `${rule} · ${payload}`;
+}

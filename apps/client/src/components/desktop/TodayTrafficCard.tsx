@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@pp/ui";
 import { useNavigate } from "react-router-dom";
 import { statsToday, STATS_TODAY_KEY } from "@pp/client-core";
-import { formatBytes } from "../../pages/Stats/desktop/utils";
+import { formatBytes } from "../../pages/Stats/utils";
 
 interface TodayTrafficCardProps {
   /** 核心运行中：5 秒轮询；停止时不轮询但仍展示持久化数据。 */
