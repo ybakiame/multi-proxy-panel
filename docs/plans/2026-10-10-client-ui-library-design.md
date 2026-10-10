@@ -118,9 +118,7 @@ export function Overlay(props: OverlayProps) {
 - M5：入口 `src/App.tsx`、样式 `src/index.css`、路由 `src/routes.tsx` 单源化；旧
   `src/desktop`、`src/mobile` 与 vite/tsc `@app` alias 已移除。配置入口、DNS、出站、
   路由、规则、规则集/市场、Experimental 共用实现。订阅规范路径为 `/subscriptions`。
-- 仪表盘、订阅目前仍有**页内平台实现**：分别涉及 VPN 授权与
-  桌面进程控制、订阅生效/覆写交互。它们位于同一页面目录，由页面入口编译期选择，未声称所有
-  页面逻辑已完全去重；后续按页继续收敛。因此 M5/M6 尚未全部关闭。
+- 仪表盘的 VPN 授权与桌面进程控制仍为页面内平台布局；其余共享页面的数据和操作已逐页收敛。
 - 保留桌面 Clash API 的启用开关、可选密钥和面板 UI 选择；Android 恒启用/必填密钥的
   自动纠正仅在移动构建执行。平台行为沿用既有 ADR，不把移动约束扩散至桌面。
 - 验证记录见 [UI 迁移验证](../testing/2026-10-10-client-ui-refactor.md)。
@@ -148,3 +146,9 @@ export function Overlay(props: OverlayProps) {
 设置主页共用标题、PageShell 与外观卡，GitHub 代理前缀字段共用；桌面内嵌的
 核心管理、代理测试和更新能力以分区呈现，移动保持 VPN 通知等二级入口。
 不再保留双份整页设置实现。平台设置适配器保留授权、密钥校验等明确能力差异。
+
+### 按页收敛：订阅（2026-10-10）
+
+订阅查询、增删改/启停、生效、刷新和失败处理共用；共享 Dialog/Sheet 表单保留
+桌面模板关联、UA 快选与预览，移动编辑未展示的模板绑定也保持原值。桌面表格与
+移动卡片只负责呈现，删除经确认，保存失败不关闭表单。移除旧页面/CRUD 双份实现。
