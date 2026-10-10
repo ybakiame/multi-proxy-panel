@@ -9,7 +9,7 @@ import {
   parseRuleSetTags,
 } from "@pp/client-core";
 import { MobileSelectSheet } from "../../components/MobileSelectSheet";
-import { BottomSheet, Button, Switch, inputClassName } from "../../components/ui";
+import { BottomSheet, Button, Switch, inputClassName } from "@pp/ui";
 import type { RuleSetOption } from "@pp/client-core";
 
 export type { RuleSetOption } from "@pp/client-core";
@@ -80,7 +80,7 @@ function SheetSwitchRow({
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
       <span className="min-w-0 flex-1 text-sm text-zinc-900 dark:text-zinc-100">{label}</span>
-      <Switch aria-label={label} isSelected={checked} isDisabled={disabled} onValueChange={(next) => onChange(next)} />
+      <Switch aria-label={label} isSelected={checked} isDisabled={disabled} onChange={onChange} />
     </div>
   );
 }

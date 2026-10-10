@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { Button, Checkbox, Input, Label, ListBox, Modal, Select } from "@heroui/react";
+import { Checkbox } from "@heroui/react";
+import { Button, Input, Label, ListBox, Modal, Select } from "@pp/ui";
 import type { LocalRuleInput, LocalRuleView, RuleOutboundOption } from "@pp/client-core";
 import { buildOutboundAction, isOutboundAction, outboundTagFromAction, parseRuleSetTags } from "@pp/client-core";
 import { RULE_ACTIONS } from "./types";
@@ -159,7 +160,6 @@ function RuleEditForm({
                 {matchTypeOptions.map((opt) => (
                   <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
                     {opt.label}
-                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
               </ListBox>
@@ -208,7 +208,6 @@ function RuleEditForm({
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 placeholder="例如：googleapis.com"
-                fullWidth
               />
             )}
           </div>
@@ -231,7 +230,6 @@ function RuleEditForm({
                 {RULE_ACTIONS.map((opt) => (
                   <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
                     {opt.label}
-                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
               </ListBox>
@@ -269,7 +267,6 @@ function RuleEditForm({
                             <span className="truncate">{opt.label}</span>
                             {opt.hint && <span className="truncate text-xs text-muted">{opt.hint}</span>}
                           </span>
-                          <ListBox.ItemIndicator />
                         </ListBox.Item>
                       ))}
                     </ListBox>
@@ -289,7 +286,6 @@ function RuleEditForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="留空则自动生成摘要"
-            fullWidth
           />
         </div>
 
@@ -320,14 +316,13 @@ function RuleEditForm({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="可选备注"
-                fullWidth
               />
             </div>
           </div>
         </div>
       </Modal.Body>
       <Modal.Footer>
-        <Button slot="close" variant="tertiary" onPress={onClose}>
+        <Button variant="tertiary" onPress={onClose}>
           取消
         </Button>
         <Button variant="primary" isDisabled={!canSave} onPress={handleSave}>
