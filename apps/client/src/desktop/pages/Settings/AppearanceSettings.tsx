@@ -1,4 +1,4 @@
-import { Card } from "@heroui/react";
+import { Card } from "@pp/ui";
 import { useThemePreference } from "@pp/client-core";
 import { ComputerDesktopIcon, MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 

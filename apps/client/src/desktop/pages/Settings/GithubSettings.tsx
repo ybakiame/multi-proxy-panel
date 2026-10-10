@@ -1,4 +1,4 @@
-import { Button, Card, Input, Label, Switch } from "@heroui/react";
+import { Button, Card, Input, Label, Switch } from "@pp/ui";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { testGithubProxy, toErrorMessage } from "@pp/client-core";
 
@@ -72,7 +72,6 @@ export default function GithubSettings({ settings }: GithubSettingsProps) {
               persistDebounced({ github_proxy_prefix: event.target.value });
             }}
             placeholder="https://gh-proxy.com"
-            fullWidth
           />
           <span className="break-words text-xs text-muted">
             GitHub 链接将拼接前缀访问，例如 https://gh-proxy.com/https://raw.githubusercontent.com/…；留空则直连
