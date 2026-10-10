@@ -27,6 +27,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 - **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
 - **Client** (`apps/client`): 客户端（Linux/Windows/macOS/Android，Tauri 壳 + React 前端，单包双入口单壳双目标，见 ADR-0007）：前端 `src/desktop`（HeroUI）/ `src/mobile`（**Konsta UI**，iOS/Material 双主题）经 vite mode 构建期分发；壳 `src-tauri` 为独立 cargo 项目，经 target 依赖表与 cfg 适配层区分桌面/移动目标。桌面端含 MITM / 脚本引擎 / 核心管理等专属能力；Android 端核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM
 - **`packages/client-core`** (`@pp/client-core`): desktop/mobile 共享前端库（api 的 invoke 封装 + hooks + atoms + 纯工具），两端 UI 一律经它调用 Tauri 命令
+- **`packages/ui`** (`@pp/ui`): 自研前端组件库（ADR-0013，建设中）：Base UI 行为层 + Tailwind v4 语义令牌，`IS_MOBILE` 编译期分发桌面/移动呈现；迁移完成后取代 HeroUI/Konsta
 
 ---
 
@@ -106,7 +107,7 @@ bun run --filter pp-web format
 bun run --filter pp-web verify
 ```
 
-提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-app` / `--filter @pp/client-core`）并全部通过。
+提交前端改动前必须执行对应 app / package 的 `verify`（`--filter pp-web` / `--filter pp-client-app` / `--filter @pp/client-core` / `--filter @pp/ui`）并全部通过。
 
 > **Android（移动端）构建**：APK 打包涉及 NDK 交叉编译、`panel-core` AAR 与 GEO 数据，完整步骤见 `docs/development.md` 的「Android 客户端构建」章节，不在此重复。
 
@@ -115,7 +116,7 @@ bun run --filter pp-web verify
 仓库通过 husky 配置 `pre-commit` 钩子（`bun install` 时 prepare 自动安装）做**本地检查**：
 - `scripts/check-file-size.sh`：文件规模门禁（业务 >500 行 / 测试 >1000 行拦截，>400 行告警，规则见 `.agents/rules/code-organization.md`）
 - 暂存含 Rust 文件时 `cargo fmt --all --check` + **快速 Rust 编译门禁**（`PP_RUST_GATE_FAST=1 scripts/check-rust-gates.sh`：根 workspace clippy + 客户端壳 host clippy + 有 NDK 时 Android target 检查；暖缓存下约几十秒）
-- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / client / client-core 全覆盖）
+- 暂存含前端文件时对对应 app / package 跑 oxlint + oxfmt（panel / client / client-core / ui 全覆盖）
 
 Rust 编译门禁用于拦截「host 全绿但壳或 Android target 编译失败」类问题（客户端壳是独立 cargo 项目、Android 代码有 cfg 裁剪，根 workspace 检查存在盲区）；完整验证（test/verify）仍以 CI 为权威门禁；请勿用 `--no-verify` 绕过。
 
@@ -296,6 +297,7 @@ desktop/mobile 双应用），平台差异全部为**编译期事实**：
 | 载体 | 形态 | 职责 |
 |------|------|------|
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）、hooks、atoms、纯工具；两端 UI 禁止直接 `invoke()` |
+| `packages/ui`（`@pp/ui`） | 前端组件库 | Base UI + Tailwind 令牌（ADR-0013，建设中）；`IS_MOBILE` 编译期分发双端呈现 |
 | `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
 | `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题，设置页可切换，默认 iOS） | vite `--mode android`；双产物互不含对方 UI 库 |
 | `apps/client/src-tauri` | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表使 Android 构建图不含 `pp-mitm` |
@@ -397,7 +399,7 @@ git commit -m "refactor(db): 提取流量查询为独立 service 方法"
 - 集成测试：`crates/pp-client/tests/real_core_e2e.rs` 是真实 sing-box 全链路 e2e，默认 `#[ignore]`，需手动运行 `cargo test -p pp-client --test real_core_e2e -- --include-ignored`（需真实 sing-box 二进制，见文件头注释）
 - 数据库测试：使用 `tokio-test` + 内存 SQLite
 - gRPC 测试：使用 `tonic` 的内存通道
-- 前端验证能力：`apps/panel`、`apps/client`、`packages/client-core` **没有单元测试运行器**，其 `verify` = 构建 + oxlint + oxfmt；前端改动的自动化边界即该 verify + 手动验证
+- 前端验证能力：`apps/panel`、`apps/client`、`packages/client-core`、`packages/ui` **没有单元测试运行器**，其 `verify` = 构建 + oxlint + oxfmt；前端改动的自动化边界即该 verify + 手动验证
 - 权威门禁：`.github/workflows/ci.yml`（Rust fmt/clippy/test + 客户端壳双目标 + 前端三包 verify）；涉及 Rust 的提交前本地跑 `bun run verify:rust`
 
 ---

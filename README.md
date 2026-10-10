@@ -222,7 +222,8 @@ proxy-panel/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
 │   └── client/             # 客户端：单一 Tauri 2 应用（单包双入口/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
 ├── packages/
-│   └── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
+│   ├── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
+│   └── ui/                 # @pp/ui：自研组件库（ADR-0013，Base UI + Tailwind 令牌，建设中）
 ├── docs/                   # 项目文档（索引见 docs/index.md）
 ├── scripts/                # 辅助脚本
 └── CHANGELOG.md            # 变更日志

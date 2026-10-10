@@ -1,0 +1,229 @@
+/**
+ * @pp/ui 令牌体系（ADR-0013 D3）。
+ *
+ * 设计要点：
+ * - 沿用 HeroUI v3 语义令牌命名（bg-surface / text-muted / border-border …），
+ *   浅色/深色取值镜像 @heroui/styles themes/default/variables.css —— 迁移期
+ *   与该包并存时同 key 同值不冲突，桌面迁移得以「换 import 不换 class」；
+ * - `--color-primary` 为 @pp/ui 自有令牌：HeroUI 未定义它（桌面现存
+ *   `bg-primary` 等类为静默死工具类），此处桌面映射 accent、移动端按
+ *   [data-ui-style] 域取品牌蓝（对齐 Konsta brand-primary #007aff 现状）；
+ * - 三层作用域：`:root` 浅色 / `.dark` 深色（client-core 主题模块同步 class）/
+ *   `[data-ui-style="ios"|"material"]` 移动双主题（移动壳 ThemeProvider 同步属性，
+ *   桌面不设置该属性、不受影响）；
+ * - `@theme inline` 使工具类解析为运行时 var() 引用，深浅色切换无需重建 CSS。
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  /* 基础 */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+
+  /* 表面层级 */
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-hover: var(--surface-hover);
+  --color-overlay: var(--overlay);
+
+  /* 边线与焦点 */
+  --color-border: var(--border);
+  --color-separator: var(--separator);
+  --color-focus: var(--focus);
+
+  /* 品牌主色（@pp/ui 自有，见文件头说明） */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  /* 强调色（accent 族） */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
+  --color-accent-soft-hover: var(--accent-soft-hover);
+
+  /* 中性色（default 族） */
+  --color-default: var(--default);
+  --color-default-hover: var(--default-hover);
+  --color-default-foreground: var(--default-foreground);
+  --color-default-soft: var(--default-soft);
+  --color-default-soft-foreground: var(--default-soft-foreground);
+  --color-default-soft-hover: var(--default-soft-hover);
+
+  /* 状态色（success / warning / danger 族） */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-hover: var(--success-hover);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-success-soft-hover: var(--success-soft-hover);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-hover: var(--warning-hover);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-warning-soft-hover: var(--warning-soft-hover);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-foreground: var(--danger-soft-foreground);
+  --color-danger-soft-hover: var(--danger-soft-hover);
+
+  /* 表单域 */
+  --color-field-background: var(--field-background);
+  --color-field-foreground: var(--field-foreground);
+  --color-field-placeholder: var(--field-placeholder);
+  --color-field-border: var(--field-border);
+  --color-field-hover: var(--field-hover);
+  --color-field-border-hover: var(--field-border-hover);
+  --color-field-border-focus: var(--field-border-focus);
+
+  /* 遮罩 */
+  --color-backdrop: var(--backdrop);
+
+  /* 半径与阴影（rounded-field / shadow-surface / shadow-overlay） */
+  --radius-field: var(--field-radius);
+  --shadow-surface: var(--surface-shadow);
+  --shadow-overlay: var(--overlay-shadow);
+  --shadow-field: var(--field-shadow);
+}
+
+@layer base {
+  /* ============ 浅色（默认）============ */
+  /* 取值镜像 @heroui/styles themes/default/variables.css light 域 */
+  :root {
+    color-scheme: light;
+
+    --background: oklch(0.9702 0 0);
+    --foreground: oklch(0.2103 0.0059 285.89);
+    --muted: oklch(0.5517 0.0138 285.94);
+
+    --surface: oklch(100% 0 0);
+    --surface-secondary: oklch(0.9524 0.0013 286.37);
+    --surface-tertiary: oklch(0.9373 0.0013 286.37);
+    --surface-hover: color-mix(in oklab, var(--surface) 92%, var(--foreground) 8%);
+    --overlay: oklch(100% 0 0);
+
+    --border: oklch(90% 0.004 286.32);
+    --separator: oklch(92% 0.004 286.32);
+    --focus: var(--accent);
+
+    /* 品牌主色：桌面默认与 accent 同色；移动端由 [data-ui-style] 域覆写 */
+    --primary: var(--accent);
+    --primary-foreground: var(--accent-foreground);
+
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.9911 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --accent-soft: color-mix(in oklab, var(--accent) 15%, transparent);
+    --accent-soft-foreground: color-mix(in oklab, var(--accent) 70%, var(--foreground) 30%);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 20%, transparent);
+
+    --default: oklch(94% 0.001 286.375);
+    --default-foreground: oklch(0.2103 0.0059 285.89);
+    --default-hover: color-mix(in oklab, var(--default) 96%, var(--default-foreground) 4%);
+    --default-soft: color-mix(in oklab, var(--default) 50%, transparent);
+    --default-soft-foreground: var(--default-foreground);
+    --default-soft-hover: color-mix(in oklab, var(--default) 60%, transparent);
+
+    --success: oklch(0.7329 0.1935 150.81);
+    --success-foreground: oklch(0.2103 0.0059 285.89);
+    --success-hover: color-mix(in oklab, var(--success) 90%, var(--success-foreground) 10%);
+    --success-soft: color-mix(in oklab, var(--success) 15%, transparent);
+    --success-soft-foreground: color-mix(in oklab, var(--success) 80%, var(--foreground) 60%);
+    --success-soft-hover: color-mix(in oklab, var(--success) 20%, transparent);
+
+    --warning: oklch(0.7819 0.1585 72.33);
+    --warning-foreground: oklch(0.2103 0.0059 285.89);
+    --warning-hover: color-mix(in oklab, var(--warning) 90%, var(--warning-foreground) 10%);
+    --warning-soft: color-mix(in oklab, var(--warning) 15%, transparent);
+    --warning-soft-foreground: color-mix(in oklab, var(--warning) 80%, var(--foreground) 70%);
+    --warning-soft-hover: color-mix(in oklab, var(--warning) 20%, transparent);
+
+    --danger: oklch(0.6532 0.2328 25.74);
+    --danger-foreground: oklch(0.9911 0 0);
+    --danger-hover: color-mix(in oklab, var(--danger) 90%, var(--danger-foreground) 10%);
+    --danger-soft: color-mix(in oklab, var(--danger) 15%, transparent);
+    --danger-soft-foreground: color-mix(in oklab, var(--danger) 70%, var(--foreground) 40%);
+    --danger-soft-hover: color-mix(in oklab, var(--danger) 20%, transparent);
+
+    --field-background: oklch(100% 0 0);
+    --field-foreground: oklch(0.2103 0.0059 285.89);
+    --field-placeholder: var(--muted);
+    --field-border: transparent;
+    --field-hover: color-mix(in oklab, var(--field-background) 90%, var(--field-foreground) 2%);
+    --field-border-hover: color-mix(in oklab, var(--border) 88%, var(--field-foreground) 10%);
+    --field-border-focus: color-mix(in oklab, var(--border) 74%, var(--field-foreground) 22%);
+
+    --backdrop: rgb(0 0 0 / 0.5);
+
+    --radius: 0.5rem;
+    --field-radius: calc(var(--radius) * 1.5);
+
+    --surface-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 0 1px 0 rgb(0 0 0 / 0.06);
+    --overlay-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.06), 0 -6px 12px 0 rgb(0 0 0 / 0.03), 0 14px 28px 0 rgb(0 0 0 / 0.08);
+    --field-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 0 1px 0 rgb(0 0 0 / 0.06);
+  }
+
+  /* ============ 深色 ============ */
+  /* 取值镜像 @heroui/styles themes/default/variables.css dark 域 */
+  .dark {
+    color-scheme: dark;
+
+    --background: oklch(12% 0.005 285.823);
+    --foreground: oklch(0.9911 0 0);
+    --muted: oklch(70.5% 0.015 286.067);
+
+    --surface: oklch(0.2103 0.0059 285.89);
+    --surface-secondary: oklch(0.257 0.0037 286.14);
+    --surface-tertiary: oklch(0.2721 0.0024 247.91);
+    --overlay: oklch(0.2103 0.0059 285.89);
+
+    --border: oklch(28% 0.006 286.033);
+    --separator: oklch(25% 0.006 286.033);
+
+    --default: oklch(27.4% 0.006 286.033);
+    --default-foreground: oklch(0.9911 0 0);
+
+    --warning: oklch(0.8203 0.1388 76.34);
+    --danger: oklch(0.594 0.1967 24.63);
+
+    --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+    --accent-soft-foreground: color-mix(in oklab, var(--accent) 80%, var(--foreground) 30%);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 16%, transparent);
+
+    --danger-soft: color-mix(in oklab, var(--danger) 15%, transparent);
+    --danger-soft-foreground: color-mix(in oklab, var(--danger) 80%, var(--foreground) 30%);
+
+    --warning-soft: color-mix(in oklab, var(--warning) 12%, transparent);
+    --warning-soft-foreground: color-mix(in oklab, var(--warning) 80%, var(--foreground) 30%);
+    --warning-soft-hover: color-mix(in oklab, var(--warning) 16%, transparent);
+
+    --success-soft: color-mix(in oklab, var(--success) 12%, transparent);
+    --success-soft-foreground: color-mix(in oklab, var(--success) 80%, var(--foreground) 30%);
+    --success-soft-hover: color-mix(in oklab, var(--success) 16%, transparent);
+
+    --field-background: oklch(0.2103 0.0059 285.89);
+    --field-foreground: var(--foreground);
+
+    --backdrop: rgb(0 0 0 / 0.6);
+
+    --surface-shadow: 0 0 0 0 transparent inset;
+    --overlay-shadow: 0 0 1px 0 rgb(255 255 255 / 0.3) inset;
+    --field-shadow: 0 0 0 0 transparent inset;
+  }
+
+  /* ============ 移动双主题域 ============ */
+  /* 仅移动壳在 <html> 设置 data-ui-style；品牌主色对齐 Konsta 现状
+     （brand-primary #007aff，Material 主题亦由该色派生 tonal 调色板）。 */
+  [data-ui-style="ios"],
+  [data-ui-style="material"] {
+    --primary: oklch(0.5623 0.2093 259.82); /* #007aff */
+    --primary-foreground: oklch(100% 0 0);
+  }
+}

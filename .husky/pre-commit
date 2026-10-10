@@ -26,6 +26,9 @@ fi
 if echo "$files" | grep -qE '^apps/client/.*\.(ts|tsx)$'; then
     bun run --filter pp-client-app lint && bun run --filter pp-client-app format:check
 fi
-if echo "$files" | grep -qE '^packages/.*\.(ts|tsx)$'; then
+if echo "$files" | grep -qE '^packages/client-core/.*\.(ts|tsx)$'; then
     bun run --filter @pp/client-core lint && bun run --filter @pp/client-core format:check
+fi
+if echo "$files" | grep -qE '^packages/ui/.*\.(ts|tsx|css)$'; then
+    bun run --filter @pp/ui lint && bun run --filter @pp/ui format:check
 fi

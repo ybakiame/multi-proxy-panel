@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
     // prevent vite from obscuring rust errors
     clearScreen: false,
     plugins: [react(isAndroid ? {} : { compiler: true }), tailwindcss()],
+    // ADR-0013 D2：编译期平台事实注入 @pp/ui（IS_MOBILE 分支经 DCE 裁剪死代码）
+    define: {
+      __PP_PLATFORM__: JSON.stringify(isAndroid ? "mobile" : "desktop"),
+    },
     base: "./",
     resolve: {
       alias: {

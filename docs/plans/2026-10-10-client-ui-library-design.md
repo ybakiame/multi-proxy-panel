@@ -42,7 +42,7 @@ ADR-0011 当时对比过 U1（单 UI 库统一 Konsta 全端）/U2（共享视�
 
 机制选型对比后用户选定**方案 A**：
 
-- vite `define` 注入 `__PP_PLATFORM__`（desktop/android），组件内以 `IS_MOBILE` 常量分支 + 内部子模块拆分（如 `select/Dropdown.tsx` | `select/SheetPicker.tsx`），靠 DCE 裁掉死分支
+- vite `define` 注入 `__PP_PLATFORM__`（desktop/mobile），组件内以 `IS_MOBILE` 常量分支 + 内部子模块拆分（如 `select/Dropdown.tsx` | `select/SheetPicker.tsx`），靠 DCE 裁掉死分支
 - 拒绝方案 B（`.desktop.tsx`/`.mobile.tsx` 后缀 + vite resolve 插件）：引入第二套平台分发机制（与 define 并存），tsc/声明文件编排复杂——与 ADR-0011 拒 U3 同理
 
 T2 组件形态示例：

@@ -1,0 +1,29 @@
+{
+  "name": "@pp/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "客户端自研组件库（ADR-0013）：Base UI headless 底座 + Tailwind v4 语义令牌，编译期平台分发（源码直出，无构建步骤）",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "lint": "oxlint src/ --deny-warnings",
+    "format": "oxfmt src/",
+    "format:check": "oxfmt --check src/",
+    "typecheck": "tsc --noEmit",
+    "verify": "bun run typecheck && bun run lint && bun run format:check"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "clsx": "^2.1.1",
+    "react": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "oxfmt": "^0.64.0",
+    "oxlint": "^1.79.0",
+    "typescript": "^7.0.2"
+  }
+}

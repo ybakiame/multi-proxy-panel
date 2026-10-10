@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* @pp/ui 语义令牌（ADR-0013 D3）：与 @heroui/styles 同 key 同值镜像，迁移期并存不冲突。 */
+@import "@pp/ui/tokens.css";
 @import "@heroui/styles";
 
 html,
