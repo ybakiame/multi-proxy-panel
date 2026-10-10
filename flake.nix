@@ -2,9 +2,14 @@
   description = "ProxyPanel 开发环境：Rust(mobile/desktop/后端) + Android(NDK/SDK) + Go(panelcore) + 前端(Bun)";
 
   nixConfig = {
-    extra-substituters = [
-      "https://mirrors.ustc.edu.cn/nix-channels/store"
+    substituters = [
+      "https://mirrors.ustc.edu.cn/nix-channels/store?priority=10"
+      "https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store?priority=15"
+      "https://mirror.sjtu.edu.cn/nix-channels/store?priority=20"
       "https://cache.nixos.org"
+    ];
+    extra-substituters = [
+      "https://mirrors.cernet.edu.cn/nix-channels/store"
     ];
     extra-trusted-public-keys = [
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
@@ -85,6 +90,8 @@
         android-sdk jdk17 gradle
         go
         bun nodejs
+        llvmPackages.libclang
+        clang
       ]);
 
       env = {
@@ -111,6 +118,7 @@
       };
 
       shellHook = ''
+        export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib";
         export PKG_CONFIG_PATH="${pkgs.webkitgtk_4_1.dev}/lib/pkgconfig:${pkgs.gtk3.dev}/lib/pkgconfig:${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
         export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath desktopLibs}:$LD_LIBRARY_PATH"
         echo "ProxyPanel dev shell: go=$(go version 2>/dev/null | cut -d' ' -f3) bun=$(bun --version 2>/dev/null) ndk=$(basename "$ANDROID_NDK_ROOT")"
