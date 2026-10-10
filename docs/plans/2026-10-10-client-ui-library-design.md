@@ -87,7 +87,7 @@ export function Overlay(props: OverlayProps) {
 |--------|------|----------|
 | **M0** 独立修复 | 桌面规则出站选择器：outboundOptions 三源并集下沉 client-core 共享 hook，移动端改消费，桌面 RuleEditModal 放开 outbound + 出站 Select | 三包 verify 绿；双端规则出站能力对齐（独立于组件库，先行交付） |
 | **M1** 脚手架 | `@pp/ui` 建包 + 令牌体系 + vite define + T0 全部 + T1 基础（Button/Switch/Input/Field）+ 移动双主题令牌域 | Base UI spike 通过（不过则转 RAC 后备并记录）；桌面某页试点换装 |
-| **M2** Overlay 族 | Base UI Dialog/Select 封装 + 自研 BottomSheet；建 a11y 对照清单（焦点陷阱/Esc/aria 属性逐项核对） | 清单全绿；桌面 Modal/移动 Sheet 各一处试点 |
+| **M2** Overlay 族 ✅(2026-10-10) | Base UI Dialog/Select 封装 + ~~自研 BottomSheet~~（实际采用 Base UI 1.9 原生 Drawer，获得滑动关闭手势）；建 a11y 对照清单（焦点陷阱/Esc/aria 属性逐项核对） | 清单全绿；桌面 Modal/移动 Sheet 各一处试点 |
 | **M3** 桌面迁移 | 全桌面换 import（T0/T1/T2），自研 Table 9 处，删 `@heroui/*` 依赖 | 桌面 verify 绿；HeroUI 依赖移除 |
 | **M4** 移动迁移 | 壳层惯用法自研（TabBar/Navbar/FAB/Segmented/List），删 `konsta` 依赖 | 移动 verify 绿；Konsta 依赖移除 |
 | **M5** 页面树合一 | 试点 Config/Rules 合一 → Shell/路由表合一 → 推广全部页面；删 `src/desktop`、`src/mobile` 树 | 单一 `src/pages` + `@pp/ui` 分发；vite `@app` alias 退役 |
