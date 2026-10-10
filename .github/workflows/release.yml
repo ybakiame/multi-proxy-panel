@@ -138,6 +138,8 @@ jobs:
       # prost-build（pp-proto）在 Windows runner 上构建需要 protoc。
       - name: Install protoc
         uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

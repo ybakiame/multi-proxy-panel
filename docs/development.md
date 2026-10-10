@@ -281,6 +281,9 @@ Release 的 `desktop-windows` 同参数构建 Windows NSIS 安装包，但只上
 （保留 7 天），不创建 Release。触发时可选目标架构（x86_64 / aarch64 / both）
 与是否注入 updater 签名密钥（默认不签名，避免与正式发布更新包混淆）。
 
+protoc 安装步骤向 `arduino/setup-protoc@v3` 的 `repo-token` 传入 `secrets.GITHUB_TOKEN`，
+避免 Windows runner 匿名 GitHub API 限流；测试与 release 工作流保持一致。
+
 ### Windows 桌面端构建
 
 客户端（`apps/client`，Tauri 2）支持 Windows 安装包（NSIS，x86_64 / aarch64 双架构）。
