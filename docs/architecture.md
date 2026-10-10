@@ -296,21 +296,23 @@ flowchart TD
 
 客户端自 ADR-0007 起是**单一 Tauri 应用** `apps/client`（单包双入口、单壳双目标），平台差异全部为**编译期事实**；前端共享库与 Rust 共享命令层各自单份实现（ADR-0003 的分离收益由编译期机制保留）。
 
-**桌面目标**（`apps/client/src/desktop` + 壳的 `desktop/` 适配层）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
+**桌面目标**（`apps/client/src/pages` 的桌面呈现 + 壳的 `desktop/` 适配层）运行于 Linux/Windows/macOS：经由 Hub 的公开订阅端点拉取节点配置，在本地驱动 sing-box 核心（桌面端已移除 mihomo 支持；Clash 格式订阅在拉取时经 `node_convert` 转换为 sing-box 节点运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密抓包、请求响应重写、QX/Surge/Loon 脚本兼容与本地定时任务。
 
-**Android 目标**（`apps/client/src/mobile` + 壳的 `mobile/` 适配层）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（`apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`）。
+**Android 目标**（`apps/client/src/pages` 的移动呈现 + 壳的 `mobile/` 适配层）面向 Android：核心由内置 Go 引擎（`panel-core`，gomobile 合并 libbox/mihomo 为单一 `panelcore.aar`）提供，经 Kotlin 桥驱动并以 VPN 模式接管流量；无 MITM（`apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`）。
 
 | 载体 | 类型 | 职责 |
 |------|------|------|
-| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
-| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src/pages` | 双端单一页面目录 | Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental 共用实现；少量历史平台能力/交互差异仍在页内分支 |
+| `apps/client/src/routes.tsx` / `App.tsx` | 单一路由表与入口 | sharedRoutes + `IS_MOBILE` 平台路由；订阅规范路径 `/subscriptions`，`/nodes` 与旧规则路径保留重定向；`@app` alias 已移除 |
 | `apps/client/src-tauri`（`pp-client-app`） | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表裁剪 Android 构建图 |
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）/ hooks / atoms / 纯工具；两端 UI 禁止直接 `invoke()` |
-| `packages/ui`（`@pp/ui`） | 自研前端组件库（ADR-0013，建设中） | Base UI 行为层 + Tailwind v4 语义令牌（`tokens.css`），`IS_MOBILE` 编译期分发桌面/移动呈现；迁移完成后取代 HeroUI/Konsta |
+| `packages/ui`（`@pp/ui`） | 自研前端组件库（ADR-0013） | Base UI 行为层 + Tailwind v4 语义令牌（`tokens.css`），`IS_MOBILE` 编译期分发桌面/移动呈现；客户端已移除 HeroUI/Konsta |
 | `pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 通用命令单份实现；Android 专属 `core_bridge`（`cfg(target_os = "android")`）也在此 crate |
 | `pp-script` | 脚本引擎层 | QuickJS 运行时 + QX/Surge/Loon 三方言 API 适配 + cron 调度 |
 | `pp-mitm` | HTTPS MITM 引擎 | CA 管理、hudsucker 封装、重写 / 脚本钩子 / 抓包、上游代理（桌面目标专属，Android 构建图不含） |
 | `pp-client` | 客户端核心库 / 引擎层 | 订阅同步、核心配置合成、系统代理、生命周期编排；`CoreEngineBridge` 抽象——桌面 spawn sing-box 子进程 / Android 经 Kotlin 桥驱动 Go 引擎 |
+
+客户端布局由 `@pp/ui` 的 Shell 分发（桌面 Sidebar、移动 TabBar），Modal / SelectField / DataList 分别分发弹窗与抽屉、下拉与 sheet-picker、表格与卡片。移动主题属性挂在 `<html data-ui-style>`，确保 portal 弹层继承 iOS/Material 令牌。双端 ToastRegion 统一消费 client-core 静态队列，不调用 view-transition。
 
 > `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（桌面目标上 mitm 等仍可能因环境禁用）；UI 平台差异是编译期事实，desktop UI 已不再消费该字段。Tauri 配置为桌面基线 `tauri.conf.json` + Android overlay `tauri.android.conf.json`（RFC 7396 合并：devUrl / 构建命令 / bundle 差异）。
 
@@ -358,14 +360,14 @@ flowchart TD
 
 由 ADR-0003 的 desktop / mobile 双应用合并而来（ADR-0007 回摆为单应用）：
 
-- **桌面目标**: Tauri 2（独立 cargo 项目 `apps/client/src-tauri`，包名 `pp-client-app`，**退出根 workspace**）+ 桌面 UI（React 19 / Vite 8 / Tailwind CSS 4 / HeroUI 3.2），Bun 作为包管理器；页面为仪表盘（`/`）、节点（`/nodes`）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`）共 5 页
+- **桌面目标**: Tauri 2（独立 cargo 项目 `apps/client/src-tauri`，包名 `pp-client-app`，**退出根 workspace**）+ 桌面呈现（React 19 / Vite 8 / Tailwind CSS 4 / `@pp/ui`），Bun 作为包管理器；页面为仪表盘（`/`）、订阅（`/subscriptions`，`/nodes` 重定向）、MITM（`/mitm`）、脚本（`/scripts`）、设置（`/settings`），以及代理、连接、统计、覆写、日志与配置子页
 - **通知**: `tauri-plugin-notification` 桌面通知
 - **壳**: 注册共享层命令（`pp-client-tauri`）+ 平台专属命令——桌面：mitm / core_mgmt / remote / tun 授权 / gpu_acceleration 等，含 WSL WebKitGTK workaround；Android：`core_bridge` 三命令与 vpn 插件注册
 - **数据目录**: 桌面解析为桌面语义（`~/.proxy-panel-client`）；Android 使用应用私有目录（`app_data_dir()`，HOME 在 Android 为只读 `/`）
 
 ### Android 目标（同一 `apps/client` 的移动目标）
 
-- **技术栈**: 同一壳的移动目标（`tauri.android.conf.json` overlay）+ 移动 UI（React 19 / Tailwind CSS 4 / **Konsta UI**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
+- **技术栈**: 同一壳的移动目标（`tauri.android.conf.json` overlay）+ 移动 UI（React 19 / Tailwind CSS 4 / **@pp/ui**，iOS/Material 双主题可在设置中切换，默认 iOS），Bun 作为包管理器
 - **核心引擎**: 内置 Go 模块 `panel-core`（`apps/client/panel-core`）经 gomobile 产出 `panelcore.aar`，由 Kotlin `VpnPlugin` / `ProxyVpnService` 以 VPN 模式驱动
 - **无 MITM**: `apps/client/src-tauri` 的 target 依赖表使 Android 构建图不含 `pp-mitm`（ADR-0003 §3.5 的依赖图隔离思路由 ADR-0007 §2 保留）
 - **构建**: 交叉编译与 AAR 打包见 `docs/development.md`「Android 客户端构建」

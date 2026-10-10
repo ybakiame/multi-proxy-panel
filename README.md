@@ -55,7 +55,7 @@ flowchart TB
     hub -- "gRPC（双向流）" --> agent
 ```
 
-客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：桌面 UI（HeroUI）与移动 UI（Konsta）经 vite mode 构建期分发，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
+客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：双端共用 `src/pages` 与 `@pp/ui`（Base UI + Tailwind），经 vite define 构建期分发呈现，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
 
 ```mermaid
 flowchart TB
@@ -220,7 +220,7 @@ proxy-panel/
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
 │   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
-│   └── client/             # 客户端：单一 Tauri 2 应用（单包双入口/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
+│   └── client/             # 客户端：单一 Tauri 2 应用（共享页面/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
 ├── packages/
 │   ├── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
 │   └── ui/                 # @pp/ui：自研组件库（ADR-0013，Base UI + Tailwind 令牌，建设中）
@@ -248,7 +248,7 @@ proxy-panel/
 | `pp-client` | 客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
 | `pp-client-tauri` | 双端共享 Tauri 命令层：state / logs / capabilities / 35 条通用命令单份实现，Android 专属 core_bridge（cfg 门控） | 库 |
 | `@pp/client-core` | desktop/mobile 共享前端库：api 的 invoke 封装 + hooks + atoms + 纯工具（bun workspaces 成员） | 库 |
-| `apps/client` | Tauri 2 客户端（React 19 + Vite 8，单包双入口：桌面 HeroUI / 移动 Konsta + Go 核心 `panel-core`；壳为退出根 workspace 的独立 cargo 项目） | 桌面（Linux/Windows/macOS）+ Android 应用 |
+| `apps/client` | Tauri 2 客户端（React 19 + Vite 8，单页面目录双目标：`@pp/ui` + 移动 Go 核心 `panel-core`；壳为退出根 workspace 的独立 cargo 项目） | 桌面（Linux/Windows/macOS）+ Android 应用 |
 
 ## 支持的协议
 

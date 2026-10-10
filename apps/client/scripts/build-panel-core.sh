@@ -41,7 +41,7 @@ set -euo pipefail
 #     差异：-androidapi 33（对齐 App minSdk）、-javapkg com.proxypanel.core
 #     （官方为 21 / io.nekohasekai）。
 #   - 同步提醒：升级 sing-box 或调整下方 `-tags` 后，请同步更新关于页常量
-#     apps/client/src/mobile/coreBuildInfo.ts 的 SING_BOX_BUILD_TAGS（两者必须一致）；
+#     apps/client/src/lib/coreBuildInfo.ts 的 SING_BOX_BUILD_TAGS（两者必须一致）；
 #     sing-box 版本由关于页经运行时 libbox.Version() 动态读取，无需硬编码。
 #   - ABI 只编 arm64-v8a + x86_64，与
 #     apps/client/src-tauri/gen/android/app/build.gradle.kts 的

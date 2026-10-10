@@ -1,12 +1,12 @@
-// 浏览器调试 mock 必须先于所有 @pp/client-core / @app 导入执行（env.ts 的
+// 浏览器调试 mock 必须先于所有 @pp/client-core / App 导入执行（env.ts 的
 // isTauriEnv 在模块加载时求值），故保持为首行 import。
 import "./browser-debug";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { installLogCapture } from "@pp/client-core";
-import App from "@app/App";
-import "@app/index.css";
+import App from "./App";
+import "./index.css";
 
 // 挂载 React 前先接入日志管道：应用早期（模块初始化/渲染）的 console 错误
 // 也能被捕获转发到后端。
@@ -24,7 +24,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// `@app` 由 vite mode alias 构建期分发到 src/desktop 或 src/mobile（见 vite.config.ts）。
+// 页面与路由共用；平台呈现由 @pp/ui 的编译期常量决定。
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -77,7 +77,7 @@ bun run --filter pp-web build
 | 异步运行时 | Tokio |
 | 数据库 | Sea-ORM (PostgreSQL / SQLite) |
 | 前端框架 | React 19 + TypeScript + Vite 8 + HeroUI 3 + Tailwind CSS v4 |
-| 客户端 | Tauri 2（单壳双目标：桌面 HeroUI / Android Konsta + Go 核心 `panel-core`） |
+| 客户端 | Tauri 2（单壳双目标：双端 @pp/ui / Android Go 核心 `panel-core`） |
 | 序列化 | Serde + Protobuf |
 | 观测 | Tracing + Metrics |
 

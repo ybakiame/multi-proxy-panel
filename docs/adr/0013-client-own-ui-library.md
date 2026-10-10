@@ -35,7 +35,7 @@ ADR-0011 对比过 U1（Konsta 全端单 UI 树，暂缓——桌面观感退让
 
 **D3 设计令牌**：沿用 HeroUI 语义令牌名（`bg-surface`/`text-muted` 等，Tailwind v4 `@theme` 实现），桌面迁移换 import 不换 class。三层作用域：`:root` 浅色 / `.dark` 深色（不动 client-core 主题模块）/ `[data-ui-style=ios|material]` 移动双主题（沿用 `pp-ui-style` 存储键）。Material 波纹后置，首期统一按压态。
 
-**D4 依赖收敛**：HeroUI 与 Konsta **全部移除**；Konsta 壳层惯用法（TabBar/Navbar/FAB/Segmented/List）自研。Base UI 无 Table/BottomSheet，自研；DataList 列定义形状镜像 TanStack Table 以备日后接入。
+**D4 依赖收敛**：HeroUI 与 Konsta **全部移除**；Konsta 壳层惯用法（TabBar/Navbar/FAB/Segmented/List）自研。Base UI 无 Table；BottomSheet 使用 Base UI 1.9 Drawer（原生滑动关闭）；DataList 列定义形状镜像 TanStack Table 以备日后接入。
 
 **D5 页面树合一**：单一权威路由表 `sharedRoutes + IS_MOBILE 平台专属数组`（旧路径双端保留重定向）；Shell 作 T2 分发；平台专属能力编译期走 `IS_MOBILE`、运行时数据依赖走 `get_capabilities`。按页原子迁移。**不引入 TanStack Router**（路由非漂移源，不与本次迁移捆绑）。
 
@@ -62,3 +62,11 @@ ADR-0011 对比过 U1（Konsta 全端单 UI 树，暂缓——桌面观感退让
 - **U1 Konsta 全端**：桌面观感退让，维持 ADR-0011 的拒绝。
 - **U3 后缀文件分发**：两套平台机制并存，维持 ADR-0011 的拒绝；路由/页面分叉统一走 D2 的 define 常量。
 - **引入 TanStack Router / TanStack Table**：路由非漂移源不捆绑；表格排序为服务端驱动用不上客户端状态机，DataList 契约对齐其列定义形状以备日后接入。
+
+## Implementation status（2026-10-10）
+
+M3/M4 已完成：客户端仅依赖 `@pp/ui`，HeroUI/Konsta 与对应 CSS 已移除。入口、路由和
+页面目录统一于 `src/App.tsx`、`src/routes.tsx`、`src/pages`，`@app` alias 已退役。
+Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental 已共用实现；部分平台能力和
+交互差异仍保留页内编译期分支，M5 的全面去重与 M6 的最终关闭仍待后续按页完成。
+参见 [实施进展](../plans/2026-10-10-client-ui-library-design.md)。

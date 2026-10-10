@@ -88,10 +88,10 @@ export function Overlay(props: OverlayProps) {
 | **M0** 独立修复 | 桌面规则出站选择器：outboundOptions 三源并集下沉 client-core 共享 hook，移动端改消费，桌面 RuleEditModal 放开 outbound + 出站 Select | 三包 verify 绿；双端规则出站能力对齐（独立于组件库，先行交付） |
 | **M1** 脚手架 | `@pp/ui` 建包 + 令牌体系 + vite define + T0 全部 + T1 基础（Button/Switch/Input/Field）+ 移动双主题令牌域 | Base UI spike 通过（不过则转 RAC 后备并记录）；桌面某页试点换装 |
 | **M2** Overlay 族 ✅(2026-10-10) | Base UI Dialog/Select 封装 + ~~自研 BottomSheet~~（实际采用 Base UI 1.9 原生 Drawer，获得滑动关闭手势）；建 a11y 对照清单（焦点陷阱/Esc/aria 属性逐项核对） | 清单全绿；桌面 Modal/移动 Sheet 各一处试点 |
-| **M3** 桌面迁移 | 全桌面换 import（T0/T1/T2），自研 Table 9 处，删 `@heroui/*` 依赖 | 桌面 verify 绿；HeroUI 依赖移除 |
-| **M4** 移动迁移 | 壳层惯用法自研（TabBar/Navbar/FAB/Segmented/List），删 `konsta` 依赖 | 移动 verify 绿；Konsta 依赖移除 |
-| **M5** 页面树合一 | 试点 Config/Rules 合一 → Shell/路由表合一 → 推广全部页面；删 `src/desktop`、`src/mobile` 树 | 单一 `src/pages` + `@pp/ui` 分发；vite `@app` alias 退役 |
-| **M6** 收尾 | vite 配置简化、ADR-0013 落定、AGENTS.md §4.5/架构文档/CHANGELOG 同步 | 文档与实现一致 |
+| **M3** 桌面迁移 ✅(2026-10-10) | 全桌面换 import（T0/T1/T2），自研 Table 9 处，删 `@heroui/*` 依赖 | 桌面 verify 绿；HeroUI 依赖移除 |
+| **M4** 移动迁移 ✅(2026-10-10) | 壳层惯用法自研（TabBar/Navbar/FAB/Segmented/List），删 `konsta` 依赖 | 移动 verify 绿；Konsta 依赖移除 |
+| **M5** 页面树合一（主体完成，页内差异待进一步收敛） | 试点 Config/Rules 合一 → Shell/路由表合一 → 推广全部页面；删 `src/desktop`、`src/mobile` 树 | 单一 `src/pages` + `@pp/ui` 分发；vite `@app` alias 退役 |
+| **M6** 收尾（结构文档已同步） | vite 配置简化、ADR-0013 落定、AGENTS.md §4.5/架构文档/CHANGELOG 同步 | 文档与实现一致 |
 
 ## §6 风险与对策
 
@@ -108,3 +108,20 @@ export function Overlay(props: OverlayProps) {
 1. client-core 新增共享 hook：封装订阅节点（`subscriptionNodeTags`）+ 模板分组（`proxiesList().groups`）+ 切片出站（`configSlicesGet().outbounds.items` 仅 enabled，`tag=outboundTag(name)`）三源并集按 tag 去重；附「原值保留」项逻辑与 `subscriptionCacheAvailable` 空候选引导
 2. 移动 `CustomRulesPage` 删除页面内实现，改消费共享 hook（D3 单一权威）
 3. 桌面 `Rules/index.tsx` 接入共享 hook；`RuleEditModal` 删除 `DESKTOP_RULE_ACTIONS` 过滤，新增出站 `Select`（空候选引导文案与移动对齐）
+
+## 实施进展（2026-10-10，M3–M5）
+
+- M3/M4：补齐 Checkbox / Radio / Tabs / Avatar / Meter / TextArea / Table / Segmented /
+  Navbar / FAB / ToastRegion；客户端全部改用 `@pp/ui`，移除 HeroUI/Konsta 依赖与 CSS。
+- T2：新增 `SelectField`（Base UI dropdown / Drawer picker）、`DataList`（原生 table /
+  卡片列表）及 `Shell`；规则列表率先采用 DataList，规则编辑共用保存、原值保留与出站候选。
+- M5：入口 `src/App.tsx`、样式 `src/index.css`、路由 `src/routes.tsx` 单源化；旧
+  `src/desktop`、`src/mobile` 与 vite/tsc `@app` alias 已移除。配置入口、DNS、出站、
+  路由、规则、规则集/市场、Experimental 共用实现。订阅规范路径为 `/subscriptions`。
+- 仪表盘、订阅、统计、日志、设置、入站目前仍有**页内平台实现**：分别涉及 VPN 授权与
+  桌面进程控制、订阅生效/覆写交互、统计卡片/表格、磁盘/内存日志、核心管理/VPN 通知、
+  TUN 提权/Android 恒启用。它们位于同一页面目录，由页面入口编译期选择，未声称所有
+  页面逻辑已完全去重；后续按页继续收敛。因此 M5/M6 尚未全部关闭。
+- 保留桌面 Clash API 的启用开关、可选密钥和面板 UI 选择；Android 恒启用/必填密钥的
+  自动纠正仅在移动构建执行。平台行为沿用既有 ADR，不把移动约束扩散至桌面。
+- 验证记录见 [UI 迁移验证](../testing/2026-10-10-client-ui-refactor.md)。

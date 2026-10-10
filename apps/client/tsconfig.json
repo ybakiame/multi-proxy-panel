@@ -15,10 +15,7 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"],
-      // vite mode alias `@app` 的 tsc 侧声明（构建期分发见 vite.config.ts）：
-      // tsc 按顺序取首个存在的目录（desktop）；两端目录均在 include 内全量检查。
-      "@app/*": ["./src/desktop/*", "./src/mobile/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"]

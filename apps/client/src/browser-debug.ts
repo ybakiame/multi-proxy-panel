@@ -9,7 +9,7 @@
  * - URL 参数 `?browser-debug=1`（`?browser-debug=0` 关闭）
  * - DevTools 执行 `localStorage.setItem("pp-browser-debug", "1")` 后刷新
  *
- * 本模块必须在所有 `@pp/client-core` / `@app` 导入之前执行：env.ts 的
+ * 本模块必须在所有 `@pp/client-core` / `App` 导入之前执行：env.ts 的
  * `isTauriEnv` 在模块加载时求值，mock 装晚了就翻不过来。
  */
 import { mockIPC } from "@tauri-apps/api/mocks";

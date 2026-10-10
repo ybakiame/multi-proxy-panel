@@ -23,8 +23,7 @@
       })();
     </script>
   </head>
-  <!-- 底色由平台 UI 各自的根容器 / 样式承担（HeroUI / Konsta token 分属两套产物），
-       body 只保留抗锯齿，避免引用单一平台的 token。 -->
+  <!-- 双端共用 @pp/ui 语义令牌，平台呈现由编译期常量决定。 -->
   <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

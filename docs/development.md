@@ -477,8 +477,8 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 - **HTTP 客户端**: Axios
 - **包管理器**: Bun workspaces（依赖在仓库根目录安装，单一 `bun.lock`）
 
-> 客户端 `apps/client` 使用同一套 React 19 / Vite 8 / Tailwind v4，但桌面 UI 为 HeroUI、
-> 移动 UI 为 Konsta（`apps/client/src/{desktop,mobile}`，见 ADR-0007）。
+> 客户端 `apps/client` 使用同一套 React 19 / Vite 8 / Tailwind v4，但客户端双端统一使用 `@pp/ui`（Base UI），
+> 页面位于 `apps/client/src/pages`，由 vite define 进行编译期呈现分发（见 ADR-0013）。
 
 ### 项目结构
 
@@ -550,7 +550,7 @@ export function MyPage() {
 
 ## Android 客户端构建
 
-`apps/client` 的 Android 目标（Tauri 2 移动应用形态：Rust 壳 mobile 适配层 + Konsta 移动 UI）核心代理能力由 `apps/client/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供；`tauri android` 子命令经 `tauri.android.conf.json` overlay 切换 devUrl 与构建命令。
+`apps/client` 的 Android 目标（Tauri 2 移动应用形态：Rust 壳 mobile 适配层 + @pp/ui 移动呈现）核心代理能力由 `apps/client/panel-core`（Go 模块，gomobile 绑定 sing-box libbox 为单一 `panelcore.aar`）提供；`tauri android` 子命令经 `tauri.android.conf.json` overlay 切换 devUrl 与构建命令。
 
 ### 构建链路总览
 

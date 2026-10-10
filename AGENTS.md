@@ -25,9 +25,9 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
 - **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
-- **Client** (`apps/client`): 客户端（Linux/Windows/macOS/Android，Tauri 壳 + React 前端，单包双入口单壳双目标，见 ADR-0007）：前端 `src/desktop`（HeroUI）/ `src/mobile`（**Konsta UI**，iOS/Material 双主题）经 vite mode 构建期分发；壳 `src-tauri` 为独立 cargo 项目，经 target 依赖表与 cfg 适配层区分桌面/移动目标。桌面端含 MITM / 脚本引擎 / 核心管理等专属能力；Android 端核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM
+- **Client** (`apps/client`): 客户端（Linux/Windows/macOS/Android，Tauri 壳 + React 前端，单页面目录单壳双目标，见 ADR-0007/0013）：前端统一于 `src/pages`，使用 `@pp/ui`（Base UI + Tailwind，移动 iOS/Material 双主题），经 vite define 构建期分发呈现；壳 `src-tauri` 为独立 cargo 项目，经 target 依赖表与 cfg 适配层区分桌面/移动目标。桌面端含 MITM / 脚本引擎 / 核心管理等专属能力；Android 端核心由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动，无 MITM
 - **`packages/client-core`** (`@pp/client-core`): desktop/mobile 共享前端库（api 的 invoke 封装 + hooks + atoms + 纯工具），两端 UI 一律经它调用 Tauri 命令
-- **`packages/ui`** (`@pp/ui`): 自研前端组件库（ADR-0013，建设中）：Base UI 行为层 + Tailwind v4 语义令牌，`IS_MOBILE` 编译期分发桌面/移动呈现；迁移完成后取代 HeroUI/Konsta
+- **`packages/ui`** (`@pp/ui`): 自研前端组件库（ADR-0013）：Base UI 行为层 + Tailwind v4 语义令牌，`IS_MOBILE` 编译期分发桌面/移动呈现；客户端已移除 HeroUI/Konsta
 
 ---
 
@@ -298,8 +298,8 @@ desktop/mobile 双应用），平台差异全部为**编译期事实**：
 |------|------|------|
 | `packages/client-core`（`@pp/client-core`） | 前端共享库 | api（Tauri invoke 封装 + 类型 + query keys）、hooks、atoms、纯工具；两端 UI 禁止直接 `invoke()` |
 | `packages/ui`（`@pp/ui`） | 前端组件库 | Base UI + Tailwind 令牌（ADR-0013，建设中）；`IS_MOBILE` 编译期分发双端呈现 |
-| `apps/client/src/desktop` | 桌面 UI（HeroUI） | vite 默认 mode；react-compiler 开启 |
-| `apps/client/src/mobile` | 移动 UI（Konsta，iOS/Material 双主题，设置页可切换，默认 iOS） | vite `--mode android`；双产物互不含对方 UI 库 |
+| `apps/client/src/pages` | 双端页面目录 | Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental 共用实现；部分平台能力差异仍在页内分支保留 |
+| `apps/client/src/routes.tsx` / `App.tsx` | 单一路由表与入口 | vite 默认桌面、`--mode android` 移动；`@pp/ui` 的 `IS_MOBILE` 编译期分发，`@app` alias 已移除；桌面开启 react-compiler |
 | `apps/client/src-tauri` | 单壳（独立 cargo 项目） | `lib.rs` 单份装配（共享命令全路径注册，平台专属命令 cfg 逐条门控）；`desktop/` 适配层（mitm / core_mgmt / remote / platform 命令 + WSL workaround），`mobile/` 适配层（Android 数据目录 + VPN 插件注册）；target 依赖表使 Android 构建图不含 `pp-mitm` |
 | `crates/pp-client-tauri` | Rust 共享命令层 | state / logs / capabilities / 35 条通用命令单份实现；Android 专属 `core_bridge` 也在此 crate（`cfg(target_os = "android")`） |
 | `crates/pp-client`（`CoreEngineBridge`） | 核心引擎层 | 桌面侧 spawn sing-box 子进程；Android 侧经 Kotlin 桥由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心 |
@@ -434,7 +434,7 @@ grpcurl -plaintext localhost:50052 list proxypanel.HubAgent
 
 **注意**：Tailwind v4 自动内容探测不跟进 node_modules 符号链接——`@pp/ui`
 等 workspace 链接包内的工具类必须在 app 的 CSS 入口显式 `@source` 才会生成
-（双端 `index.css` 已有 `@source "../../../../packages/ui/src"`）。
+（共享 `src/index.css` 已有 `@source "../../../packages/ui/src"`）。
 
 ---
 

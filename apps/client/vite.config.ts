@@ -1,21 +1,10 @@
-import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
-/**
- * 客户端单包双入口（apps/client，见 docs/plans/2026-10-03-client-merge-evaluation.md）：
- * vite mode 构建期平台分发，平台是构建期事实而非运行时判断。
- *
- * - desktop（默认 mode）：桌面 UI（`src/desktop`，HeroUI + react-compiler），
- *   dev 端口 1420（Tauri 桌面基线 `src-tauri/tauri.conf.json` devUrl 一致）；
- * - android（`--mode android`）：移动 UI（`src/mobile`，Konsta，不开 react-compiler），
- *   dev 端口 1430（`src-tauri/tauri.android.conf.json` overlay devUrl 一致）。
- *
- * `@app` alias 指向当前 mode 的平台目录，产物互不含对方 UI 库（M0-③ 实证）。
- */
+/** mode 只决定平台常量、react-compiler 与 dev 端口；页面树共享（ADR-0013）。 */
 export default defineConfig(({ mode }) => {
   const isAndroid = mode === "android";
   const port = isAndroid ? 1430 : 1420;
@@ -28,11 +17,6 @@ export default defineConfig(({ mode }) => {
       __PP_PLATFORM__: JSON.stringify(isAndroid ? "mobile" : "desktop"),
     },
     base: "./",
-    resolve: {
-      alias: {
-        "@app": path.resolve(import.meta.dirname, isAndroid ? "./src/mobile" : "./src/desktop"),
-      },
-    },
     server: {
       // make sure this port matches the devUrl port in the corresponding tauri conf
       port,
