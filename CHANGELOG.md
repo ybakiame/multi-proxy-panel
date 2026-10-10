@@ -14,6 +14,9 @@
 
 ### Added
 
+- **桌面端规则管理**：补齐「指定出站」动作（对齐移动端）——出站候选 = 订阅节点 +
+  模板分组 + 切片出站并集，候选装配下沉 `client-core` 共享 hook（ADR-0011 D1/D3）。
+
 - **客户端**：合并为单壳双目标应用 `apps/client`（Tauri 2，桌面 HeroUI / 移动 Konsta，
   独立 cargo 壳 + `crates/pp-client-tauri` + `packages/client-core`），见 ADR-0007 与
   `docs/plans/2026-10-03-client-merge-evaluation.md`。
