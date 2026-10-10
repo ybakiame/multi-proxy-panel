@@ -143,4 +143,13 @@ WebView，处理过的 IME Insets 清零后继续传递，避免新版重复避�
 `:app:compileArm64DebugKotlin` 与 `:app:assembleArm64Debug` 通过（复用未修改的 Rust 库，
 排除 rustBuildArm64Debug；本轮未修改 Rust）。已生成测试 APK。
 
+用户自行完成 Android 真机验证，确认 IME 避让修复生效。后续真机调试优先在
+项目 Nix 环境中运行 `bun run --filter pp-client-app android:dev`（封装
+`tauri android dev --target aarch64`），通过前端热更新验证 UI；涉及 Kotlin 或
+Manifest 的原生变更仍需重新编译并部署应用。
+
+Windows 测试构建 [38067298370](https://github.com/ybakiame/multi-proxy-panel/actions/runs/38067298370)
+的 x86_64、aarch64 两个任务均已通过 `Install protoc`，确认 GitHub token 配置
+修复了此前的匿名 API 限流；记录时后续构建仍在执行。
+
 来源：[Android WebView Insets](https://developer.android.com/develop/ui/views/layout/webapps/understand-window-insets)。
