@@ -148,7 +148,7 @@ mod tests {
     use super::*;
 
     fn sleep_pid() -> (std::process::Child, u32) {
-        let child = std::process::Command::new("sleep")
+        let child = std::process::Command::new(which_sleep())
             .arg("30")
             .spawn()
             .expect("spawn sleep");
@@ -164,12 +164,12 @@ mod tests {
     }
 
     fn which_sleep() -> PathBuf {
-        // /proc/<pid>/exe 会解析到真实路径（如 /usr/bin/sleep 或 coreutils 实际路径），
-        // 直接查 PATH 可能与 /proc 解析不一致，故以 /proc/self 解析 PATH 中的 sleep。
-        for dir in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
-            let p = Path::new(dir).join("sleep");
-            if p.exists() {
-                return p;
+        // 按当前开发环境的 PATH 查找，与 spawn 使用同一个文件；Nix 的 sleep 不在 /usr/bin。
+        let path = std::env::var_os("PATH").expect("PATH must be set for process tests");
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("sleep");
+            if candidate.is_file() {
+                return candidate;
             }
         }
         panic!("sleep binary not found");
