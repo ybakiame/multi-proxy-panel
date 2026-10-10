@@ -1,6 +1,6 @@
 import { BellAlertIcon, CodeBracketIcon, GlobeAltIcon, InformationCircleIcon } from "@heroicons/react/24/outline";
 import { IS_MOBILE } from "@pp/ui";
-import DesktopSettings from "./desktop";
+import DesktopSettingsSections from "./desktop/DesktopSettingsSections";
 import { useNavigate } from "react-router-dom";
 import { EntryLinkList } from "../../components/mobile/EntryLinkCard";
 import { PageShell } from "../../components/PageShell";
@@ -16,49 +16,50 @@ import { AppearanceCard } from "./AppearanceCard";
  *
  * 入站管理与 Clash API 已迁移为配置页必选切片入口（`/config/inbounds`、`/config/experimental`）。
  */
-function MobileSettings() {
+export default function Settings() {
   const navigate = useNavigate();
 
   return (
     <PageShell>
       <div>
         <h1 className="text-xl font-semibold">设置</h1>
+        {!IS_MOBILE && <p className="text-sm text-muted">客户端外观与核心运行配置 · 所有修改即时保存</p>}
       </div>
 
       <AppearanceCard />
 
-      <EntryLinkList
-        entries={[
-          {
-            icon: <BellAlertIcon className="size-5" aria-hidden="true" />,
-            title: "VPN 通知",
-            description: "通知栏显示流量与节点选择",
-            onPress: () => navigate("/settings/vpn-notify"),
-          },
-          {
-            icon: <GlobeAltIcon className="size-5" aria-hidden="true" />,
-            title: "GitHub 访问",
-            description: "代理前缀加速",
-            onPress: () => navigate("/settings/github"),
-          },
-          {
-            icon: <CodeBracketIcon className="size-5" aria-hidden="true" />,
-            title: "开发者工具",
-            description: "日志与当前配置",
-            onPress: () => navigate("/settings/dev-tools"),
-          },
-          {
-            icon: <InformationCircleIcon className="size-5" aria-hidden="true" />,
-            title: "关于",
-            description: "应用与核心信息",
-            onPress: () => navigate("/settings/about"),
-          },
-        ]}
-      />
+      {IS_MOBILE ? (
+        <EntryLinkList
+          entries={[
+            {
+              icon: <BellAlertIcon className="size-5" aria-hidden="true" />,
+              title: "VPN 通知",
+              description: "通知栏显示流量与节点选择",
+              onPress: () => navigate("/settings/vpn-notify"),
+            },
+            {
+              icon: <GlobeAltIcon className="size-5" aria-hidden="true" />,
+              title: "GitHub 访问",
+              description: "代理前缀加速",
+              onPress: () => navigate("/settings/github"),
+            },
+            {
+              icon: <CodeBracketIcon className="size-5" aria-hidden="true" />,
+              title: "开发者工具",
+              description: "日志与当前配置",
+              onPress: () => navigate("/settings/dev-tools"),
+            },
+            {
+              icon: <InformationCircleIcon className="size-5" aria-hidden="true" />,
+              title: "关于",
+              description: "应用与核心信息",
+              onPress: () => navigate("/settings/about"),
+            },
+          ]}
+        />
+      ) : (
+        <DesktopSettingsSections />
+      )}
     </PageShell>
   );
-}
-
-export default function Settings() {
-  return IS_MOBILE ? <MobileSettings /> : <DesktopSettings />;
 }

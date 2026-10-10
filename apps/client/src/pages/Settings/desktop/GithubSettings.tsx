@@ -1,5 +1,6 @@
-import { Button, Card, Input, Label, Switch } from "@pp/ui";
+import { Button, Card, Switch } from "@pp/ui";
 import type { UseSettingsConfigReturn } from "./useSettingsConfig";
+import { GithubPrefixField } from "../GithubAccessCard";
 import { testGithubProxy, toErrorMessage } from "@pp/client-core";
 
 interface GithubSettingsProps {
@@ -62,20 +63,16 @@ export default function GithubSettings({ settings }: GithubSettingsProps) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="settings-github-proxy-prefix">GitHub 代理前缀</Label>
-          <Input
-            id="settings-github-proxy-prefix"
-            aria-label="GitHub 代理前缀"
-            value={githubProxyPrefix}
-            onChange={(event) => {
-              setGithubProxyPrefix(event.target.value);
-              persistDebounced({ github_proxy_prefix: event.target.value });
+          <GithubPrefixField
+            settings={{
+              ready: settings.config !== null,
+              githubProxyPrefixDraft: githubProxyPrefix,
+              onGithubProxyPrefixChange: (value) => {
+                setGithubProxyPrefix(value);
+                persistDebounced({ github_proxy_prefix: value });
+              },
             }}
-            placeholder="https://gh-proxy.com"
           />
-          <span className="break-words text-xs text-muted">
-            GitHub 链接将拼接前缀访问，例如 https://gh-proxy.com/https://raw.githubusercontent.com/…；留空则直连
-          </span>
           <div className="flex flex-wrap items-center gap-3">
             <Button variant="secondary" size="sm" isPending={proxyTestPending} onPress={() => void runProxyTest()}>
               测试连通性

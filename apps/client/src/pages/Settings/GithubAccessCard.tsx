@@ -1,9 +1,8 @@
 import { Card } from "@pp/ui";
-import type { UseSettingsConfigReturn } from "./useSettingsConfig";
 import { SettingsInput } from "./fields";
 
 interface GithubAccessCardProps {
-  settings: UseSettingsConfigReturn;
+  settings: { ready: boolean; githubProxyPrefixDraft: string; onGithubProxyPrefixChange: (value: string) => void };
 }
 
 /**
@@ -13,16 +12,23 @@ export function GithubAccessCard({ settings }: GithubAccessCardProps) {
   return (
     <Card>
       <Card.Content className="flex flex-col gap-4">
-        <SettingsInput
-          id="settings-github-proxy-prefix"
-          label="GitHub 代理前缀"
-          value={settings.githubProxyPrefixDraft}
-          onChange={settings.onGithubProxyPrefixChange}
-          placeholder="https://gh-proxy.com"
-          disabled={!settings.ready}
-          hint="从 Github 下载资源时自动拼接此代理地址进行加下载速"
-        />
+        <GithubPrefixField settings={settings} />
       </Card.Content>
     </Card>
+  );
+}
+
+/** 双端共享代理前缀字段，保存由页面适配器提供。 */
+export function GithubPrefixField({ settings }: GithubAccessCardProps) {
+  return (
+    <SettingsInput
+      id="settings-github-proxy-prefix"
+      label="GitHub 代理前缀"
+      value={settings.githubProxyPrefixDraft}
+      onChange={settings.onGithubProxyPrefixChange}
+      placeholder="https://gh-proxy.com"
+      disabled={!settings.ready}
+      hint="GitHub 链接拼接此前缀访问，留空直连"
+    />
   );
 }

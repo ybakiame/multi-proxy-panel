@@ -1,6 +1,5 @@
 import { Alert } from "@pp/ui";
 import { useSettingsConfig } from "./useSettingsConfig";
-import { AppearanceCard } from "../AppearanceCard";
 import GithubSettings from "./GithubSettings";
 import CoreManagement from "./CoreManagement";
 import AboutSection from "./AboutSection";
@@ -10,22 +9,12 @@ import AboutSection from "./AboutSection";
  * （`/config/inbounds`、`/config/experimental`，对齐移动端），本页保留外观 /
  * GitHub 访问 / 核心管理 / 关于。
  */
-export default function Settings() {
+export default function DesktopSettingsSections() {
   const settings = useSettingsConfig();
   const { error } = settings;
 
   return (
-    <div className="flex max-w-xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold">设置</h1>
-        <p className="text-sm text-muted">客户端外观与核心运行配置</p>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-muted">所有修改即时保存</span>
-      </div>
-
-      <AppearanceCard />
+    <>
       <GithubSettings settings={settings} />
 
       <CoreManagement settings={settings} />
@@ -41,6 +30,6 @@ export default function Settings() {
       )}
 
       <AboutSection />
-    </div>
+    </>
   );
 }

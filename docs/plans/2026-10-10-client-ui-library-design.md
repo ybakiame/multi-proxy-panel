@@ -118,8 +118,8 @@ export function Overlay(props: OverlayProps) {
 - M5：入口 `src/App.tsx`、样式 `src/index.css`、路由 `src/routes.tsx` 单源化；旧
   `src/desktop`、`src/mobile` 与 vite/tsc `@app` alias 已移除。配置入口、DNS、出站、
   路由、规则、规则集/市场、Experimental 共用实现。订阅规范路径为 `/subscriptions`。
-- 仪表盘、订阅、设置目前仍有**页内平台实现**：分别涉及 VPN 授权与
-  桌面进程控制、订阅生效/覆写交互、核心管理/VPN 通知。它们位于同一页面目录，由页面入口编译期选择，未声称所有
+- 仪表盘、订阅目前仍有**页内平台实现**：分别涉及 VPN 授权与
+  桌面进程控制、订阅生效/覆写交互。它们位于同一页面目录，由页面入口编译期选择，未声称所有
   页面逻辑已完全去重；后续按页继续收敛。因此 M5/M6 尚未全部关闭。
 - 保留桌面 Clash API 的启用开关、可选密钥和面板 UI 选择；Android 恒启用/必填密钥的
   自动纠正仅在移动构建执行。平台行为沿用既有 ADR，不把移动约束扩散至桌面。
@@ -142,3 +142,9 @@ export function Overlay(props: OverlayProps) {
 端口、协议栈、自动路由与 IPv6 字段和防抖保存合一；`DesktopTunControls` 仅提供
 桌面可选 TUN 与授权查询/操作，Android 编译裁剪。桌面保留 mixed/gvisor/system
 选项，移动保持 go/mixed/system 与 VPN 恒启用，不改变核心合成边界。
+
+### 按页收敛：设置（2026-10-10）
+
+设置主页共用标题、PageShell 与外观卡，GitHub 代理前缀字段共用；桌面内嵌的
+核心管理、代理测试和更新能力以分区呈现，移动保持 VPN 通知等二级入口。
+不再保留双份整页设置实现。平台设置适配器保留授权、密钥校验等明确能力差异。
