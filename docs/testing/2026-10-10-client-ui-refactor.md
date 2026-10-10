@@ -99,3 +99,13 @@ VisualViewport 高度由 844 缩至 320：抽屉底部偏移 524px、最大高�
 依次调用 `set_subscription_enabled(enabled=true)`、`set_active_subscription`。
 移动 600 字符 URL 的 clientWidth=330、scrollWidth=4537、textOverflow=ellipsis；
 390px 视口内 document.scrollWidth=390，无横向溢出。存储字段保留，未执行启动迁移。
+
+## 关于信息与编译 tags 核验
+
+Nix 环境三包 verify 通过。双端显示壳 API `plugin:app|version` 返回版本；点击 GitHub
+调用 `plugin:opener|open_url`，URL 为仓库主页。桌面不再使用 window.open，移动新增同一
+版本与链接呈现。真实 Windows 系统浏览器跳转待本轮 desktop-test 真机验收。
+
+Nix Go 对当前 AAR 内 `jni/arm64-v8a/libgojni.so` 执行 `go version -m` 成功，读取
+`build -tags` 与构建脚本/UI 常量一致。上游 `sing-box version` 使用 ReadBuildInfo 读取
+-tags；当前 libbox 桥未导出 Tags，移动明确展示构建配置，未宣称运行时读取 tags。

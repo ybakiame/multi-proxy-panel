@@ -1,10 +1,12 @@
 /**
- * panelcore.aar（sing-box libbox）编译期元数据。
+ * panelcore.aar（sing-box libbox）构建 tags 配置（不是运行时读取的产物元数据）。
  *
  * - sing-box 版本：经运行时 API `Libbox.version()` 动态读取（@pp/client-core
  *   `useCoreVersion` → Rust `core_version` → Kotlin `VpnPlugin.coreVersion`），
  *   无需在此硬编码。
- * - 编译 tags：libbox 无运行时导出（仅有 `Version()`，无 `Tags()`），只能硬编码。
+ * - 编译 tags：当前 libbox 桥没有 Tags() API，UI 展示本地构建配置。
+ *   桌面 `sing-box version` 可读取真实 tags；AAR 内 .so 可用 `go version -m`
+ *   的 build -tags 字段核验，具体命令见 docs/development.md。
  *
  * 同步提醒：升级 sing-box 或调整构建 tags 后，请同步更新本常量与
  * `apps/client/scripts/build-panel-core.sh` 的 `-tags`（两者必须一致）。

@@ -13,6 +13,7 @@
  * `isTauriEnv` 在模块加载时求值，mock 装晚了就翻不过来。
  */
 import { mockIPC } from "@tauri-apps/api/mocks";
+import { version } from "../package.json";
 
 const FLAG_KEY = "pp-browser-debug";
 
@@ -29,6 +30,7 @@ function browserDebugEnabled(): boolean {
 
 /** 常用命令的最小可用返回值；未列出的命令一律 `null`（查询走空态/错误态即可渲染）。 */
 const MOCKS: Record<string, unknown> = {
+  "plugin:app|version": version,
   get_capabilities: {
     os: "linux",
     is_android: false,

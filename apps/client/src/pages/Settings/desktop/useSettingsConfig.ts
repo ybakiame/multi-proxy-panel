@@ -9,7 +9,6 @@ import { PORT_RANGE_ERROR, isValidPort, portError } from "@pp/client-core";
 import type { ClientConfig, RestartDirtyKey } from "@pp/client-core";
 
 // TODO: read version from package.json (build-time injection or runtime read)
-export const APP_VERSION = "0.1.0";
 
 export { PORT_RANGE_ERROR, isValidPort };
 

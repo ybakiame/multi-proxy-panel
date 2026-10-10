@@ -256,3 +256,5 @@ export {
   toastModeOverride,
   testGithubProxy,
 } from "./system";
+
+export { getAppVersion, openProjectUrl, PROJECT_URL } from "./app";

@@ -100,6 +100,7 @@
       "dependencies": {
         "@tanstack/react-query": "^5.102.7",
         "@tauri-apps/api": "^2",
+        "@tauri-apps/plugin-opener": "^2",
         "jotai": "^2.20.1",
         "react": "^19.2.7",
         "zustand": "^5.0.14",

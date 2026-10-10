@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button, Card } from "@pp/ui";
 import { toastError, toastSuccess } from "@pp/client-core";
 import { checkForUpdate } from "../../../lib/updater";
-import { APP_VERSION } from "./useSettingsConfig";
+import { AboutInfo } from "../AboutInfo";
 
 type UpdateState =
   | { kind: "idle" }
@@ -59,11 +59,8 @@ export default function AboutSection() {
         <Card.Description>ProxyPanel 客户端信息</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted">版本号</span>
-          <span className="text-sm font-medium">{APP_VERSION}</span>
-        </div>
-        <div className="flex items-center justify-between">
+        <AboutInfo />
+        <div className="flex min-h-8 items-center justify-between gap-4">
           <span className="text-sm text-muted">检查更新</span>
           {state.kind === "available" ? (
             <div className="flex items-center gap-2">
@@ -77,18 +74,6 @@ export default function AboutSection() {
               {checking ? "检查中…" : installing ? "下载安装中…" : "检查更新"}
             </Button>
           )}
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted">项目链接</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onPress={() => {
-              window.open("https://github.com/ybakiame/multi-proxy-panel", "_blank");
-            }}
-          >
-            GitHub
-          </Button>
         </div>
       </Card.Content>
     </Card>

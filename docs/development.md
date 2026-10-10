@@ -565,6 +565,25 @@ bun run android:build --apk
 
 > 注意：`panelcore.aar` 与 GEO 数据均为本地产物、不入库；克隆仓库后必须先跑步骤 1+2 才能打包。
 
+### 核验 sing-box 编译 tags
+
+桌面核心执行 `sing-box version`，输出的 `Tags:` 来自 Go `debug.ReadBuildInfo()` 的
+`-tags` 设置，并非约定文件。Android 的 libbox 当前未向 Kotlin 桥导出 `Tags()`；
+移动关于页的 tags 明确标注为「构建配置」，来自 `coreBuildInfo.ts`，需与构建脚本同步。
+若需核验 AAR 的真实编译信息，可提取 Go 共享库后使用 Go 工具链：
+
+```bash
+unzip -p apps/client/src-tauri/gen/android/app/libs/panelcore.aar \
+  jni/arm64-v8a/libgojni.so > /tmp/panelcore-libgojni.so
+go version -m /tmp/panelcore-libgojni.so
+```
+
+查找输出的 `build -tags=...`。2026-10-10 对本地 AAR 实测可读，tags 与当前构建脚本、
+UI 配置一致；`-s -w` 不会清除这份 Go 构建信息。以上命令用于产物核验，移动 UI 尚未
+通过运行时桥读取 tags。
+来源：[sing-box version 实现](https://github.com/SagerNet/sing-box/blob/v1.15.0-alpha.5/cmd/sing-box/cmd_version.go)、
+[Go version 命令](https://pkg.go.dev/cmd/go#hdr-Print_Go_version)。
+
 ### ⚠️ Android 交叉编译环境：工具链变量与 pkg-config 守卫
 
 Android target 的构建需要两组配置，缺失会导致难以排查的构建失败：
