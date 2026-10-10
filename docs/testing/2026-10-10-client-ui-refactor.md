@@ -129,3 +129,18 @@ Nix Go 对当前 AAR 内 `jni/arm64-v8a/libgojni.so` 执行 `go version -m` 成�
 原进程回收测试按 PATH 启动 Nix sleep，却用 /usr/bin/sleep 校验身份；测试辅助函数改为
 启动和校验同一个 PATH 文件，8 条 pp-core 测试及完整工作区测试通过，生产逻辑未修改。
 客户端前端、Tauri 配置、壳清单及对应锁文件版本统一为 0.1.1。
+
+## Android edge-to-edge IME 修正（2026-10-11）
+
+连接设备 WebView 116.0.5845.92，订阅表单聚焦 User-Agent 后真实输入法
+`mInputShown=true`，但 innerHeight=873、visualViewport.height=873.09，输入框底部
+779.09，原 JS 视口监听没有收到键盘高度变化。这与 WebView M139 才支持 IME
+VisualViewport resize 的官方说明一致，之前桌面模拟不足以覆盖该窗口模式。
+
+MainActivity 内容容器处理 IME Insets；Manifest 使用 adjustNothing，原生统一缩小
+WebView，处理过的 IME Insets 清零后继续传递，避免新版重复避让。共享抽屉继续负责
+焦点滚动。Nix 环境下 `pp-client-app verify`、项目 Gradle wrapper 的
+`:app:compileArm64DebugKotlin` 与 `:app:assembleArm64Debug` 通过（复用未修改的 Rust 库，
+排除 rustBuildArm64Debug；本轮未修改 Rust）。已生成测试 APK。
+
+来源：[Android WebView Insets](https://developer.android.com/develop/ui/views/layout/webapps/understand-window-insets)。

@@ -84,6 +84,8 @@
 
 ### Fixed
 
+- **Android 输入法避让**：原生容器处理 edge-to-edge 下的 IME Insets，让旧 WebView 的实际视口也随键盘缩小，修复共享表单仍被键盘遮挡。
+
 - **Windows 构建**：protoc 安装 Action 使用 GitHub token，避免匿名 API 限流导致测试和发布构建失败。
 
 - **客户端开发预览**：桌面和移动 Vite 缓存按 mode 隔离，修复同时运行时桌面 React Compiler 依赖被覆盖导致页面无法加载。

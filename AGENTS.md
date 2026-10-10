@@ -324,6 +324,9 @@ desktop/mobile 双应用），平台差异全部为**编译期事实**：
 `tauri.android.conf.json`（RFC 7396 合并：devUrl/构建命令/bundle 差异）。
 详见 ADR-0003（分离）与 ADR-0007（合并回摆）。
 
+Android edge-to-edge 的 IME Insets 由 MainActivity 内容容器处理，WebView 实际高度随键盘
+变化；共享抽屉负责焦点滚动（ADR-0013），不依赖旧 WebView 的 VisualViewport 键盘上报。
+
 核心进程生命周期为 ADR-0012 纵深防御四层：OS 级父子绑定（Windows Job Object /
 Linux PR_SET_PDEATHSIG，pp-common `spawn_guarded`）+ PID 文件启动收割
 （pp-core `lifecycle`，exe 校验防 PID 复用误杀）+ ExitRequested 退出清理

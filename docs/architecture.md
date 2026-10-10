@@ -316,6 +316,13 @@ flowchart TD
 
 > `capabilities::get_capabilities` 的 `is_android` 保留为**运行时功能开关**（桌面目标上 mitm 等仍可能因环境禁用）；UI 平台差异是编译期事实，desktop UI 已不再消费该字段。Tauri 配置为桌面基线 `tauri.conf.json` + Android overlay `tauri.android.conf.json`（RFC 7396 合并：devUrl / 构建命令 / bundle 差异）。
 
+### Android 输入法与共享表单视口
+
+Android MainActivity 在 edge-to-edge 下处理原生 IME Insets，收缩 WebView 内容区域；
+已处理的 IME Insets 清零后向子视图传递，避免新版 WebView 再次避让。Manifest 使用
+adjustNothing，键盘显示/收起由同一窗口适配器处理。`@pp/ui` 共享抽屉监听实际可见视口
+并滚动焦点输入框，适用于全部表单；不增加键盘 IPC，详见 ADR-0013。
+
 ### pp-script — 脚本引擎层
 
 基于 QuickJS（`rquickjs` 0.12）的客户端代理脚本引擎：

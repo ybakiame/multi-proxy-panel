@@ -73,3 +73,11 @@ M3–M6 的实现与文档迁移已完成：客户端仅依赖 `@pp/ui`，HeroUI
 继续按编译期事实分发。真实 WebView/VPN/提权/手势验收仍需设备环境，Material 波纹后置。
 参见 [实施进展](../plans/2026-10-10-client-ui-library-design.md) 与
 [验证记录](../testing/2026-10-10-client-ui-refactor.md)。
+
+### Android IME 视口补充（2026-10-11）
+
+共享抽屉继续负责可见视口布局与焦点滚动。Android edge-to-edge 下，仅监听
+VisualViewport 无法覆盖旧 WebView；MainActivity 的原生内容容器统一处理 IME Insets
+并缩小 WebView 可用高度，Manifest 使用 adjustNothing 避免系统重复 resize。
+已处理的 IME Insets 清零后继续向 WebView 传递，系统栏/刘海安全区保持原渠道；
+不新增 JS/IPC 键盘接口，不把平台窗口逻辑散落到各页面。
