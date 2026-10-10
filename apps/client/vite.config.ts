@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) => {
   return {
     // prevent vite from obscuring rust errors
     clearScreen: false,
+    // 两种 mode 的预构建依赖不同（桌面含 React Compiler），避免同时开发时互相覆盖。
+    cacheDir: `node_modules/.vite-${isAndroid ? "android" : "desktop"}`,
     plugins: [react(isAndroid ? {} : { compiler: true }), tailwindcss()],
     // ADR-0013 D2：编译期平台事实注入 @pp/ui（IS_MOBILE 分支经 DCE 裁剪死代码）
     define: {

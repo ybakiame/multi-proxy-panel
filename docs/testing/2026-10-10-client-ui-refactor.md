@@ -109,3 +109,13 @@ Nix 环境三包 verify 通过。双端显示壳 API `plugin:app|version` 返回
 Nix Go 对当前 AAR 内 `jni/arm64-v8a/libgojni.so` 执行 `go version -m` 成功，读取
 `build -tags` 与构建脚本/UI 常量一致。上游 `sing-box version` 使用 ReadBuildInfo 读取
 -tags；当前 libbox 桥未导出 Tags，移动明确展示构建配置，未宣称运行时读取 tags。
+
+## Nix 环境与双端开发预览复验
+
+本轮后续编译与运行统一使用项目 `nix develop --offline --command`（锁定 flake）。
+确认 Bun/Go/rustup/Android SDK 来自 `/nix/store`。三包 verify 重新通过；在 Nix 启动的
+1420/1430 服务检查订阅、关于信息与项目 opener。移动焦点底部 244px 位于 320px
+可见视口内，内部滚动 78px；键盘收起恢复高度 844px、底部偏移 0。
+
+双服务原先共用依赖缓存，导致桌面 react_compiler-runtime 请求 504。Vite cacheDir
+按 desktop/android 隔离后，两端同时运行，桌面设置页正常渲染且项目链接调用 opener。
