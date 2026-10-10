@@ -14,6 +14,7 @@ import { Drawer as BaseDrawer } from "@base-ui/react/drawer";
 import type { ComponentType, ReactNode } from "react";
 import { XMarkIcon } from "../icons.tsx";
 import { IS_MOBILE } from "../platform.ts";
+import { useSheetViewport } from "./useSheetViewport";
 import { cx } from "../utils.ts";
 
 export interface ModalBackdropProps {
@@ -57,11 +58,16 @@ function DesktopModal({ isOpen, onOpenChange, children }: ModalBackdropProps) {
 
 /** 移动：底部抽屉（Drawer 提供下滑关闭；translate 入场 + transform 手势偏移两条轴互不干扰）。 */
 function MobileSheet({ isOpen, onOpenChange, children }: ModalBackdropProps) {
+  const viewportRef = useSheetViewport(isOpen);
   return (
     <BaseDrawer.Root open={isOpen} onOpenChange={(open) => onOpenChange?.(open)}>
       <BaseDrawer.Portal>
         <BaseDrawer.Backdrop className={BACKDROP_CLASSES} />
-        <BaseDrawer.Viewport className="fixed inset-0 z-50 flex items-end justify-center">
+        <BaseDrawer.Viewport
+          ref={viewportRef}
+          className="fixed inset-x-0 z-50 flex items-end justify-center"
+          style={{ height: "var(--sheet-viewport-height, 100dvh)", bottom: "var(--sheet-viewport-bottom, 0px)" }}
+        >
           <BaseDrawer.Popup
             className={cx(
               "pointer-events-none flex w-full justify-center",
@@ -93,7 +99,7 @@ function ModalDialog({ className, children }: ModalSectionProps) {
       className={cx(
         "pointer-events-auto relative flex w-full flex-col bg-overlay shadow-overlay outline-none",
         IS_MOBILE
-          ? "max-h-[85vh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
+          ? "max-h-[min(85dvh,calc(var(--sheet-viewport-height,100dvh)-1rem))] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
           : "max-h-full rounded-3xl p-6 sm:max-w-xl",
         className,
       )}
@@ -140,6 +146,7 @@ function Body({ className, children }: ModalSectionProps) {
     <div
       // 滚动区豁免 drawer 滑动手势，避免长表单滚动误触发关闭
       data-base-ui-swipe-ignore={IS_MOBILE ? "" : undefined}
+      data-sheet-scroll={IS_MOBILE ? "" : undefined}
       className={cx(
         IS_MOBILE
           ? "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2 text-sm"
