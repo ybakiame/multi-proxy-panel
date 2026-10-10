@@ -67,6 +67,6 @@ ADR-0011 对比过 U1（Konsta 全端单 UI 树，暂缓——桌面观感退让
 
 M3/M4 已完成：客户端仅依赖 `@pp/ui`，HeroUI/Konsta 与对应 CSS 已移除。入口、路由和
 页面目录统一于 `src/App.tsx`、`src/routes.tsx`、`src/pages`，`@app` alias 已退役。
-Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental 已共用实现；部分平台能力和
+Config / DNS / 出站 / 路由 / 规则 / 规则集 / Experimental / 日志已共用实现；部分平台能力和
 交互差异仍保留页内编译期分支，M5 的全面去重与 M6 的最终关闭仍待后续按页完成。
 参见 [实施进展](../plans/2026-10-10-client-ui-library-design.md)。

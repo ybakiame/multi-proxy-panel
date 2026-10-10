@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { Alert, Button, Card, Label, ListBox, Select, Switch } from "@pp/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { clearLogs, exportLogs, getLogs, listLogFiles, readLogFileTail, toErrorMessage } from "@pp/client-core";
+import { getLogs, toErrorMessage } from "@pp/client-core";
 import type { LogEntry } from "@pp/client-core";
-import { LOGS_KEY, LOG_FILES_KEY } from "@pp/client-core";
-import { toastError, toastSuccess } from "@pp/client-core";
+import { LOGS_KEY } from "@pp/client-core";
 
 /** 级别过滤选项（空串 = 不过滤；其余与后端 `min_level` 对齐，默认 info）。 */
 const LEVEL_OPTIONS = [
@@ -55,19 +54,13 @@ function formatTime(iso: string): string {
 
 const LOGS_REFETCH_INTERVAL_MS = 2000;
 
-export default function Logs() {
+/** 桌面运行日志缓冲；磁盘文件与导出操作由共享日志页负责。 */
+export default function RuntimeLogs() {
   const queryClient = useQueryClient();
   const [minLevel, setMinLevel] = useState<string>("info");
   const [limit, setLimit] = useState(500);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [exportPath, setExportPath] = useState<string | null>(null);
-  const [exportCopied, setExportCopied] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string | null>(null);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-
   const {
     data: entries = [],
     error: logsError,
@@ -79,22 +72,6 @@ export default function Logs() {
     retry: false,
   });
 
-  const { data: logFiles = [] } = useQuery<string[]>({
-    queryKey: LOG_FILES_KEY,
-    queryFn: listLogFiles,
-    retry: false,
-  });
-
-  // 当前选中文件被日志滚动清理/移除时，同步清空选择与内容。
-  const prevLogFilesRef = useState(logFiles);
-  if (prevLogFilesRef[0] !== logFiles) {
-    if (selectedFile && !logFiles.includes(selectedFile)) {
-      setSelectedFile(null);
-      setFileContent(null);
-    }
-    prevLogFilesRef[1](logFiles);
-  }
-
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -105,69 +82,8 @@ export default function Logs() {
     setRefreshing(false);
   };
 
-  const handleExport = async () => {
-    try {
-      const path = await exportLogs();
-      setExportPath(path);
-      toastSuccess("日志已导出");
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    }
-  };
-
-  const handleCopyPath = async () => {
-    if (!exportPath) {
-      return;
-    }
-    await navigator.clipboard.writeText(exportPath);
-    setExportCopied(true);
-    window.setTimeout(() => setExportCopied(false), 2000);
-  };
-
-  const handleClear = async () => {
-    try {
-      await clearLogs();
-      toastSuccess("日志已清空");
-      await queryClient.invalidateQueries({ queryKey: LOGS_KEY });
-    } catch (err) {
-      toastError(toErrorMessage(err));
-    }
-  };
-
-  const handleRefreshFiles = async () => {
-    setFilesLoading(true);
-    try {
-      await queryClient.invalidateQueries({ queryKey: LOG_FILES_KEY });
-    } catch {
-      // ignore
-    }
-    setFilesLoading(false);
-  };
-
-  const handleSelectFile = async (name: string) => {
-    if (!name) {
-      setSelectedFile(null);
-      setFileContent(null);
-      return;
-    }
-    setSelectedFile(name);
-    setFileContent(null);
-    setFileError(null);
-    try {
-      setFileContent(await readLogFileTail(name, 1000));
-    } catch (err) {
-      setFileError(toErrorMessage(err));
-      setFileContent(null);
-    }
-  };
-
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold">日志</h1>
-        <p className="text-sm text-muted">后端与前端错误日志（内存环形缓冲，最新在前）</p>
-      </div>
-
+    <>
       <Card>
         <Card.Header>
           <Card.Title>运行日志</Card.Title>
@@ -262,96 +178,7 @@ export default function Logs() {
             )}
           </div>
         </Card.Content>
-        <Card.Footer className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onPress={() => void handleExport()}>
-              导出日志
-            </Button>
-            <Button variant="tertiary" onPress={() => void handleClear()}>
-              清空
-            </Button>
-          </div>
-          {exportPath && (
-            <div className="flex min-w-0 items-center gap-2 text-xs">
-              <span className="min-w-0 flex-1 truncate font-mono text-muted" title={exportPath}>
-                {exportPath}
-              </span>
-              <Button size="sm" variant="tertiary" onPress={() => void handleCopyPath()}>
-                {exportCopied ? "已复制" : "复制"}
-              </Button>
-            </div>
-          )}
-        </Card.Footer>
       </Card>
-
-      <Card>
-        <Card.Header>
-          <Card.Title>历史日志</Card.Title>
-          <Card.Description>按文件查看 `data_dir/logs` 下的滚动/固定日志文件，最多 1000 行</Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-64 flex-1 flex-col gap-1">
-              {logFiles.length === 0 ? (
-                <p className="text-xs text-warning">暂无日志文件，点击「刷新文件」重试</p>
-              ) : (
-                <>
-                  <Label htmlFor="logs-history-file">文件</Label>
-                  <Select
-                    id="logs-history-file"
-                    aria-label="历史日志文件"
-                    placeholder="选择文件"
-                    value={selectedFile ?? ""}
-                    onChange={(value) => void handleSelectFile(String(value ?? ""))}
-                    fullWidth
-                  >
-                    <Select.Trigger>
-                      <Select.Value />
-                      <Select.Indicator />
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {logFiles.map((file) => (
-                          <ListBox.Item key={file} id={file} textValue={file}>
-                            {file}
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
-                </>
-              )}
-            </div>
-            <Button variant="secondary" isPending={filesLoading} onPress={() => void handleRefreshFiles()}>
-              刷新文件
-            </Button>
-          </div>
-
-          {fileError && (
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>历史日志读取失败</Alert.Title>
-                <Alert.Description className="break-all">{fileError}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted">按文件查看，最多 1000 行</span>
-            <div className="max-h-96 overflow-auto rounded-medium border border-border bg-default-50 p-3">
-              {fileContent === null ? (
-                <p className="text-xs text-muted">选择左侧文件后显示其尾部内容</p>
-              ) : (
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
-                  {fileContent || "(空文件)"}
-                </pre>
-              )}
-            </div>
-          </div>
-        </Card.Content>
-      </Card>
-
       {logsError && (
         <Alert status="danger">
           <Alert.Indicator />
@@ -361,6 +188,6 @@ export default function Logs() {
           </Alert.Content>
         </Alert>
       )}
-    </div>
+    </>
   );
 }

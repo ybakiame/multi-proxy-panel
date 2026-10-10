@@ -118,10 +118,16 @@ export function Overlay(props: OverlayProps) {
 - M5：入口 `src/App.tsx`、样式 `src/index.css`、路由 `src/routes.tsx` 单源化；旧
   `src/desktop`、`src/mobile` 与 vite/tsc `@app` alias 已移除。配置入口、DNS、出站、
   路由、规则、规则集/市场、Experimental 共用实现。订阅规范路径为 `/subscriptions`。
-- 仪表盘、订阅、统计、日志、设置、入站目前仍有**页内平台实现**：分别涉及 VPN 授权与
-  桌面进程控制、订阅生效/覆写交互、统计卡片/表格、磁盘/内存日志、核心管理/VPN 通知、
+- 仪表盘、订阅、统计、设置、入站目前仍有**页内平台实现**：分别涉及 VPN 授权与
+  桌面进程控制、订阅生效/覆写交互、统计卡片/表格、核心管理/VPN 通知、
   TUN 提权/Android 恒启用。它们位于同一页面目录，由页面入口编译期选择，未声称所有
   页面逻辑已完全去重；后续按页继续收敛。因此 M5/M6 尚未全部关闭。
 - 保留桌面 Clash API 的启用开关、可选密钥和面板 UI 选择；Android 恒启用/必填密钥的
   自动纠正仅在移动构建执行。平台行为沿用既有 ADR，不把移动约束扩散至桌面。
 - 验证记录见 [UI 迁移验证](../testing/2026-10-10-client-ui-refactor.md)。
+
+### 按页收敛：日志（2026-10-10）
+
+日志页已合一：文件列表、尾部读取/刷新、导出、错误与清空确认共用 `Logs/index.tsx`；
+仅桌面实时内存缓冲保留 `RuntimeLogs` 能力组件（过滤/自动刷新），移动构建裁剪它。
+移除整页 DesktopLogs/MobileLogs 分叉，清空后更新共享日志缓存，保留桌面导出路径复制。
