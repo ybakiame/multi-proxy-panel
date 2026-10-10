@@ -62,6 +62,7 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0010](0010-desktop-bundled-core.md) | Accepted | 2026-10-08 | 桌面核心收敛为内嵌 pinned 核心（FlClash 模式） |
 | [ADR-0011](0011-shared-view-model-layer.md) | Accepted | 2026-10-08 | 客户端 UI 共享视图模型层（View-Model 下沉至 client-core） |
 | [ADR-0012](0012-client-core-lifecycle.md) | Accepted | 2026-10-09 | 客户端核心进程生命周期管理（OS 父子绑定 + PID 收割 + 退出清理 + 端口诊断） |
+| [ADR-0013](0013-client-own-ui-library.md) | Accepted | 2026-10-10 | 客户端自研组件库与页面树合一（@pp/ui，Base UI + Tailwind，编译期分发） |
 
 > 关联计划与评估材料：`docs/plans/2026-10-03-client-merge-evaluation.md`（ADR-0007 的评估依据）、
 > `docs/research/client-audit-2026-08.md`、`docs/research/panel-comparison.md`。

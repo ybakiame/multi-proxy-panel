@@ -4,7 +4,7 @@
 - **Date:** 2026-10-08
 - **Deciders:** ProxyPanel Contributors
 - **Scope:** `packages/client-core`、`apps/client/src/desktop`、`apps/client/src/mobile`
-- **Related:** ADR-0007（单壳双目标，双 UI 树与编译期分发）、ADR-0002（规则管理交互）
+- **Related:** ADR-0007（单壳双目标，双 UI 树与编译期分发）、ADR-0002（规则管理交互）、ADR-0013（后续：自研组件库与页面树合一，U1 目标以自研路线达成）
 
 ---
 
