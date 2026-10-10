@@ -20,3 +20,23 @@ export { Button, type ButtonSize, type ButtonVariant } from "./components/Button
 export { Field } from "./components/Field.tsx";
 export { Input, inputClassName, textareaClassName } from "./components/Input.tsx";
 export { Switch } from "./components/Switch.tsx";
+
+// T2 Overlay / Select 族
+export {
+  AlertDialog,
+  ConfirmDialog,
+  type AlertDialogStatus,
+  type ConfirmDialogProps,
+} from "./components/AlertDialog.tsx";
+export { BottomSheet, Modal, type BottomSheetProps, type ModalBackdropProps } from "./components/Modal.tsx";
+export { ListBox, Select, type ListBoxItemProps, type SelectRootProps } from "./components/Select.tsx";
+
+// 共享图标（Heroicons outline 内联）
+export {
+  CheckCircleIcon,
+  CheckIcon,
+  ChevronUpDownIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+  XMarkIcon,
+} from "./icons.tsx";
