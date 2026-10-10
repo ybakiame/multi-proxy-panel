@@ -424,6 +424,18 @@ RUST_LOG=proxy_panel_hub=debug,tower_http=debug cargo run --bin proxy-panel-hub
 grpcurl -plaintext localhost:50052 list proxypanel.HubAgent
 ```
 
+### 浏览器调试客户端 UI（无 Tauri）
+
+纯浏览器打开 vite devUrl 会被 App 拦截（缺 IPC 桥）。调试模式：
+`bun run --filter pp-client-app dev` 后访问 `http://localhost:1420/?browser-debug=1`
+（开关持久化到 localStorage，`?browser-debug=0` 关闭）。dev 构建下
+`src/browser-debug.ts` 用 `@tauri-apps/api/mocks` 安装 mock IPC，页面以空态渲染，
+可配合 agent-browser 做纯 UI/样式调试。
+
+**注意**：Tailwind v4 自动内容探测不跟进 node_modules 符号链接——`@pp/ui`
+等 workspace 链接包内的工具类必须在 app 的 CSS 入口显式 `@source` 才会生成
+（双端 `index.css` 已有 `@source "../../../../packages/ui/src"`）。
+
 ---
 
 ## 9. 文件变更后需同步的文档
