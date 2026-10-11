@@ -323,6 +323,10 @@ Android MainActivity 在 edge-to-edge 下处理原生 IME Insets，收缩 WebVie
 adjustNothing，键盘显示/收起由同一窗口适配器处理。`@pp/ui` 共享抽屉监听实际可见视口
 并滚动焦点输入框，适用于全部表单；不增加键盘 IPC，详见 ADR-0013。
 
+客户端窗口与策略 UI 适配见 [ADR-0014](adr/0014-client-window-and-proxy-ui.md)：
+Windows 关闭原生装饰并使用 Shell 标题栏插槽，窗口操作走 client-core；双端策略页
+使用已有核心命令，移动端不再内嵌面板。MITM 证书操作在 blocking 线程池执行。
+
 ### pp-script — 脚本引擎层
 
 基于 QuickJS（`rquickjs` 0.12）的客户端代理脚本引擎：

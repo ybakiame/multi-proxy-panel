@@ -3,32 +3,14 @@ import { Alert, Button, Card, Chip, Spinner } from "@pp/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { proxiesList, proxiesSelect, proxiesTestDelay, proxiesTestGroup, toErrorMessage } from "@pp/client-core";
-import type { GroupView, NodeView, ProxyList } from "@pp/client-core";
+import type { GroupView, ProxyList } from "@pp/client-core";
 import { PROXIES_KEY } from "@pp/client-core";
 import { toastError, toastSuccess } from "@pp/client-core";
 import NodeItem from "./NodeItem";
+import { SubPageShell } from "../../components/PageShell";
+import { buildNodeMap, groupTypeLabel } from "../../components/proxyFormat";
 
 const REFETCH_INTERVAL_MS = 5000;
-
-/** 分组类型中文标签。 */
-function groupTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    Selector: "选择器",
-    URLTest: "自动测速",
-    Fallback: "故障转移",
-    LoadBalance: "负载均衡",
-  };
-  return map[type] ?? type;
-}
-
-/** 构建节点名 → 节点详情的映射表。 */
-function buildNodeMap(nodes: NodeView[]): Map<string, NodeView> {
-  const map = new Map<string, NodeView>();
-  for (const node of nodes) {
-    map.set(node.name, node);
-  }
-  return map;
-}
 
 export default function Proxies() {
   const navigate = useNavigate();
@@ -58,7 +40,7 @@ export default function Proxies() {
   // 核心未运行时 error 不为 null
   const coreNotRunning = Boolean(error);
 
-  const nodeMap = data ? buildNodeMap(data.nodes) : new Map<string, NodeView>();
+  const nodeMap = buildNodeMap(data?.nodes ?? []);
 
   /** 切换节点（仅 Selector 类型组可点）。 */
   const handleSelect = useCallback(
@@ -166,17 +148,7 @@ export default function Proxies() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">策略组</h1>
-          <p className="text-sm text-muted">节点分组、选择与延迟测试</p>
-        </div>
-        <Button variant="secondary" size="sm" onPress={() => navigate("/subscriptions")}>
-          管理订阅
-        </Button>
-      </div>
-
+    <SubPageShell title="代理策略" backTo="/">
       {actionError && (
         <Alert status="danger">
           <Alert.Indicator />
@@ -214,15 +186,15 @@ export default function Proxies() {
 
             return (
               <Card key={group.name}>
-                <Card.Header className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                <Card.Header className="flex flex-col gap-3 border-b border-border">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Card.Title>{group.name}</Card.Title>
                     <Chip size="sm" variant="soft" color="default">
                       {groupTypeLabel(group.group_type)}
                     </Chip>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="min-w-0 flex-1 truncate text-sm text-muted" title={group.now}>
                       当前：
                       <span className="font-medium text-foreground">{group.now}</span>
                     </span>
@@ -236,6 +208,9 @@ export default function Proxies() {
                       {groupTesting ? "测速中" : "测速"}
                     </Button>
                   </div>
+                  <Card.Description>
+                    {group.members.length} 个候选 · {isSelector ? "点击节点切换出口" : "由核心自动选择出口"}
+                  </Card.Description>
                 </Card.Header>
                 <Card.Content>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -274,6 +249,6 @@ export default function Proxies() {
           )}
         </div>
       )}
-    </div>
+    </SubPageShell>
   );
 }

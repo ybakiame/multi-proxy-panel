@@ -1,5 +1,6 @@
 import { Button, Chip } from "@pp/ui";
 import type { NodeView } from "@pp/client-core";
+import { delayColor, delayText, nodeTypeLabel } from "../../components/proxyFormat";
 
 interface NodeItemProps {
   name: string;
@@ -11,41 +12,6 @@ interface NodeItemProps {
   testing: boolean;
   onSelect: () => void;
   onTest: () => void;
-}
-
-/** 延迟色块颜色：绿 < 300ms，黄 < 800ms，灰 = 超时/未测。 */
-function delayColor(delay: number | null | undefined): "success" | "warning" | "default" {
-  if (delay == null) return "default";
-  if (delay < 300) return "success";
-  if (delay < 800) return "warning";
-  return "default";
-}
-
-/** 延迟展示文本。 */
-function delayText(delay: number | null | undefined): string {
-  if (delay == null) return "超时";
-  return `${delay}ms`;
-}
-
-/** 节点类型中文标签（常见类型映射）。 */
-function nodeTypeLabel(type: string | undefined): string {
-  if (!type) return "未知";
-  const map: Record<string, string> = {
-    Shadowsocks: "SS",
-    Vmess: "VMess",
-    Trojan: "Trojan",
-    Vless: "VLESS",
-    Hysteria: "Hysteria",
-    Hysteria2: "Hy2",
-    Tuic: "Tuic",
-    WireGuard: "WG",
-    Direct: "直连",
-    Reject: "拒绝",
-    Http: "HTTP",
-    Socks5: "SOCKS5",
-    Snell: "Snell",
-  };
-  return map[type] ?? type;
 }
 
 export default function NodeItem({
@@ -62,25 +28,26 @@ export default function NodeItem({
   const canClick = selectable && !busy && !testing;
 
   return (
-    <button
-      type="button"
+    <div
       className={[
-        "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+        "flex w-full min-w-0 items-center gap-2 rounded-xl border p-2 transition-colors",
         selected
           ? "border-primary bg-primary/10"
           : "border-border/60 bg-surface hover:border-primary/40 hover:bg-surface-secondary",
-        canClick ? "cursor-pointer" : "cursor-default",
       ].join(" ")}
-      onClick={() => {
-        if (canClick) onSelect();
-      }}
-      disabled={!canClick}
-      aria-pressed={selectable ? selected : undefined}
-      aria-label={selectable ? `选择节点 ${name}` : undefined}
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{name}</span>
+      <button
+        type="button"
+        className="flex min-h-12 min-w-0 flex-1 flex-col justify-center gap-1 rounded-lg px-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default"
+        disabled={!canClick}
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={`选择节点 ${name}`}
+      >
+        <div className="flex w-full min-w-0 items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
+            {name}
+          </span>
           {selected && (
             <Chip size="sm" variant="soft" color="accent">
               选中
@@ -104,12 +71,11 @@ export default function NodeItem({
             </Chip>
           )}
         </div>
-      </div>
+      </button>
 
       <Button
         size="sm"
         variant="ghost"
-        isIconOnly
         isPending={testing}
         isDisabled={testing}
         onPress={() => {
@@ -122,6 +88,6 @@ export default function NodeItem({
           {testing ? "测速中" : delayText(node?.delay_ms)}
         </Chip>
       </Button>
-    </button>
+    </div>
   );
 }

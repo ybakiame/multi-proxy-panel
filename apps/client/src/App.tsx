@@ -10,6 +10,7 @@ import { Toaster } from "./components/Toaster";
 import { RestartPrompt as DesktopRestartPrompt } from "./components/desktop/RestartPrompt";
 import { RestartPrompt as MobileRestartPrompt } from "./components/mobile/RestartPrompt";
 import { AppRoutes } from "./routes";
+import { WindowTitlebar } from "./components/desktop/WindowTitlebar";
 
 function AppContent() {
   const { pathname } = useLocation();
@@ -23,6 +24,7 @@ function AppContent() {
       <Toaster />
       <Shell
         mainRef={mainRef}
+        titlebar={IS_MOBILE ? null : <WindowTitlebar />}
         sidebar={IS_MOBILE ? null : <DesktopSidebar />}
         navigation={IS_MOBILE ? <TabBar /> : null}
         showNavigation={showNavigation}

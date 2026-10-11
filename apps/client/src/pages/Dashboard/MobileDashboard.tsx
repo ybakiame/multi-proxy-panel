@@ -12,7 +12,7 @@ import {
   vpnLastError,
 } from "@pp/client-core";
 import { useDashboardState } from "@pp/client-core";
-import { CurrentNodeCard } from "../../components/mobile/CurrentNodeCard";
+import { ProxyStrategyCard } from "../../components/ProxyStrategyCard";
 import { PageShell } from "../../components/PageShell";
 import { StartStopFab } from "../../components/mobile/StartStopFab";
 import { StatusCard } from "../../components/mobile/StatusCard";
@@ -27,12 +27,10 @@ const VPN_AUTH_MARKER = "vpn_not_authorized";
  * 首页（仪表盘，ADR-0003 M5）。区块自上而下：
  *
  * 1. 头部：应用名 + 生效订阅行（点击开 SubscriptionSheet；无生效订阅时行下提示先选择）；
- * 2. 状态卡（StatusCard）：运行状态大字；运行中内嵌出站模式分段切换（`RuleModeSwitch`），
- *    未运行时仅展示状态并保留已保存模式 chip；
+ * 2. 状态卡（StatusCard）：运行状态与当前模式，只读展示；
  * 3. 今日流量卡（TodayStatsCard）：本地持久化统计（已代理流量主指标），
  *    未运行时也展示，点击进入 `/stats` 详情页；
- * 4. 运行依赖区（仅核心运行中渲染，未运行时整组隐藏，相关轮询亦不发起）：
- *    当前节点卡（CurrentNodeCard，订阅名/分组/当前节点，点击进面板页）；
+ * 4. 共享代理策略卡：路由模式、当前节点与策略组入口；运行时额外展示流量会话；
  * 5. 主操作：右下角悬浮启停按钮（StartStopFab，无生效订阅时禁用并提示选择）；点「启动代理」
  *    即完成「启动 →（遇 `vpn_not_authorized`）自动请求 VPN 授权 → 授权成功自动重试启动」
  *    的一次点击链路；授权被拒 / 重试仍失败则落错误展示（含「去授权」兜底按钮）；
@@ -172,23 +170,17 @@ export default function Dashboard() {
         {!running && !canStart && <p className="text-xs text-amber-500">请先选择要使用的订阅</p>}
       </header>
 
-      {/* 2. 状态卡（运行中内嵌出站模式分段切换） */}
-      <StatusCard
-        running={running}
-        ruleMode={ruleMode}
-        clashApiEnabled={config?.clash_api_enabled ?? false}
-        missingRuleSets={status?.missing_rule_sets ?? []}
-      />
+      {/* 2. 运行状态与当前模式 */}
+      <StatusCard running={running} ruleMode={ruleMode} missingRuleSets={status?.missing_rule_sets ?? []} />
 
       {/* 3. 今日流量（持久化统计，未运行时也展示；点击进入详情页） */}
       <TodayStatsCard running={running} />
 
+      <ProxyStrategyCard running={running} subscriptionName={activeSub?.name ?? null} />
+
       {/* 4. 运行依赖区（仅核心运行中渲染；未运行时整组隐藏，相关轮询不发起） */}
       {running && (
         <>
-          {/* 当前节点卡（订阅名/分组/当前节点，点击进入面板页） */}
-          <CurrentNodeCard running={running} subscriptionName={activeSub?.name ?? null} />
-
           {/* 流量统计卡（Clash API 会话实时统计） */}
           <TrafficCard running={running} clashApiUrl={status?.clash_api_url ?? null} />
         </>

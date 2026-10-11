@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowPathIcon, ArrowUpTrayIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { InlineAlert, IS_MOBILE } from "@pp/ui";
+import { InlineAlert, IS_MOBILE, SelectField } from "@pp/ui";
 import RuntimeLogs from "./RuntimeLogs";
 import { Button, Card, ConfirmDialog, Spinner } from "@pp/ui";
 import {
@@ -20,24 +20,24 @@ import { SubPageShell } from "../../components/PageShell";
 /** 每次读取的尾部行数（后端默认/上限 1000）。 */
 const TAIL_LINES = 1000;
 
-/** 日志文件中文说明：按已知文件名规则给出可读副标题（后端只返回文件名列表）。 */
-function describeLogFile(name: string): string {
-  if (name === "libbox.log") return "内核日志（sing-box / libbox）";
-  if (name === "last_start_config.json") return "上次启动的核心配置快照";
-  const daily = name.match(/^app\.log\.(\d{4}-\d{2}-\d{2})$/);
-  if (daily) return `滚动日志 · ${daily[1]}`;
-  if (name === "app.log") return "当前运行日志";
-  return "日志文件";
+/** 将应用日志、核心日志与诊断快照分别选择。 */
+function logType(name: string): string {
+  if (name === "libbox.log") return "core";
+  if (name === "last_start_config.json") return "config";
+  return "app";
 }
+const LOG_TYPES = [
+  { value: "app", label: "应用日志" },
+  { value: "core", label: "核心日志" },
+  { value: "config", label: "启动配置快照" },
+];
 
 /** 双端共用磁盘日志、导出与清空；桌面额外显示运行日志缓冲。 */
 export default function Logs() {
   const queryClient = useQueryClient();
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string | null>(null);
-  const [readError, setReadError] = useState<string | null>(null);
-  const [reading, setReading] = useState(false);
+  const [selectedType, setSelectedType] = useState("app");
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportPath, setExportPath] = useState<string | null>(null);
@@ -54,6 +54,23 @@ export default function Logs() {
     retry: false,
   });
 
+  const {
+    data: fileContent = null,
+    error: readError,
+    isFetching: reading,
+    refetch: refreshTail,
+  } = useQuery({
+    queryKey: [...LOG_FILES_KEY, "tail", selectedFile],
+    queryFn: () => readLogFileTail(selectedFile!, TAIL_LINES),
+    enabled: selectedFile !== null,
+    retry: false,
+  });
+  const visibleFiles = logFiles.filter((name) => logType(name) === selectedType);
+  const changeType = (value: string) => {
+    setSelectedType(value);
+    setSelectedFile(null);
+  };
+
   // tail 内容滚动容器：内容更新后自动滚到底部（最新日志在文件末尾）。
   const tailBoxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -64,45 +81,16 @@ export default function Logs() {
     }
   }, [fileContent]);
 
-  /** 读取指定文件的尾部内容；写入选区与错误状态。 */
-  const loadTail = async (name: string) => {
-    setReading(true);
-    setReadError(null);
-    try {
-      setFileContent(await readLogFileTail(name, TAIL_LINES));
-    } catch (err) {
-      setReadError(toErrorMessage(err));
-      setFileContent(null);
-    }
-    setReading(false);
-  };
-
-  const handleSelectFile = async (name: string) => {
-    if (name === selectedFile) {
-      return;
-    }
-    setSelectedFile(name);
-    setFileContent(null);
-    await loadTail(name);
-  };
-
-  /** 手动刷新：重拉文件列表；若选中文件仍存在则重读其尾部，已消失则清空选择。 */
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await queryClient.invalidateQueries({ queryKey: LOG_FILES_KEY });
+      await queryClient.invalidateQueries({ queryKey: LOG_FILES_KEY, exact: true });
       const files = queryClient.getQueryData<string[]>(LOG_FILES_KEY);
-      if (selectedFile && files && !files.includes(selectedFile)) {
-        setSelectedFile(null);
-        setFileContent(null);
-        setReadError(null);
-      } else if (selectedFile) {
-        await loadTail(selectedFile);
-      }
-    } catch {
-      // invalidateQueries 不抛异常
+      if (selectedFile && files && !files.includes(selectedFile)) setSelectedFile(null);
+      else if (selectedFile) await refreshTail();
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
   };
 
   const handleExport = async () => {
@@ -158,71 +146,34 @@ export default function Logs() {
     >
       {!IS_MOBILE && <RuntimeLogs />}
 
-      {/* 日志文件列表 */}
       <Card>
         <Card.Header>
-          <Card.Title>日志文件</Card.Title>
-          <Card.Description>应用保存的滚动与内核日志文件</Card.Description>
+          <Card.Title>日志记录</Card.Title>
+          <Card.Description>选择日志类型和文件，查看末尾 1000 行</Card.Description>
         </Card.Header>
-        <Card.Content className="flex flex-col gap-2">
+        <Card.Content className="flex flex-col gap-4">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-2">
+              <span className="text-sm text-muted">日志类型</span>
+              <SelectField label="日志类型" value={selectedType} options={LOG_TYPES} onChange={changeType} />
+            </div>
+            <div className="flex min-w-0 flex-col gap-2">
+              <span className="text-sm text-muted">日志文件</span>
+              <SelectField
+                label="日志文件"
+                value={selectedFile ?? ""}
+                options={visibleFiles.map((name) => ({ value: name, label: name }))}
+                onChange={setSelectedFile}
+                placeholder={filesLoading ? "正在读取目录…" : visibleFiles.length ? "请选择文件" : "暂无此类文件"}
+                disabled={filesLoading || refreshing}
+              />
+            </div>
+          </div>
           {filesError && (
             <InlineAlert kind="danger" title="日志目录读取失败">
               {toErrorMessage(filesError)}
             </InlineAlert>
           )}
-          {filesLoading && logFiles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-              <Spinner aria-hidden="true" />
-              <span className="text-sm text-zinc-500 dark:text-zinc-400">正在读取日志目录…</span>
-            </div>
-          ) : logFiles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-              <span className="text-sm text-zinc-500 dark:text-zinc-400">暂无日志文件</span>
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                产生运行日志后会自动生成滚动文件，可点击右上角刷新重试
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {logFiles.map((name) => {
-                const selected = name === selectedFile;
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={reading || refreshing}
-                    onClick={() => void handleSelectFile(name)}
-                    className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80 ${
-                      selected
-                        ? "border-primary/60 bg-primary/10"
-                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-                    }`}
-                  >
-                    <span
-                      className="w-full truncate font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                      title={name}
-                    >
-                      {name}
-                    </span>
-                    <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{describeLogFile(name)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Card.Content>
-      </Card>
-
-      {/* 尾部内容查看 */}
-      <Card>
-        <Card.Header>
-          <Card.Title>{selectedFile ? "日志内容" : "文件预览"}</Card.Title>
-          <Card.Description>
-            {selectedFile ? `最多显示末尾 ${TAIL_LINES} 行 · 自动滚动到底部` : "点击上方文件查看其尾部内容"}
-          </Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-2">
           {reading && fileContent === null ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
               <Spinner aria-hidden="true" />
@@ -230,12 +181,12 @@ export default function Logs() {
             </div>
           ) : readError ? (
             <InlineAlert kind="danger" title="日志读取失败">
-              <span className="break-all">{readError}</span>
+              <span className="break-all">{toErrorMessage(readError)}</span>
             </InlineAlert>
           ) : fileContent === null ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <span className="text-sm text-zinc-500 dark:text-zinc-400">未选择文件</span>
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">从上方列表选择一个日志文件开始查看</span>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">先选择日志类型，再选择文件查看内容</span>
             </div>
           ) : (
             <div

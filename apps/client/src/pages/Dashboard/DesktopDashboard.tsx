@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAtom } from "jotai";
 import { useCallback, useState } from "react";
-import { Alert, Card } from "@pp/ui";
+import { Alert } from "@pp/ui";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listCores, listProfiles } from "@pp/client-core";
 import { activateSubscription, setActiveCore, toErrorMessage } from "@pp/client-core";
@@ -14,7 +14,7 @@ import { markRestartRequired } from "@pp/client-core";
 import ConfigPreviewModal from "../../components/desktop/ConfigPreviewModal";
 import { TodayStatsCard } from "../../components/TodayStatsCard";
 import { useDashboardState } from "@pp/client-core";
-import { RuleModeSwitch } from "../../components/RuleModeSwitch";
+import { ProxyStrategyCard } from "../../components/ProxyStrategyCard";
 import { DesktopRunConfig } from "./DesktopRunConfig";
 import DashboardStatusCards from "../DashboardStatusCards";
 
@@ -32,7 +32,6 @@ export default function Dashboard() {
     subscriptions: subs,
     activeSub,
     running,
-    ruleMode,
     startMutation,
     stopMutation,
   } = useDashboardState({ onActionError: setLastError, onActionSuccess: () => setLastError(null) });
@@ -213,8 +212,6 @@ export default function Dashboard() {
   }
   const canStart = gateMessages.length === 0;
 
-  // 规则模式：优先取运行状态，其次配置，默认 rule。
-
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -265,22 +262,7 @@ export default function Dashboard() {
         onStop={handleStop}
       />
 
-      {/* B. 规则模式 */}
-      <Card>
-        <Card.Header>
-          <Card.Title>规则模式</Card.Title>
-          <Card.Description>切换流量路由策略</Card.Description>
-        </Card.Header>
-        <Card.Content className="flex flex-col gap-3">
-          <RuleModeSwitch
-            value={ruleMode}
-            running={running}
-            clashApiEnabled={config?.clash_api_enabled ?? false}
-            onError={setActionError}
-            onSuccess={() => setActionError(null)}
-          />
-        </Card.Content>
-      </Card>
+      <ProxyStrategyCard running={running} subscriptionName={activeSub?.name ?? null} />
 
       {/* C. 今日流量（点击进入统计详情页） */}
       <TodayStatsCard running={running} />

@@ -61,6 +61,10 @@ const MOCKS: Record<string, unknown> = {
   list_subscriptions: [],
   list_cores: [],
   list_remotes: [],
+  list_log_files: [],
+  get_logs: [],
+  list_traffic: [],
+  proxies_list: { groups: [], nodes: [] },
   proxy_status: null,
   toast_mode_override: null,
 };

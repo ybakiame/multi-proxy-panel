@@ -1,6 +1,6 @@
 import { ChevronRightIcon, PlusIcon, SignalIcon } from "@heroicons/react/24/outline";
 import type { DnsServer } from "@pp/client-core";
-import { delayColor } from "../../../components/mobile/proxyFormat";
+import { delayColor } from "../../../components/proxyFormat";
 import { Button, Card, Chip, Switch } from "@pp/ui";
 import { DNS_ROLE_LABELS, dnsRoleTag, dnsServerSummary, dnsServerTypeLabel } from "@pp/client-core";
 

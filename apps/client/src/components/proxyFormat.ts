@@ -42,7 +42,7 @@ export function delayColor(delay: number | null | undefined): "success" | "warni
 
 /** 延迟展示文本。 */
 export function delayText(delay: number | null | undefined): string {
-  if (delay == null) return "超时";
+  if (delay == null) return "未测速 / 超时";
   return `${delay}ms`;
 }
 

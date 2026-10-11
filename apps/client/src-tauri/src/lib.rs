@@ -48,6 +48,10 @@ pub fn run() {
 
     let builder = builder
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_decorations(false)?;
+            }
             // 数据目录：桌面 `$HOME/.proxy-panel-client`；Android 应用私有目录
             // （HOME 在 Android 为只读 `/`）。
             #[cfg(not(any(target_os = "android", target_os = "ios")))]

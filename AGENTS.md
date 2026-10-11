@@ -327,6 +327,10 @@ desktop/mobile 双应用），平台差异全部为**编译期事实**：
 Android edge-to-edge 的 IME Insets 由 MainActivity 内容容器处理，WebView 实际高度随键盘
 变化；共享抽屉负责焦点滚动（ADR-0013），不依赖旧 WebView 的 VisualViewport 键盘上报。
 
+Windows 标题栏经 Shell 插槽自定义，窗口操作统一走 client-core，权限仅授予 Windows。
+双端 `/proxies` 共用策略页；移动端不再内嵌 Clash Web UI。MITM 系统信任查询与安装
+必须在后台 blocking 线程池执行，禁止阻塞窗口线程（ADR-0014）。
+
 核心进程生命周期为 ADR-0012 纵深防御四层：OS 级父子绑定（Windows Job Object /
 Linux PR_SET_PDEATHSIG，pp-common `spawn_guarded`）+ PID 文件启动收割
 （pp-core `lifecycle`，exe 校验防 PID 复用误杀）+ ExitRequested 退出清理

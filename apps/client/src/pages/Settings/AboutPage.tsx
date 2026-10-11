@@ -1,5 +1,7 @@
 import { SubPageShell } from "../../components/PageShell";
 import { AboutCard } from "./AboutCard";
+import ProductCard from "./ProductCard";
+import { IS_MOBILE } from "@pp/ui";
 
 /**
  * 关于子页（路由 `/settings/about`）。
@@ -9,7 +11,8 @@ import { AboutCard } from "./AboutCard";
 export default function AboutPage() {
   return (
     <SubPageShell title="关于">
-      <AboutCard />
+      <ProductCard />
+      {IS_MOBILE && <AboutCard />}
     </SubPageShell>
   );
 }

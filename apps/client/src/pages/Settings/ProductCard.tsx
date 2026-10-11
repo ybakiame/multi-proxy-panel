@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Button, Card } from "@pp/ui";
-import { toastError, toastSuccess } from "@pp/client-core";
-import { checkForUpdate } from "../../../lib/updater";
-import { AboutInfo } from "../AboutInfo";
+import { Button, Card, IS_MOBILE } from "@pp/ui";
+import { openReleaseUrl, toastError, toastSuccess } from "@pp/client-core";
+import { checkForUpdate } from "../../lib/updater";
+import { AboutInfo } from "./AboutInfo";
 
 type UpdateState =
   | { kind: "idle" }
@@ -19,12 +19,17 @@ type UpdateState =
  * 检查更新（ADR-0008 D2）：经 GitHub Releases latest.json + ed25519 签名校验；
  * 有更新时行内出现「下载并重启」按钮，安装完成自动重启应用。
  */
-export default function AboutSection() {
+export default function ProductCard() {
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
 
   const onCheck = async () => {
     setState({ kind: "checking" });
     try {
+      if (IS_MOBILE) {
+        await openReleaseUrl();
+        setState({ kind: "idle" });
+        return;
+      }
       const result = await checkForUpdate();
       if (result.version && result.install) {
         setState({ kind: "available", version: result.version, install: result.install });
@@ -55,11 +60,12 @@ export default function AboutSection() {
   return (
     <Card>
       <Card.Header>
-        <Card.Title>关于应用</Card.Title>
-        <Card.Description>ProxyPanel 客户端信息</Card.Description>
+        <Card.Title>ProxyPanel</Card.Title>
+        <Card.Description>管理订阅、代理策略与本地规则的跨平台代理客户端</Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-4">
         <AboutInfo />
+        {IS_MOBILE && <p className="text-xs text-muted">检查更新将在系统浏览器打开最新发布页。</p>}
         <div className="flex min-h-8 items-center justify-between gap-4">
           <span className="text-sm text-muted">检查更新</span>
           {state.kind === "available" ? (

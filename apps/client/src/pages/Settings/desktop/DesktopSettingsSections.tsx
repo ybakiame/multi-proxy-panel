@@ -2,7 +2,7 @@ import { Alert } from "@pp/ui";
 import { useSettingsConfig } from "./useSettingsConfig";
 import GithubSettings from "./GithubSettings";
 import CoreManagement from "./CoreManagement";
-import AboutSection from "./AboutSection";
+import ProductCard from "../ProductCard";
 
 /**
  * 设置页。入站（混合端口 / TUN / IPv6）与 Clash 面板均已剥离至配置页
@@ -29,7 +29,7 @@ export default function DesktopSettingsSections() {
         </Alert>
       )}
 
-      <AboutSection />
+      <ProductCard />
     </>
   );
 }

@@ -16,7 +16,6 @@ import Logs from "./pages/Logs";
 import Stats from "./pages/Stats";
 import Proxies from "./pages/Proxies";
 import Connections from "./pages/Connections";
-import Panel from "./pages/Panel";
 import Mitm from "./pages/Mitm";
 import Scripts from "./pages/Scripts";
 import Tools from "./pages/Tools";
@@ -43,6 +42,8 @@ const sharedRoutes: RouteObject[] = [
   { path: "/settings", element: <Settings /> },
   { path: "/stats", element: <Stats /> },
   { path: "/logs", element: <Logs /> },
+  { path: "/proxies", element: <Proxies /> },
+  redirect("/panel", "/proxies"),
   redirect("/nodes", "/subscriptions"),
   redirect("/config/network", "/config/inbounds"),
   redirect("/config/clash-api", "/config/experimental"),
@@ -58,9 +59,7 @@ const sharedRoutes: RouteObject[] = [
 ];
 const platformRoutes: RouteObject[] = IS_MOBILE
   ? [
-      { path: "/panel", element: <Panel /> },
-      redirect("/proxies", "/panel"),
-      redirect("/connections", "/panel"),
+      redirect("/connections", "/proxies"),
       { path: "/settings/vpn-notify", element: <VpnNotify /> },
       { path: "/settings/github", element: <Github /> },
       { path: "/settings/dev-tools", element: <DevTools /> },
@@ -68,7 +67,6 @@ const platformRoutes: RouteObject[] = IS_MOBILE
       { path: "/settings/about", element: <About /> },
     ]
   : [
-      { path: "/proxies", element: <Proxies /> },
       { path: "/connections", element: <Connections /> },
       { path: "/mitm", element: <Mitm /> },
       { path: "/scripts", element: <Scripts /> },
