@@ -137,14 +137,23 @@ export default function Mitm() {
 
   // 系统信任库信任状态
   const queryClient = useQueryClient();
-  const { data: trust } = useQuery({
+  const {
+    data: trust,
+    isFetching: checkingTrust,
+    error: trustError,
+    refetch: refreshTrust,
+  } = useQuery({
     queryKey: MITM_CA_TRUST_KEY,
     queryFn: getMitmCaTrustStatus,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 
   // 一键安装到系统信任库：成功后回写信任状态缓存；失败 toast 错误信息。
   const installMutation = useMutation({
     mutationFn: installMitmCa,
+    onMutate: () => queryClient.cancelQueries({ queryKey: MITM_CA_TRUST_KEY }),
     onSuccess: (view) => {
       queryClient.setQueryData(MITM_CA_TRUST_KEY, view);
       if (view.status === "trusted") {
@@ -239,7 +248,7 @@ export default function Mitm() {
                     <dt className="shrink-0 text-muted">系统信任状态</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <Chip size="sm" variant="soft" color={TRUST_CHIP[trust?.status ?? "unknown"].color}>
-                        {TRUST_CHIP[trust?.status ?? "unknown"].label}
+                        {checkingTrust ? "查询中…" : TRUST_CHIP[trust?.status ?? "unknown"].label}
                       </Chip>
                       {trust && (
                         <span className="min-w-0 truncate text-xs text-muted" title={trust.detail}>
@@ -249,6 +258,14 @@ export default function Mitm() {
                     </dd>
                   </div>
                   <div className="flex items-center gap-3">
+                    <Button
+                      variant="secondary"
+                      isPending={checkingTrust}
+                      isDisabled={installMutation.isPending}
+                      onPress={() => void refreshTrust()}
+                    >
+                      刷新信任状态
+                    </Button>
                     <Button
                       variant="primary"
                       isPending={installMutation.isPending}
@@ -261,6 +278,11 @@ export default function Mitm() {
                     </Button>
                     {caCopied && <span className="text-sm text-success">已复制到剪贴板</span>}
                   </div>
+                  {trustError && (
+                    <p role="alert" className="text-danger">
+                      {toErrorMessage(trustError)}
+                    </p>
+                  )}
                   <p className="text-xs text-muted">
                     macOS / Linux 安装时会弹系统授权框；Windows 写入当前用户信任库，无需管理员权限
                   </p>

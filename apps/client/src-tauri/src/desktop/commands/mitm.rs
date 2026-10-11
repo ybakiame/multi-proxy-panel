@@ -111,8 +111,11 @@ pub struct MitmCaView {
 
 /// Get MITM CA certificate (`data_dir/certs/ca.{crt,key}`).
 #[tauri::command]
-pub fn get_mitm_ca(state: State<'_, AppState>) -> Result<MitmCaView, String> {
-    get_mitm_ca_impl(&state.data_dir)
+pub async fn get_mitm_ca(state: State<'_, AppState>) -> Result<MitmCaView, String> {
+    let data_dir = state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || get_mitm_ca_impl(&data_dir))
+        .await
+        .map_err(|e| format!("读取 CA 任务失败: {e}"))?
 }
 
 /// Implementation of `get_mitm_ca` (testable pure logic).
@@ -142,19 +145,29 @@ fn ensure_ca_path(data_dir: &std::path::Path) -> Result<std::path::PathBuf, Stri
 /// Windows 写 CurrentUser Root 存储（免 UAC）；macOS / Linux 弹系统授权框。
 /// 返回安装后的信任状态（供前端直接回写缓存）。
 #[tauri::command]
-pub fn install_mitm_ca(state: State<'_, AppState>) -> Result<CaTrustView, String> {
-    let ca_path = ensure_ca_path(&state.data_dir)?;
-    pp_mitm::install_ca(&ca_path).map_err(|e| format!("安装 CA 到系统信任库失败: {e}"))?;
-    Ok(pp_mitm::ca_trust_status(&ca_path))
+pub async fn install_mitm_ca(state: State<'_, AppState>) -> Result<CaTrustView, String> {
+    let data_dir = state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ca_path = ensure_ca_path(&data_dir)?;
+        pp_mitm::install_ca(&ca_path).map_err(|e| format!("安装 CA 到系统信任库失败: {e}"))?;
+        Ok(pp_mitm::ca_trust_status(&ca_path))
+    })
+    .await
+    .map_err(|e| format!("安装 CA 任务失败: {e}"))?
 }
 
 /// Detect whether the MITM CA is trusted by the system trust store.
 ///
 /// 检测失败返回 status=unknown 而非报错。
 #[tauri::command]
-pub fn mitm_ca_trust_status(state: State<'_, AppState>) -> Result<CaTrustView, String> {
-    let ca_path = ensure_ca_path(&state.data_dir)?;
-    Ok(pp_mitm::ca_trust_status(&ca_path))
+pub async fn mitm_ca_trust_status(state: State<'_, AppState>) -> Result<CaTrustView, String> {
+    let data_dir = state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ca_path = ensure_ca_path(&data_dir)?;
+        Ok(pp_mitm::ca_trust_status(&ca_path))
+    })
+    .await
+    .map_err(|e| format!("查询 CA 信任状态任务失败: {e}"))?
 }
 
 #[cfg(test)]

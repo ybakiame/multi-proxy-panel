@@ -9,8 +9,12 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use pp_common::error::{PanelError, PanelResult};
+
+// 独立 FileCaStore 实例也必须共享保护；异步 UI 查询与核心启动可能同时首次生成 CA。
+static CA_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 /// MITM CA 材料（PEM 编码）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +54,9 @@ impl FileCaStore {
 
 impl CaStore for FileCaStore {
     fn load_or_generate(&self) -> PanelResult<CaMaterial> {
+        let _guard = CA_FILE_LOCK
+            .lock()
+            .map_err(|e| PanelError::Mitm(format!("CA 文件锁失败: {e}")))?;
         fs::create_dir_all(&self.dir)
             .map_err(|e| PanelError::Mitm(format!("create ca dir {:?}: {e}", self.dir)))?;
         let cert_path = self.cert_path();
@@ -171,6 +178,32 @@ mod tests {
         assert!(first.cert_pem.contains("BEGIN CERTIFICATE"));
         assert!(first.key_pem.contains("PRIVATE KEY"));
         assert!(!first.key_pem.contains("PUBLIC KEY"));
+    }
+
+    #[test]
+    fn concurrent_stores_share_one_complete_ca_pair() {
+        let dir = tempdir().unwrap();
+        let barrier = std::sync::Barrier::new(8);
+        let materials = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let barrier = &barrier;
+                    let path = dir.path();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        FileCaStore::new(path).load_or_generate().unwrap()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let persisted = FileCaStore::new(dir.path()).load_or_generate().unwrap();
+        for material in materials {
+            assert_eq!(material, persisted);
+        }
     }
 
     #[cfg(unix)]
