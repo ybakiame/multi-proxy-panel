@@ -1,4 +1,4 @@
-//! 核心进程生命周期辅助（ADR-0012 D1/D2）。
+//! 核心进程生命周期辅助。
 //!
 //! - [`spawn_core`]：经 `pp_common::spawn_guarded` spawn 核心子进程并完成
 //!   std → tokio 转换（OS 级父子绑定：父死子亡）；
@@ -33,7 +33,7 @@ pub struct CoreSpawn {
     pub stderr: Option<ChildStderr>,
 }
 
-/// Spawn 核心子进程并绑定其生命周期到本进程（ADR-0012 D1），完成
+/// Spawn 核心子进程并绑定其生命周期到本进程，完成
 /// std → tokio 的 Child / stdio 转换。`core` 为错误信息中的核心名。
 pub fn spawn_core<I, S>(core: &str, binary: &Path, args: I) -> Result<CoreSpawn, String>
 where
@@ -89,7 +89,7 @@ fn exe_matches(pid: u32, binary: &Path) -> bool {
     }
 }
 
-/// `start` 前收割上次实例遗留的核心进程（ADR-0012 D2）。
+/// `start` 前收割上次实例遗留的核心进程。
 ///
 /// pidfile 存在且进程存活且 exe 匹配时强杀；进程已死、exe 不匹配（PID 复用）
 /// 或 pidfile 损坏时仅清理 pidfile。全部失败降级为告警，不阻塞启动。

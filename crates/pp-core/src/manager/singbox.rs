@@ -22,7 +22,7 @@ pub struct SingBoxProcessManager {
     binary: PathBuf,
     config_dir: PathBuf,
     process: RwLock<Option<std::process::Child>>,
-    // 父子绑定句柄（ADR-0012 D1）：声明顺序在 process 之后——manager drop 时
+    // 父子绑定句柄：声明顺序在 process 之后——manager drop 时
     // 先释放 Child（detach），再由 guard 关闭 Job 句柄杀死残留子进程。
     guard: RwLock<Option<LifecycleGuard>>,
     start_time: RwLock<Option<Instant>>,
@@ -76,11 +76,11 @@ impl CoreManager for SingBoxProcessManager {
             return Err(PanelError::Core(msg));
         }
 
-        // ADR-0012 D2：收割上次实例遗留的核心进程（OS 级绑定未覆盖的旧版本
+        // 收割上次实例遗留的核心进程（OS 级绑定未覆盖的旧版本
         // 孤儿、macOS 等场景），避免端口被残留进程占用。
         lifecycle::reap_stale(&self.pid_path(), &self.binary);
 
-        // ADR-0012 D1：OS 级父子绑定 spawn（父进程死亡核心即被 OS 回收）。
+        // OS 级父子绑定 spawn（父进程死亡核心即被 OS 回收）。
         let spawn = match lifecycle::spawn_core(
             "sing-box",
             &self.binary,
@@ -144,7 +144,7 @@ impl CoreManager for SingBoxProcessManager {
             *self.start_time.write().await = None;
             tracing::info!("sing-box stopped");
         }
-        // ADR-0012：释放父子绑定句柄（Windows Job 句柄关闭会确保子进程死亡）
+        // 释放父子绑定句柄（Windows Job 句柄关闭会确保子进程死亡）
         // 并清理 PID 文件。
         *self.guard.write().await = None;
         lifecycle::remove_pid_file(&self.pid_path());
@@ -235,9 +235,5 @@ impl CoreManager for SingBoxProcessManager {
 
     async fn last_error(&self) -> PanelResult<String> {
         Ok(self.last_error.read().await.clone())
-    }
-
-    fn reap_stale(&self) {
-        lifecycle::reap_stale(&self.pid_path(), &self.binary);
     }
 }

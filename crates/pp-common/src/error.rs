@@ -36,15 +36,6 @@ pub enum PanelError {
     #[error("subscription error: {0}")]
     Subscription(String),
 
-    #[error("script error: {0}")]
-    Script(String),
-
-    #[error("mitm error: {0}")]
-    Mitm(String),
-
-    #[error("client error: {0}")]
-    Client(String),
-
     #[error("traffic error: {0}")]
     Traffic(String),
 

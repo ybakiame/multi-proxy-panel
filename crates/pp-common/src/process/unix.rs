@@ -1,4 +1,4 @@
-//! Unix 平台进程原语实现（Linux / macOS / Android）。
+//! Unix 平台进程原语实现（Linux / macOS）。
 
 use std::io;
 use std::path::PathBuf;
@@ -6,8 +6,8 @@ use std::path::PathBuf;
 /// Unix 侧无 post-spawn 资源需要持有（pdeathsig 在子进程侧生效），占位类型。
 pub struct JobGuard;
 
-/// spawn 前配置：Linux / Android（含 WSL）设置 `PR_SET_PDEATHSIG`，父进程
-/// 死亡时内核向子进程发 SIGKILL；macOS 无等价机制，跳过（ADR-0012 D1）。
+/// spawn 前配置：Linux（含 WSL）设置 `PR_SET_PDEATHSIG`，父进程
+/// 死亡时内核向子进程发 SIGKILL；macOS 无等价机制，跳过。
 pub fn configure_pre_spawn(cmd: &mut std::process::Command) {
     #[cfg(not(target_os = "macos"))]
     {
@@ -44,7 +44,7 @@ pub fn is_process_alive(pid: u32) -> bool {
     matches!(io::Error::last_os_error().raw_os_error(), Some(e) if e == libc::EPERM)
 }
 
-/// 进程可执行文件路径：Linux / Android 读 `/proc/<pid>/exe`，macOS 走
+/// 进程可执行文件路径：Linux 读 `/proc/<pid>/exe`，macOS 走
 /// `proc_pidpath`。
 pub fn process_exe_path(pid: u32) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
@@ -70,71 +70,4 @@ pub fn kill_process(pid: u32) -> io::Result<()> {
     } else {
         Err(io::Error::last_os_error())
     }
-}
-
-/// 反查监听端口的占用进程：`/proc/net/tcp{,6}` 找 LISTEN socket inode →
-/// 扫 `/proc/*/fd` 反查 PID → `/proc/<pid>/comm` 取名。macOS 无 /proc，
-/// 各步读取静默失败，最终返回 `None`。
-pub fn port_owner(port: u16) -> Option<super::PortOwner> {
-    for inode in listen_socket_inodes(port) {
-        if let Some(pid) = find_pid_by_socket_inode(&inode) {
-            let name = process_name(pid).unwrap_or_else(|| "<unknown>".into());
-            return Some(super::PortOwner { pid, name });
-        }
-    }
-    None
-}
-
-/// 解析 /proc/net/tcp{,6}，返回监听指定端口的 socket inode 列表。
-fn listen_socket_inodes(port: u16) -> Vec<String> {
-    let mut out = Vec::new();
-    for table in ["/proc/net/tcp", "/proc/net/tcp6"] {
-        let Ok(content) = std::fs::read_to_string(table) else {
-            continue;
-        };
-        for line in content.lines().skip(1) {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            // local_address 列形如 "0100007F:2382"（hex IP:hex 端口）；st=0A 为 LISTEN；
-            // inode 在第 10 列（索引 9）。
-            if cols.len() > 9
-                && cols[3] == "0A"
-                && let Some((_, port_hex)) = cols[1].split_once(':')
-                && u16::from_str_radix(port_hex, 16).ok() == Some(port)
-            {
-                out.push(cols[9].to_string());
-            }
-        }
-    }
-    out
-}
-
-/// 扫 /proc/*/fd 反查持有指定 socket inode 的 PID（无权限的进程目录静默跳过）。
-fn find_pid_by_socket_inode(inode: &str) -> Option<u32> {
-    let needle = format!("socket:[{inode}]");
-    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(pid) = name.parse::<u32>() else {
-            continue;
-        };
-        let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
-            continue;
-        };
-        for fd in fds.flatten() {
-            if let Ok(target) = std::fs::read_link(fd.path())
-                && target.to_string_lossy() == needle
-            {
-                return Some(pid);
-            }
-        }
-    }
-    None
-}
-
-/// /proc/<pid>/comm 取进程名。
-fn process_name(pid: u32) -> Option<String> {
-    std::fs::read_to_string(format!("/proc/{pid}/comm"))
-        .ok()
-        .map(|s| s.trim().to_string())
 }

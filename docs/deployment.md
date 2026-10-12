@@ -415,29 +415,26 @@ sudo proxy-panel uninstall agent --purge
 
 ## 手动部署
 
-### 1. 编译二进制文件
+### 1. 准备部署产物
+
+从项目 Release 获取与服务器架构匹配的 Hub 发布包，并校验随附的 `SHA256SUMS`。
+服务端发布包由既有 GNU/Linux runner 构建，保持部署兼容性；本地源码构建与验证使用
+项目 Nix 环境，流程见 [开发指南](development.md)。
 
 ```bash
-# 在开发机器上编译
-git clone https://github.com/ybakiame/multi-proxy-panel.git
-cd proxy-panel
-
-# 编译 Release 版本
-cargo build --release --workspace
-
-# 产物路径:
-# target/release/proxy-panel-hub
-# target/release/proxy-panel-agent
-# target/release/proxy-panel
+# 示例为 x86_64；aarch64 服务器使用对应架构发布包
+# 包含 proxy-panel-hub、proxy-panel 与 dist/ 前端文件
+sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf proxy-panel-hub-linux-x86_64.tar.gz
 ```
 
 ### 2. 部署 Hub
 
 ```bash
 # 在 Hub 服务器上
-sudo mkdir -p /opt/proxypanel/{bin,config,web}
-sudo cp target/release/proxy-panel-hub /opt/proxypanel/bin/
-sudo cp target/release/proxy-panel /opt/proxypanel/bin/
+sudo mkdir -p /opt/proxypanel/{bin,config,web/dist}
+sudo cp proxy-panel-hub /opt/proxypanel/bin/
+sudo cp proxy-panel /opt/proxypanel/bin/
 
 # 创建配置文件
 sudo tee /opt/proxypanel/config/hub.toml << 'EOF'
@@ -448,7 +445,7 @@ static_dir = "/opt/proxypanel/web/dist"
 EOF
 
 # 复制前端文件
-sudo cp -r apps/panel/dist/* /opt/proxypanel/web/dist/
+sudo cp -r dist/* /opt/proxypanel/web/dist/
 ```
 
 ### 3. 创建 systemd 服务
@@ -813,8 +810,8 @@ sudo systemctl status proxy-panel-hub
 
 | Job | 触发条件 | 说明 |
 |-----|----------|------|
-| `rust` | push 到 `main`/`master`、任意 PR | 执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
-| `web` | 同上 | 在 `apps/panel` 执行 `bun run verify`（构建 + Linter + 格式检查） |
+| `rust` | push 到 `main`/`master`、任意 PR 中相关 Rust 路径变更 | 在项目 Nix 中执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
+| `web` | 同上，相关 Web 路径变更 | 在项目 Nix 中执行 `bun run --filter pp-web verify`（构建 + Linter + 格式检查） |
 
 ### Release Workflow (`.github/workflows/release.yml`)
 
@@ -825,19 +822,13 @@ sudo systemctl status proxy-panel-hub
 | `release` | `build` 完成后 | 收集 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease） |
 | `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent` |
 
-### Desktop Test Build Workflow (`.github/workflows/desktop-test.yml`)
-
-| 触发条件 | 说明 |
-|----------|------|
-| 仅手动触发（`workflow_dispatch`） | 按输入的架构（x86_64 / aarch64 / both）构建客户端 Windows NSIS 安装包并上传 artifact（保留 7 天）；可选注入 updater 签名密钥（默认不签名）；不创建 Release |
-
 ### 产物命名
 
 | 产物 | 文件名 |
 |------|--------|
 | CLI 二进制包 (x86_64) | `proxy-panel-cli-linux-x86_64.tar.gz`（根层级单个文件 `proxy-panel`） |
 | CLI 二进制包 (aarch64) | `proxy-panel-cli-linux-aarch64.tar.gz` |
-| Hub 二进制包 (x86_64) | `proxy-panel-hub-linux-x86_64.tar.gz`（含 `proxy-panel-hub`、`proxy-panel`、前端 `web/dist/**`） |
+| Hub 二进制包 (x86_64) | `proxy-panel-hub-linux-x86_64.tar.gz`（含 `proxy-panel-hub`、`proxy-panel`、前端 `dist/**`） |
 | Hub 二进制包 (aarch64) | `proxy-panel-hub-linux-aarch64.tar.gz` |
 | Agent 二进制包 | `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`（根层级单个文件 `proxy-panel-agent`） |
 | 校验文件 | `SHA256SUMS` |

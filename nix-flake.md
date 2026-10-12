@@ -1,32 +1,46 @@
-# ProxyPanel 开发环境（Nix flake）
+# Nix 开发环境
 
-本仓库通过 `flake.nix` 声明式管理全部开发依赖：Rust 生态工具、Android SDK/NDK、Go（panelcore）、Bun 前端、桌面 GUI 系统库。本地编译、运行、测试和提交统一通过该环境执行；现有 Windows CI runner 仍负责平台安装包。当前 flake 的开发 shell 支持 x86_64-linux。
+ProxyPanel 的本地构建、运行、验证与提交钩子统一使用根目录 `flake.nix` / `flake.lock`。
+管理 Web 的 Bun、Protobuf 编译器与系统构建工具由 Nix 提供；Rust 经 Nix 提供的 rustup
+按 `rust-toolchain.toml` 管理。Linux CI 检查使用同一环境。服务端 Release 保留既有 runner/容器构建链路，
+以维持 GNU/Linux 二进制的部署兼容性；不直接分发带 Nix store 动态加载器的开发产物。
 
----
+## 使用
 
-## 1. 前置：安装 Nix 并启用 Flakes
-
-```sh
-sh <(curl -L https://nixos.org/nix/install) --daemon   # 官方脚本（daemon 模式）
-mkdir -p ~/.config/nix
-echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-source /etc/profile && nix --version                    # 需 2.11+
-```
-
-WSL2 用户：flakes 需要 systemd 或 daemon 模式均可，`/etc/profile` 需含 nix profile 路径。
-
-## 2. 使用
+安装支持 flakes 的 Nix 后，在仓库根目录执行：
 
 ```bash
-nix develop                 # 进入开发 shell（首次会构建/下载声明式 Android SDK，约 1-2GB）
-nix develop --command bash --noprofile --norc -c 'adb devices; go version; bun --version'   # 冒烟
-exit                        # 退出
+nix develop
+bun install --frozen-lockfile
+cargo build --workspace
+bun run verify:rust
+bun run --filter pp-web verify
 ```
 
-建议配合 direnv（`.envrc` 中写 `use flake`）实现进入目录自动激活。
+自动化使用非交互 shell，避免用户 rc 覆盖环境：
 
-所有开发命令、验证门禁与 git 提交钩子均在此环境运行；脚本不再优先探测
-`~/go-sdk` 或 `~/Android/Sdk`。Nix 下载连接失败时，可设置代理后重试：
+```bash
+nix develop --command bash --noprofile --norc -c 'bun run verify:rust'
+```
+
+所有开发、验证和 git 提交命令均在该环境运行。数据库和容器服务由外部提供。
+环境支持 `x86_64-linux` 和 `aarch64-linux`。
+`flake.lock` 锁定 nixpkgs；Rust 的 channel / components 以 `rust-toolchain.toml` 为准。
+当前 Rust channel 为 stable，rustup 的实际下载与缓存不写入 Nix store。
+
+## 环境范围
+
+- Rust：rustup、C/C++ 构建工具、pkg-config、Protobuf。
+- 管理 Web：Bun、Node.js。
+- Agent 的压缩库：zlib、xz、bzip2、zstd；运行时库路径由 shell 设置。
+- Git、curl、wget、unzip 与常规构建工具。
+
+客户端已独立到 [Lanpath](https://github.com/ybakiame/lanpath)；本仓不提供 Go、JDK、
+Android SDK/NDK、Gradle、Tauri 或桌面 GUI 系统库。Lanpath 使用自身的 Nix 配置。
+
+## 网络与维护
+
+下载失败时可按本机代理配置重试；此工作区示例：
 
 ```bash
 export http_proxy="http://127.0.0.1:7899"
@@ -34,42 +48,16 @@ export https_proxy="http://127.0.0.1:7899"
 nix develop
 ```
 
-代理地址按本机配置调整；不修改 flake.lock 来绕过网络问题。
-
-## 3. 覆盖的依赖清单
-
-| 类别 | 内容 | 来源 |
-|---|---|---|
-| Android | **SDK 35+36 / build-tools 35.0.0+36.0.0 / platform-tools / NDK 28.0.13004108**（`cmdline-tools` 齐备；许可证已预接受。Android 工程 compileSdk=36 需要 platform/build-tools 36） | `tadfisher/android-nixpkgs`（stable 频道） |
-| Android 工具链 | JDK 17（JAVA_HOME 统一指向）、gradle、cargo-ndk | nixpkgs |
-| Rust | rustup + `rust-toolchain.toml` 锁定（stable + rustfmt/clippy + aarch64-linux-android target） | rustup（见下「Rust 例外」） |
-| Go | 锁定 nixpkgs 提供的 Go（当前 1.26.7；panelcore 要求 ≥1.25.5） | nixpkgs |
-| 前端 | Bun、Node.js（Bun workspaces 管理） | nixpkgs |
-| 桌面 GUI 系统库 | webkit2gtk-4.1、gtk3、glib-networking、openssl、alsa-lib、xorg 等（Tauri 客户端与 `pp-client-tauri` 的 host 链接与运行） | nixpkgs |
-| 构建基础 | pkg-config、cmake、ninja、perl（openssl vendored）、protobuf、gnumake | nixpkgs |
-
-环境变量由 shell 自动导出：`ANDROID_HOME` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_ROOT` / `NDK_HOME` / `ANDROID_NDK_HOME`（均指向 nix store 中的 NDK 28.0.13004108）/ `ANDROID_JAR`（platforms-android-35）/ `JAVA_HOME` / `PKG_CONFIG_PATH`（flake 系统库优先）。另按 aarch64 单 ABI（Android 目标仅发布 arm64）导出 `CC_*` / `AR_*` / `CARGO_TARGET_*_LINKER` / `BINDGEN_EXTRA_CLANG_ARGS_*`，使裸 `cargo check/build --target aarch64-linux-android` 也走 nix NDK；CI runner 的同一组变量由 `apps/client/scripts/android-ndk-env.sh` 注入（被 `scripts/check-rust-gates.sh` 引用）。仓库内不再有任何写死的 NDK 绝对路径。
-
-## 4. 例外与注意事项
-
-1. **Rust 工具链本体走 rustup**（不进 nix）：`rust-toolchain.toml` 是版本锁定的事实来源，rustup 按其自动安装 stable + components + `aarch64-linux-android` target。进入 shell 后 `cargo`/`rustc` 由 rustup 代理。
-2. **首次 `nix develop`** 会从 dl.google.com 下载 Android SDK/NDK 组合（1-2GB，一次性），之后全部走本地 store 缓存。
-3. **adb 设备**：宿主机已运行的 adb server 与 shell 内 nix 版 adb 版本一致即可混用；遇 `no devices` 先 `adb kill-server; adb devices`。
-4. **WSL2/WSLg**：GUI（Tauri 客户端窗口）依赖 WSLg 提供的 Wayland/X11；GPU 加速走宿主驱动。
-5. `direnv` 可选：`.envrc` 写 `use flake` 后进入仓库目录自动激活。
-6. **用户 shell rc 覆盖陷阱**：`nix develop` 的交互 bash 会 source `~/.bashrc`，若其中无条件 `export ANDROID_HOME/NDK_HOME` 指向主机 SDK，会覆盖 flake 的 nix 路径（tauri 探测 NDK 优先读 `NDK_HOME`），表现为「进了 nix 却仍用主机 NDK」。请在 rc 中用 `[ -z "$IN_NIX_SHELL" ]` 守卫这些导出；自动化直接使用 `bash --noprofile --norc`，不要依赖机器上的 rc 配置。
-
-## 5. 更新依赖
+若镜像不可用，可显式选择官方缓存：
 
 ```bash
-nix flake update            # 更新 nixpkgs / android-nixpkgs 锁定
-nix develop                 # 重新构建并验证
+nix develop --option substituters https://cache.nixos.org
 ```
 
-Android SDK 组件的新版本（如 NDK r29）由 android-nixpkgs stable 频道每日跟随 Google 仓库更新，改 `flake.nix` 中 `ndk-28-0-13004108` 为目标版本后 `nix flake update` 即可。
+更新工具链必须复跑服务端 Rust 门禁与管理 Web verify：
 
----
-
-## 历史说明
-
-本文件最初为 KMP 迁移期的 Nix 入门笔记（2026-09-19），现升级为项目正式开发依赖管理文档。文中历史方案（KMP + Compose Multiplatform → Dioxus 全栈 Rust）最终由 Tauri 2 客户端方案取代（见 ADR-0007 与 `docs/adoption/audit-pass1.md` 的记录）；原 `docs/adr/0006-mobile-client-dioxus.md` 已不存在，现行 `docs/adr/0006-client-traffic-stats.md` 复用了该编号记录流量统计决策。
+```bash
+nix flake update
+bun run verify:rust
+bun run --filter pp-web verify
+```

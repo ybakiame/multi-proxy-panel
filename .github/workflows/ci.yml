@@ -6,64 +6,37 @@ on:
   pull_request:
 
 jobs:
-  # 变更检测（ADR-0009 D2）：按路径分片，各门禁 job 仅在相关路径变更时运行，
-  # 避免服务端与客户端改动互相拖累 CI。过滤规则需与仓库结构同步维护。
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
-      shell: ${{ steps.filter.outputs.shell }}
       panel: ${{ steps.filter.outputs.panel }}
-      client_core: ${{ steps.filter.outputs.client_core }}
-      client_web: ${{ steps.filter.outputs.client_web }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Path filters
         uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
-            # 根 workspace Rust 门禁：任何 crate / proto / 工具链变更。
             rust:
               - 'crates/**'
               - 'proto/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.cargo/**'
               - 'scripts/check-rust-gates.sh'
-              - '.github/workflows/ci.yml'
-            # 客户端壳（独立 cargo 项目）：壳自身 + 其 Rust 依赖链 + 共享 crate。
-            shell:
-              - 'apps/client/src-tauri/**'
-              - 'crates/pp-client/**'
-              - 'crates/pp-client-tauri/**'
-              - 'crates/pp-mitm/**'
-              - 'crates/pp-script/**'
-              - 'crates/pp-common/**'
-              - 'crates/pp-core/**'
-              - 'Cargo.toml'
-              - 'rust-toolchain.toml'
+              - 'flake.nix'
+              - 'flake.lock'
               - '.github/workflows/ci.yml'
             panel:
               - 'apps/panel/**'
               - 'package.json'
               - 'bun.lock'
-              - '.github/workflows/ci.yml'
-            client_core:
-              - 'packages/client-core/**'
-              - 'package.json'
-              - 'bun.lock'
-              - '.github/workflows/ci.yml'
-            # 客户端前端：apps/client（排除 src-tauri，Rust 侧由 shell 覆盖）+ 共享库。
-            client_web:
-              - 'apps/client/**'
-              - '!apps/client/src-tauri/**'
-              - 'packages/client-core/**'
-              - 'package.json'
-              - 'bun.lock'
+              - 'flake.nix'
+              - 'flake.lock'
               - '.github/workflows/ci.yml'
 
   rust:
@@ -74,134 +47,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Install protobuf-compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Install Tauri Linux system dependencies
-        # pp-client-tauri（workspace 成员）依赖 tauri → gtk / webkit2gtk → glib-sys，
-        # 其 build script 用 pkg-config 探测系统库；裸 ubuntu-latest 未安装这些
-        # dev 包时 clippy/test 在 build script 阶段即失败（glib-2.0 not found）。
-        run: |
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: Setup Rust toolchain
-        # channel 与 rust-toolchain.toml 保持一致（stable + rustfmt + clippy）
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
-
       - name: Check formatting
-        run: cargo fmt --all --check
-
+        run: nix develop --command bash --noprofile --norc -c 'cargo fmt --all --check'
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
+        run: nix develop --command bash --noprofile --norc -c 'cargo clippy --workspace --all-targets -- -D warnings'
       - name: Run tests
-        run: cargo test --workspace
-
-      # ADR-0009 D1：客户端 crate 禁依赖服务端专属 crate（pp-db / pp-proto /
-      # pp-config / pp-subscription），含传递依赖；破坏边界即失败。
-      - name: Assert client/server dependency boundary (ADR-0009 D1)
-        run: |
-          set -euo pipefail
-          for p in pp-client pp-client-tauri pp-mitm pp-script; do
-            if cargo tree -p "$p" --prefix none -e normal | grep -qE '^pp-(db|proto|config|subscription) v'; then
-              echo "::error::$p 的依赖图中出现服务端专属 crate（ADR-0009 D1 边界破坏）"
-              cargo tree -p "$p" --prefix none -e normal | grep -E '^pp-' | sort -u
-              exit 1
-            fi
-          done
-          echo "客户端/服务端依赖边界断言通过"
-
-  client-shells:
-    name: Client Shell (desktop / android targets)
-    needs: changes
-    if: needs.changes.outputs.shell == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install Tauri Linux system dependencies
-        # 客户端壳（apps/client/src-tauri）依赖 tauri → gtk / webkit2gtk → glib-sys，
-        # 与根 workspace 的 pp-client-tauri 相同，需要系统 dev 包。
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          targets: aarch64-linux-android
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-
-      # 客户端壳是独立 cargo 项目（不在根 workspace），rust 任务的 clippy/test 覆盖不到；
-      # 这里单独门禁，避免「根 workspace 全绿但壳编译失败」。
-      - name: Check client shell (host = desktop target)
-        # host 编译即桌面目标：desktop 适配层与 pp-client-tauri/mitm feature 在此覆盖。
-        run: cargo clippy --manifest-path apps/client/src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Check client shell (aarch64-linux-android)
-        # 覆盖 host 编译不可见的 #[cfg(target_os = "android")] 路径（mobile 适配层 +
-        # core_bridge；历史上两次「host 全绿但 Android 编译失败」的盲区），并实证
-        # Android 构建图不含 pp-mitm（target 依赖表，I3）。CI 用 ubuntu-latest 预装
-        # NDK，经环境变量注入工具链。
-        run: |
-          NDK=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
-          echo "Using NDK: $NDK"
-          export CC_aarch64_linux_android="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
-          export AR_aarch64_linux_android="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
-          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-android33 --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot -isystem $NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
-          cd apps/client/src-tauri && cargo check --target aarch64-linux-android
+        run: nix develop --command bash --noprofile --norc -c 'cargo test --workspace'
 
   web:
     name: Web Checks
     needs: changes
-    if: >-
-      needs.changes.outputs.panel == 'true'
-      || needs.changes.outputs.client_core == 'true'
-      || needs.changes.outputs.client_web == 'true'
+    if: needs.changes.outputs.panel == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies (bun workspaces)
-        run: bun install --frozen-lockfile
-
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+      - name: Install dependencies
+        run: nix develop --command bash --noprofile --norc -c 'bun install --frozen-lockfile'
       - name: Verify panel
-        if: needs.changes.outputs.panel == 'true'
-        run: bun run --filter pp-web verify
-
-      - name: Verify client-core (shared library)
-        if: needs.changes.outputs.client_core == 'true'
-        run: bun run --filter @pp/client-core verify
-
-      - name: Verify client app (desktop + android builds)
-        # 单包 verify 内含双 mode 构建（desktop / android），一次门禁双产物；
-        # client_web 过滤条件已含 packages/client-core（共享库变更触发整包验证）。
-        if: needs.changes.outputs.client_web == 'true'
-        run: bun run --filter pp-client-app verify
+        run: nix develop --command bash --noprofile --norc -c 'bun run --filter pp-web verify'

@@ -42,9 +42,8 @@
 **能力边界**：orchestrator 不直接改代码（权限为 ask 且 bash 受限）；执行与评审分离，
 评审角色无写权限。
 
-**验证**：`.opencode/rules/coding-standards.md` 给出 Rust（根 workspace）、客户端壳
-（`apps/client/src-tauri`，独立 cargo 项目）与前端（`apps/client` / `apps/panel` /
-`packages/client-core`）的验证命令矩阵，并指向 `AGENTS.md` §5 提交规范。
+**验证**：`.opencode/rules/coding-standards.md` 给出 Nix 环境内的根 Rust workspace
+与管理 Web 验证命令，并指向 `AGENTS.md` §5 提交规范。
 
 **已知限制**：
 
@@ -85,8 +84,7 @@ skills，上下文与主 agent 隔离。
 **已知限制**：
 
 - 主 agent 无写入与命令权限，必须在委派上下文中提供充分素材，否则子代理无法自行补足。
-- `.pi/plans/` 是历史计划记录（例如 2026-10-01 桌面同步计划中引用的 `apps/desktop`），
-  按历史材料保留，不回溯改写；当前路径以 `docs/architecture.md` 与 ADR-0007 为准。
+- 客户端专属历史计划已随拆仓移除；当前项目范围以 `docs/architecture.md` 与 ADR-0015 为准。
 
 ---
 
@@ -94,8 +92,8 @@ skills，上下文与主 agent 隔离。
 
 | 项 | 内容 |
 |----|------|
-| 规则 | `.agents/rules/code-organization.md`、`data-migration.md`、`package-manager.md`、`client-state-management.md` |
-| 技能 | `.agents/skills/heroui-react`、`heroui-native`、`heroui-migration`，锁文件 `skills-lock.json` |
+| 规则 | `.agents/rules/code-organization.md`、`data-migration.md`、`package-manager.md` |
+| 技能 | `.agents/skills/heroui-react`、`heroui-migration`，锁文件 `skills-lock.json` |
 
 `.agents/rules/` 是**项目级**代理规则（不是厂商配置）：`AGENTS.md` §2.4 直接引用
 `code-organization.md` 的文件规模阈值，husky pre-commit 的 `scripts/check-file-size.sh`
@@ -103,8 +101,6 @@ skills，上下文与主 agent 隔离。
 
 **已知限制**：
 
-- `.agents/rules/client-state-management.md` 标题与正文按 `apps/client`（原
-  `apps/desktop`）编写；随 ADR-0007 已修正为 `apps/client` 语义。
 - `.agents/skills/heroui-*` 是第三方（HeroUI）技能包，随 `skills-lock.json` 锁定版本；
   其内容不属于项目契约。
 
@@ -140,7 +136,6 @@ skills，上下文与主 agent 隔离。
 ## 7. 维护约定
 
 - 新增或调整编码代理：更新本文件对应小节 + `AGENTS.md` §9 同步表。
-- 路径迁移（如 ADR-0007 的 `apps/desktop` → `apps/client`）后，运行
-  `grep -rn "apps/desktop\|apps/mobile" .opencode .agents .pi opencode.jsonc` 修复适配层；
-  `.pi/plans/` 等历史材料除外。
+- 仓库结构调整后，运行
+  `rg -n "cargo|bun|nix" .opencode .agents/rules .pi opencode.jsonc` 核对适配层命令与项目契约。
 - 不要把厂商模型名、权限配置、skill 版本写入 `AGENTS.md` / `README.md` / `docs/architecture.md`。

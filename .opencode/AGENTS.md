@@ -17,10 +17,8 @@
 完成定义与停止/升级条件），适配器侧的验证命令矩阵见
 [`.opencode/rules/coding-standards.md`](rules/coding-standards.md)。
 
-- 后端：Rust workspace（Axum + Tonic + Sea-ORM + tokio），13 个 crate
-- 前端：Bun workspaces（依赖在仓库根目录安装，单一 `bun.lock`）——`apps/panel`（pp-web）、
-  `apps/client`（pp-client-app，单壳双目标）、`packages/client-core`（@pp/client-core）
-- 客户端壳：`apps/client/src-tauri`（独立 cargo 项目，不在根 workspace）
+- 后端：Rust workspace（Axum + Tonic + Sea-ORM + tokio），9 个 crate
+- 前端：`apps/panel`（pp-web，Bun workspace）
 
 厂商特有的模型、权限与子代理配置属于适配器层，只写在本目录与
 [`docs/adapters/README.md`](../docs/adapters/README.md)，不要写入项目契约。

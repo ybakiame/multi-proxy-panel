@@ -7,10 +7,6 @@ use std::io;
 use std::path::PathBuf;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
-use windows_sys::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
-};
-use windows_sys::Win32::Networking::WinSock::AF_INET;
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
@@ -131,57 +127,5 @@ pub fn kill_process(pid: u32) -> io::Result<()> {
         } else {
             Ok(())
         }
-    }
-}
-
-/// `GetExtendedTcpTable`（仅 IPv4，127.0.0.1 绑定的 Clash API / mixed 入站
-/// 均为 IPv4）反查监听端口 PID，进程名取 exe 文件名。
-pub fn port_owner(port: u16) -> Option<super::PortOwner> {
-    let pid = tcp_listener_pid(port)?;
-    let name = process_exe_path(pid)
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "<unknown>".into());
-    Some(super::PortOwner { pid, name })
-}
-
-fn tcp_listener_pid(port: u16) -> Option<u32> {
-    unsafe {
-        // SAFETY: 首次调用取所需缓冲区大小（ERROR_INSUFFICIENT_BUFFER），
-        // 二次调用写入堆缓冲区后按表结构读取。
-        let mut size: u32 = 0;
-        GetExtendedTcpTable(
-            std::ptr::null_mut(),
-            &mut size,
-            0,
-            AF_INET as u32,
-            TCP_TABLE_OWNER_PID_LISTENER,
-            0,
-        );
-        if size == 0 {
-            return None;
-        }
-        let mut buf = vec![0u8; size as usize];
-        let ret = GetExtendedTcpTable(
-            buf.as_mut_ptr().cast(),
-            &mut size,
-            0,
-            AF_INET as u32,
-            TCP_TABLE_OWNER_PID_LISTENER,
-            0,
-        );
-        if ret != 0 {
-            return None;
-        }
-        let table = buf.as_ptr() as *const MIB_TCPTABLE_OWNER_PID;
-        let num = (*table).dwNumEntries as isize;
-        let rows = (*table).table.as_ptr();
-        for i in 0..num {
-            let row = &*rows.offset(i);
-            // dwLocalPort 低 16 位为网络字节序端口。
-            if u16::from_be((row.dwLocalPort & 0xFFFF) as u16) == port {
-                return Some(row.dwOwningPid);
-            }
-        }
-        None
     }
 }
