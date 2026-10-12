@@ -16,7 +16,7 @@
 | [ADR 索引与约定](adr/README.md) | 架构师、贡献者 | 架构决策记录索引、状态约定与模板 |
 | [编码代理适配器](adapters/README.md) | 使用 AI 编码代理的贡献者 | pi / .agents 适配器的入口、能力边界与验证命令 |
 | [开发代理指南](../AGENTS.md) | AI 编码代理 | 项目契约：构建、规范、常见任务、工作流、完成定义与升级条件 |
-| [服务端清理复核](adoption/2026-10-11-server-only-reconciliation.md) | 维护者 | 客户端拆仓后的文件归属、构建和协议验证 |
+| [协议引用与服务端复核](adoption/2026-10-11-server-only-reconciliation.md) | 维护者 | 当前协议引用及客户端拆仓后的历史验收 |
 | [协议采纳记录](adoption/adoption-report.md) | 维护者 | Agent Development Protocol 采纳审计与结果（Pass 1 / Pass 2） |
 | [Nix 开发环境](../nix-flake.md) | 开发者、CI 维护者 | 通过 flake 管理服务端 Rust、Protobuf、Bun 与构建系统库 |
 | [变更日志](../CHANGELOG.md) | 所有使用者 | 各版本新增、变更、修复与安全说明 |

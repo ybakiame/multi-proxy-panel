@@ -14,6 +14,7 @@
 
 ### Changed
 
+- 更新 Agent Development Protocol 引用至 `c502eaf`，保留 0.1 接口，采用按需阅读与增量维护说明并提供可选只读检查器。
 - **产品拆分**：客户端岚径 · Lanpath 已迁入独立仓库，通过公开订阅/API 与 ProxyPanel 协作；本仓只维护 Hub、Agent、管理 Web、CLI 与服务端共享模块，服务端继续支持 sing-box/mihomo。
 - **开发与构建配置**：Rust/Bun workspace、依赖锁、Nix、CI、Docker 与提交钩子按服务端范围收窄；移除 Android/桌面工具链与客户端打包依赖。Linux CI 检查使用项目 Nix 环境，服务端发布与部署链路保持兼容。
 
