@@ -2,7 +2,10 @@
 
 > 2026-10-11 维护补记：本文保留当时审计/采纳的历史证据，客户端路径不代表当前工作区。
 > 已确认迁移验收并清理原仓客户端；当前范围及验证见
-> [服务端范围复核](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/docs/adoption/2026-10-11-server-only-reconciliation.md)。历史源码链接固定到迁移前修订。
+> [服务端范围复核](2026-10-11-server-only-reconciliation.md)。历史源码链接固定到迁移前修订。
+
+> 2026-10-12：opencode 适配器已移除。下文对应内容属于历史证据，当前适配器范围见
+> [适配器文档](../adapters/README.md)。
 
 ## Project
 
@@ -125,7 +128,7 @@ Pass 2 改动按 `AGENTS.md` §5 拆为 8 个原子提交（在 `8ebba04` 之上
 - [`docs/development.md`](../development.md)：技术栈版本、根目录安装约定、变更工作流章节、测试面（e2e + 前端边界）、代码审查清单。
 - [`docs/contributing.md`](../contributing.md)：文档位置表、发布步骤（`[Unreleased]` → 版本标题）。
 - [`docs/adr/0002-client-rule-management.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/docs/adr/0002-client-rule-management.md)（仅 `Status`）、[`docs/adr/0006-client-traffic-stats.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/docs/adr/0006-client-traffic-stats.md)（仅 `Date`）。
-- [`.opencode/AGENTS.md`](../../.opencode/AGENTS.md)、[`.opencode/rules/coding-standards.md`](../../.opencode/rules/coding-standards.md)、[`.agents/rules/client-state-management.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/.agents/rules/client-state-management.md)（适配器路径与占位符修复）。
+- [`.opencode/AGENTS.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/.opencode/AGENTS.md)、[`.opencode/rules/coding-standards.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/.opencode/rules/coding-standards.md)、[`.agents/rules/client-state-management.md`](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/.agents/rules/client-state-management.md)（适配器路径与占位符修复）。
 - [`crates/pp-agent/README.md`](../../crates/pp-agent/README.md)、[`crates/pp-hub/README.md`](../../crates/pp-hub/README.md)（相对链接）。
 - [`Cargo.toml`](../../Cargo.toml)（成员注释，无构建语义）、[`nix-flake.md`](../../nix-flake.md)（NDK 脚本路径与历史说明）。
 

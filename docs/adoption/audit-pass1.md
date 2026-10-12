@@ -2,7 +2,7 @@
 
 > 2026-10-11 维护补记：本文保留当时审计/采纳的历史证据，客户端路径不代表当前工作区。
 > 已确认迁移验收并清理原仓客户端；当前范围及验证见
-> [服务端范围复核](https://github.com/ybakiame/multi-proxy-panel/blob/cd09a8aec70886a8af17514a0b8d437b626c7822/docs/adoption/2026-10-11-server-only-reconciliation.md)。历史源码链接固定到迁移前修订。
+> [服务端范围复核](2026-10-11-server-only-reconciliation.md)。历史源码链接固定到迁移前修订。
 
 - **Status:** Pass 1 complete — audit only. No Pass 2 work was started.
 - **Audited revision:** `1bf847a30fd6436bf4e2f632d37d3e09a308ec30`

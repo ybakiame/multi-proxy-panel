@@ -404,5 +404,12 @@
     "external_client": "https://github.com/ybakiame/lanpath",
     "protocol_submodule_revision": "310fba5baa384c912e1fd8300e33d72a057908c5",
     "validation": "PASS — project Nix clean-cache cargo build --workspace --locked; final fmt/clippy/tests (134 passed, 0 failed, 0 ignored); pp-web verify and frozen Bun install; Hub/Agent/CLI --help smoke; 3 schemas, 2 workflows, 2 Docker manifest sets, 38 Markdown files / 120 links, file-size/shell/diff checks; no Cargo version additions; protocol unchanged. Remote CI and Docker images were not built."
+  },
+  "maintenance_2026_10_12": {
+    "date": "2026-10-12",
+    "change": "Removed .opencode and opencode.jsonc at maintainer request; earlier references are historical evidence.",
+    "current_adapter_document": "docs/adapters/README.md",
+    "agent_adapter_status": "Partial: pi representative-task execution evidence remains absent.",
+    "protocol_submodule_modified": false
   }
 }
