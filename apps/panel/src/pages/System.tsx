@@ -204,7 +204,7 @@ export function System() {
                     href={info.release_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+                    className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline dark:text-blue-300"
                   >
                     <span className="break-all">{info.release_url}</span>
                     <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 shrink-0" />
