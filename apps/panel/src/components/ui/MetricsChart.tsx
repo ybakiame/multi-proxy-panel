@@ -47,14 +47,14 @@ function toPoints(metrics: Metric[]): MetricPoint[] {
 }
 
 const tooltipStyle = {
-  backgroundColor: "var(--surface)",
+  backgroundColor: "var(--card)",
   border: "1px solid var(--border)",
   borderRadius: "var(--radius-md)",
   color: "var(--foreground)",
   fontSize: 12,
 };
 
-const axisTick = { fill: "var(--muted)", fontSize: 12 };
+const axisTick = { fill: "var(--muted-foreground)", fontSize: 12 };
 
 export function MetricsChart({ metrics, height = 260 }: MetricsChartProps) {
   const { t } = useTranslation();

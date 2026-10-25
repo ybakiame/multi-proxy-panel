@@ -2,17 +2,16 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader, Pagination, FormSelect, FormInput, TrafficChart } from "../components/ui";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Spinner } from "../components/ui/spinner";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+  PageHeader,
+  Pagination,
+  FormSelect,
+  FormInput,
+  TrafficChart,
+  DataTable,
+} from "../components/ui";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import type { TrafficPoint } from "../components/ui/TrafficChart";
 import { usePagination } from "../hooks/useCommon";
 import { getTraffic } from "../api/traffic";
@@ -237,58 +236,43 @@ export function Traffic() {
 
       <Card>
         <CardContent>
-          {trafficLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <>
-              <Table aria-label="traffic">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("traffic.hour")}</TableHead>
-                    <TableHead>{t("traffic.node")}</TableHead>
-                    <TableHead>{t("traffic.client")}</TableHead>
-                    <TableHead>{t("traffic.upload")}</TableHead>
-                    <TableHead>{t("traffic.download")}</TableHead>
-                    <TableHead>{t("traffic.total")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {display.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
-                        {t("traffic.empty")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    display.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell>{formatDateTime(r.hour_bucket)}</TableCell>
-                        <TableCell>
-                          {r.node_id ? nodeNames.get(r.node_id) || r.node_id : "-"}
-                        </TableCell>
-                        <TableCell>
-                          {r.client_id ? clientNames.get(r.client_id) || r.client_id : "-"}
-                        </TableCell>
-                        <TableCell>{formatBytes(r.upload_bytes)}</TableCell>
-                        <TableCell>{formatBytes(r.download_bytes)}</TableCell>
-                        <TableCell>{formatBytes(r.upload_bytes + r.download_bytes)}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                perPage={perPage}
-                total={total}
-                onPageChange={setPage}
-                onPerPageChange={setPerPage}
-              />
-            </>
-          )}
+          <DataTable
+            aria-label="traffic"
+            columns={6}
+            loading={trafficLoading}
+            empty={display.length === 0 ? t("traffic.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("traffic.hour")}</TableHead>
+                <TableHead>{t("traffic.node")}</TableHead>
+                <TableHead>{t("traffic.client")}</TableHead>
+                <TableHead>{t("traffic.upload")}</TableHead>
+                <TableHead>{t("traffic.download")}</TableHead>
+                <TableHead>{t("traffic.total")}</TableHead>
+              </TableRow>
+            }
+          >
+            {display.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell>{formatDateTime(r.hour_bucket)}</TableCell>
+                <TableCell>{r.node_id ? nodeNames.get(r.node_id) || r.node_id : "-"}</TableCell>
+                <TableCell>
+                  {r.client_id ? clientNames.get(r.client_id) || r.client_id : "-"}
+                </TableCell>
+                <TableCell>{formatBytes(r.upload_bytes)}</TableCell>
+                <TableCell>{formatBytes(r.download_bytes)}</TableCell>
+                <TableCell>{formatBytes(r.upload_bytes + r.download_bytes)}</TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            perPage={perPage}
+            total={total}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+          />
         </CardContent>
       </Card>
     </div>

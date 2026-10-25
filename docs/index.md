@@ -18,7 +18,7 @@
 | [开发代理指南](../AGENTS.md) | AI 编码代理 | 项目契约：构建、规范、常见任务、工作流、完成定义与升级条件 |
 | [协议引用与服务端复核](adoption/2026-10-11-server-only-reconciliation.md) | 维护者 | 当前协议引用及客户端拆仓后的历史验收 |
 | [协议采纳记录](adoption/adoption-report.md) | 维护者 | Agent Development Protocol 采纳审计与结果（Pass 1 / Pass 2） |
-| [Nix 开发环境](../nix-flake.md) | 开发者、CI 维护者 | 通过 flake 管理服务端 Rust、Protobuf、Bun 与构建系统库 |
+| [Nix 开发环境](../nix-flake.md) | 开发者、CI 维护者 | 通过 flake + devenv 管理服务端 Rust、Protobuf、Bun 与构建系统库 |
 | [变更日志](../CHANGELOG.md) | 所有使用者 | 各版本新增、变更、修复与安全说明 |
 
 ---
@@ -52,7 +52,7 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 # 1. 克隆项目
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop
+nix develop --no-pure-eval
 
 # 2. 启动数据库
 docker compose up -d postgres

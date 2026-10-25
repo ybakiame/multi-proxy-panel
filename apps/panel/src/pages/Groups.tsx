@@ -10,16 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import {
+  DataTable,
   PageHeader,
   ConfirmDialog,
   Pagination,
@@ -210,58 +203,48 @@ export function Groups() {
 
       <Card>
         <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="groups">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("common.name")}</TableHead>
-                  <TableHead>{t("groups.description")}</TableHead>
-                  <TableHead>{t("groups.bindings")}</TableHead>
-                  <TableHead>{t("common.labels")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groups.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
-                      {t("common.empty")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {groups.map((group) => (
-                  <TableRow key={group.id}>
-                    <TableCell>{group.name}</TableCell>
-                    <TableCell>{group.description || "-"}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {bindingNamesForGroup(group.id)}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {JSON.stringify(group.labels || {})}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(group)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteGroupId(group.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="groups"
+            columns={5}
+            loading={isLoading}
+            empty={groups.length === 0 ? t("common.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("common.name")}</TableHead>
+                <TableHead>{t("groups.description")}</TableHead>
+                <TableHead>{t("groups.bindings")}</TableHead>
+                <TableHead>{t("common.labels")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {groups.map((group) => (
+              <TableRow key={group.id}>
+                <TableCell>{group.name}</TableCell>
+                <TableCell>{group.description || "-"}</TableCell>
+                <TableCell className="max-w-xs truncate">
+                  {bindingNamesForGroup(group.id)}
+                </TableCell>
+                <TableCell className="max-w-xs truncate">
+                  {JSON.stringify(group.labels || {})}
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(group)}>
+                      {t("common.edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDeleteGroupId(group.id)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 

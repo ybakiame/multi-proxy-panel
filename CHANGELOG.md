@@ -7,10 +7,23 @@
 > 维护说明：
 > - `v0.4.0`–`v0.4.5` 条目依据仓库 git 发布标签（日期 + 标签说明）整理；`v0.4.0` 之前的
 >   版本历史未在仓库中保留，不做回溯重建。
-> - `[Unreleased]` 记录 `v0.5.0-rc.1` 之后 mainline 的主要变更主题（逐条提交历史见
->   `git log v0.5.0-rc.1..HEAD`），发布时按下述流程整理为新版本标题。
+> - `[Unreleased]` 记录 `v0.5.0-rc.2` 之后 mainline 的主要变更主题（逐条提交历史见
+>   `git log v0.5.0-rc.2..HEAD`），发布时按下述流程整理为新版本标题。
 
 ## [Unreleased]
+
+## [0.5.0-rc.2] - 2026-10-25
+
+### Added
+
+- 开发环境支持 direnv 自动加载：新增 `.envrc`（nix-direnv 3.1.0，watch flake/devenv/nix 文件）。
+
+### Changed
+
+- **管理面板 UI 骨架重设计**：灰白工作区 + 白色圆角卡片 + 湖水青重点卡的新视觉骨架（全量 OKLCH token、亮暗主题），分组导航 + 紧凑顶部栏 + 移动抽屉，登录页品牌区/表单区分栏，仪表盘改为真实数据的欢迎区、KPI 与局部加载/错误重试；新增 Hub/UI 双版本标识。
+- **表格易用性**：全部数据表统一为共享 DataTable，提供 sticky 表头、统一密度和加载/错误/空态；节点与客户端操作收进行菜单，小屏改为关键字段卡片，宽表保留键盘可访问的内部滚动。
+- **构建环境**：开发环境迁移至 devenv flake 集成——新增 `devenv.nix` 与 `nix/tools.nix`（原 `flake.nix` 工具清单与运行时库原样迁移），`flake.nix` 改用 `devenv.lib.mkShell`（devenv v2.4.0，nixpkgs 保持 nixos-unstable，新增 devenv binary cache、国内镜像全部保留）；所有 `nix develop` 调用统一带 `--no-pure-eval`（devenv 定位项目根目录所需）；不启用 devenv git hooks，husky 仍是唯一提交检查入口。见 ADR-0019 与 [Nix 开发环境](nix-flake.md)。
+- **发布流程**：RC 预发布标签（如 `v0.5.0-rc.1`）跳过 Docker 镜像发布，仅发布二进制 tar.gz 与 `SHA256SUMS` 并保留构建缓存；稳定版本标签与手动触发保留 GHCR 镜像发布。见 ADR-0019。
 
 ## [0.5.0-rc.1] - 2026-10-25
 
@@ -92,7 +105,8 @@
 - 前端引入 TanStack Query。
 - CI/CD Release 流程。
 
-[Unreleased]: https://github.com/ybakiame/multi-proxy-panel/compare/v0.5.0-rc.1...HEAD
+[Unreleased]: https://github.com/ybakiame/multi-proxy-panel/compare/v0.5.0-rc.2...HEAD
+[0.5.0-rc.2]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.5.0-rc.2
 [0.5.0-rc.1]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.5.0-rc.1
 [0.4.5]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.5
 [0.4.4]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.4

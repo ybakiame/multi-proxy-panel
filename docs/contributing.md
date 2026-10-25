@@ -90,7 +90,7 @@
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop
+nix develop --no-pure-eval
 docker compose up -d postgres
 cargo run --bin proxy-panel -- init-db --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
 cargo build --workspace

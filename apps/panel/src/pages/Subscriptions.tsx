@@ -12,20 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
 import { Switch } from "../components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   ConfirmDialog,
   CopyableSecret,
+  DataTable,
   Pagination,
   FormInput,
   FormSelect,
@@ -488,94 +481,79 @@ export function Subscriptions() {
 
             <Card>
               <CardContent>
-                {loadingSubs ? (
-                  <div className="flex h-32 items-center justify-center">
-                    <Spinner />
-                  </div>
-                ) : (
-                  <>
-                    <Table aria-label="subscriptions">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{t("subscriptions.client")}</TableHead>
-                          <TableHead>{t("subscriptions.token")}</TableHead>
-                          <TableHead>{t("subscriptions.urlPath")}</TableHead>
-                          <TableHead>{t("subscriptions.isActive")}</TableHead>
-                          <TableHead>{t("subscriptions.expiresAt")}</TableHead>
-                          <TableHead>{t("subscriptions.lastAccessed")}</TableHead>
-                          <TableHead>{t("common.actions")}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {subscriptions.length === 0 && (
-                          <TableRow>
-                            <TableCell
-                              colSpan={7}
-                              className="p-4 text-center text-muted-foreground"
-                            >
-                              {t("common.empty")}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {subscriptions.map((sub) => (
-                          <TableRow key={sub.id}>
-                            <TableCell>{clientName(sub.client_id)}</TableCell>
-                            <TableCell>{maskToken(sub.token)}</TableCell>
-                            <TableCell className="max-w-xs truncate">{sub.url_path}</TableCell>
-                            <TableCell>
-                              {sub.is_active ? t("common.enabled") : t("common.disabled")}
-                            </TableCell>
-                            <TableCell>{formatDateTime(sub.expire_at)}</TableCell>
-                            <TableCell>{formatDateTime(sub.last_accessed_at)}</TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => copyToClipboard(buildSubUrl(sub))}
-                                >
-                                  {t("subscriptions.copyLink")}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setQrSub(sub);
-                                    setQrFormat("base64");
-                                  }}
-                                >
-                                  {t("subscriptions.qrCode")}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEditSubscription(sub)}
-                                >
-                                  {t("common.edit")}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeleteSubId(sub.id)}
-                                >
-                                  {t("common.delete")}
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <Pagination
-                      page={subsPagination.page}
-                      totalPages={Math.max(1, Math.ceil(subsTotal / subsPagination.perPage))}
-                      perPage={subsPagination.perPage}
-                      total={subsTotal}
-                      onPageChange={subsPagination.setPage}
-                      onPerPageChange={subsPagination.setPerPage}
-                    />
-                  </>
-                )}
+                <DataTable
+                  aria-label="subscriptions"
+                  columns={7}
+                  loading={loadingSubs}
+                  empty={subscriptions.length === 0 ? t("common.empty") : undefined}
+                  header={
+                    <TableRow>
+                      <TableHead>{t("subscriptions.client")}</TableHead>
+                      <TableHead>{t("subscriptions.token")}</TableHead>
+                      <TableHead>{t("subscriptions.urlPath")}</TableHead>
+                      <TableHead>{t("subscriptions.isActive")}</TableHead>
+                      <TableHead>{t("subscriptions.expiresAt")}</TableHead>
+                      <TableHead>{t("subscriptions.lastAccessed")}</TableHead>
+                      <TableHead>{t("common.actions")}</TableHead>
+                    </TableRow>
+                  }
+                >
+                  {subscriptions.map((sub) => (
+                    <TableRow key={sub.id}>
+                      <TableCell>{clientName(sub.client_id)}</TableCell>
+                      <TableCell>{maskToken(sub.token)}</TableCell>
+                      <TableCell className="max-w-xs truncate">{sub.url_path}</TableCell>
+                      <TableCell>
+                        {sub.is_active ? t("common.enabled") : t("common.disabled")}
+                      </TableCell>
+                      <TableCell>{formatDateTime(sub.expire_at)}</TableCell>
+                      <TableCell>{formatDateTime(sub.last_accessed_at)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => copyToClipboard(buildSubUrl(sub))}
+                          >
+                            {t("subscriptions.copyLink")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setQrSub(sub);
+                              setQrFormat("base64");
+                            }}
+                          >
+                            {t("subscriptions.qrCode")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditSubscription(sub)}
+                          >
+                            {t("common.edit")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setDeleteSubId(sub.id)}
+                          >
+                            {t("common.delete")}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </DataTable>
+                <Pagination
+                  page={subsPagination.page}
+                  totalPages={Math.max(1, Math.ceil(subsTotal / subsPagination.perPage))}
+                  perPage={subsPagination.perPage}
+                  total={subsTotal}
+                  onPageChange={subsPagination.setPage}
+                  onPerPageChange={subsPagination.setPerPage}
+                />
               </CardContent>
             </Card>
           </div>
@@ -590,77 +568,61 @@ export function Subscriptions() {
 
             <Card>
               <CardContent>
-                {loadingTemplates ? (
-                  <div className="flex h-32 items-center justify-center">
-                    <Spinner />
-                  </div>
-                ) : (
-                  <Table aria-label="subscription templates">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t("common.name")}</TableHead>
-                        <TableHead>{t("subscriptions.format")}</TableHead>
-                        <TableHead>{t("subscriptions.builtin")}</TableHead>
-                        <TableHead>{t("subscriptions.enabled")}</TableHead>
-                        <TableHead>{t("common.actions")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {templates.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
-                            {t("common.empty")}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {templates.map((tmpl) => (
-                        <TableRow key={tmpl.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {templateDisplayName(tmpl)}
-                              {tmpl.is_builtin && (
-                                <Badge variant="secondary" className="bg-warning/10 text-warning">
-                                  {t("subscriptions.defaultTemplate")}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{templateFormatBadge(tmpl.format)}</TableCell>
-                          <TableCell>
-                            {tmpl.is_builtin ? t("common.yes") : t("common.no")}
-                          </TableCell>
-                          <TableCell>
-                            <Switch
-                              checked={tmpl.is_enabled}
-                              onCheckedChange={(selected) => handleToggleTemplate(tmpl, selected)}
-                              aria-label={t("subscriptions.enabled")}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openEditTemplate(tmpl)}
-                              >
-                                {t("common.edit")}
-                              </Button>
-                              {!tmpl.is_builtin && (
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeleteTemplateId(tmpl.id)}
-                                >
-                                  {t("common.delete")}
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
+                <DataTable
+                  aria-label="subscription templates"
+                  columns={5}
+                  loading={loadingTemplates}
+                  empty={templates.length === 0 ? t("common.empty") : undefined}
+                  header={
+                    <TableRow>
+                      <TableHead>{t("common.name")}</TableHead>
+                      <TableHead>{t("subscriptions.format")}</TableHead>
+                      <TableHead>{t("subscriptions.builtin")}</TableHead>
+                      <TableHead>{t("subscriptions.enabled")}</TableHead>
+                      <TableHead>{t("common.actions")}</TableHead>
+                    </TableRow>
+                  }
+                >
+                  {templates.map((tmpl) => (
+                    <TableRow key={tmpl.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {templateDisplayName(tmpl)}
+                          {tmpl.is_builtin && (
+                            <Badge variant="secondary" className="bg-warning/10 text-warning">
+                              {t("subscriptions.defaultTemplate")}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{templateFormatBadge(tmpl.format)}</TableCell>
+                      <TableCell>{tmpl.is_builtin ? t("common.yes") : t("common.no")}</TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={tmpl.is_enabled}
+                          onCheckedChange={(selected) => handleToggleTemplate(tmpl, selected)}
+                          aria-label={t("subscriptions.enabled")}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => openEditTemplate(tmpl)}>
+                            {t("common.edit")}
+                          </Button>
+                          {!tmpl.is_builtin && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => setDeleteTemplateId(tmpl.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </DataTable>
               </CardContent>
             </Card>
           </div>

@@ -10,16 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import { PageHeader, ConfirmDialog, FormInput, FormSelect } from "../components/ui";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
+import { DataTable, PageHeader, ConfirmDialog, FormInput, FormSelect } from "../components/ui";
 import {
   getCertificates,
   createCertificate,
@@ -113,58 +105,44 @@ export function Certificates() {
 
       <Card>
         <CardContent>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="certificates">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("certificates.domain")}</TableHead>
-                  <TableHead>{t("certificates.node")}</TableHead>
-                  <TableHead>{t("common.status")}</TableHead>
-                  <TableHead>{t("common.expiry")}</TableHead>
-                  <TableHead>{t("certificates.lastError")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {certs.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
-                      {t("certificates.emptyHint")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {certs.map((cert) => (
-                  <TableRow key={cert.id}>
-                    <TableCell className="font-mono text-sm">{cert.domain}</TableCell>
-                    <TableCell>{cert.node_name || cert.node_id}</TableCell>
-                    <TableCell>{statusBadge(cert.status)}</TableCell>
-                    <TableCell>
-                      {cert.expires_at ? new Date(cert.expires_at).toLocaleDateString() : "-"}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">{cert.last_error || "-"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => handleRenew(cert.id)}>
-                          {t("certificates.renew")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteId(cert.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="certificates"
+            columns={6}
+            loading={loading}
+            empty={certs.length === 0 ? t("certificates.emptyHint") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("certificates.domain")}</TableHead>
+                <TableHead>{t("certificates.node")}</TableHead>
+                <TableHead>{t("common.status")}</TableHead>
+                <TableHead>{t("common.expiry")}</TableHead>
+                <TableHead>{t("certificates.lastError")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {certs.map((cert) => (
+              <TableRow key={cert.id}>
+                <TableCell className="font-mono text-sm">{cert.domain}</TableCell>
+                <TableCell>{cert.node_name || cert.node_id}</TableCell>
+                <TableCell>{statusBadge(cert.status)}</TableCell>
+                <TableCell>
+                  {cert.expires_at ? new Date(cert.expires_at).toLocaleDateString() : "-"}
+                </TableCell>
+                <TableCell className="max-w-xs truncate">{cert.last_error || "-"}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => handleRenew(cert.id)}>
+                      {t("certificates.renew")}
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => setDeleteId(cert.id)}>
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 

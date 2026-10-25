@@ -11,16 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import {
+  DataTable,
   PageHeader,
   ConfirmDialog,
   CopyableSecret,
@@ -128,66 +121,52 @@ export function ApiKeys() {
 
       <Card>
         <CardContent>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <>
-              <Table aria-label="api keys">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("common.name")}</TableHead>
-                    <TableHead>{t("apiKeys.scopes")}</TableHead>
-                    <TableHead>{t("common.active")}</TableHead>
-                    <TableHead>{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {apiKeys.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {apiKeys.map((key) => (
-                    <TableRow key={key.id}>
-                      <TableCell>{key.name}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {key.scopes.slice(0, 3).map((scope) => (
-                            <Badge key={scope} variant="secondary">
-                              {scope}
-                            </Badge>
-                          ))}
-                          {key.scopes.length > 3 && (
-                            <Badge variant="secondary">+{key.scopes.length - 3}</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {key.is_active ? t("common.enabled") : t("common.disabled")}
-                      </TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="destructive" onClick={() => setDeleteId(key.id)}>
-                          {t("common.delete")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                perPage={perPage}
-                total={total}
-                onPageChange={setPage}
-                onPerPageChange={setPerPage}
-              />
-            </>
-          )}
+          <DataTable
+            aria-label="api keys"
+            columns={4}
+            loading={loading}
+            empty={apiKeys.length === 0 ? t("common.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("common.name")}</TableHead>
+                <TableHead>{t("apiKeys.scopes")}</TableHead>
+                <TableHead>{t("common.active")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {apiKeys.map((key) => (
+              <TableRow key={key.id}>
+                <TableCell>{key.name}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {key.scopes.slice(0, 3).map((scope) => (
+                      <Badge key={scope} variant="secondary">
+                        {scope}
+                      </Badge>
+                    ))}
+                    {key.scopes.length > 3 && (
+                      <Badge variant="secondary">+{key.scopes.length - 3}</Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>{key.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
+                <TableCell>
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteId(key.id)}>
+                    {t("common.delete")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            perPage={perPage}
+            total={total}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+          />
         </CardContent>
       </Card>
 

@@ -10,16 +10,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import { PageHeader, ConfirmDialog, Pagination, FormInput, FormCheckbox } from "../components/ui";
+  DataTable,
+  PageHeader,
+  ConfirmDialog,
+  Pagination,
+  FormInput,
+  FormCheckbox,
+} from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getHosts, createHost, updateHost, deleteHost } from "../api/hosts";
 import type { CreateHostPayload } from "../api/hosts";
@@ -179,66 +178,54 @@ export function Hosts() {
 
       <Card>
         <CardContent>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="hosts">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("hosts.remark")}</TableHead>
-                  <TableHead>{t("hosts.address")}</TableHead>
-                  <TableHead>{t("hosts.port")}</TableHead>
-                  <TableHead>{t("hosts.sni")}</TableHead>
-                  <TableHead>{t("hosts.host")}</TableHead>
-                  <TableHead>{t("hosts.path")}</TableHead>
-                  <TableHead>{t("hosts.isActive")}</TableHead>
-                  <TableHead>{t("hosts.protocolConfig")}</TableHead>
-                  <TableHead>{t("hosts.node")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {hosts.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={10} className="p-4 text-center text-muted-foreground">
-                      {t("common.empty")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {hosts.map((host) => (
-                  <TableRow key={host.id}>
-                    <TableCell>{host.remark}</TableCell>
-                    <TableCell>{host.address}</TableCell>
-                    <TableCell>{host.port}</TableCell>
-                    <TableCell>{host.sni || "-"}</TableCell>
-                    <TableCell>{host.host || "-"}</TableCell>
-                    <TableCell>{host.path || "-"}</TableCell>
-                    <TableCell>
-                      {host.is_active ? t("common.enabled") : t("common.disabled")}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">{host.protocol_config_id}</TableCell>
-                    <TableCell className="max-w-xs truncate">{host.node_id}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(host)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteHostId(host.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="hosts"
+            columns={10}
+            loading={loading}
+            empty={hosts.length === 0 ? t("common.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("hosts.remark")}</TableHead>
+                <TableHead>{t("hosts.address")}</TableHead>
+                <TableHead>{t("hosts.port")}</TableHead>
+                <TableHead>{t("hosts.sni")}</TableHead>
+                <TableHead>{t("hosts.host")}</TableHead>
+                <TableHead>{t("hosts.path")}</TableHead>
+                <TableHead>{t("hosts.isActive")}</TableHead>
+                <TableHead>{t("hosts.protocolConfig")}</TableHead>
+                <TableHead>{t("hosts.node")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {hosts.map((host) => (
+              <TableRow key={host.id}>
+                <TableCell>{host.remark}</TableCell>
+                <TableCell>{host.address}</TableCell>
+                <TableCell>{host.port}</TableCell>
+                <TableCell>{host.sni || "-"}</TableCell>
+                <TableCell>{host.host || "-"}</TableCell>
+                <TableCell>{host.path || "-"}</TableCell>
+                <TableCell>{host.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
+                <TableCell className="max-w-xs truncate">{host.protocol_config_id}</TableCell>
+                <TableCell className="max-w-xs truncate">{host.node_id}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(host)}>
+                      {t("common.edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDeleteHostId(host.id)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 

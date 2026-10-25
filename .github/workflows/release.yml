@@ -140,6 +140,9 @@ jobs:
   docker:
     name: Build and Push Docker Images
     needs: [build]
+    # RC 预发布标签（如 v0.5.0-rc.1）不发布 Docker 镜像，仅保留二进制与构建缓存；
+    # 稳定版本标签与手动触发保留 Docker 发布。
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

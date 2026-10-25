@@ -1,13 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
+import { DataTable } from "../components/ui";
 import { Binding, Node, ProtocolConfig } from "../api/types";
 
 interface BindingsTableProps {
@@ -38,8 +32,11 @@ export function BindingsTable({
   };
 
   return (
-    <Table aria-label="bindings">
-      <TableHeader>
+    <DataTable
+      aria-label="bindings"
+      columns={5}
+      empty={bindings.length === 0 ? t("common.empty") : undefined}
+      header={
         <TableRow>
           <TableHead>{t("bindings.node")}</TableHead>
           <TableHead>{t("bindings.protocol")}</TableHead>
@@ -47,36 +44,28 @@ export function BindingsTable({
           <TableHead>{t("bindings.overrideSettings")}</TableHead>
           <TableHead>{t("common.actions")}</TableHead>
         </TableRow>
-      </TableHeader>
-      <TableBody>
-        {bindings.length === 0 && (
-          <TableRow>
-            <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
-              {t("common.empty")}
-            </TableCell>
-          </TableRow>
-        )}
-        {bindings.map((binding) => (
-          <TableRow key={binding.id}>
-            <TableCell>{getNodeName(binding.node_id)}</TableCell>
-            <TableCell>{getProtocolName(binding.protocol_config_id)}</TableCell>
-            <TableCell>{binding.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
-            <TableCell className="max-w-xs truncate font-mono">
-              {binding.override_settings ? JSON.stringify(binding.override_settings) : "-"}
-            </TableCell>
-            <TableCell>
-              <div className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => onEdit(binding)}>
-                  {t("common.edit")}
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => onDelete(binding.id)}>
-                  {t("common.delete")}
-                </Button>
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+      }
+    >
+      {bindings.map((binding) => (
+        <TableRow key={binding.id}>
+          <TableCell>{getNodeName(binding.node_id)}</TableCell>
+          <TableCell>{getProtocolName(binding.protocol_config_id)}</TableCell>
+          <TableCell>{binding.is_active ? t("common.enabled") : t("common.disabled")}</TableCell>
+          <TableCell className="max-w-xs truncate font-mono">
+            {binding.override_settings ? JSON.stringify(binding.override_settings) : "-"}
+          </TableCell>
+          <TableCell>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={() => onEdit(binding)}>
+                {t("common.edit")}
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => onDelete(binding.id)}>
+                {t("common.delete")}
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+      ))}
+    </DataTable>
   );
 }

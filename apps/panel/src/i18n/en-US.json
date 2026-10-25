@@ -43,7 +43,9 @@
     "expand": "Show advanced options",
     "collapse": "Hide advanced options",
     "openMenu": "Open navigation menu",
-    "closeMenu": "Close navigation menu"
+    "closeMenu": "Close navigation menu",
+    "retry": "Retry",
+    "rowActions": "More actions for {{name}}"
   },
   "status": {
     "online": "Online",
@@ -87,6 +89,19 @@
     "traffic": "Traffic Records",
     "system": "System"
   },
+  "navSection": {
+    "overview": "Overview",
+    "infrastructure": "Nodes & Config",
+    "access": "Users & Subscriptions",
+    "observability": "Observability",
+    "system": "System"
+  },
+  "version": {
+    "badge": "Hub v{{hub}} · UI v{{ui}}",
+    "badgeHubOnly": "Hub v{{hub}}",
+    "badgeUnavailable": "Hub unavailable · UI v{{ui}}",
+    "hubUnreachable": "Unable to fetch Hub version"
+  },
   "login": {
     "title": "ProxyPanel",
     "subtitle": "Management Panel Login",
@@ -94,10 +109,16 @@
     "apiKeyPlaceholder": "Enter API key",
     "verify": "Verify Key",
     "invalid": "Invalid API key",
-    "failed": "Verification failed: {{error}}"
+    "failed": "Verification failed: {{error}}",
+    "brandTitle": "Multi-node proxy fleet, one control plane",
+    "brandSubtitle": "Manage sing-box / mihomo nodes, protocol configs, user subscriptions and traffic observability in one place.",
+    "highlightNodes": "Hub-Agent architecture with staged config rollout",
+    "highlightSecurity": "API key access control and managed TLS certificates",
+    "highlightObserve": "Real-time traffic, host metrics and log observability"
   },
   "dashboard": {
     "title": "Dashboard",
+    "subtitle": "Fleet overview and last-24h traffic",
     "totalNodes": "Total Nodes",
     "online": "Online",
     "onlineUsers": "Online Users",
@@ -109,7 +130,16 @@
     "recentLogs": "Recent Logs",
     "nodeStatus": "Node Status",
     "loading": "Loading dashboard...",
-    "error": "Some dashboard data failed to load."
+    "error": "Some dashboard data failed to load.",
+    "systemStatus": "System Status",
+    "hubHealthy": "Healthy",
+    "hubDegraded": "Degraded",
+    "hubUnreachable": "Unreachable",
+    "trafficTotal": "24h Total",
+    "onlineNodes": "Nodes Online",
+    "viewAll": "View all",
+    "sectionError": "Failed to load this section",
+    "addNode": "Add Node"
   },
   "nodes": {
     "title": "Nodes",

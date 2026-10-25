@@ -1,18 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, ConfirmDialog, Pagination } from "../components/ui";
+import { PageHeader, ConfirmDialog, Pagination, DataTable } from "../components/ui";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import { usePagination } from "../hooks/useCommon";
 import {
   getProtocols,
@@ -281,59 +273,48 @@ export function Protocols() {
 
       <Card>
         <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="protocols">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("common.name")}</TableHead>
-                  <TableHead>{t("protocols.type")}</TableHead>
-                  <TableHead>{t("protocols.core")}</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>{t("protocols.listen")}</TableHead>
-                  <TableHead>{t("protocols.port")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {protocols.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
-                      {t("common.empty")}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  protocols.map((protocol) => (
-                    <TableRow key={protocol.id}>
-                      <TableCell>{protocol.name}</TableCell>
-                      <TableCell>{protocol.protocol_type}</TableCell>
-                      <TableCell>{protocol.core_type}</TableCell>
-                      <TableCell>{protocol.core_version || "-"}</TableCell>
-                      <TableCell>{protocol.listen_address}</TableCell>
-                      <TableCell>{protocol.listen_port}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(protocol)}>
-                            {t("common.edit")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => setDeleteProtocolId(protocol.id)}
-                          >
-                            {t("common.delete")}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="protocols"
+            columns={7}
+            loading={isLoading}
+            empty={protocols.length === 0 ? t("common.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("common.name")}</TableHead>
+                <TableHead>{t("protocols.type")}</TableHead>
+                <TableHead>{t("protocols.core")}</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>{t("protocols.listen")}</TableHead>
+                <TableHead>{t("protocols.port")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {protocols.map((protocol) => (
+              <TableRow key={protocol.id}>
+                <TableCell>{protocol.name}</TableCell>
+                <TableCell>{protocol.protocol_type}</TableCell>
+                <TableCell>{protocol.core_type}</TableCell>
+                <TableCell>{protocol.core_version || "-"}</TableCell>
+                <TableCell>{protocol.listen_address}</TableCell>
+                <TableCell>{protocol.listen_port}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(protocol)}>
+                      {t("common.edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDeleteProtocolId(protocol.id)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 

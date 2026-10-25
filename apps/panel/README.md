@@ -22,7 +22,7 @@ ProxyPanel Web 前端，基于 React + TypeScript + Vite + shadcn/ui（Base UI�
 
 ```bash
 # 进入项目环境并安装锁定依赖
-nix develop
+nix develop --no-pure-eval
 bun install --frozen-lockfile
 
 # 启动开发服务器（带热重载）
@@ -41,7 +41,7 @@ bun run --filter pp-web verify
 ## 发布构建验证
 
 ```bash
-nix develop
+nix develop --no-pure-eval
 bun install --frozen-lockfile
 bun run --filter pp-web verify
 ```

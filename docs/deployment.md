@@ -872,7 +872,11 @@ PROXYPANEL_MAINTENANCE_ENABLED=true
 | `web` | push `v*` 标签、手动触发 | 构建前端产物并上传 artifact |
 | `build` | `web` 完成后 | 在 `ubuntu-22.04` (x86_64) 与 `ubuntu-24.04-arm` (aarch64) 上交叉编译 Release 二进制 |
 | `release` | `build` 完成后 | 收集 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease） |
-| `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent` |
+| `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`；RC 预发布标签（ref 含 `-`）跳过，仅稳定版本标签与手动触发执行 |
+
+> RC 标签（如 `v0.5.0-rc.1`）不发布 Docker 镜像，但仍发布全部二进制 tar.gz 与
+> `SHA256SUMS`，GitHub Actions 构建缓存照常保留；该策略见
+> [ADR-0019](adr/0019-devenv-migration-and-rc-docker-skip.md)。
 
 ### 产物命名
 

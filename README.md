@@ -59,8 +59,9 @@ flowchart TB
 
 ### 环境要求
 
-本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)（`flake.nix` / `flake.lock`）。
-以下开发命令均在 `nix develop` 内执行，Bun、Protobuf 与构建系统库使用 flake
+本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)（`flake.nix` / `flake.lock`，
+devenv flake 集成：根 `devenv.nix` + `nix/tools.nix`，`.envrc` 可 direnv 自动加载）。
+以下开发命令均在 `nix develop --no-pure-eval` 内执行，Bun、Protobuf 与构建系统库使用 flake
 提供的版本；Rust 经该环境的 rustup 按 `rust-toolchain.toml` 管理。
 
 - Rust 1.88+（参见 `rust-toolchain.toml`）
@@ -73,7 +74,7 @@ flowchart TB
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop
+nix develop --no-pure-eval
 ```
 
 ### 2. 启动数据库
@@ -259,8 +260,8 @@ docker compose up -d postgres
 
 项目通过 GitHub Actions 自动构建并发布二进制文件与容器镜像：
 
-- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz`、`proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`
-- **GHCR 镜像**: 同时构建并推送 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`
+- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz`、`proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`（RC 预发布标签照常发布二进制）
+- **GHCR 镜像**: 稳定版本标签与手动触发时构建并推送 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`；RC 预发布标签（如 `v0.5.0-rc.1`）跳过 Docker 发布（见 [ADR-0019](docs/adr/0019-devenv-migration-and-rc-docker-skip.md)）
 
 **安装 Hub：**
 

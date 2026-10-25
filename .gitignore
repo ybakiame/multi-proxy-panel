@@ -27,6 +27,10 @@ hub-test.toml
 .env.*
 !.env.example
 
+# direnv / devenv
+.devenv
+.direnv/
+
 # Keys and certs
 *.pem
 *.key
