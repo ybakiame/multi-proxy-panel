@@ -6,19 +6,15 @@ members = [
     "crates/pp-proto",
     "crates/pp-config",
     "crates/pp-subscription",
-    "crates/pp-script",
     "crates/pp-core",
     "crates/pp-hub",
     "crates/pp-agent",
     "crates/pp-cli",
-    "crates/pp-mitm",
-    "crates/pp-client",
-    "crates/pp-client-tauri",
-    # 前端不在 workspace：apps/panel（管理系统）、apps/client（Tauri 客户端，单壳双目标），bun workspaces 管理
+    # 管理 Web apps/panel 由 Bun workspace 管理，不是 Cargo 成员。
 ]
 
 [workspace.package]
-version = "0.4.5"
+version = "0.5.0-rc.1"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 authors = ["ProxyPanel Contributors"]
@@ -42,11 +38,6 @@ prost = "0.13"
 prost-types = "0.13"
 
 # Database
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "macros",
-] }
 sea-orm = { version = "1.1", features = [
     "runtime-tokio-rustls",
     "sqlx-postgres",
@@ -69,7 +60,7 @@ serde_yaml = "0.9"
 toml = "0.8"
 uuid = { version = "1.16", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.17"
+semver = { version = "1.0", features = ["serde"] }
 
 # CLI & config
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -83,9 +74,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 thiserror = "2.0"
 anyhow = "1.0"
-regex = "1"
-# 关闭 default-tls（native-tls/openssl）：统一 rustls-tls，避免 Android 等
-# 交叉编译 target 需要为 openssl-sys 准备 sysroot（pp-hub/pp-core 已如此声明）。
+# HTTP 客户端统一 rustls，避免依赖宿主机 OpenSSL。
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sysinfo = "0.34"
 notify = { version = "8.0", default-features = false, features = ["macos_fsevent"] }
@@ -109,18 +98,7 @@ jsonschema = "0.26"
 base64 = "0.22"
 url = "2.5"
 qrcode = "0.14"
-
-# HTTP body utilities (used by pp-mitm)
-http-body-util = "0.1"
-async-trait = "0.1"
 futures = "0.3"
-bytes = "1"
-
-# WebSocket client（无 TLS 特性：仅用于 127.0.0.1 回环 ws://，见 pp-client connections/ws）
-tokio-tungstenite = { version = "0.30", default-features = false, features = [
-    "connect",
-    "handshake",
-] }
 
 # Internal crates
 pp-common = { path = "crates/pp-common" }
@@ -129,20 +107,6 @@ pp-proto = { path = "crates/pp-proto" }
 pp-config = { path = "crates/pp-config" }
 pp-subscription = { path = "crates/pp-subscription" }
 pp-core = { path = "crates/pp-core" }
-pp-script = { path = "crates/pp-script" }
-pp-mitm = { path = "crates/pp-mitm" }
-# 共享层默认以 scripts-only 形态拉取 pp-client（mobile 形态无 pp-mitm）；
-# desktop 全功能由成员/壳层通过 pp-client/mitm feature 显式开启。
-pp-client = { path = "crates/pp-client", default-features = false, features = ["scripts"] }
-
-[profile]
-
-[profile.wasm-dev]
-inherits = "dev"
-opt-level = 1
 
 [profile.server-dev]
-inherits = "dev"
-
-[profile.android-dev]
 inherits = "dev"

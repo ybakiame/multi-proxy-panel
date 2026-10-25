@@ -16,6 +16,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod config;
 mod grpc;
+mod logging;
 mod middleware;
 mod rate_limiter;
 mod response;
@@ -31,7 +32,7 @@ use rate_limiter::RateLimiter;
 use routes::{
     api_key, bindings, certificates, client, core_version, health, inbound_host, install, login,
     logs, metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset,
-    relay_rule, subscription, traffic, usage, webhook,
+    relay_rule, subscription, system_update, traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -485,11 +486,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             delete(webhook::delete_webhook)
                 .route_layer(middleware::api_key::scope_layer(scopes::WEBHOOKS_WRITE)),
         )
-        // Logs
         .route(
             "/api/v1/logs",
             get(logs::query_logs).route_layer(middleware::api_key::scope_layer(scopes::LOGS_READ)),
         )
+        .merge(system_update::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::api_key::require_api_key,
@@ -531,12 +532,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "proxy_panel_hub=info,tower_http=debug".into()),
-        )
-        .init();
+    let pending_logs = logging::init();
 
     let args = Args::parse();
 
@@ -570,6 +566,8 @@ async fn main() -> anyhow::Result<()> {
     let db = pp_db::init_db(&hub_config.database_url).await?;
     pp_db::run_migrations(&db).await?;
     pp_db::upgrade::run_versioned_upgrades(&db, env!("CARGO_PKG_VERSION")).await?;
+
+    let log_writer = pending_logs.start(db.clone());
 
     if let Err(e) = ensure_bootstrap_api_key(&db).await {
         tracing::warn!("failed to ensure bootstrap api key: {}", e);
@@ -735,6 +733,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tracing::info!("ProxyPanel Hub shutdown complete");
+    log_writer.shutdown().await;
     Ok(())
 }
 

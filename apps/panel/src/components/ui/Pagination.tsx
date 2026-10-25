@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Button } from "@heroui/react";
+import { useTranslation } from "react-i18next";
+import { Button } from "./button";
 
 interface PaginationProps {
   page: number;
@@ -18,60 +18,61 @@ export function Pagination({
   onPageChange,
   onPerPageChange,
 }: PaginationProps) {
-  const [selectedPerPage, setSelectedPerPage] = useState(perPage.toString());
+  const { t } = useTranslation();
 
   const handlePerPageChange = (value: string) => {
-    setSelectedPerPage(value);
+    onPageChange(1);
     onPerPageChange(Number(value));
   };
 
   return (
     <div className="flex items-center justify-between gap-4 py-4">
       <div className="text-sm text-muted-foreground">
-        Page {page} of {totalPages} ({total} total)
+        {t("pagination.pageInfo", { current: page, total: totalPages, count: total })}
       </div>
       <div className="flex items-center gap-2">
         <Button
-          isIconOnly
           variant="ghost"
-          size="sm"
-          isDisabled={page <= 1}
-          onPress={() => onPageChange(1)}
+          size="icon-sm"
+          disabled={page <= 1}
+          onClick={() => onPageChange(1)}
+          aria-label={t("pagination.first")}
         >
           «
         </Button>
         <Button
-          isIconOnly
           variant="ghost"
-          size="sm"
-          isDisabled={page <= 1}
-          onPress={() => onPageChange(page - 1)}
+          size="icon-sm"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label={t("pagination.prev")}
         >
           ‹
         </Button>
         <Button
-          isIconOnly
           variant="ghost"
-          size="sm"
-          isDisabled={page >= totalPages}
-          onPress={() => onPageChange(page + 1)}
+          size="icon-sm"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label={t("pagination.next")}
         >
           ›
         </Button>
         <Button
-          isIconOnly
           variant="ghost"
-          size="sm"
-          isDisabled={page >= totalPages}
-          onPress={() => onPageChange(totalPages)}
+          size="icon-sm"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(totalPages)}
+          aria-label={t("pagination.last")}
         >
           »
         </Button>
       </div>
       <select
-        className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground"
-        value={selectedPerPage}
-        onChange={(e) => handlePerPageChange(e.target.value)}
+        aria-label={t("pagination.perPage")}
+        className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+        value={perPage.toString()}
+        onChange={(event) => handlePerPageChange(event.target.value)}
       >
         <option value="10">10 / page</option>
         <option value="20">20 / page</option>

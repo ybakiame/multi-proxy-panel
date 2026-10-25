@@ -56,20 +56,14 @@ where
     ) {
         let level = event.metadata().level().as_str().to_lowercase();
         let target = event.metadata().target().to_string();
-        let mut message = String::new();
-        event.record(
-            &mut |field: &tracing::field::Field, value: &dyn std::fmt::Debug| {
-                if field.name() == "message" {
-                    message = format!("{:?}", value).trim_matches('"').to_string();
-                }
-            },
-        );
-
-        if message.is_empty() {
-            message = format!("event at {}", target);
-        }
-
-        let fields: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut visitor = pp_common::logging::LogVisitor::default();
+        event.record(&mut visitor);
+        let message = if visitor.message.is_empty() {
+            format!("event at {target}")
+        } else {
+            visitor.message
+        };
+        let fields = visitor.fields;
         let entry = LogEntry {
             timestamp: chrono::Utc::now().timestamp(),
             level,
@@ -119,4 +113,29 @@ pub async fn collect_core_status(supervisor: &pp_core::CoreSupervisor) -> Vec<Co
         }
     }
     reports
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracing_subscriber::prelude::*;
+
+    #[tokio::test]
+    async fn forwards_filtered_redacted_records_with_fields() {
+        let (tx, mut rx) = mpsc::channel(10);
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::new(
+                "proxy_panel_agent=info,pp_core=info",
+            ))
+            .with(GrpcLogLayer::new(tx));
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "pp_core", password = "private", retries = 2_u64, "core token=hidden");
+            tracing::debug!(target: "pp_core", "excluded");
+        });
+        let batch = collect_logs(&mut rx, 10).await;
+        assert_eq!(batch.entries.len(), 1);
+        assert_eq!(batch.entries[0].fields["password"], "[REDACTED]");
+        assert_eq!(batch.entries[0].fields["retries"], "2");
+        assert!(!batch.entries[0].message.contains("hidden"));
+    }
 }

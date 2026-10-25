@@ -7,7 +7,7 @@
 
 ## 项目简介
 
-ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架构设计。它支持多节点统一管理、多协议配置、自动订阅生成、实时流量统计与主机监控，并提供现代化的 Web 管理界面与跨平台桌面客户端。
+ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架构设计。它支持多节点统一管理、多协议配置、自动订阅生成、实时流量统计与主机监控，并提供现代化的 Web 管理界面。
 
 ### 核心特性
 
@@ -19,11 +19,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **桌面客户端**: 基于 Tauri 的跨平台桌面应用（Linux/Windows/macOS），内置脚本引擎与 HTTPS MITM 抓包重写（MITM 为桌面端能力，移动端不支持）
-- **移动客户端**: 基于 Tauri 的 Android 客户端，核心由内置 Go 引擎驱动（VPN 模式，无 MITM）
-- **脚本引擎**: 兼容 Quantumult X / Surge / Loon 三方言 API 的 JS 脚本运行时（QuickJS）
-- **HTTPS 解密与重写**: URL / Header / Body 重写、Reject / Mock、请求响应脚本钩子、流量抓包（桌面端专属）
-- **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
+- **现代化前端**: 基于 React + shadcn/ui（Base UI） + Tailwind CSS 的响应式 Web 管理界面
 - **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
 
 ## 系统架构
@@ -55,27 +51,17 @@ flowchart TB
     hub -- "gRPC（双向流）" --> agent
 ```
 
-客户端为单一 Tauri 应用 `apps/client`（`pp-client-app`，ADR-0007 单壳双目标）：桌面 UI（HeroUI）与移动 UI（Konsta）经 vite mode 构建期分发，壳层经 target 依赖表与 cfg 适配层区分桌面/Android 目标，共享前端库 `@pp/client-core` 与 Rust 命令层 `pp-client-tauri`。桌面客户端运行在用户设备上，经由订阅端点从 Hub 拉取节点配置，在本地驱动 sing-box 核心（Clash 格式订阅经节点转换后同样由 sing-box 运行），并叠加 MITM 与脚本引擎实现 HTTPS 解密与抓包重写（MITM 为桌面端能力，移动端不支持）；移动客户端由内置 Go 引擎（`panel-core` → `panelcore.aar`）驱动核心。桌面客户端链路：
-
-```mermaid
-flowchart TB
-    subgraph client["ProxyPanel Client (Desktop)"]
-        direction TB
-        script["pp-script<br/>脚本引擎"]
-        mitm["pp-mitm<br/>MITM 引擎"]
-        core["pp-core<br/>核心子进程"]
-        state["pp-client (ClientState)<br/>订阅同步 / 配置合成 / 系统代理"]
-        script --> state
-        mitm --> state
-        core --> state
-    end
-    client -- "订阅 (HTTP)" --> subEndpoint["Hub /sub/{token} 公开订阅端点"]
-    client -- "本地代理流量" --> remote["远端代理节点 (sing-box / mihomo)"]
-```
+用户侧客户端已迁入独立的 [岚径 · Lanpath 仓库](https://github.com/ybakiame/lanpath)，
+通过公开订阅/API 与 ProxyPanel 协作。两仓构建、版本和发布独立，
+本仓仅维护 Hub、Agent、管理 Web、CLI 与服务端共享模块。
 
 ## 快速开始
 
 ### 环境要求
+
+本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)（`flake.nix` / `flake.lock`）。
+以下开发命令均在 `nix develop` 内执行，Bun、Protobuf 与构建系统库使用 flake
+提供的版本；Rust 经该环境的 rustup 按 `rust-toolchain.toml` 管理。
 
 - Rust 1.88+（参见 `rust-toolchain.toml`）
 - PostgreSQL 15+ (或 SQLite 用于开发)
@@ -86,7 +72,8 @@ flowchart TB
 
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
-cd proxy-panel
+cd multi-proxy-panel
+nix develop
 ```
 
 ### 2. 启动数据库
@@ -177,28 +164,10 @@ cargo run --release --bin proxy-panel-agent \
   --token "your-agent-token"
 ```
 
-### 9. 构建客户端（可选）
-
-客户端为单一 Tauri 项目 `apps/client`（壳退出根 workspace，包名 `pp-client-app`），使用 Bun 作为包管理器；依赖已在上一步于仓库根目录统一安装：
-
-```bash
-cd apps/client
-bun run tauri dev      # 桌面开发模式（Vite 热重载 + Tauri 窗口）
-bun run tauri build    # 桌面发布构建（产物位于 src-tauri/target/release/）
-bun run android:dev    # Android 开发模式（需 NDK/SDK 环境，见 docs/development.md）
-bun run android:build  # Android APK 构建
-```
-
-支持平台：Linux / Windows / macOS。Windows 发布构建产出 NSIS 安装包（x86_64 / ARM64 双架构，`bundle/nsis/*.exe`），内置 sing-box 种子核心与 `wintun.dll`（首启免联网即可用，ADR-0008），并支持自动更新（设置页「关于应用 → 检查更新」）。TUN 模式需要管理员权限（「配置 → 入站管理」提供一键以管理员身份重启）。CI 的 `desktop-windows` job 会在发版时自动构建并随 Release 发布安装包；本地完整打包流程见 [docs/development.md](docs/development.md#windows-桌面端构建)。
-
-#### Android（移动端目标）构建
-
-Android 为 `apps/client` 的移动目标（Tauri 2，`tauri.android.conf.json` overlay）。构建涉及 NDK 交叉编译、Go 核心 `panel-core` 的 AAR 打包与 GEO 数据准备，完整步骤见 [docs/development.md](docs/development.md) 的「[Android 客户端构建](docs/development.md#android-客户端构建)」章节。
-
 ## 项目结构
 
 ```
-proxy-panel/
+multi-proxy-panel/
 ├── Cargo.toml              # Workspace 根配置
 ├── docker-compose.yml      # 开发环境编排
 ├── proto/
@@ -211,18 +180,11 @@ proxy-panel/
 │   ├── pp-config/          # sing-box/mihomo 配置构建器
 │   ├── pp-core/            # 核心进程管理抽象
 │   ├── pp-subscription/    # 订阅链接生成器
-│   ├── pp-script/          # 客户端脚本引擎（QuickJS + QX/Surge/Loon 方言）
-│   ├── pp-mitm/            # HTTPS MITM 引擎（hudsucker 封装 + 重写/抓包，桌面专属）
-│   ├── pp-client/          # 客户端核心库（订阅/配置合成/系统代理）
-│   ├── pp-client-tauri/    # 双端共享 Tauri 命令层（state/logs/capabilities/命令 + android core_bridge）
 │   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
 │   ├── pp-agent/           # 节点代理程序
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
-│   ├── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
-│   └── client/             # 客户端：单一 Tauri 2 应用（单包双入口/单壳双目标）+ Android Go 核心（panel-core）与构建脚本
-├── packages/
-│   └── client-core/        # @pp/client-core：desktop/mobile 共享前端库（api/hooks/atoms/工具）
+│   └── panel/              # 管理系统：React Web 前端（Vite + shadcn/ui（Base UI） + Tailwind）
 ├── docs/                   # 项目文档（索引见 docs/index.md）
 ├── scripts/                # 辅助脚本
 └── CHANGELOG.md            # 变更日志
@@ -236,18 +198,12 @@ proxy-panel/
 | `pp-agent` | 节点代理，管理本地 sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
 | `apps/panel` | 管理系统 Web 前端（bun workspaces 成员） | 静态文件 |
 | `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、组件生命周期管理（安装/升级/回滚/卸载/状态/日志/重启） | `proxy-panel` |
-| `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
+| `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具、日志脱敏与字段采集 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
 | `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
 | `pp-config` | 配置抽象：将通用协议配置转译为 sing-box JSON 或 mihomo YAML | 库 |
 | `pp-core` | 核心进程管理：启动、停止、重载 | 库 |
 | `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
-| `pp-script` | 客户端 JS 脚本引擎：rquickjs 后端 + QX/Surge/Loon 方言 API 适配与 cron 调度 | 库 |
-| `pp-mitm` | HTTPS MITM 引擎（桌面端专属，移动端不支持）：CA 管理、hudsucker 封装、URL/Header/Body 重写、脚本钩子、抓包、上游代理 | 库 |
-| `pp-client` | 客户端核心库：订阅同步、核心配置合成（含 MITM 链路，桌面端专属）、系统代理、生命周期编排 | 库 |
-| `pp-client-tauri` | 双端共享 Tauri 命令层：state / logs / capabilities / 35 条通用命令单份实现，Android 专属 core_bridge（cfg 门控） | 库 |
-| `@pp/client-core` | desktop/mobile 共享前端库：api 的 invoke 封装 + hooks + atoms + 纯工具（bun workspaces 成员） | 库 |
-| `apps/client` | Tauri 2 客户端（React 19 + Vite 8，单包双入口：桌面 HeroUI / 移动 Konsta + Go 核心 `panel-core`；壳为退出根 workspace 的独立 cargo 项目） | 桌面（Linux/Windows/macOS）+ Android 应用 |
 
 ## 支持的协议
 
@@ -274,7 +230,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 # 格式化代码
 cargo fmt --all
 
-# Rust 全量门禁（含客户端壳双目标）
+# Rust 全量门禁（fmt + clippy + test）
 bun run verify:rust
 
 # 前端：根目录安装依赖后按包构建/校验
@@ -343,6 +299,10 @@ sudo proxy-panel install agent \
 # 查看各组件状态
 sudo proxy-panel status
 
+# 检查更新（无需 root）
+proxy-panel check-update
+proxy-panel check-update hub --json
+
 # 升级组件
 sudo proxy-panel upgrade hub
 sudo proxy-panel upgrade agent
@@ -364,6 +324,12 @@ sudo proxy-panel restart agent
 sudo proxy-panel uninstall agent --purge
 sudo proxy-panel uninstall hub --purge
 ```
+
+Hub 自更新也可在 Web 面板 `/system` 页检测与触发：默认仅显示检测结果和手动命令；
+管理员可选安装受限 sudo 授权与 systemd drop-in 后开启面板一键升级（默认关闭，见
+[docs/deployment.md](docs/deployment.md#面板更新中心可选) 与
+[ADR-0018](docs/adr/0018-hub-self-update-maintenance.md)）。Agent 不提供远程升级，
+需在节点本地执行上述 CLI 命令。
 
 详见 [docs/deployment.md](docs/deployment.md)。
 

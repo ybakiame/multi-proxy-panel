@@ -70,6 +70,38 @@ sudo proxy-panel uninstall hub --purge
 | `clash-full-template.json` | Clash Meta 完整配置订阅模板（占位符方式） |
 | `proxy-panel-hub.service` | Hub 服务单元 |
 | `proxy-panel-agent.service` | Agent 服务单元 |
+| `proxy-panel-maintenance.sudoers` | （可选）面板更新中心的受限 sudo 授权样例，见下文 |
+| `proxy-panel-hub-maintenance.conf` | （可选）Hub 维护 drop-in，仅放宽 `NoNewPrivileges`，见下文 |
+
+### 可选：启用面板更新中心（Hub 自更新）
+
+默认部署中 Hub 面板只**检测**更新并给出手动命令。若管理员希望直接在面板 `/system`
+页触发 Hub 升级，需要显式安装以下两个授权文件（安装脚本**不会**自动安装）：
+
+```bash
+# 1. 受限 sudo 规则：proxypanel 用户只能以 root 执行这一条固定形状的命令
+sudo install -o root -g root -m 0440 deploy/proxy-panel-maintenance.sudoers \
+  /etc/sudoers.d/proxy-panel-maintenance
+sudo visudo -cf /etc/sudoers.d/proxy-panel-maintenance
+
+# 2. systemd drop-in：仅放宽 NoNewPrivileges 以便 sudo 提权（其余加固不变）
+sudo install -o root -g root -m 0644 deploy/proxy-panel-hub-maintenance.conf \
+  /etc/systemd/system/proxy-panel-hub.service.d/10-maintenance.conf
+sudo systemctl daemon-reload
+sudo systemctl restart proxy-panel-hub
+
+# 3. 在 /etc/proxy-panel/hub.env（或 hub.toml）中开启
+PROXYPANEL_MAINTENANCE_ENABLED=true
+```
+
+风险与边界说明（完整版见 [docs/deployment.md](../docs/deployment.md#面板更新中心可选)）：
+
+- sudoers 条目只放行固定参数形状：unit 名、CLI 路径与 `--status-file` 路径不可变，
+  仅 `--version` / `--repo` 值可变；Hub 配置中的 `maintenance_*` 路径必须与之一致。
+- drop-in 放宽 `NoNewPrivileges` 后，拿到面板 API 的攻击者可触发 Hub 自身的 root
+  升级，属于有意的权限边界收缩，请仅在受信管理网络中启用。
+- 更新通过 transient unit `proxy-panel-hub-update` 运行，Hub 服务停止不会杀死
+  进行中的更新；状态写入 `/opt/proxy-panel/data/hub-update.json` 供面板轮询。
 
 ### 前置准备
 

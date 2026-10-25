@@ -34,6 +34,8 @@ pub mod scopes {
     pub const METRICS_READ: &str = "metrics:read";
     pub const ONLINES_READ: &str = "onlines:read";
     pub const LOGS_READ: &str = "logs:read";
+    pub const SYSTEM_READ: &str = "system:read";
+    pub const SYSTEM_WRITE: &str = "system:write";
     pub const ALL: &str = "*";
 
     pub const ALL_SCOPES: &[&str] = &[
@@ -59,6 +61,8 @@ pub mod scopes {
         METRICS_READ,
         ONLINES_READ,
         LOGS_READ,
+        SYSTEM_READ,
+        SYSTEM_WRITE,
         ALL,
     ];
 }

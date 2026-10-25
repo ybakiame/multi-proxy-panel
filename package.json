@@ -2,9 +2,7 @@
   "name": "proxy-panel",
   "private": true,
   "workspaces": [
-    "apps/panel",
-    "apps/client",
-    "packages/*"
+    "apps/panel"
   ],
   "scripts": {
     "prepare": "husky",

@@ -126,30 +126,37 @@ pub async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 
 /// Generate a backup file path for a binary.
 pub fn backup_path(binary_name: &str, version_or_timestamp: &str) -> PathBuf {
-    PathBuf::from(BACKUP_DIR).join(format!("{}.{}.bak", binary_name, version_or_timestamp))
+    backup_path_in(Path::new(BACKUP_DIR), binary_name, version_or_timestamp)
 }
 
-/// Find the most recent backup for a component binary.
-pub async fn find_latest_backup(binary_name: &str) -> Result<Option<PathBuf>> {
-    let mut entries = tokio::fs::read_dir(BACKUP_DIR).await?;
+pub fn backup_path_in(backup_dir: &Path, name: &str, version_or_timestamp: &str) -> PathBuf {
+    backup_dir.join(format!("{}.{}.bak", name, version_or_timestamp))
+}
+
+/// Find the most recent backup for a component binary or web directory.
+pub async fn find_latest_backup_in(backup_dir: &Path, name: &str) -> Result<Option<PathBuf>> {
+    let mut entries = tokio::fs::read_dir(backup_dir).await?;
     let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
     while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with(&format!("{}.", binary_name)) && name_str.ends_with(".bak") {
+        let entry_name = entry.file_name();
+        let entry_name = entry_name.to_string_lossy();
+        if entry_name.starts_with(&format!("{}.", name)) && entry_name.ends_with(".bak") {
             let meta = entry.metadata().await?;
             if let Ok(modified) = meta.modified() {
                 candidates.push((entry.path(), modified));
             }
         }
     }
-    candidates.sort_by_key(|b| std::cmp::Reverse(b.1)); // newest first
-    Ok(candidates.into_iter().next().map(|(p, _)| p))
+    candidates.sort_by_key(|backup| std::cmp::Reverse(backup.1));
+    Ok(candidates.into_iter().next().map(|(path, _)| path))
 }
 
 /// Keep only the newest backup for a component binary (rollback needs one).
 pub async fn prune_backups(bin_name: &str) {
-    let backup_dir = Path::new(BACKUP_DIR);
+    prune_backups_in(Path::new(BACKUP_DIR), bin_name).await;
+}
+
+pub async fn prune_backups_in(backup_dir: &Path, name: &str) {
     if !backup_dir.exists() {
         return;
     }
@@ -158,17 +165,22 @@ pub async fn prune_backups(bin_name: &str) {
     };
     let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with(&format!("{}.", bin_name))
-            && name_str.ends_with(".bak")
+        let entry_name = entry.file_name();
+        let entry_name = entry_name.to_string_lossy();
+        if entry_name.starts_with(&format!("{}.", name))
+            && entry_name.ends_with(".bak")
             && let Ok(modified) = entry.metadata().await.and_then(|m| m.modified())
         {
             candidates.push((entry.path(), modified));
         }
     }
-    candidates.sort_by_key(|b| std::cmp::Reverse(b.1));
+    candidates.sort_by_key(|backup| std::cmp::Reverse(backup.1));
     for (path, _) in candidates.into_iter().skip(1) {
-        let _ = tokio::fs::remove_file(&path).await;
+        let result = if path.is_dir() {
+            tokio::fs::remove_dir_all(&path).await
+        } else {
+            tokio::fs::remove_file(&path).await
+        };
+        let _ = result;
     }
 }

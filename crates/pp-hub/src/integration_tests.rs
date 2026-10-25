@@ -13,7 +13,7 @@ use tower::ServiceExt;
 use crate::rate_limiter::RateLimiter;
 use crate::{AppState, HubConfig, build_app, ensure_bootstrap_api_key};
 
-async fn setup_db() -> sea_orm::DatabaseConnection {
+pub(crate) async fn setup_db() -> sea_orm::DatabaseConnection {
     let db = sea_orm::Database::connect("sqlite::memory:")
         .await
         .expect("connect");
@@ -21,7 +21,7 @@ async fn setup_db() -> sea_orm::DatabaseConnection {
     db
 }
 
-fn test_state(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
+pub(crate) fn test_state(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
     AppState::new(db, HubConfig::default(), RateLimiter::default(), None)
 }
 
@@ -347,6 +347,21 @@ async fn api_key_scope_enforcement() {
         .await
         .expect("list");
     assert_eq!(list_response.status(), StatusCode::OK);
+
+    // Both central log types retain the existing logs:read boundary.
+    for kind in ["system", "agent"] {
+        let response = app
+            .clone()
+            .oneshot(api_request(
+                "GET",
+                &format!("/api/v1/logs?kind={kind}"),
+                read_key,
+                None,
+            ))
+            .await
+            .expect("log query");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 
     // Write should fail
     let create_response = app

@@ -72,6 +72,23 @@ pub async fn systemd_is_active(unit: &str) -> bool {
     }
 }
 
+/// Wait for a restarted unit to remain active for three consecutive checks.
+pub async fn systemd_wait_stable(unit: &str) -> Result<()> {
+    let mut stable_checks = 0;
+    for _ in 0..30 {
+        if systemd_is_active(unit).await {
+            stable_checks += 1;
+            if stable_checks == 3 {
+                return Ok(());
+            }
+        } else {
+            stable_checks = 0;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    bail!("{} 未能在 30 秒内稳定保持 active", unit)
+}
+
 /// Check whether a systemd unit is enabled.
 pub async fn systemd_is_enabled(unit: &str) -> bool {
     match Command::new("systemctl")

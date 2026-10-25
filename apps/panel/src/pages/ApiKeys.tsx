@@ -1,7 +1,25 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import {
   PageHeader,
   ConfirmDialog,
@@ -109,7 +127,7 @@ export function ApiKeys() {
       {newToken && <CopyableSecret secret={newToken} label={t("apiKeys.tokenWarning")} />}
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -117,51 +135,48 @@ export function ApiKeys() {
           ) : (
             <>
               <Table aria-label="api keys">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("common.name")}</Table.Column>
-                      <Table.Column>{t("apiKeys.scopes")}</Table.Column>
-                      <Table.Column>{t("common.active")}</Table.Column>
-                      <Table.Column>{t("common.actions")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("common.empty")}
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("common.name")}</TableHead>
+                    <TableHead>{t("apiKeys.scopes")}</TableHead>
+                    <TableHead>{t("common.active")}</TableHead>
+                    <TableHead>{t("common.actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {apiKeys.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {apiKeys.map((key) => (
+                    <TableRow key={key.id}>
+                      <TableCell>{key.name}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {key.scopes.slice(0, 3).map((scope) => (
+                            <Badge key={scope} variant="secondary">
+                              {scope}
+                            </Badge>
+                          ))}
+                          {key.scopes.length > 3 && (
+                            <Badge variant="secondary">+{key.scopes.length - 3}</Badge>
+                          )}
                         </div>
-                      )}
-                    >
-                      {apiKeys.map((key) => (
-                        <Table.Row key={key.id}>
-                          <Table.Cell>{key.name}</Table.Cell>
-                          <Table.Cell>
-                            <div className="flex flex-wrap gap-1">
-                              {key.scopes.slice(0, 3).map((scope) => (
-                                <Badge key={scope} size="sm" variant="soft">
-                                  {scope}
-                                </Badge>
-                              ))}
-                              {key.scopes.length > 3 && (
-                                <Badge size="sm" variant="soft">
-                                  +{key.scopes.length - 3}
-                                </Badge>
-                              )}
-                            </div>
-                          </Table.Cell>
-                          <Table.Cell>
-                            {key.is_active ? t("common.enabled") : t("common.disabled")}
-                          </Table.Cell>
-                          <Table.Cell>
-                            <Button size="sm" variant="danger" onPress={() => setDeleteId(key.id)}>
-                              {t("common.delete")}
-                            </Button>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                      </TableCell>
+                      <TableCell>
+                        {key.is_active ? t("common.enabled") : t("common.disabled")}
+                      </TableCell>
+                      <TableCell>
+                        <Button size="sm" variant="destructive" onClick={() => setDeleteId(key.id)}>
+                          {t("common.delete")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -173,7 +188,7 @@ export function ApiKeys() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <ConfirmDialog
@@ -185,47 +200,45 @@ export function ApiKeys() {
         {t("apiKeys.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("apiKeys.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormTextArea
-                label={t("apiKeys.scopes")}
-                value={form.scopes}
-                onChange={(value) => setForm({ ...form, scopes: value })}
-                className="font-mono"
-              />
-              <FormTextArea
-                label={t("apiKeys.ipAllowlist")}
-                value={form.ip_allowlist}
-                onChange={(value) => setForm({ ...form, ip_allowlist: value })}
-                className="font-mono"
-              />
-              <FormInput
-                type="number"
-                label={t("apiKeys.rateLimit")}
-                value={form.rate_limit}
-                onChange={(value) => setForm({ ...form, rate_limit: value })}
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("apiKeys.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+              isRequired
+            />
+            <FormTextArea
+              label={t("apiKeys.scopes")}
+              value={form.scopes}
+              onChange={(value) => setForm({ ...form, scopes: value })}
+              className="font-mono"
+            />
+            <FormTextArea
+              label={t("apiKeys.ipAllowlist")}
+              value={form.ip_allowlist}
+              onChange={(value) => setForm({ ...form, ip_allowlist: value })}
+              className="font-mono"
+            />
+            <FormInput
+              type="number"
+              label={t("apiKeys.rateLimit")}
+              value={form.rate_limit}
+              onChange={(value) => setForm({ ...form, rate_limit: value })}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleCreate}>{t("common.create")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

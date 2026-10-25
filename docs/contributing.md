@@ -89,7 +89,8 @@
 
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
-cd proxy-panel
+cd multi-proxy-panel
+nix develop
 docker compose up -d postgres
 cargo run --bin proxy-panel -- init-db --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
 cargo build --workspace
@@ -324,7 +325,7 @@ Closes #456
 | API 参考 | `docs/api_reference.md` | REST API 文档 |
 | 部署指南 | `docs/deployment.md` | 生产部署说明 |
 | ADR 索引 | `docs/adr/README.md` | 架构决策记录与状态约定 |
-| 编码代理适配器 | `docs/adapters/README.md` | opencode / pi / `.agents` 适配器说明 |
+| 编码代理适配器 | `docs/adapters/README.md` | pi / `.agents` 适配器说明 |
 | 变更日志 | `CHANGELOG.md` | 各版本用户可见变更 |
 | 贡献指南 | `docs/contributing.md` | 本文档 |
 

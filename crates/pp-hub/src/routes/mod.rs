@@ -18,6 +18,7 @@ pub mod protocol;
 pub mod protocol_preset;
 pub mod relay_rule;
 pub mod subscription;
+pub mod system_update;
 pub mod traffic;
 pub mod usage;
 pub mod webhook;

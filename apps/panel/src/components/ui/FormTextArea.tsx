@@ -1,4 +1,6 @@
-import { TextField, Label, TextArea, FieldError } from "@heroui/react";
+import { useId } from "react";
+import { Label } from "./label";
+import { Textarea } from "./textarea";
 
 interface FormTextAreaProps {
   label?: string;
@@ -23,17 +25,27 @@ export function FormTextArea({
   className,
   rows,
 }: FormTextAreaProps) {
+  const id = useId();
+  const errorId = `${id}-error`;
+
   return (
-    <TextField
-      value={value}
-      onChange={onChange}
-      isRequired={isRequired}
-      isInvalid={isInvalid}
-      className={className}
-    >
-      {label && <Label>{label}</Label>}
-      <TextArea placeholder={placeholder} rows={rows} />
-      {errorMessage && <FieldError>{errorMessage}</FieldError>}
-    </TextField>
+    <div className={className}>
+      {label && <Label htmlFor={id}>{label}</Label>}
+      <Textarea
+        id={id}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        placeholder={placeholder}
+        required={isRequired}
+        rows={rows}
+        aria-invalid={isInvalid || undefined}
+        aria-describedby={errorMessage ? errorId : undefined}
+      />
+      {errorMessage && (
+        <p id={errorId} className="mt-1 text-sm text-destructive">
+          {errorMessage}
+        </p>
+      )}
+    </div>
   );
 }

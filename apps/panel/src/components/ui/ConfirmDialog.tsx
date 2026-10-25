@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { Button, Modal } from "@heroui/react";
+import { Button } from "./button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./dialog";
+import { Spinner } from "./spinner";
 
 interface ConfirmDialogProps {
   title: string;
@@ -22,28 +24,27 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
   return (
-    <Modal.Backdrop
-      isOpen={isOpen}
+    <Dialog
+      open={isOpen}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
     >
-      <Modal.Container>
-        <Modal.Dialog>
-          <Modal.Header>
-            <Modal.Heading>{title}</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body>{children}</Modal.Body>
-          <Modal.Footer>
-            <Button slot="close" variant="ghost" onPress={onClose}>
-              {t("common.cancel")}
-            </Button>
-            <Button variant="danger" onPress={onConfirm} isPending={isLoading}>
-              {confirmText || t("common.delete")}
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div>{children}</div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={isLoading}>
+            {isLoading && <Spinner aria-label={t("common.loading")} />}
+            {confirmText || t("common.delete")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

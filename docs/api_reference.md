@@ -21,7 +21,8 @@
 9. [指标查询](#指标查询)
 10. [日志查询](#日志查询)
 11. [公开订阅端点](#公开订阅端点)
-12. [错误响应](#错误响应)
+12. [系统更新（Hub 自更新）](#系统更新hub-自更新)
+13. [错误响应](#错误响应)
 
 ---
 
@@ -1127,15 +1128,17 @@
 
 ### GET `/api/v1/logs`
 
-查询系统日志。
+查询系统或节点日志，需要 `logs:read` 权限。默认返回系统日志；节点日志额外包含 `node_id` 和 `node_name`。
 
 **查询参数:**
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `level` | string | 日志级别: `error`, `warn`, `info`, `debug` |
-| `source` | string | 日志来源筛选 |
-| `limit` | integer | 最大返回数量（默认 100） |
+| `level` | string | 日志级别: `error`, `warn`, `info`, `debug`, `trace`（大小写不敏感） |
+| `kind` | string | `system`（默认）或 `agent` |
+| `source` | string | 日志来源包含匹配；节点日志也匹配节点名称，最多 256 字节 |
+| `page` / `per_page` | integer | 同时提供时分页；每页最多 200 条 |
+| `limit` | integer | 未分页时最大返回数量（默认 100，范围 1–200） |
 
 **响应:**
 
@@ -1188,6 +1191,153 @@
 
 ---
 
+## 系统更新（Hub 自更新）
+
+Hub 自更新检测与触发接口。执行升级的始终是 `proxy-panel` CLI（root）；Hub 仅在
+授权启用时通过受限 sudo + transient systemd unit 调度它。**默认关闭**
+（`maintenance_enabled=false`）：关闭时 GET 接口照常返回检测结果与手动命令，
+POST 返回 `403`。授权安装步骤与风险说明见
+[deployment.md](deployment.md#面板更新中心可选)。
+
+所需 scope：`system:read`（GET）、`system:write`（POST）。Agent 远程升级不属于
+本接口范围，Agent 升级需在节点本地以 root 执行 CLI。
+
+### GET `/api/v1/system/update`
+
+检测最新稳定 Release，并返回当前维护状态。
+
+**响应:**
+
+```json
+{
+  "data": {
+    "current_version": "0.4.5",
+    "latest_version": "0.4.5",
+    "update_available": false,
+    "release_url": "https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.5",
+    "published_at": "2026-08-25T00:00:00Z",
+    "checked_at": "2026-10-25T08:00:00Z",
+    "execution_enabled": false,
+    "manual_command": "/usr/local/bin/proxy-panel upgrade hub --version latest --repo ybakiame/multi-proxy-panel --status-file data/hub-update.json",
+    "status": {
+      "status": "idle",
+      "stage": "idle",
+      "component": "hub",
+      "current_version": "0.4.5",
+      "target_version": null,
+      "message": "",
+      "started_at": null,
+      "finished_at": null
+    }
+  }
+}
+```
+
+**字段说明（SystemUpdate）:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `current_version` | string | 运行中的 Hub 版本 |
+| `latest_version` | string | 最新稳定 Release 版本 |
+| `update_available` | boolean | 最新版本是否高于当前版本 |
+| `release_url` | string | Release 页面地址 |
+| `published_at` | string / null | Release 发布时间 |
+| `checked_at` | string | 本次检测时间 |
+| `execution_enabled` | boolean | 面板触发升级是否已授权启用（`maintenance_enabled`） |
+| `manual_command` | string | 未启用时的等价手动 CLI 命令（可直接复制执行） |
+| `status` | MaintenanceStatus | 当前维护状态，结构见 GET status |
+
+**状态码:**
+- `200 OK`
+- `400 Bad Request` — Release 版本号无法解析（`invalid_target_version`）
+- `500 Internal Server Error` — 状态文件损坏（`invalid_status_file`）
+
+### POST `/api/v1/system/update`
+
+触发 Hub 自更新。仅当 `maintenance_enabled=true` 且 sudo/drop-in 授权已安装时
+可用；命令以 transient unit `proxy-panel-hub-update` 在 Hub 服务 cgroup 外运行。
+
+**所需 scope:** `system:write`
+
+**请求体（可省略）:**
+
+```json
+{
+  "target_version": "v0.5.0"
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `target_version` | string | ❌ | 目标 Release tag；省略时取最新稳定版。必须是语义化版本 tag 的稳定 Release，且高于当前版本 |
+
+**响应** (`202 Accepted`，更新已提交后台执行):
+
+```json
+{
+  "data": {
+    "status": { "status": "running", "stage": "launching", "...": "..." },
+    "message": "Hub update started"
+  }
+}
+```
+
+**状态码:**
+- `202 Accepted` — 更新已提交，进度经状态文件轮询
+- `400 Bad Request` — `invalid_target_version`（非语义化版本 tag / 预发布版本）或
+  `no_update_available`（目标不高于当前版本）
+- `403 Forbidden` — `maintenance_disabled`（未启用维护授权）
+- `409 Conflict` — `update_in_progress`（已有更新在运行，或状态为 `stale` 需人工核验）
+- `500 Internal Server Error` — 维护命令 spawn 失败等
+- `502 Bad Gateway` — `release_query_failed`（查询 GitHub Release 失败）
+
+### GET `/api/v1/system/update/status`
+
+只读维护状态。Hub 重启后从状态文件恢复；`running` 超过 30 分钟未结束会被标记为
+`stale`（需人工核验，更新可能仍在后台运行或被中断）。
+
+**所需 scope:** `system:read`
+
+**响应:**
+
+```json
+{
+  "data": {
+    "status": "succeeded",
+    "stage": "restart",
+    "component": "hub",
+    "current_version": "0.4.5",
+    "target_version": "0.5.0",
+    "message": "",
+    "started_at": "2026-10-25T08:00:00Z",
+    "finished_at": "2026-10-25T08:01:12Z"
+  }
+}
+```
+
+**MaintenanceStatus 字段说明:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | string | `idle` / `running` / `succeeded` / `failed` / `rolled_back` / `stale` |
+| `stage` | string | 当前阶段（如 `launching`、`download`、`restart`，由 CLI 定义） |
+| `component` | string | 固定为 `hub` |
+| `current_version` | string / null | 升级发起时的版本 |
+| `target_version` | string / null | 目标版本 |
+| `message` | string | 附加信息（失败原因、stale 说明等） |
+| `started_at` | string / null | 开始时间 |
+| `finished_at` | string / null | 结束时间 |
+
+> 升级结果由 CLI 尽力恢复：备份仅保留最新一份，失败时的自动回滚不保证必然成功；
+> 出现 `failed` / `rolled_back` / `stale` 时应人工核验服务状态，必要时手动
+> `sudo proxy-panel rollback hub`。
+
+**状态码:**
+- `200 OK`
+- `500 Internal Server Error` — 状态文件损坏（`invalid_status_file`）
+
+---
+
 ## 错误响应
 
 所有错误响应统一格式：
@@ -1209,7 +1359,7 @@
 | `401 Unauthorized` | 认证失败（预留） |
 | `403 Forbidden` | 权限不足、订阅已禁用 |
 | `404 Not Found` | 资源不存在 |
-| `409 Conflict` | 资源冲突（预留） |
+| `409 Conflict` | 资源冲突（Hub 更新进行中或状态为 stale） |
 | `422 Unprocessable Entity` | 业务逻辑验证失败（预留） |
 | `500 Internal Server Error` | 服务器内部错误 |
 | `502 Bad Gateway` | Agent 未连接或通信失败 |

@@ -1,4 +1,6 @@
-import { TextField, Label, Input } from "@heroui/react";
+import { useId } from "react";
+import { Input } from "./input";
+import { Label } from "./label";
 
 interface SearchInputProps {
   value: string;
@@ -7,10 +9,20 @@ interface SearchInputProps {
 }
 
 export function SearchInput({ value, onChange, placeholder }: SearchInputProps) {
+  const id = useId();
+
   return (
-    <TextField value={value} onChange={onChange} className="max-w-xs">
-      <Label className="sr-only">{placeholder || "Search..."}</Label>
-      <Input type="text" placeholder={placeholder || "Search..."} />
-    </TextField>
+    <div className="max-w-xs">
+      <Label htmlFor={id} className="sr-only">
+        {placeholder || "Search..."}
+      </Label>
+      <Input
+        id={id}
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder || "Search..."}
+      />
+    </div>
   );
 }

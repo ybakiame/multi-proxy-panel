@@ -16,6 +16,7 @@ import {
   CpuChipIcon,
   LockClosedIcon,
   ArrowPathRoundedSquareIcon,
+  WrenchIcon,
 } from "@heroicons/react/24/outline";
 
 export const navItems = [
@@ -44,4 +45,5 @@ export const navItems = [
   { path: "/webhooks", labelKey: "nav.webhooks", icon: BellIcon },
   { path: "/onlines", labelKey: "nav.onlines", icon: SignalIcon },
   { path: "/traffic", labelKey: "nav.traffic", icon: ArrowsRightLeftIcon },
+  { path: "/system", labelKey: "nav.system", icon: WrenchIcon },
 ];

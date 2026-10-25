@@ -1,8 +1,10 @@
 //! Operations for installing, upgrading, uninstalling, and managing ProxyPanel components.
 
+pub mod check_update;
 pub mod download;
 pub mod fsutil;
 pub mod install;
+pub mod maintenance;
 pub mod status_logs;
 pub mod systemd;
 pub mod tests;

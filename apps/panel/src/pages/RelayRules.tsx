@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
 import {
-  PageHeader,
-  ConfirmDialog,
-  FormInput,
-  FormSelect,
-  FormTextArea,
-  FormCheckbox,
-} from "../components/ui";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import { PageHeader, ConfirmDialog } from "../components/ui";
 import {
   getRelayRules,
   getRuleSetLibrary,
@@ -21,20 +24,7 @@ import {
 import { getNodes } from "../api/nodes";
 import { getBindings } from "../api/bindings";
 import { getAllProtocols } from "../api/protocols";
-
-interface RelayRuleForm {
-  name: string;
-  node_id: string;
-  exit_binding_id: string;
-  match_type: "inline" | "rule_set";
-  domains: string;
-  domain_suffixes: string;
-  library_name: string;
-  singbox_url: string;
-  mihomo_url: string;
-  enabled: boolean;
-  sort_order: string;
-}
+import { RelayRuleDialog, type RelayRuleForm } from "./RelayRuleDialog";
 
 const defaultForm: RelayRuleForm = {
   name: "",
@@ -288,65 +278,63 @@ export function RelayRules() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <Table aria-label="relay rules">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
-                    <Table.Column>{t("relayRules.entryNode")}</Table.Column>
-                    <Table.Column>{t("relayRules.exitBinding")}</Table.Column>
-                    <Table.Column>{t("relayRules.match")}</Table.Column>
-                    <Table.Column>{t("common.enabled")}</Table.Column>
-                    <Table.Column>{t("relayRules.sortOrder")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("relayRules.emptyHint")}
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("common.name")}</TableHead>
+                  <TableHead>{t("relayRules.entryNode")}</TableHead>
+                  <TableHead>{t("relayRules.exitBinding")}</TableHead>
+                  <TableHead>{t("relayRules.match")}</TableHead>
+                  <TableHead>{t("common.enabled")}</TableHead>
+                  <TableHead>{t("relayRules.sortOrder")}</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rules.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
+                      {t("relayRules.emptyHint")}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {rules.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell>{rule.name}</TableCell>
+                    <TableCell>{rule.node_name || getNodeName(rule.node_id)}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {[rule.exit_node_name, rule.exit_config_name].filter(Boolean).join(" / ") ||
+                        rule.exit_binding_id}
+                    </TableCell>
+                    <TableCell>{matchSummary(rule)}</TableCell>
+                    <TableCell>{enabledBadge(rule.enabled)}</TableCell>
+                    <TableCell>{rule.sort_order}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(rule)}>
+                          {t("common.edit")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteRuleId(rule.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
                       </div>
-                    )}
-                  >
-                    {rules.map((rule) => (
-                      <Table.Row key={rule.id}>
-                        <Table.Cell>{rule.name}</Table.Cell>
-                        <Table.Cell>{rule.node_name || getNodeName(rule.node_id)}</Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {[rule.exit_node_name, rule.exit_config_name]
-                            .filter(Boolean)
-                            .join(" / ") || rule.exit_binding_id}
-                        </Table.Cell>
-                        <Table.Cell>{matchSummary(rule)}</Table.Cell>
-                        <Table.Cell>{enabledBadge(rule.enabled)}</Table.Cell>
-                        <Table.Cell>{rule.sort_order}</Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onPress={() => openEdit(rule)}>
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteRuleId(rule.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <ConfirmDialog
@@ -358,246 +346,31 @@ export function RelayRules() {
         {t("relayRules.deleteConfirm")}
       </ConfirmDialog>
 
-      {/* Create Modal */}
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("relayRules.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormSelect
-                label={t("relayRules.entryNode")}
-                value={form.node_id}
-                onChange={(value) => {
-                  setForm({ ...form, node_id: value, exit_binding_id: "" });
-                }}
-                options={nodes.map((n) => ({ id: n.id, label: n.name }))}
-                isRequired
-              />
-              <FormSelect
-                label={t("relayRules.exitBinding")}
-                value={form.exit_binding_id}
-                onChange={(value) => setForm({ ...form, exit_binding_id: value })}
-                options={exitBindingOptions}
-                isRequired
-                isDisabled={!form.node_id}
-              />
-              <FormSelect
-                label={t("relayRules.match")}
-                value={form.match_type}
-                onChange={(value) =>
-                  setForm({
-                    ...form,
-                    match_type: value as "inline" | "rule_set",
-                  })
-                }
-                options={[
-                  { id: "inline", label: t("relayRules.matchInline") },
-                  { id: "rule_set", label: t("relayRules.matchRuleSet") },
-                ]}
-                isRequired
-              />
-              {form.match_type === "inline" && (
-                <>
-                  <FormTextArea
-                    label={t("relayRules.domains")}
-                    value={form.domains}
-                    onChange={(value) => setForm({ ...form, domains: value })}
-                    placeholder={t("relayRules.domainsHint")}
-                    rows={4}
-                  />
-                  <FormTextArea
-                    label={t("relayRules.domainSuffixes")}
-                    value={form.domain_suffixes}
-                    onChange={(value) => setForm({ ...form, domain_suffixes: value })}
-                    placeholder={t("relayRules.domainsHint")}
-                    rows={4}
-                  />
-                </>
-              )}
-              {form.match_type === "rule_set" && (
-                <>
-                  <FormSelect
-                    label={t("relayRules.library")}
-                    value={form.library_name}
-                    onChange={(value) => setForm({ ...form, library_name: value })}
-                    options={libraryOptions}
-                  />
-                  {!form.library_name && (
-                    <>
-                      <FormInput
-                        label={t("relayRules.customSingboxUrl")}
-                        value={form.singbox_url}
-                        onChange={(value) => setForm({ ...form, singbox_url: value })}
-                        placeholder="https://..."
-                      />
-                      <FormInput
-                        label={t("relayRules.customMihomoUrl")}
-                        value={form.mihomo_url}
-                        onChange={(value) => setForm({ ...form, mihomo_url: value })}
-                        placeholder="https://..."
-                      />
-                    </>
-                  )}
-                </>
-              )}
-              <FormCheckbox
-                isSelected={form.enabled}
-                onChange={(selected) => setForm({ ...form, enabled: selected })}
-              >
-                {t("common.enabled")}
-              </FormCheckbox>
-              <FormInput
-                label={t("relayRules.sortOrder")}
-                value={form.sort_order}
-                onChange={(value) => setForm({ ...form, sort_order: value })}
-                type="number"
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button
-                isDisabled={!form.name.trim() || !form.node_id || !form.exit_binding_id}
-                onPress={handleCreate}
-              >
-                {t("common.create")}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <RelayRuleDialog
+        open={createOpen}
+        title={t("relayRules.createTitle")}
+        submitLabel={t("common.create")}
+        form={form}
+        nodeOptions={nodes.map((n) => ({ id: n.id, label: n.name }))}
+        exitBindingOptions={exitBindingOptions}
+        libraryOptions={libraryOptions}
+        onFormChange={setForm}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreate}
+      />
 
-      {/* Edit Modal */}
-      <Modal.Backdrop
-        isOpen={!!editRule}
-        onOpenChange={(open) => {
-          if (!open) setEditRule(null);
-        }}
-      >
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("relayRules.editTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormSelect
-                label={t("relayRules.entryNode")}
-                value={form.node_id}
-                onChange={(value) => {
-                  setForm({ ...form, node_id: value, exit_binding_id: "" });
-                }}
-                options={nodes.map((n) => ({ id: n.id, label: n.name }))}
-                isRequired
-              />
-              <FormSelect
-                label={t("relayRules.exitBinding")}
-                value={form.exit_binding_id}
-                onChange={(value) => setForm({ ...form, exit_binding_id: value })}
-                options={exitBindingOptions}
-                isRequired
-                isDisabled={!form.node_id}
-              />
-              <FormSelect
-                label={t("relayRules.match")}
-                value={form.match_type}
-                onChange={(value) =>
-                  setForm({
-                    ...form,
-                    match_type: value as "inline" | "rule_set",
-                  })
-                }
-                options={[
-                  { id: "inline", label: t("relayRules.matchInline") },
-                  { id: "rule_set", label: t("relayRules.matchRuleSet") },
-                ]}
-                isRequired
-              />
-              {form.match_type === "inline" && (
-                <>
-                  <FormTextArea
-                    label={t("relayRules.domains")}
-                    value={form.domains}
-                    onChange={(value) => setForm({ ...form, domains: value })}
-                    placeholder={t("relayRules.domainsHint")}
-                    rows={4}
-                  />
-                  <FormTextArea
-                    label={t("relayRules.domainSuffixes")}
-                    value={form.domain_suffixes}
-                    onChange={(value) => setForm({ ...form, domain_suffixes: value })}
-                    placeholder={t("relayRules.domainsHint")}
-                    rows={4}
-                  />
-                </>
-              )}
-              {form.match_type === "rule_set" && (
-                <>
-                  <FormSelect
-                    label={t("relayRules.library")}
-                    value={form.library_name}
-                    onChange={(value) => setForm({ ...form, library_name: value })}
-                    options={libraryOptions}
-                  />
-                  {!form.library_name && (
-                    <>
-                      <FormInput
-                        label={t("relayRules.customSingboxUrl")}
-                        value={form.singbox_url}
-                        onChange={(value) => setForm({ ...form, singbox_url: value })}
-                        placeholder="https://..."
-                      />
-                      <FormInput
-                        label={t("relayRules.customMihomoUrl")}
-                        value={form.mihomo_url}
-                        onChange={(value) => setForm({ ...form, mihomo_url: value })}
-                        placeholder="https://..."
-                      />
-                    </>
-                  )}
-                </>
-              )}
-              <FormCheckbox
-                isSelected={form.enabled}
-                onChange={(selected) => setForm({ ...form, enabled: selected })}
-              >
-                {t("common.enabled")}
-              </FormCheckbox>
-              <FormInput
-                label={t("relayRules.sortOrder")}
-                value={form.sort_order}
-                onChange={(value) => setForm({ ...form, sort_order: value })}
-                type="number"
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setEditRule(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button
-                isDisabled={!form.name.trim() || !form.node_id || !form.exit_binding_id}
-                onPress={handleUpdate}
-              >
-                {t("common.update")}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <RelayRuleDialog
+        open={!!editRule}
+        title={t("relayRules.editTitle")}
+        submitLabel={t("common.update")}
+        form={form}
+        nodeOptions={nodes.map((n) => ({ id: n.id, label: n.name }))}
+        exitBindingOptions={exitBindingOptions}
+        libraryOptions={libraryOptions}
+        onFormChange={setForm}
+        onClose={() => setEditRule(null)}
+        onSubmit={handleUpdate}
+      />
     </div>
   );
 }

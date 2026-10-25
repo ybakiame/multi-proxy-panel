@@ -10,6 +10,3 @@ tmp/
 scripts/.dev-*
 scripts/__pycache__/
 .venv-deploy/
-android/**/build/
-crates/pp-client-ui/src-tauri/target/
-crates/pp-client-ui/src-tauri/gen/

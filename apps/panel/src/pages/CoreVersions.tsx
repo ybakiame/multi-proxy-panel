@@ -1,7 +1,24 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { PageHeader, ConfirmDialog, FormCheckbox } from "../components/ui";
 import {
   getCoreVersions,
@@ -110,76 +127,71 @@ export function CoreVersions() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <Table aria-label="core versions">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("coreVersions.core")}</Table.Column>
-                    <Table.Column>{t("coreVersions.version")}</Table.Column>
-                    <Table.Column>{t("coreVersions.channel")}</Table.Column>
-                    <Table.Column>{t("coreVersions.inUse")}</Table.Column>
-                    <Table.Column>{t("coreVersions.publishedAt")}</Table.Column>
-                    <Table.Column>{t("common.createdAt")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("coreVersions.emptyHint")}
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("coreVersions.core")}</TableHead>
+                  <TableHead>{t("coreVersions.version")}</TableHead>
+                  <TableHead>{t("coreVersions.channel")}</TableHead>
+                  <TableHead>{t("coreVersions.inUse")}</TableHead>
+                  <TableHead>{t("coreVersions.publishedAt")}</TableHead>
+                  <TableHead>{t("common.createdAt")}</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {versions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
+                      {t("coreVersions.emptyHint")}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {versions.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell>{v.core_type}</TableCell>
+                    <TableCell className="font-mono text-sm">{v.version}</TableCell>
+                    <TableCell>{channelBadge(v.channel)}</TableCell>
+                    <TableCell>
+                      {v.is_active ? (
+                        <span className="inline-flex items-center rounded bg-success-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-success-soft-foreground">
+                          {t("coreVersions.inUse")}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
+                    </TableCell>
+                    <TableCell>{new Date(v.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {!v.is_active && (
+                          <Button size="sm" variant="ghost" onClick={() => handleActivate(v.id)}>
+                            {t("coreVersions.setActive")}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={v.is_active}
+                          onClick={() => setDeleteId(v.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
                       </div>
-                    )}
-                  >
-                    {versions.map((v) => (
-                      <Table.Row key={v.id}>
-                        <Table.Cell>{v.core_type}</Table.Cell>
-                        <Table.Cell className="font-mono text-sm">{v.version}</Table.Cell>
-                        <Table.Cell>{channelBadge(v.channel)}</Table.Cell>
-                        <Table.Cell>
-                          {v.is_active ? (
-                            <span className="inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium bg-success-soft text-success-soft-foreground">
-                              {t("coreVersions.inUse")}
-                            </span>
-                          ) : null}
-                        </Table.Cell>
-                        <Table.Cell>
-                          {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
-                        </Table.Cell>
-                        <Table.Cell>{new Date(v.created_at).toLocaleString()}</Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-2">
-                            {!v.is_active && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onPress={() => handleActivate(v.id)}
-                              >
-                                {t("coreVersions.setActive")}
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              isDisabled={v.is_active}
-                              onPress={() => setDeleteId(v.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <ConfirmDialog
@@ -191,75 +203,73 @@ export function CoreVersions() {
         {t("coreVersions.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={upstreamOpen} onOpenChange={(open) => setUpstreamOpen(open)}>
-        <Modal.Container className="max-w-2xl">
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("coreVersions.selectVersions")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="max-h-[60vh] overflow-auto space-y-4">
-              {upstreamLoading ? (
-                <div className="flex h-32 items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : (
-                upstream.map((core) => (
-                  <div key={core.core_type} className="space-y-2">
-                    <p className="text-sm font-medium">{core.core_type}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {core.versions.map((v) => {
-                        const key = `${core.core_type}|${v.version}`;
-                        return (
-                          <FormCheckbox
-                            key={key}
-                            isSelected={(v.saved && !v.update_available) || selected.has(key)}
-                            isDisabled={v.saved && !v.update_available}
-                            onChange={(checked) =>
-                              toggleVersion(
-                                {
-                                  core_type: core.core_type,
-                                  version: v.version,
-                                  channel: v.channel,
-                                  published_at: v.published_at,
-                                  commit_sha: v.commit_sha,
-                                },
-                                checked,
-                              )
-                            }
-                          >
-                            <span className="inline-flex items-center gap-1">
-                              <span className="font-mono text-sm">{v.version}</span>
-                              {channelBadge(v.channel)}
-                              {v.saved && !v.update_available && (
-                                <span className="text-xs text-muted-foreground">
-                                  {t("coreVersions.savedBadge")}
-                                </span>
-                              )}
-                              {v.saved && v.update_available && (
-                                <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
-                                  {t("coreVersions.updateAvailable")}
-                                </span>
-                              )}
-                            </span>
-                          </FormCheckbox>
-                        );
-                      })}
-                    </div>
+      <Dialog open={upstreamOpen} onOpenChange={setUpstreamOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("coreVersions.selectVersions")}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-4 overflow-auto">
+            {upstreamLoading ? (
+              <div className="flex h-32 items-center justify-center">
+                <Spinner />
+              </div>
+            ) : (
+              upstream.map((core) => (
+                <div key={core.core_type} className="space-y-2">
+                  <p className="text-sm font-medium">{core.core_type}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {core.versions.map((v) => {
+                      const key = `${core.core_type}|${v.version}`;
+                      return (
+                        <FormCheckbox
+                          key={key}
+                          isSelected={(v.saved && !v.update_available) || selected.has(key)}
+                          isDisabled={v.saved && !v.update_available}
+                          onChange={(checked) =>
+                            toggleVersion(
+                              {
+                                core_type: core.core_type,
+                                version: v.version,
+                                channel: v.channel,
+                                published_at: v.published_at,
+                                commit_sha: v.commit_sha,
+                              },
+                              checked,
+                            )
+                          }
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            <span className="font-mono text-sm">{v.version}</span>
+                            {channelBadge(v.channel)}
+                            {v.saved && !v.update_available && (
+                              <span className="text-xs text-muted-foreground">
+                                {t("coreVersions.savedBadge")}
+                              </span>
+                            )}
+                            {v.saved && v.update_available && (
+                              <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
+                                {t("coreVersions.updateAvailable")}
+                              </span>
+                            )}
+                          </span>
+                        </FormCheckbox>
+                      );
+                    })}
                   </div>
-                ))
-              )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setUpstreamOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button isDisabled={selected.size === 0 || saving} onPress={handleSave}>
-                {saving ? t("common.submitting") : t("coreVersions.saveSelected")}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUpstreamOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button disabled={selected.size === 0 || saving} onClick={handleSave}>
+              {saving ? t("common.submitting") : t("coreVersions.saveSelected")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

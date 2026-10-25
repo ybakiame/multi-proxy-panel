@@ -1,5 +1,5 @@
-import { Badge } from "@heroui/react";
 import { useTranslation } from "react-i18next";
+import { Badge } from "./badge";
 
 interface StatusBadgeProps {
   status: string;
@@ -8,19 +8,20 @@ interface StatusBadgeProps {
 export function StatusBadge({ status }: StatusBadgeProps) {
   const { t } = useTranslation();
   const s = status.toLowerCase();
-  let color: "default" | "accent" | "success" | "warning" | "danger" = "default";
-  let variant: "primary" | "secondary" | "soft" = "soft";
+  let variant: "secondary" | "destructive" = "secondary";
+  let className = "";
 
-  if (["online", "active", "enabled"].includes(s)) color = "success";
-  else if (["offline", "inactive", "disabled", "expired"].includes(s)) color = "danger";
-  else if (["connecting", "on_hold", "limited", "degraded"].includes(s)) color = "warning";
-  else if (["maintenance"].includes(s)) color = "default";
+  if (["online", "active", "enabled"].includes(s)) className = "bg-success/10 text-success";
+  else if (["offline", "inactive", "disabled", "expired"].includes(s)) variant = "destructive";
+  else if (["connecting", "on_hold", "limited", "degraded"].includes(s)) {
+    className = "bg-warning/10 text-warning";
+  }
 
   const labelKey = `status.${s}`;
   const label = t(labelKey, { defaultValue: status });
 
   return (
-    <Badge color={color} size="sm" variant={variant}>
+    <Badge variant={variant} className={className}>
       {label}
     </Badge>
   );

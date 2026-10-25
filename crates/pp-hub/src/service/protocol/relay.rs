@@ -227,7 +227,7 @@ pub async fn apply_relay_rules(
         let Some(binding) = node_binding::Entity::find_by_id(rule.exit_binding_id)
             .one(db)
             .await
-            .map_err(&db_err)?
+            .map_err(db_err)?
         else {
             tracing::warn!("relay rule {}: exit binding missing, skipping", rule.id);
             continue;
@@ -235,14 +235,14 @@ pub async fn apply_relay_rules(
         let Some(exit_cfg) = protocol_config::Entity::find_by_id(binding.protocol_config_id)
             .one(db)
             .await
-            .map_err(&db_err)?
+            .map_err(db_err)?
         else {
             continue;
         };
         let Some(exit_node) = node::Entity::find_by_id(binding.node_id)
             .one(db)
             .await
-            .map_err(&db_err)?
+            .map_err(db_err)?
         else {
             continue;
         };

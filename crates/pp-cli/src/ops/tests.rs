@@ -84,3 +84,50 @@ fn backup_path_format() {
         PathBuf::from("/opt/proxy-panel/backup/proxy-panel-hub.0.3.3.bak")
     );
 }
+
+#[tokio::test]
+async fn restores_binary_and_web_from_retained_copies() {
+    let temp = tempfile::tempdir().unwrap();
+    let binary = temp.path().join("bin/proxy-panel-hub");
+    let web = temp.path().join("opt/web/dist");
+    let binary_backup = temp.path().join("backup/hub.bak");
+    let web_backup = temp.path().join("backup/web.bak");
+    tokio::fs::create_dir_all(binary.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::create_dir_all(&web).await.unwrap();
+    tokio::fs::create_dir_all(web_backup.join("assets"))
+        .await
+        .unwrap();
+    tokio::fs::write(&binary, "new binary").await.unwrap();
+    tokio::fs::write(web.join("index.html"), "new web")
+        .await
+        .unwrap();
+    tokio::fs::write(&binary_backup, "old binary")
+        .await
+        .unwrap();
+    tokio::fs::write(web_backup.join("assets/app.js"), "old web")
+        .await
+        .unwrap();
+
+    super::upgrade::restore_path(Some(&binary_backup), &binary)
+        .await
+        .unwrap();
+    super::upgrade::restore_path(Some(&web_backup), &web)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        tokio::fs::read_to_string(&binary).await.unwrap(),
+        "old binary"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(web.join("assets/app.js"))
+            .await
+            .unwrap(),
+        "old web"
+    );
+    assert!(!web.join("index.html").exists());
+    assert!(binary_backup.exists());
+    assert!(web_backup.exists());
+}

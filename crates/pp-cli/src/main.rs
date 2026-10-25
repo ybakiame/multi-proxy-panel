@@ -73,6 +73,16 @@ enum Commands {
         #[command(subcommand)]
         target: InstallTarget,
     },
+    /// Check stable releases without installing anything
+    CheckUpdate {
+        /// Component to check: hub, agent, or cli (all if omitted)
+        component: Option<String>,
+        #[arg(long, default_value = "ybakiame/multi-proxy-panel")]
+        repo: String,
+        /// Emit a machine-readable JSON array
+        #[arg(long)]
+        json: bool,
+    },
     /// Upgrade a component
     Upgrade {
         /// Component to upgrade: agent, hub, or cli
@@ -81,6 +91,9 @@ enum Commands {
         version: String,
         #[arg(long, default_value = "ybakiame/multi-proxy-panel")]
         repo: String,
+        /// Atomically write running/succeeded/failed/rolled_back JSON status
+        #[arg(long)]
+        status_file: Option<std::path::PathBuf>,
     },
     /// Rollback a component to the previous backup
     Rollback {
@@ -281,12 +294,20 @@ async fn main() -> anyhow::Result<()> {
                 .await?;
             }
         },
+        Commands::CheckUpdate {
+            component,
+            repo,
+            json,
+        } => {
+            ops::check_update::check_update(component.as_deref(), &repo, json).await?;
+        }
         Commands::Upgrade {
             component,
             version,
             repo,
+            status_file,
         } => {
-            ops::upgrade(&component, &version, &repo).await?;
+            ops::upgrade(&component, &version, &repo, status_file).await?;
         }
         Commands::Rollback { component } => {
             ops::rollback(&component).await?;

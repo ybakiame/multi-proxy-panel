@@ -1,7 +1,25 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import {
   PageHeader,
   ConfirmDialog,
@@ -100,7 +118,7 @@ export function Webhooks() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -108,57 +126,54 @@ export function Webhooks() {
           ) : (
             <>
               <Table aria-label="webhooks">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("common.name")}</Table.Column>
-                      <Table.Column>{t("webhooks.url")}</Table.Column>
-                      <Table.Column>{t("webhooks.events")}</Table.Column>
-                      <Table.Column>{t("common.active")}</Table.Column>
-                      <Table.Column>{t("common.actions")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("common.empty")}
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("common.name")}</TableHead>
+                    <TableHead>{t("webhooks.url")}</TableHead>
+                    <TableHead>{t("webhooks.events")}</TableHead>
+                    <TableHead>{t("common.active")}</TableHead>
+                    <TableHead>{t("common.actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {webhooks.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
+                        {t("common.empty")}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {webhooks.map((webhook) => (
+                    <TableRow key={webhook.id}>
+                      <TableCell>{webhook.name}</TableCell>
+                      <TableCell className="max-w-xs truncate">{webhook.url}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {webhook.events.slice(0, 2).map((event) => (
+                            <Badge key={event} variant="secondary">
+                              {event}
+                            </Badge>
+                          ))}
+                          {webhook.events.length > 2 && (
+                            <Badge variant="secondary">+{webhook.events.length - 2}</Badge>
+                          )}
                         </div>
-                      )}
-                    >
-                      {webhooks.map((webhook) => (
-                        <Table.Row key={webhook.id}>
-                          <Table.Cell>{webhook.name}</Table.Cell>
-                          <Table.Cell className="max-w-xs truncate">{webhook.url}</Table.Cell>
-                          <Table.Cell>
-                            <div className="flex flex-wrap gap-1">
-                              {webhook.events.slice(0, 2).map((event) => (
-                                <Badge key={event} size="sm" variant="soft">
-                                  {event}
-                                </Badge>
-                              ))}
-                              {webhook.events.length > 2 && (
-                                <Badge size="sm" variant="soft">
-                                  +{webhook.events.length - 2}
-                                </Badge>
-                              )}
-                            </div>
-                          </Table.Cell>
-                          <Table.Cell>
-                            {webhook.is_active ? t("common.enabled") : t("common.disabled")}
-                          </Table.Cell>
-                          <Table.Cell>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteId(webhook.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                      </TableCell>
+                      <TableCell>
+                        {webhook.is_active ? t("common.enabled") : t("common.disabled")}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteId(webhook.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -170,7 +185,7 @@ export function Webhooks() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <ConfirmDialog
@@ -182,53 +197,51 @@ export function Webhooks() {
         {t("webhooks.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("webhooks.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormInput
-                label={t("webhooks.url")}
-                value={form.url}
-                onChange={(value) => setForm({ ...form, url: value })}
-                isRequired
-              />
-              <FormTextArea
-                label={t("webhooks.events")}
-                value={form.events}
-                onChange={(value) => setForm({ ...form, events: value })}
-                className="font-mono"
-              />
-              <FormInput
-                type="password"
-                label={t("webhooks.secret")}
-                value={form.secret}
-                onChange={(value) => setForm({ ...form, secret: value })}
-              />
-              <FormCheckbox
-                isSelected={form.is_active}
-                onChange={(selected) => setForm({ ...form, is_active: selected })}
-              >
-                {t("common.active")}
-              </FormCheckbox>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("webhooks.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+              isRequired
+            />
+            <FormInput
+              label={t("webhooks.url")}
+              value={form.url}
+              onChange={(value) => setForm({ ...form, url: value })}
+              isRequired
+            />
+            <FormTextArea
+              label={t("webhooks.events")}
+              value={form.events}
+              onChange={(value) => setForm({ ...form, events: value })}
+              className="font-mono"
+            />
+            <FormInput
+              type="password"
+              label={t("webhooks.secret")}
+              value={form.secret}
+              onChange={(value) => setForm({ ...form, secret: value })}
+            />
+            <FormCheckbox
+              isSelected={form.is_active}
+              onChange={(selected) => setForm({ ...form, is_active: selected })}
+            >
+              {t("common.active")}
+            </FormCheckbox>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleCreate}>{t("common.create")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

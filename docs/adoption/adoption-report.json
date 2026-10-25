@@ -155,5 +155,47 @@
   "follow_up": [
     "Record representative adapter execution evidence in a future real task (PR description or docs/adoption/) to close the agent-adapter gap.",
     "Re-run adoption reconciliation after substantial project changes, as described in the adoption workflow (docs/development.md#变更工作流workflows)."
-  ]
+  ],
+  "maintenance_2026_10_11": {
+    "date": "2026-10-11",
+    "basis_revision": "cd09a8aec70886a8af17514a0b8d437b626c7822",
+    "scope": "User confirmed Lanpath migration acceptance and authorized complete client removal. Earlier audit fields remain historical evidence.",
+    "report": "docs/adoption/2026-10-11-server-only-reconciliation.md",
+    "project_languages": [
+      "Rust",
+      "TypeScript",
+      "Shell",
+      "Nix"
+    ],
+    "cargo_workspace_members": [
+      "pp-common",
+      "pp-db",
+      "pp-proto",
+      "pp-config",
+      "pp-subscription",
+      "pp-core",
+      "pp-hub",
+      "pp-agent",
+      "pp-cli"
+    ],
+    "bun_workspace_members": [
+      "apps/panel"
+    ],
+    "build_commands": [
+      "cargo build --workspace --locked",
+      "bun run verify:rust",
+      "bun run --filter pp-web verify"
+    ],
+    "environment": "Local build/run/test/hooks and Linux CI checks use project Nix. Existing server Release/container build contracts retained for deployment compatibility.",
+    "external_client": "https://github.com/ybakiame/lanpath",
+    "protocol_submodule_revision": "310fba5baa384c912e1fd8300e33d72a057908c5",
+    "validation": "PASS — project Nix clean-cache cargo build --workspace --locked; final fmt/clippy/tests (134 passed, 0 failed, 0 ignored); pp-web verify and frozen Bun install; Hub/Agent/CLI --help smoke; 3 schemas, 2 workflows, 2 Docker manifest sets, 38 Markdown files / 120 links, file-size/shell/diff checks; no Cargo version additions; protocol unchanged. Remote CI and Docker images were not built."
+  },
+  "maintenance_2026_10_12": {
+    "date": "2026-10-12",
+    "change": "Removed .opencode and opencode.jsonc at maintainer request; earlier references are historical evidence.",
+    "current_adapter_document": "docs/adapters/README.md",
+    "agent_adapter_status": "Partial: pi representative-task execution evidence remains absent.",
+    "protocol_submodule_modified": false
+  }
 }

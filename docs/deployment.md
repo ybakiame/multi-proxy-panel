@@ -168,10 +168,11 @@ grpc.example.com {
 
 | 子命令 | 语法 | 说明 |
 |--------|------|------|
+| `check-update` | `proxy-panel check-update [hub\|agent\|cli] [--repo owner/repo] [--json]` | 只读：对比当前版本与最新稳定 Release，无需 root |
 | `install hub` | `proxy-panel install hub [--version latest\|vX.Y.Z] [--repo owner/repo]` | 下载并安装 Hub（含 CLI 二进制与 web/dist），自动生成 `hub.toml` 模板（jwt_secret 随机填充）和 `hub.env`，写入 systemd unit |
 | `install agent` | `proxy-panel install agent --hub-url <url> --token <t> [--agent-id <uuid>] [--name <n>] [--version ...] [--repo ...]` | 下载并安装 Agent，写入 `agent.env` 与 systemd unit，自动 enable --now 并检查运行状态 |
-| `upgrade` | `proxy-panel upgrade <agent\|hub\|cli> [--version ...] [--repo ...]` | 下载目标版本 → SHA256 校验 → 备份现二进制 → 替换 → 有服务则重启；启动失败自动回滚 |
-| `rollback` | `proxy-panel rollback <agent\|hub>` | 从 `/opt/proxy-panel/backup/` 恢复最近备份并重启服务 |
+| `upgrade` | `proxy-panel upgrade <agent\|hub\|cli> [--version ...] [--repo ...] [--status-file <path>]` | 下载目标版本 → SHA256 校验 → 备份现二进制 → 替换 → 有服务则重启；启动失败时**尝试**回滚备份（尽力恢复，不保证必然成功）并报告结果；`--status-file` 原子写入 JSON 状态供面板轮询 |
+| `rollback` | `proxy-panel rollback <agent\|hub>` | 从 `/opt/proxy-panel/backup/` 恢复最近一份备份并重启服务（备份仅保留最新一份） |
 | `uninstall` | `proxy-panel uninstall <agent\|hub> [--purge]` | stop / disable / 删 unit / 删二进制与对应 env；`--purge` 额外删数据目录 |
 | `status` | `proxy-panel status` | 只读：各组件 installed / 版本 / systemd active / enabled / env 文件存在性 |
 | `logs` | `proxy-panel logs <agent\|hub> [--lines N] [--follow]` | 调用 journalctl 查看日志，默认 50 行 |
@@ -238,10 +239,12 @@ sudo proxy-panel upgrade hub --version v0.3.4
 升级内部流程：
 1. 读取当前已安装版本（`<bin> --version`）
 2. 下载目标版本的 tar.gz 与 SHA256SUMS，校验哈希
-3. 备份现有二进制到 `/opt/proxy-panel/backup/<binary>.<版本或时间戳>.bak`
+3. 备份现有二进制（Hub 同时备份 `web/dist`）到 `/opt/proxy-panel/backup/`；**备份仅保留最新一份**，旧备份会被清理
 4. 替换二进制
 5. 若对应服务已 enable，执行 `systemctl restart`
-6. 检查 `is-active`：失败则自动回滚备份并重启旧版，报告结果
+6. 检查 `is-active`：失败则尝试从备份恢复旧版并重启、报告结果。这是尽力恢复——若恢复本身也失败（如备份损坏），需要人工介入：`sudo proxy-panel rollback <component>` 或从 Release 重装的旧版本
+
+> 升级前请自行备份数据库与 `/etc/proxy-panel/` 配置；CLI 只保护二进制与 `web/dist`。
 
 > CLI 自升级（`upgrade cli`）不涉及服务操作，因为 Linux 允许替换运行中二进制。
 
@@ -415,29 +418,26 @@ sudo proxy-panel uninstall agent --purge
 
 ## 手动部署
 
-### 1. 编译二进制文件
+### 1. 准备部署产物
+
+从项目 Release 获取与服务器架构匹配的 Hub 发布包，并校验随附的 `SHA256SUMS`。
+服务端发布包由既有 GNU/Linux runner 构建，保持部署兼容性；本地源码构建与验证使用
+项目 Nix 环境，流程见 [开发指南](development.md)。
 
 ```bash
-# 在开发机器上编译
-git clone https://github.com/ybakiame/multi-proxy-panel.git
-cd proxy-panel
-
-# 编译 Release 版本
-cargo build --release --workspace
-
-# 产物路径:
-# target/release/proxy-panel-hub
-# target/release/proxy-panel-agent
-# target/release/proxy-panel
+# 示例为 x86_64；aarch64 服务器使用对应架构发布包
+# 包含 proxy-panel-hub、proxy-panel 与 dist/ 前端文件
+sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf proxy-panel-hub-linux-x86_64.tar.gz
 ```
 
 ### 2. 部署 Hub
 
 ```bash
 # 在 Hub 服务器上
-sudo mkdir -p /opt/proxypanel/{bin,config,web}
-sudo cp target/release/proxy-panel-hub /opt/proxypanel/bin/
-sudo cp target/release/proxy-panel /opt/proxypanel/bin/
+sudo mkdir -p /opt/proxypanel/{bin,config,web/dist}
+sudo cp proxy-panel-hub /opt/proxypanel/bin/
+sudo cp proxy-panel /opt/proxypanel/bin/
 
 # 创建配置文件
 sudo tee /opt/proxypanel/config/hub.toml << 'EOF'
@@ -448,7 +448,7 @@ static_dir = "/opt/proxypanel/web/dist"
 EOF
 
 # 复制前端文件
-sudo cp -r apps/panel/dist/* /opt/proxypanel/web/dist/
+sudo cp -r dist/* /opt/proxypanel/web/dist/
 ```
 
 ### 3. 创建 systemd 服务
@@ -778,7 +778,7 @@ sudo proxy-panel upgrade agent
 sudo proxy-panel upgrade cli
 ```
 
-CLI 会自动处理下载、校验、备份、替换、重启与失败回滚。备份文件保存在 `/opt/proxy-panel/backup/`。
+CLI 会自动处理下载、校验、备份、替换、重启与失败时的恢复尝试（尽力回滚，不保证必然成功；备份仅保留最新一份）。备份文件保存在 `/opt/proxy-panel/backup/`。
 
 如需手动升级：
 
@@ -803,6 +803,55 @@ sudo systemctl restart proxy-panel-agent
 sudo systemctl status proxy-panel-hub
 ```
 
+### 面板更新中心（可选）
+
+Web 面板 `/system` 页与 `GET/POST /api/v1/system/update*` 接口提供 Hub 自更新
+检测与触发。要点：
+
+- **检测始终可用**：无论是否授权，面板都显示当前版本、最新稳定 Release 与
+  `manual_command`（等价手动命令），可直接复制到 Hub 服务器以 root 执行。
+- **面板触发默认关闭**：`maintenance_enabled=false`（环境变量
+  `PROXYPANEL_MAINTENANCE_ENABLED`）。未启用时 POST 返回 `403 maintenance_disabled`。
+- **执行者是 CLI，不是 Hub**：Hub 以 `proxypanel` 用户运行，面板触发时通过受限
+  sudo 规则以 root 启动 transient unit `proxy-panel-hub-update` 执行
+  `proxy-panel upgrade hub --version <tag> --repo <repo> --status-file <path>`。
+  独立 unit 保证 Hub 服务停止/重启不会杀死进行中的更新；`--collect` 在 unit
+  退出后回收。升级进度经状态文件（默认 `data/hub-update.json`）轮询，`running`
+  超过 30 分钟标记 `stale`，需人工核验。
+
+授权安装（**可选的管理员动作**，一键安装脚本不会自动安装）：
+
+```bash
+# 1. 受限 sudo 规则（/etc/sudoers.d 权限 0440，内容见 deploy/proxy-panel-maintenance.sudoers）
+sudo install -o root -g root -m 0440 deploy/proxy-panel-maintenance.sudoers \
+  /etc/sudoers.d/proxy-panel-maintenance
+sudo visudo -cf /etc/sudoers.d/proxy-panel-maintenance
+
+# 2. systemd drop-in（仅放宽 NoNewPrivileges，见 deploy/proxy-panel-hub-maintenance.conf）
+sudo install -o root -g root -m 0644 deploy/proxy-panel-hub-maintenance.conf \
+  /etc/systemd/system/proxy-panel-hub.service.d/10-maintenance.conf
+sudo systemctl daemon-reload
+sudo systemctl restart proxy-panel-hub
+
+# 3. 开启维护开关（/etc/proxy-panel/hub.env 或 hub.toml）
+PROXYPANEL_MAINTENANCE_ENABLED=true
+```
+
+安全说明：
+
+- **NoNewPrivileges 放宽风险**：基础 unit 的 `NoNewPrivileges=true` 会阻止 Hub
+  进程 sudo 提权；drop-in 将其设为 `false` 后，拿到 Hub API（`system:write` scope）
+  即可触发 Hub 自身的 root 升级。这是有意的权限边界收缩，只在受信管理网络中启用。
+- **只允许固定参数形状**：sudoers 条目逐参数匹配，unit 名
+  （`proxy-panel-hub-update`）、CLI 路径与 `--status-file` 路径不可变，仅
+  `--version` / `--repo` 的值可变（`*` 通配）；多余参数或其他子命令会被 sudo 拒绝。
+  Hub 配置中的 `maintenance_cli_path` / `maintenance_status_file` 等必须与 sudoers
+  一致，否则触发时 sudo 拒绝执行（状态文件会记录失败）。
+- **边界真实存在**：面板触发不能替代 root——未安装上述授权时面板只能给手动
+  命令；容器（Docker）部署内通常没有 systemd/sudo，不适用该模型，请滚动镜像升级。
+- **本功能只管 Hub**：Agent 组件的升级仍需在各节点本地以 root 执行
+  `sudo proxy-panel upgrade agent`，面板不提供 Agent 远程升级。
+
 ---
 
 ## CI/CD 产物说明
@@ -813,8 +862,8 @@ sudo systemctl status proxy-panel-hub
 
 | Job | 触发条件 | 说明 |
 |-----|----------|------|
-| `rust` | push 到 `main`/`master`、任意 PR | 执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
-| `web` | 同上 | 在 `apps/panel` 执行 `bun run verify`（构建 + Linter + 格式检查） |
+| `rust` | push 到 `main`/`master`、任意 PR 中相关 Rust 路径变更 | 在项目 Nix 中执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` |
+| `web` | 同上，相关 Web 路径变更 | 在项目 Nix 中执行 `bun run --filter pp-web verify`（构建 + Linter + 格式检查） |
 
 ### Release Workflow (`.github/workflows/release.yml`)
 
@@ -825,19 +874,13 @@ sudo systemctl status proxy-panel-hub
 | `release` | `build` 完成后 | 收集 tar.gz、生成 `SHA256SUMS`、创建 GitHub Release（自动识别 prerelease） |
 | `docker` | `build` 完成后 | 构建并推送 GHCR 镜像 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent` |
 
-### Desktop Test Build Workflow (`.github/workflows/desktop-test.yml`)
-
-| 触发条件 | 说明 |
-|----------|------|
-| 仅手动触发（`workflow_dispatch`） | 按输入的架构（x86_64 / aarch64 / both）构建客户端 Windows NSIS 安装包并上传 artifact（保留 7 天）；可选注入 updater 签名密钥（默认不签名）；不创建 Release |
-
 ### 产物命名
 
 | 产物 | 文件名 |
 |------|--------|
 | CLI 二进制包 (x86_64) | `proxy-panel-cli-linux-x86_64.tar.gz`（根层级单个文件 `proxy-panel`） |
 | CLI 二进制包 (aarch64) | `proxy-panel-cli-linux-aarch64.tar.gz` |
-| Hub 二进制包 (x86_64) | `proxy-panel-hub-linux-x86_64.tar.gz`（含 `proxy-panel-hub`、`proxy-panel`、前端 `web/dist/**`） |
+| Hub 二进制包 (x86_64) | `proxy-panel-hub-linux-x86_64.tar.gz`（含 `proxy-panel-hub`、`proxy-panel`、前端 `dist/**`） |
 | Hub 二进制包 (aarch64) | `proxy-panel-hub-linux-aarch64.tar.gz` |
 | Agent 二进制包 | `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`（根层级单个文件 `proxy-panel-agent`） |
 | 校验文件 | `SHA256SUMS` |

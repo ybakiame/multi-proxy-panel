@@ -1,12 +1,12 @@
 # ProxyPanel Web
 
-ProxyPanel Web 前端，基于 React + TypeScript + Vite + HeroUI + Tailwind CSS v4。
+ProxyPanel Web 前端，基于 React + TypeScript + Vite + shadcn/ui（Base UI）+ Tailwind CSS v4。
 
 ## 技术栈
 
 - **框架**: React 19 + TypeScript
 - **构建工具**: Vite 8 (Rolldown)
-- **UI 组件库**: HeroUI
+- **UI 组件**: shadcn/ui + Base UI（组件源码由 `components.json` 管理）
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7
 - **国际化**: react-i18next
@@ -15,37 +15,38 @@ ProxyPanel Web 前端，基于 React + TypeScript + Vite + HeroUI + Tailwind CSS
 
 ## 环境要求
 
-- Node.js 20+
-- npm 10+
+使用仓库根目录的 [Nix 开发环境](../../nix-flake.md)，Bun 与系统构建工具由 flake 提供。
+所有命令在仓库根目录执行，依赖统一安装到根 Bun workspace。
 
 ## 可用脚本
 
 ```bash
-# 安装依赖
-npm install
+# 进入项目环境并安装锁定依赖
+nix develop
+bun install --frozen-lockfile
 
 # 启动开发服务器（带热重载）
-npm run dev
+bun run --filter pp-web dev
 
 # 发布构建
-npm run build
+bun run --filter pp-web build
 
 # 预览发布产物
-npm run preview
+bun run --filter pp-web preview
 
-# TypeScript 类型检查
-npx tsc --noEmit
+# 完整构建、lint 和格式验证
+bun run --filter pp-web verify
 ```
 
 ## 发布构建验证
 
 ```bash
-cd apps/panel
-npm install
-npm run build:prod
+nix develop
+bun install --frozen-lockfile
+bun run --filter pp-web verify
 ```
 
-成功后会输出到 `dist/` 目录。Hub 默认从 `apps/panel/dist` 托管静态文件，也可通过 `--static-dir` 指定其他路径。
+成功后会输出到 `apps/panel/dist/` 目录。Hub 默认从 `apps/panel/dist` 托管静态文件，也可通过 `--static-dir` 指定其他路径。
 
 ## 项目结构
 
@@ -59,7 +60,7 @@ src/
 ├── components/
 │   ├── Layout.tsx        # 侧边栏 + 顶部栏布局
 │   ├── nav.ts            # 导航菜单定义
-│   └── ui/               # HeroUI 风格自定义组件
+│   └── ui/               # shadcn/ui 基础组件与面板共享组件
 ├── context/
 │   └── AuthContext.tsx   # API Key 认证状态
 ├── hooks/
@@ -96,7 +97,7 @@ src/
 - 若需要自定义 Hub API 地址，可在运行开发服务器前设置环境变量：
 
   ```bash
-  PROXYPANEL_API_URL=http://127.0.0.1:8081 npm run dev
+  PROXYPANEL_API_URL=http://127.0.0.1:8081 bun run --filter pp-web dev
   ```
 
 - 构建产物输出到 `dist/`，Hub 默认从 `apps/panel/dist` 提供静态文件服务。

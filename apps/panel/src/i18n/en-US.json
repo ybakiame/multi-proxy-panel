@@ -39,7 +39,11 @@
     "stopped": "Stopped",
     "yes": "Yes",
     "no": "No",
-    "optional": "Optional"
+    "optional": "Optional",
+    "expand": "Show advanced options",
+    "collapse": "Hide advanced options",
+    "openMenu": "Open navigation menu",
+    "closeMenu": "Close navigation menu"
   },
   "status": {
     "online": "Online",
@@ -60,7 +64,8 @@
     "next": "Next",
     "first": "First",
     "last": "Last",
-    "pageInfo": "Page {{current}} of {{total}} ({{count}} total)"
+    "pageInfo": "Page {{current}} of {{total}} ({{count}} total)",
+    "perPage": "Items per page"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -79,7 +84,8 @@
     "apiKeys": "API Keys",
     "webhooks": "Webhooks",
     "onlines": "Online Sessions",
-    "traffic": "Traffic Records"
+    "traffic": "Traffic Records",
+    "system": "System"
   },
   "login": {
     "title": "ProxyPanel",
@@ -449,11 +455,65 @@
     "secret": "Secret"
   },
   "logs": {
+    "kind": "Log type",
+    "system": "System logs",
+    "agent": "Node logs",
+    "loadError": "Failed to load logs. Refresh to retry.",
+    "expand": "Expand full message",
     "title": "Logs",
     "level": "Level",
     "source": "Source",
     "message": "Message",
     "time": "Time",
     "empty": "No logs match the selected filters."
+  },
+  "system": {
+    "title": "System",
+    "description": "Check for and apply updates to the Hub application itself. The Hub will be briefly interrupted and restart during an update. To update sing-box / mihomo cores, go to the \"Core Versions\" page.",
+    "versionCardTitle": "Version Information",
+    "currentVersion": "Current Version",
+    "latestVersion": "Latest Stable",
+    "updateState": "Update Status",
+    "upToDate": "Up to Date",
+    "updateAvailable": "Update Available",
+    "publishedAt": "Published At",
+    "checkedAt": "Checked At",
+    "releaseUrl": "Release Page",
+    "checkUpdates": "Check for Updates",
+    "checking": "Checking...",
+    "loadError": "Failed to load update information. Refresh to retry.",
+    "executionTitle": "Apply Update",
+    "executionEnabledHint": "Hub-controlled updates are enabled. You can upgrade directly from this page.",
+    "executionDisabledHint": "Hub-controlled updates are disabled, so this page cannot perform the upgrade. Run the following command on the server hosting the Hub:",
+    "copyCommand": "Copy Command",
+    "copyFailed": "Copy failed. Please select and copy the command manually.",
+    "startUpdate": "Start Update",
+    "startConfirmTitle": "Update Hub",
+    "startConfirmBody": "This will update the Hub from {{current}} to {{target}}. The Hub will be briefly interrupted and restart automatically; the admin panel and API will be unavailable for a few seconds. Continue?",
+    "noUpdateHint": "You are already on the latest version.",
+    "runningHint": "An update is in progress. Please wait for it to finish.",
+    "staleHint": "The previous update state has not refreshed for over 30 minutes and requires manual verification before updating again.",
+    "startError": "Failed to start update",
+    "statusTitle": "Update Progress",
+    "stage": "Stage",
+    "component": "Component",
+    "targetVersion": "Target Version",
+    "startedAt": "Started At",
+    "finishedAt": "Finished At",
+    "elapsed": "Elapsed",
+    "message": "Message",
+    "idleAlert": "No update is currently in progress.",
+    "succeededAlert": "Update completed. The Hub is now running the new version.",
+    "failedAlert": "Update failed. The Hub is still running the previous version. Check the logs and retry, or follow the instructions above to run the update manually.",
+    "rolledBackAlert": "Something went wrong during the update, and the Hub was rolled back to the previous version automatically.",
+    "staleAlert": "The update state has not refreshed for over 30 minutes. The Hub may still be restarting or has exited abnormally. Verify the service manually, then follow the instructions above to run the update manually.",
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "rolled_back": "Rolled Back",
+      "stale": "Stale"
+    }
   }
 }

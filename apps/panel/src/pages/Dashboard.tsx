@@ -2,8 +2,17 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, TrafficChart } from "../components/ui";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import type { TrafficPoint } from "../components/ui/TrafficChart";
 import { formatDateTime } from "../utils/format";
 import { getNodes } from "../api/nodes";
@@ -127,93 +136,95 @@ export function Dashboard() {
         {stats.map((s) => (
           <Link key={s.label} to={s.to} className="block transition-opacity hover:opacity-80">
             <Card className="h-full">
-              <Card.Content className="p-5">
+              <CardContent className="p-5">
                 <p className="text-sm text-muted-foreground">{s.label}</p>
                 <p className="mt-1 text-3xl font-bold">{s.value}</p>
-              </Card.Content>
+              </CardContent>
             </Card>
           </Link>
         ))}
       </div>
 
       <Card>
-        <Card.Header>
-          <h3 className="text-lg font-semibold">{t("dashboard.traffic24h")}</h3>
-        </Card.Header>
-        <Card.Content>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">{t("dashboard.traffic24h")}</CardTitle>
+        </CardHeader>
+        <CardContent>
           <TrafficChart data={trafficChartData} height={220} />
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
-          <Card.Header>
-            <h3 className="text-lg font-semibold">{t("dashboard.recentLogs")}</h3>
-          </Card.Header>
-          <Card.Content>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">{t("dashboard.recentLogs")}</CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table aria-label="recent logs">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("logs.level")}</Table.Column>
-                    <Table.Column>{t("logs.source")}</Table.Column>
-                    <Table.Column>{t("logs.message")}</Table.Column>
-                    <Table.Column>{t("logs.time")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">{t("logs.empty")}</div>
-                    )}
-                  >
-                    {logs.map((log) => (
-                      <Table.Row key={log.id}>
-                        <Table.Cell>{log.level}</Table.Cell>
-                        <Table.Cell>{log.source}</Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">{log.message}</Table.Cell>
-                        <Table.Cell>{formatDateTime(log.created_at)}</Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("logs.level")}</TableHead>
+                  <TableHead>{t("logs.source")}</TableHead>
+                  <TableHead>{t("logs.message")}</TableHead>
+                  <TableHead>{t("logs.time")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
+                      {t("logs.empty")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  logs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell>{log.level}</TableCell>
+                      <TableCell>{log.source}</TableCell>
+                      <TableCell className="max-w-xs truncate">{log.message}</TableCell>
+                      <TableCell>{formatDateTime(log.created_at)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
             </Table>
-          </Card.Content>
+          </CardContent>
         </Card>
 
         <Card>
-          <Card.Header>
-            <h3 className="text-lg font-semibold">{t("dashboard.nodeStatus")}</h3>
-          </Card.Header>
-          <Card.Content>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">{t("dashboard.nodeStatus")}</CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table aria-label="node status">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
-                    <Table.Column>{t("nodes.hostname")}</Table.Column>
-                    <Table.Column>{t("nodes.address")}</Table.Column>
-                    <Table.Column>{t("common.status")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
-                      </div>
-                    )}
-                  >
-                    {nodes.map((node) => (
-                      <Table.Row key={node.id}>
-                        <Table.Cell>{node.name}</Table.Cell>
-                        <Table.Cell>{node.hostname}</Table.Cell>
-                        <Table.Cell>{node.address}</Table.Cell>
-                        <Table.Cell>{node.status}</Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("nodes.name")}</TableHead>
+                  <TableHead>{t("nodes.hostname")}</TableHead>
+                  <TableHead>{t("nodes.address")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {nodes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
+                      {t("common.empty")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  nodes.map((node) => (
+                    <TableRow key={node.id}>
+                      <TableCell>{node.name}</TableCell>
+                      <TableCell>{node.hostname}</TableCell>
+                      <TableCell>{node.address}</TableCell>
+                      <TableCell>{node.status}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
             </Table>
-          </Card.Content>
+          </CardContent>
         </Card>
       </div>
     </div>
