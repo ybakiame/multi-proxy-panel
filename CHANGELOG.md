@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- 开发环境支持 direnv 自动加载：新增 `.envrc`（nix-direnv 3.1.0，watch flake/devenv/nix 文件）。
+
+### Changed
+
+- **构建环境**：开发环境迁移至 devenv flake 集成——新增 `devenv.nix` 与 `nix/tools.nix`（原 `flake.nix` 工具清单与运行时库原样迁移），`flake.nix` 改用 `devenv.lib.mkShell`（devenv v2.4.0，nixpkgs 保持 nixos-unstable，新增 devenv binary cache、国内镜像全部保留）；所有 `nix develop` 调用统一带 `--no-pure-eval`（devenv 定位项目根目录所需）；不启用 devenv git hooks，husky 仍是唯一提交检查入口。见 ADR-0019 与 [Nix 开发环境](nix-flake.md)。
+- **发布流程**：RC 预发布标签（如 `v0.5.0-rc.1`）跳过 Docker 镜像发布，仅发布二进制 tar.gz 与 `SHA256SUMS` 并保留构建缓存；稳定版本标签与手动触发保留 GHCR 镜像发布。见 ADR-0019。
+
 ## [0.5.0-rc.1] - 2026-10-25
 
 ### Fixed

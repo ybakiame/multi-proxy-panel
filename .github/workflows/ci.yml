@@ -30,6 +30,8 @@ jobs:
               - 'scripts/check-rust-gates.sh'
               - 'flake.nix'
               - 'flake.lock'
+              - 'devenv.nix'
+              - 'nix/**'
               - '.github/workflows/ci.yml'
             panel:
               - 'apps/panel/**'
@@ -37,6 +39,8 @@ jobs:
               - 'bun.lock'
               - 'flake.nix'
               - 'flake.lock'
+              - 'devenv.nix'
+              - 'nix/**'
               - '.github/workflows/ci.yml'
 
   rust:
@@ -52,11 +56,11 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Check formatting
-        run: nix develop --command bash --noprofile --norc -c 'cargo fmt --all --check'
+        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo fmt --all --check'
       - name: Run Clippy
-        run: nix develop --command bash --noprofile --norc -c 'cargo clippy --workspace --all-targets -- -D warnings'
+        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo clippy --workspace --all-targets -- -D warnings'
       - name: Run tests
-        run: nix develop --command bash --noprofile --norc -c 'cargo test --workspace'
+        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo test --workspace'
 
   web:
     name: Web Checks
@@ -69,6 +73,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
       - name: Install dependencies
-        run: nix develop --command bash --noprofile --norc -c 'bun install --frozen-lockfile'
+        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun install --frozen-lockfile'
       - name: Verify panel
-        run: nix develop --command bash --noprofile --norc -c 'bun run --filter pp-web verify'
+        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun run --filter pp-web verify'

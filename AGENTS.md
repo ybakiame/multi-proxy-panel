@@ -35,15 +35,18 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 ### 2.1 工具链
 
 本地编译、运行、测试和提交钩子统一在仓库 `flake.nix` 开发环境中执行，不使用宿主机
-Bun/Protobuf 或系统库。先 `nix develop`，自动化使用
-`nix develop --command bash --noprofile --norc -c '<命令>'`，避免用户 shell rc 覆盖环境。
+Bun/Protobuf 或系统库。该环境为 devenv flake 集成（`devenv.nix` + `nix/tools.nix`，
+见 [ADR-0019](docs/adr/0019-devenv-migration-and-rc-docker-skip.md)）；已装 direnv 时
+`.envrc` 自动加载同一环境。先 `nix develop --no-pure-eval`，自动化使用
+`nix develop --no-pure-eval --command bash --noprofile --norc -c '<命令>'`，避免用户 shell rc 覆盖环境。
+`--no-pure-eval` 为 devenv 定位项目根目录所需（与 Lanpath 一致）。
 Rust 版本仍由 `rust-toolchain.toml` 经 flake 的 rustup 管理。
 如 Nix 下载连接失败，可按本机代理配置重试（此工作区代理为 `http://127.0.0.1:7899`）：
 
 ```bash
 export http_proxy="http://127.0.0.1:7899"
 export https_proxy="http://127.0.0.1:7899"
-nix develop
+nix develop --no-pure-eval
 ```
 
 详见 [Nix 开发环境](nix-flake.md)。下文构建命令均假定已进入该环境。
