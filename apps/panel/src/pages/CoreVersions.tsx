@@ -11,15 +11,8 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import { PageHeader, ConfirmDialog, FormCheckbox } from "../components/ui";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
+import { DataTable, PageHeader, ConfirmDialog, FormCheckbox } from "../components/ui";
 import {
   getCoreVersions,
   getUpstreamCoreVersions,
@@ -128,69 +121,59 @@ export function CoreVersions() {
 
       <Card>
         <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="core versions">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("coreVersions.core")}</TableHead>
-                  <TableHead>{t("coreVersions.version")}</TableHead>
-                  <TableHead>{t("coreVersions.channel")}</TableHead>
-                  <TableHead>{t("coreVersions.inUse")}</TableHead>
-                  <TableHead>{t("coreVersions.publishedAt")}</TableHead>
-                  <TableHead>{t("common.createdAt")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {versions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
-                      {t("coreVersions.emptyHint")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {versions.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell>{v.core_type}</TableCell>
-                    <TableCell className="font-mono text-sm">{v.version}</TableCell>
-                    <TableCell>{channelBadge(v.channel)}</TableCell>
-                    <TableCell>
-                      {v.is_active ? (
-                        <span className="inline-flex items-center rounded bg-success-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-success-soft-foreground">
-                          {t("coreVersions.inUse")}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
-                    </TableCell>
-                    <TableCell>{new Date(v.created_at).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {!v.is_active && (
-                          <Button size="sm" variant="ghost" onClick={() => handleActivate(v.id)}>
-                            {t("coreVersions.setActive")}
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={v.is_active}
-                          onClick={() => setDeleteId(v.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="core versions"
+            columns={7}
+            loading={isLoading}
+            empty={versions.length === 0 ? t("coreVersions.emptyHint") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("coreVersions.core")}</TableHead>
+                <TableHead>{t("coreVersions.version")}</TableHead>
+                <TableHead>{t("coreVersions.channel")}</TableHead>
+                <TableHead>{t("coreVersions.inUse")}</TableHead>
+                <TableHead>{t("coreVersions.publishedAt")}</TableHead>
+                <TableHead>{t("common.createdAt")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {versions.map((v) => (
+              <TableRow key={v.id}>
+                <TableCell>{v.core_type}</TableCell>
+                <TableCell className="font-mono text-sm">{v.version}</TableCell>
+                <TableCell>{channelBadge(v.channel)}</TableCell>
+                <TableCell>
+                  {v.is_active ? (
+                    <span className="inline-flex items-center rounded bg-success-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-success-soft-foreground">
+                      {t("coreVersions.inUse")}
+                    </span>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  {v.published_at ? new Date(v.published_at).toLocaleString() : "-"}
+                </TableCell>
+                <TableCell>{new Date(v.created_at).toLocaleString()}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    {!v.is_active && (
+                      <Button size="sm" variant="ghost" onClick={() => handleActivate(v.id)}>
+                        {t("coreVersions.setActive")}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={v.is_active}
+                      onClick={() => setDeleteId(v.id)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 

@@ -1,18 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader, ConfirmDialog, StatusBadge, Pagination } from "../../components/ui";
+import { PageHeader, ConfirmDialog, Pagination } from "../../components/ui";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent } from "../../components/ui/card";
 import { Spinner } from "../../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
+import { NodesTable } from "./NodesTable";
 import { usePagination } from "../../hooks/useCommon";
 import {
   getNodesPaginated,
@@ -292,129 +284,17 @@ export function Nodes() {
         ))}
       </div>
 
-      <Card>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="nodes">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("nodes.name")}</TableHead>
-                  <TableHead>{t("nodes.hostname")}</TableHead>
-                  <TableHead>{t("nodes.address")}</TableHead>
-                  <TableHead>{t("common.status")}</TableHead>
-                  <TableHead>{t("nodes.pending")}</TableHead>
-                  <TableHead>{t("nodes.coreStatus")}</TableHead>
-                  <TableHead>{t("nodes.parentId")}</TableHead>
-                  <TableHead>{t("nodes.coresAvailable")}</TableHead>
-                  <TableHead>{t("nodes.usageCoefficient")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredNodes.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="p-4 text-center text-muted-foreground">
-                      {t("common.empty")}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredNodes.map((node) => (
-                    <TableRow key={node.id}>
-                      <TableCell>{node.name}</TableCell>
-                      <TableCell>{node.hostname || "-"}</TableCell>
-                      <TableCell>{node.address || "-"}</TableCell>
-                      <TableCell>
-                        <StatusBadge status={node.status} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {pending
-                            .filter((p) => p.node_id === node.id)
-                            .map((p, i) => (
-                              <span
-                                key={i}
-                                className="inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium bg-warning-soft text-warning-soft-foreground"
-                              >
-                                {p.update_type === "core"
-                                  ? `${t("nodes.pendingCore")} ${p.core_type}`
-                                  : `${t("nodes.pendingConfig")} ${p.core_type}`}
-                              </span>
-                            ))}
-                          {pending.filter((p) => p.node_id === node.id).length === 0 && null}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(node.core_statuses || []).map((cs) => {
-                            const shortVersion = cs.version.match(/\d+\.\d+[\d.]*/)?.[0] ?? "";
-                            return (
-                              <span
-                                key={cs.core_type}
-                                className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${
-                                  cs.running
-                                    ? "bg-success-soft text-success-soft-foreground"
-                                    : "bg-danger-soft text-danger-soft-foreground"
-                                }`}
-                                title={cs.version}
-                              >
-                                {cs.core_type}
-                                {shortVersion && <span className="opacity-70">{shortVersion}</span>}
-                                <span>
-                                  {cs.running ? t("common.running") : t("common.stopped")}
-                                </span>
-                              </span>
-                            );
-                          })}
-                          {(node.core_statuses || []).length === 0 && "-"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {node.parent_id ? `${t("nodes.childOf")} ${node.parent_id}` : "-"}
-                      </TableCell>
-                      <TableCell>{(node.cores_available || []).join(", ")}</TableCell>
-                      <TableCell>{node.usage_coefficient}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(node)}>
-                            {t("common.edit")}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openLogs(node)}>
-                            {t("nodes.logs")}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openPush(node)}>
-                            {t("nodes.pushConfig")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openInstallCommand(node)}
-                          >
-                            {t("nodes.installCommand")}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openBinaries(node)}>
-                            {t("nodes.binaries")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => setDeleteNodeId(node.id)}
-                          >
-                            {t("common.delete")}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <NodesTable
+        nodes={filteredNodes}
+        pending={pending}
+        isLoading={isLoading}
+        onEdit={openEdit}
+        onLogs={openLogs}
+        onPush={openPush}
+        onInstall={openInstallCommand}
+        onBinaries={openBinaries}
+        onDelete={(node) => setDeleteNodeId(node.id)}
+      />
 
       <Pagination
         page={page}

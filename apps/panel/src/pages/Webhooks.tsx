@@ -11,23 +11,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
 import {
   PageHeader,
   ConfirmDialog,
+  DataTable,
   Pagination,
   FormInput,
   FormTextArea,
   FormCheckbox,
 } from "../components/ui";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import { usePagination } from "../hooks/useCommon";
 import { getWebhooks, createWebhook, deleteWebhook } from "../api/webhooks";
 
@@ -119,72 +112,56 @@ export function Webhooks() {
 
       <Card>
         <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <>
-              <Table aria-label="webhooks">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("common.name")}</TableHead>
-                    <TableHead>{t("webhooks.url")}</TableHead>
-                    <TableHead>{t("webhooks.events")}</TableHead>
-                    <TableHead>{t("common.active")}</TableHead>
-                    <TableHead>{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {webhooks.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {webhooks.map((webhook) => (
-                    <TableRow key={webhook.id}>
-                      <TableCell>{webhook.name}</TableCell>
-                      <TableCell className="max-w-xs truncate">{webhook.url}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {webhook.events.slice(0, 2).map((event) => (
-                            <Badge key={event} variant="secondary">
-                              {event}
-                            </Badge>
-                          ))}
-                          {webhook.events.length > 2 && (
-                            <Badge variant="secondary">+{webhook.events.length - 2}</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {webhook.is_active ? t("common.enabled") : t("common.disabled")}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteId(webhook.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                perPage={perPage}
-                total={total}
-                onPageChange={setPage}
-                onPerPageChange={setPerPage}
-              />
-            </>
-          )}
+          <DataTable
+            aria-label="webhooks"
+            columns={5}
+            loading={isLoading}
+            empty={webhooks.length === 0 ? t("common.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("common.name")}</TableHead>
+                <TableHead>{t("webhooks.url")}</TableHead>
+                <TableHead>{t("webhooks.events")}</TableHead>
+                <TableHead>{t("common.active")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {webhooks.map((webhook) => (
+              <TableRow key={webhook.id}>
+                <TableCell>{webhook.name}</TableCell>
+                <TableCell className="max-w-xs truncate">{webhook.url}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {webhook.events.slice(0, 2).map((event) => (
+                      <Badge key={event} variant="secondary">
+                        {event}
+                      </Badge>
+                    ))}
+                    {webhook.events.length > 2 && (
+                      <Badge variant="secondary">+{webhook.events.length - 2}</Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {webhook.is_active ? t("common.enabled") : t("common.disabled")}
+                </TableCell>
+                <TableCell>
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteId(webhook.id)}>
+                    {t("common.delete")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            perPage={perPage}
+            total={total}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+          />
         </CardContent>
       </Card>
 

@@ -44,7 +44,8 @@
     "collapse": "收起高级选项",
     "openMenu": "打开导航菜单",
     "closeMenu": "关闭导航菜单",
-    "retry": "重试"
+    "retry": "重试",
+    "rowActions": "{{name}} 的更多操作"
   },
   "status": {
     "online": "在线",

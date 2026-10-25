@@ -11,20 +11,13 @@ import {
   ArrowPathIcon,
   PlusIcon,
 } from "@heroicons/react/24/outline";
-import { PageHeader, TrafficChart } from "../components/ui";
+import { PageHeader, TrafficChart, DataTable } from "../components/ui";
 import { useHubVersion } from "../components/VersionBadge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import type { TrafficPoint } from "../components/ui/TrafficChart";
 import { formatBytes, formatDateTime } from "../utils/format";
 import { getNodes } from "../api/nodes";
@@ -316,36 +309,30 @@ export function Dashboard() {
             isError={logsQuery.isError}
             onRetry={() => logsQuery.refetch()}
           >
-            <Table aria-label="recent logs">
-              <TableHeader>
+            <DataTable
+              aria-label="recent logs"
+              columns={4}
+              empty={logs.length === 0 ? t("logs.empty") : undefined}
+              header={
                 <TableRow>
                   <TableHead>{t("logs.level")}</TableHead>
                   <TableHead>{t("logs.source")}</TableHead>
                   <TableHead>{t("logs.message")}</TableHead>
                   <TableHead>{t("logs.time")}</TableHead>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {logs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
-                      {t("logs.empty")}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  logs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-medium">{log.level}</TableCell>
-                      <TableCell>{log.source}</TableCell>
-                      <TableCell className="max-w-xs truncate">{log.message}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDateTime(log.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+              }
+            >
+              {logs.map((log) => (
+                <TableRow key={log.id}>
+                  <TableCell className="font-medium">{log.level}</TableCell>
+                  <TableCell>{log.source}</TableCell>
+                  <TableCell className="max-w-xs truncate">{log.message}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(log.created_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </DataTable>
           </SectionState>
         </CardContent>
       </Card>

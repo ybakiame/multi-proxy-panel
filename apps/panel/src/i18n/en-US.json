@@ -44,7 +44,8 @@
     "collapse": "Hide advanced options",
     "openMenu": "Open navigation menu",
     "closeMenu": "Close navigation menu",
-    "retry": "Retry"
+    "retry": "Retry",
+    "rowActions": "More actions for {{name}}"
   },
   "status": {
     "online": "Online",

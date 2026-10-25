@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import {
   CopyableSecret,
   ConfirmDialog,
+  DataTable,
   FormInput,
   FormSelect,
   FormTextArea,
@@ -15,14 +16,7 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Spinner } from "../../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../../components/ui/table";
 import type { Node, AgentLog } from "../../api/types";
 import type { CoreBinary, InstallCommand } from "../../api/nodes";
 import type { NodeFormState } from "./useNodeActions";
@@ -201,55 +195,50 @@ export function BinariesModal({
             </DialogTitle>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-auto">
-            {binLoading ? (
-              <div className="flex h-32 items-center justify-center">
-                <Spinner />
-              </div>
-            ) : binaries.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">{t("common.empty")}</div>
-            ) : (
-              <Table aria-label="core binaries">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("nodes.binaryName")}</TableHead>
-                    <TableHead>{t("nodes.binarySize")}</TableHead>
-                    <TableHead>{t("nodes.binaryModified")}</TableHead>
-                    <TableHead>{t("common.status")}</TableHead>
-                    <TableHead>{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {binaries.map((b) => (
-                    <TableRow key={b.file_name}>
-                      <TableCell className="font-mono text-sm">{b.file_name}</TableCell>
-                      <TableCell>{formatSize(b.size_bytes)}</TableCell>
-                      <TableCell>
-                        {b.modified_at ? new Date(b.modified_at * 1000).toLocaleString() : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {b.in_use ? (
-                          <span className="rounded bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
-                            {t("nodes.binaryInUse")}
-                          </span>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={b.in_use}
-                          onClick={() => onDelete(b.file_name)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            <DataTable
+              aria-label="core binaries"
+              columns={5}
+              loading={binLoading}
+              empty={binaries.length === 0 ? t("common.empty") : undefined}
+              header={
+                <TableRow>
+                  <TableHead>{t("nodes.binaryName")}</TableHead>
+                  <TableHead>{t("nodes.binarySize")}</TableHead>
+                  <TableHead>{t("nodes.binaryModified")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
+                </TableRow>
+              }
+            >
+              {binaries.map((b) => (
+                <TableRow key={b.file_name}>
+                  <TableCell className="font-mono text-sm">{b.file_name}</TableCell>
+                  <TableCell>{formatSize(b.size_bytes)}</TableCell>
+                  <TableCell>
+                    {b.modified_at ? new Date(b.modified_at * 1000).toLocaleString() : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {b.in_use ? (
+                      <span className="rounded bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
+                        {t("nodes.binaryInUse")}
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={b.in_use}
+                      onClick={() => onDelete(b.file_name)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </DataTable>
           </div>
           <DialogFooter>
             <Button onClick={onClose}>{t("common.close")}</Button>

@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader, Pagination, FormSelect, FormCheckbox, SearchInput } from "../components/ui";
+import {
+  PageHeader,
+  Pagination,
+  FormSelect,
+  FormCheckbox,
+  SearchInput,
+  DataTable,
+} from "../components/ui";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import {
@@ -12,14 +19,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
 import { usePagination, useDebouncedValue } from "../hooks/useCommon";
 import { getOnlines } from "../api/onlines";
 import { getNodes } from "../api/nodes";
@@ -150,62 +150,49 @@ export function Onlines() {
       </div>
       <Card>
         <CardContent>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <>
-              <Table aria-label="onlines">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("onlines.client")}</TableHead>
-                    <TableHead>{t("onlines.node")}</TableHead>
-                    <TableHead>{t("onlines.ip")}</TableHead>
-                    <TableHead>{t("onlines.inbound")}</TableHead>
-                    <TableHead>{t("onlines.connectedAt")}</TableHead>
-                    <TableHead>{t("onlines.duration")}</TableHead>
-                    <TableHead>{t("onlines.lastActive")}</TableHead>
-                    <TableHead>{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {display.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="p-4 text-center text-muted-foreground">
-                        {t("onlines.empty")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    display.map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell>{clientNames.get(s.client_id) || s.client_id}</TableCell>
-                        <TableCell>{nodeNames.get(s.node_id) || s.node_id}</TableCell>
-                        <TableCell>{s.ip_address}</TableCell>
-                        <TableCell>{s.inbound_tag || "-"}</TableCell>
-                        <TableCell>{formatDateTime(s.connected_at)}</TableCell>
-                        <TableCell>{formatDurationSince(s.connected_at)}</TableCell>
-                        <TableCell>{formatDateTime(s.last_active_at)}</TableCell>
-                        <TableCell>
-                          <Button size="sm" variant="ghost" onClick={() => openIps(s)}>
-                            {t("onlines.historyIps")}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                perPage={perPage}
-                total={total}
-                onPageChange={setPage}
-                onPerPageChange={setPerPage}
-              />
-            </>
-          )}
+          <DataTable
+            aria-label="onlines"
+            columns={8}
+            loading={isLoading}
+            empty={display.length === 0 ? t("onlines.empty") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("onlines.client")}</TableHead>
+                <TableHead>{t("onlines.node")}</TableHead>
+                <TableHead>{t("onlines.ip")}</TableHead>
+                <TableHead>{t("onlines.inbound")}</TableHead>
+                <TableHead>{t("onlines.connectedAt")}</TableHead>
+                <TableHead>{t("onlines.duration")}</TableHead>
+                <TableHead>{t("onlines.lastActive")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {display.map((s) => (
+              <TableRow key={s.id}>
+                <TableCell>{clientNames.get(s.client_id) || s.client_id}</TableCell>
+                <TableCell>{nodeNames.get(s.node_id) || s.node_id}</TableCell>
+                <TableCell>{s.ip_address}</TableCell>
+                <TableCell>{s.inbound_tag || "-"}</TableCell>
+                <TableCell>{formatDateTime(s.connected_at)}</TableCell>
+                <TableCell>{formatDurationSince(s.connected_at)}</TableCell>
+                <TableCell>{formatDateTime(s.last_active_at)}</TableCell>
+                <TableCell>
+                  <Button size="sm" variant="ghost" onClick={() => openIps(s)}>
+                    {t("onlines.historyIps")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            perPage={perPage}
+            total={total}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+          />
         </CardContent>
       </Card>
 

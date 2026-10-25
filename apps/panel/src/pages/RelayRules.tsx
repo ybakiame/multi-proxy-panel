@@ -3,16 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-import { PageHeader, ConfirmDialog } from "../components/ui";
+import { TableCell, TableHead, TableRow } from "../components/ui/table";
+import { PageHeader, ConfirmDialog, DataTable } from "../components/ui";
 import {
   getRelayRules,
   getRuleSetLibrary,
@@ -279,61 +271,51 @@ export function RelayRules() {
 
       <Card>
         <CardContent>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="relay rules">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("common.name")}</TableHead>
-                  <TableHead>{t("relayRules.entryNode")}</TableHead>
-                  <TableHead>{t("relayRules.exitBinding")}</TableHead>
-                  <TableHead>{t("relayRules.match")}</TableHead>
-                  <TableHead>{t("common.enabled")}</TableHead>
-                  <TableHead>{t("relayRules.sortOrder")}</TableHead>
-                  <TableHead>{t("common.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rules.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
-                      {t("relayRules.emptyHint")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {rules.map((rule) => (
-                  <TableRow key={rule.id}>
-                    <TableCell>{rule.name}</TableCell>
-                    <TableCell>{rule.node_name || getNodeName(rule.node_id)}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {[rule.exit_node_name, rule.exit_config_name].filter(Boolean).join(" / ") ||
-                        rule.exit_binding_id}
-                    </TableCell>
-                    <TableCell>{matchSummary(rule)}</TableCell>
-                    <TableCell>{enabledBadge(rule.enabled)}</TableCell>
-                    <TableCell>{rule.sort_order}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(rule)}>
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteRuleId(rule.id)}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            aria-label="relay rules"
+            columns={7}
+            loading={loading}
+            empty={rules.length === 0 ? t("relayRules.emptyHint") : undefined}
+            header={
+              <TableRow>
+                <TableHead>{t("common.name")}</TableHead>
+                <TableHead>{t("relayRules.entryNode")}</TableHead>
+                <TableHead>{t("relayRules.exitBinding")}</TableHead>
+                <TableHead>{t("relayRules.match")}</TableHead>
+                <TableHead>{t("common.enabled")}</TableHead>
+                <TableHead>{t("relayRules.sortOrder")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            }
+          >
+            {rules.map((rule) => (
+              <TableRow key={rule.id}>
+                <TableCell>{rule.name}</TableCell>
+                <TableCell>{rule.node_name || getNodeName(rule.node_id)}</TableCell>
+                <TableCell className="max-w-xs truncate">
+                  {[rule.exit_node_name, rule.exit_config_name].filter(Boolean).join(" / ") ||
+                    rule.exit_binding_id}
+                </TableCell>
+                <TableCell>{matchSummary(rule)}</TableCell>
+                <TableCell>{enabledBadge(rule.enabled)}</TableCell>
+                <TableCell>{rule.sort_order}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(rule)}>
+                      {t("common.edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDeleteRuleId(rule.id)}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
         </CardContent>
       </Card>
 
