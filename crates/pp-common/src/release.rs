@@ -25,11 +25,21 @@ pub struct Release {
 pub struct GitHubReleaseClient {
     client: reqwest::Client,
     repo: String,
+    api_base: String,
 }
 
 impl GitHubReleaseClient {
     pub fn new(repo: &str) -> PanelResult<Self> {
         validate_repo(repo)?;
+        let api_base = std::env::var("PROXYPANEL_RELEASE_API_BASE")
+            .unwrap_or_else(|_| GITHUB_API.to_string())
+            .trim_end_matches('/')
+            .to_string();
+        if !(api_base.starts_with("https://") || api_base.starts_with("http://")) {
+            return Err(PanelError::Validation(
+                "PROXYPANEL_RELEASE_API_BASE must be an HTTP(S) URL".to_string(),
+            ));
+        }
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(30))
@@ -40,12 +50,16 @@ impl GitHubReleaseClient {
         Ok(Self {
             client,
             repo: repo.to_string(),
+            api_base,
         })
     }
 
     /// Return the newest stable, non-draft release.
     pub async fn latest_stable(&self) -> PanelResult<Release> {
-        let url = format!("{GITHUB_API}/repos/{}/releases?per_page=100", self.repo);
+        let url = format!(
+            "{}/repos/{}/releases?per_page=100",
+            self.api_base, self.repo
+        );
         let responses: Vec<ReleaseResponse> = self.get_json(&url).await?;
         select_latest_stable(responses)
     }
@@ -58,7 +72,7 @@ impl GitHubReleaseClient {
         } else {
             format!("v{tag}")
         };
-        let url = format!("{GITHUB_API}/repos/{}/releases/tags/{tag}", self.repo);
+        let url = format!("{}/repos/{}/releases/tags/{tag}", self.api_base, self.repo);
         let response: ReleaseResponse = self.get_json(&url).await?;
         if response.draft || response.prerelease {
             return Err(PanelError::Release(format!(

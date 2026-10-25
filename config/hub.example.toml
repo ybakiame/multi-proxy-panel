@@ -21,6 +21,9 @@ auto_register_agents = true
 # Generate a random value, e.g.: openssl rand -base64 42
 jwt_secret = "change-me-to-a-random-secret"
 
+# Optional GitHub-compatible Release API mirror/test endpoint (environment only):
+# PROXYPANEL_RELEASE_API_BASE=https://api.github.com
+
 # In-panel update center (Hub self-update). Disabled by default.
 # When enabled, POST /api/v1/system/update triggers `sudo systemd-run --unit=proxy-panel-hub-update
 # --collect <cli> upgrade hub ... --status-file <status_file>` as root. This requires the
