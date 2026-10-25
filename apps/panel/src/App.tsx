@@ -20,6 +20,7 @@ import { Webhooks } from "./pages/Webhooks";
 import { Onlines } from "./pages/Onlines";
 import { Traffic } from "./pages/Traffic";
 import { RelayRules } from "./pages/RelayRules";
+import { System } from "./pages/System";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -171,6 +172,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <RelayRules />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/system"
+        element={
+          <ProtectedRoute>
+            <System />
           </ProtectedRoute>
         }
       />
