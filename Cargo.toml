@@ -60,6 +60,7 @@ serde_yaml = "0.9"
 toml = "0.8"
 uuid = { version = "1.16", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+semver = { version = "1.0", features = ["serde"] }
 
 # CLI & config
 clap = { version = "4.5", features = ["derive", "env"] }

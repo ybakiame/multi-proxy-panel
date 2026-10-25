@@ -36,6 +36,9 @@ pub enum PanelError {
     #[error("subscription error: {0}")]
     Subscription(String),
 
+    #[error("release query error: {0}")]
+    Release(String),
+
     #[error("traffic error: {0}")]
     Traffic(String),
 

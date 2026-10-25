@@ -66,6 +66,29 @@ proxy-panel provision-node \
 proxy-panel diagnose --database-url "postgres://user:pass@localhost/proxypanel"
 ```
 
+### 检查稳定版更新
+
+无需 root；省略组件时检查 Hub、Agent 和 CLI。CLI 未安装到 `/usr/local/bin` 时，仅在开发场景回退到当前编译版本。
+
+```bash
+proxy-panel check-update
+proxy-panel check-update hub --repo ybakiame/multi-proxy-panel
+proxy-panel check-update cli --json
+```
+
+输出当前版本、最新稳定版、是否有更新及 Release 页面；`--json` 输出机器可读数组。
+
+### 升级与回滚
+
+```bash
+sudo proxy-panel upgrade hub --version latest
+sudo proxy-panel upgrade agent --version 0.4.5 --repo ybakiame/multi-proxy-panel
+sudo proxy-panel upgrade cli --status-file /opt/proxy-panel/upgrade-status.json
+sudo proxy-panel rollback hub
+```
+
+升级会先解析稳定 Release 并完成下载、校验和解压，再备份和替换文件。相同版本会跳过，较旧目标会被拒绝（降级使用 `rollback`）。Hub 的二进制与 `web/dist` 一同备份和恢复；失败时自动回滚，且仅重新启动升级前处于 active 的服务。`--status-file` 原子写入 `running`、`succeeded`、`failed` 或 `rolled_back` JSON 状态。install、upgrade 和 rollback 共用 `/opt/proxy-panel/maintenance.lock` 非阻塞锁。
+
 ## 环境变量
 
 多数命令支持通过环境变量传入 `--database-url`：

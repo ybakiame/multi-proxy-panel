@@ -6,6 +6,7 @@ pub mod logging;
 pub mod models;
 pub mod process;
 pub mod protocol;
+pub mod release;
 pub mod settings_helper;
 
 pub use crypto::*;

@@ -125,7 +125,7 @@ pub async fn download_and_verify(
     Ok(asset_path)
 }
 
-/// Get the installed version of a binary by running `<bin> --version`.
+/// Get an installed version while preserving legacy install-time fallback behavior.
 pub async fn installed_version(bin_path: &Path) -> Result<Option<String>> {
     if !bin_path.exists() {
         return Ok(None);
@@ -140,4 +140,31 @@ pub async fn installed_version(bin_path: &Path) -> Result<Option<String>> {
     }
     let text = String::from_utf8_lossy(&out.stdout);
     Ok(parse_version_from_output(&text))
+}
+
+/// Query an existing binary without hiding execution or version-parse failures.
+pub async fn installed_version_strict(bin_path: &Path) -> Result<Option<String>> {
+    if !bin_path.exists() {
+        return Ok(None);
+    }
+    let out = Command::new(bin_path)
+        .arg("--version")
+        .output()
+        .await
+        .with_context(|| format!("failed to run {} --version", bin_path.display()))?;
+    if !out.status.success() {
+        bail!(
+            "{} --version failed: {}",
+            bin_path.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    parse_version_from_output(&text).map(Some).with_context(|| {
+        format!(
+            "failed to parse version from {} --version output: {}",
+            bin_path.display(),
+            text.trim()
+        )
+    })
 }

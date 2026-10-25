@@ -26,6 +26,8 @@ subtle = "2.6"
 x25519-dalek = { version = "2.0", features = ["static_secrets", "getrandom"] }
 regex = "1.12.3"
 tracing.workspace = true
+reqwest.workspace = true
+semver.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

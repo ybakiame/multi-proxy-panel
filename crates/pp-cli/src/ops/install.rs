@@ -10,6 +10,7 @@ use super::download::{download_and_verify, installed_version};
 use super::fsutil::{
     backup_path, copy_file, ensure_dir, move_file, move_path, prune_backups, write_file,
 };
+use super::maintenance::MaintenanceLock;
 use super::systemd::{
     systemd_daemon_reload, systemd_enable_now, systemd_is_active, systemd_restart, systemd_stop,
 };
@@ -62,6 +63,7 @@ async fn ensure_user() -> Result<()> {
 /// Install the Hub component.
 pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
     require_root()?;
+    let _lock = MaintenanceLock::acquire(Path::new(OPT_DIR))?;
     let arch = release_arch()?;
     let asset = format!("proxy-panel-hub-linux-{}.tar.gz", arch);
 
@@ -231,6 +233,7 @@ pub async fn install_agent(
     repo: &str,
 ) -> Result<()> {
     require_root()?;
+    let _lock = MaintenanceLock::acquire(Path::new(OPT_DIR))?;
     let arch = release_arch()?;
     let asset = format!("proxy-panel-agent-linux-{}.tar.gz", arch);
 
