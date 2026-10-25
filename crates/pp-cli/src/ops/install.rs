@@ -8,7 +8,8 @@ use tokio::process::Command;
 
 use super::download::{download_and_verify, installed_version};
 use super::fsutil::{
-    backup_path, copy_file, ensure_dir, move_file, move_path, prune_backups, write_file,
+    backup_path, copy_file, ensure_dir, find_web_dist, move_file, move_path, prune_backups,
+    write_file,
 };
 use super::maintenance::MaintenanceLock;
 use super::systemd::{
@@ -91,7 +92,6 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
     // Find extracted binaries and web/dist
     let mut hub_bin_src: Option<PathBuf> = None;
     let mut cli_bin_src: Option<PathBuf> = None;
-    let mut web_dist_src: Option<PathBuf> = None;
 
     let mut entries = tokio::fs::read_dir(&extract_dir).await?;
     while let Some(entry) = entries.next_entry().await? {
@@ -101,14 +101,10 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
             hub_bin_src = Some(entry.path());
         } else if name_str == "proxy-panel" {
             cli_bin_src = Some(entry.path());
-        } else if name_str == "web" {
-            // look for dist inside
-            let dist = entry.path().join("dist");
-            if dist.is_dir() {
-                web_dist_src = Some(dist);
-            }
         }
     }
+    let web_dist_src =
+        find_web_dist(&extract_dir).with_context(|| "hub tarball 中未找到 web/dist")?;
 
     let hub_dst = PathBuf::from(BIN_DIR).join("proxy-panel-hub");
     let cli_dst = PathBuf::from(BIN_DIR).join("proxy-panel");
@@ -155,16 +151,12 @@ pub async fn install_hub(version: &str, repo: &str) -> Result<()> {
             .with_context(|| format!("failed to chmod {}", cli_dst.display()))?;
     }
 
-    // Copy web/dist
-    if let Some(src) = web_dist_src {
-        // Remove old dist and replace
-        if web_dst.exists() {
-            tokio::fs::remove_dir_all(&web_dst)
-                .await
-                .with_context(|| format!("failed to remove old {}", web_dst.display()))?;
-        }
-        move_path(&src, &web_dst).await?;
+    if web_dst.exists() {
+        tokio::fs::remove_dir_all(&web_dst)
+            .await
+            .with_context(|| format!("failed to remove old {}", web_dst.display()))?;
     }
+    move_path(&web_dist_src, &web_dst).await?;
 
     // Write hub.toml if not exists
     let hub_toml = PathBuf::from(ETC_DIR).join("hub.toml");

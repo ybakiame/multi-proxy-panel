@@ -95,11 +95,12 @@ jobs:
 
       - name: Package hub tarball
         run: |
-          mkdir -p hub-bundle
+          mkdir -p hub-bundle/web
           cp target/${{ matrix.target }}/release/proxy-panel-hub hub-bundle/
           cp target/${{ matrix.target }}/release/proxy-panel hub-bundle/
-          cp -r web/dist hub-bundle/
+          cp -r web/dist hub-bundle/web/
           tar -czf dist/proxy-panel-hub-linux-${{ matrix.arch }}.tar.gz -C hub-bundle .
+          tar -tzf dist/proxy-panel-hub-linux-${{ matrix.arch }}.tar.gz | grep -qx './web/dist/index.html'
 
       - name: Upload tarball artifacts
         uses: actions/upload-artifact@v5
