@@ -24,30 +24,39 @@ pub trait CoreManager: Send + Sync {
     fn core_type(&self) -> CoreType;
 
     /// Start the core with the given configuration.
+    #[must_use = "the returned future must be awaited"]
     async fn start(&self, config: &Value) -> PanelResult<()>;
 
     /// Stop the running core gracefully.
+    #[must_use = "the returned future must be awaited"]
     async fn stop(&self) -> PanelResult<()>;
 
     /// Restart the core with a new configuration.
+    #[must_use = "the returned future must be awaited"]
     async fn restart(&self, config: &Value) -> PanelResult<()>;
 
     /// Check if the core is currently running.
+    #[must_use = "the returned future must be awaited"]
     async fn is_running(&self) -> bool;
 
     /// Reload configuration without restart (if supported by core).
+    #[must_use = "the returned future must be awaited"]
     async fn reload(&self, config: &Value) -> PanelResult<()>;
 
     /// Get core version string.
+    #[must_use = "the returned future must be awaited"]
     async fn version(&self) -> PanelResult<String>;
 
     /// Uptime in seconds if the core is running.
+    #[must_use = "the returned future must be awaited"]
     async fn uptime_secs(&self) -> PanelResult<u64>;
 
     /// Active inbound tags (if queryable).
+    #[must_use = "the returned future must be awaited"]
     async fn active_inbounds(&self) -> PanelResult<Vec<String>>;
 
     /// Last recorded error message.
+    #[must_use = "the returned future must be awaited"]
     async fn last_error(&self) -> PanelResult<String>;
 }
 
