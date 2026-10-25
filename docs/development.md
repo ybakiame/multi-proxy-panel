@@ -392,7 +392,7 @@ cargo run --bin proxy-panel -- init-db --database-url "$PROXYPANEL_DATABASE_URL"
 
 - **框架**: React 19 + TypeScript
 - **构建工具**: Vite 8
-- **UI 库**: HeroUI 3（`@heroui/react` / `@heroui/styles`）
+- **UI 组件**: shadcn/ui + Base UI（组件源码位于 `src/components/ui/`，通过 `components.json` 与 shadcn CLI 维护）
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7
 - **国际化**: react-i18next

@@ -1,7 +1,24 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import {
   PageHeader,
   ConfirmDialog,
@@ -192,61 +209,60 @@ export function Groups() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <Table aria-label="groups">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
-                    <Table.Column>{t("groups.description")}</Table.Column>
-                    <Table.Column>{t("groups.bindings")}</Table.Column>
-                    <Table.Column>{t("common.labels")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("common.name")}</TableHead>
+                  <TableHead>{t("groups.description")}</TableHead>
+                  <TableHead>{t("groups.bindings")}</TableHead>
+                  <TableHead>{t("common.labels")}</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {groups.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="p-4 text-center text-muted-foreground">
+                      {t("common.empty")}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {groups.map((group) => (
+                  <TableRow key={group.id}>
+                    <TableCell>{group.name}</TableCell>
+                    <TableCell>{group.description || "-"}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {bindingNamesForGroup(group.id)}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {JSON.stringify(group.labels || {})}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(group)}>
+                          {t("common.edit")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteGroupId(group.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
                       </div>
-                    )}
-                  >
-                    {groups.map((group) => (
-                      <Table.Row key={group.id}>
-                        <Table.Cell>{group.name}</Table.Cell>
-                        <Table.Cell>{group.description || "-"}</Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {bindingNamesForGroup(group.id)}
-                        </Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {JSON.stringify(group.labels || {})}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onPress={() => openEdit(group)}>
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteGroupId(group.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <Pagination
@@ -267,117 +283,113 @@ export function Groups() {
         {t("groups.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("groups.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormInput
-                label={t("groups.description")}
-                value={form.description}
-                onChange={(value) => setForm({ ...form, description: value })}
-              />
-              <FormTextArea
-                label={t("groups.labels")}
-                value={form.labels}
-                onChange={(value) => setForm({ ...form, labels: value })}
-                className="font-mono"
-              />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("groups.bindings")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {bindings.map((binding) => (
-                    <FormCheckbox
-                      key={binding.id}
-                      isSelected={form.selectedBindings.has(binding.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedBindings);
-                        if (selected) next.add(binding.id);
-                        else next.delete(binding.id);
-                        setForm({ ...form, selectedBindings: next });
-                      }}
-                    >
-                      {bindingDisplayName(binding)}
-                    </FormCheckbox>
-                  ))}
-                </div>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("groups.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+              isRequired
+            />
+            <FormInput
+              label={t("groups.description")}
+              value={form.description}
+              onChange={(value) => setForm({ ...form, description: value })}
+            />
+            <FormTextArea
+              label={t("groups.labels")}
+              value={form.labels}
+              onChange={(value) => setForm({ ...form, labels: value })}
+              className="font-mono"
+            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("groups.bindings")}</p>
+              <div className="flex flex-wrap gap-2">
+                {bindings.map((binding) => (
+                  <FormCheckbox
+                    key={binding.id}
+                    isSelected={form.selectedBindings.has(binding.id)}
+                    onChange={(selected) => {
+                      const next = new Set(form.selectedBindings);
+                      if (selected) next.add(binding.id);
+                      else next.delete(binding.id);
+                      setForm({ ...form, selectedBindings: next });
+                    }}
+                  >
+                    {bindingDisplayName(binding)}
+                  </FormCheckbox>
+                ))}
               </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleCreate}>{t("common.create")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal.Backdrop
-        isOpen={!!editGroup}
+      <Dialog
+        open={!!editGroup}
         onOpenChange={(open) => {
           if (!open) setEditGroup(null);
         }}
       >
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("groups.editTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-              />
-              <FormInput
-                label={t("groups.description")}
-                value={form.description}
-                onChange={(value) => setForm({ ...form, description: value })}
-              />
-              <FormTextArea
-                label={t("groups.labels")}
-                value={form.labels}
-                onChange={(value) => setForm({ ...form, labels: value })}
-                className="font-mono"
-              />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("groups.bindings")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {bindings.map((binding) => (
-                    <FormCheckbox
-                      key={binding.id}
-                      isSelected={form.selectedBindings.has(binding.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedBindings);
-                        if (selected) next.add(binding.id);
-                        else next.delete(binding.id);
-                        setForm({ ...form, selectedBindings: next });
-                      }}
-                    >
-                      {bindingDisplayName(binding)}
-                    </FormCheckbox>
-                  ))}
-                </div>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("groups.editTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+            />
+            <FormInput
+              label={t("groups.description")}
+              value={form.description}
+              onChange={(value) => setForm({ ...form, description: value })}
+            />
+            <FormTextArea
+              label={t("groups.labels")}
+              value={form.labels}
+              onChange={(value) => setForm({ ...form, labels: value })}
+              className="font-mono"
+            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("groups.bindings")}</p>
+              <div className="flex flex-wrap gap-2">
+                {bindings.map((binding) => (
+                  <FormCheckbox
+                    key={binding.id}
+                    isSelected={form.selectedBindings.has(binding.id)}
+                    onChange={(selected) => {
+                      const next = new Set(form.selectedBindings);
+                      if (selected) next.add(binding.id);
+                      else next.delete(binding.id);
+                      setForm({ ...form, selectedBindings: next });
+                    }}
+                  >
+                    {bindingDisplayName(binding)}
+                  </FormCheckbox>
+                ))}
               </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setEditGroup(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleUpdate}>{t("common.update")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditGroup(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleUpdate}>{t("common.update")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

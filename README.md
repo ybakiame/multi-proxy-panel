@@ -19,7 +19,7 @@ ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架
 - **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
 - **配置热重载**: 无需重启即可向节点推送配置更新
 - **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **现代化前端**: 基于 React + HeroUI + Tailwind CSS 的响应式 Web 管理界面
+- **现代化前端**: 基于 React + shadcn/ui（Base UI） + Tailwind CSS 的响应式 Web 管理界面
 - **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
 
 ## 系统架构
@@ -184,7 +184,7 @@ multi-proxy-panel/
 │   ├── pp-agent/           # 节点代理程序
 │   └── pp-cli/             # 管理 CLI 工具
 ├── apps/
-│   └── panel/              # 管理系统：React Web 前端（Vite + HeroUI + Tailwind）
+│   └── panel/              # 管理系统：React Web 前端（Vite + shadcn/ui（Base UI） + Tailwind）
 ├── docs/                   # 项目文档（索引见 docs/index.md）
 ├── scripts/                # 辅助脚本
 └── CHANGELOG.md            # 变更日志

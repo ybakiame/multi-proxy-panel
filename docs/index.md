@@ -86,7 +86,7 @@ bun run --filter pp-web build
 | 后端框架 | Axum (HTTP) + Tonic (gRPC) |
 | 异步运行时 | Tokio |
 | 数据库 | Sea-ORM (PostgreSQL / SQLite) |
-| 前端框架 | React 19 + TypeScript + Vite 8 + HeroUI 3 + Tailwind CSS v4 |
+| 前端框架 | React 19 + TypeScript + Vite 8 + shadcn/ui（Base UI）+ Tailwind CSS v4 |
 | 序列化 | Serde + Protobuf |
 | 观测 | Tracing + Metrics |
 

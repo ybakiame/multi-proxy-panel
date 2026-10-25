@@ -61,24 +61,18 @@ skills，上下文与主 agent 隔离。
 | 项 | 内容 |
 |----|------|
 | 规则 | `.agents/rules/code-organization.md`、`data-migration.md`、`package-manager.md` |
-| 技能 | `.agents/skills/heroui-react`、`heroui-migration`，锁文件 `skills-lock.json` |
+| 技能 | 当前无仓库锁定的第三方技能；`skills-lock.json` 保留空索引 |
 
 `.agents/rules/` 是**项目级**代理规则（不是厂商配置）：`AGENTS.md` §2.4 直接引用
 `code-organization.md` 的文件规模阈值，husky pre-commit 的 `scripts/check-file-size.sh`
-实现同一门禁。
-
-**已知限制**：
-
-- `.agents/skills/heroui-*` 是第三方（HeroUI）技能包，随 `skills-lock.json` 锁定版本；
-  其内容不属于项目契约。
+实现同一门禁。HeroUI 技能已随前端迁移移除。
 
 ---
 
 ## 4. 嵌套 `apps/panel/AGENTS.md`
 
-`apps/panel/AGENTS.md` 是 HeroUI 官方工具生成的**组件文档索引**（`HEROUI-REACT-AGENTS-MD`
-区块），只作用于 `apps/panel` 子树，用于让代理在写 HeroUI 代码前查最新组件文档。
-它不重复根契约规则；根契约始终优先。
+`apps/panel/AGENTS.md` 记录 shadcn/ui（Base UI）组件源码、CLI 与 Tailwind v4 的本地约定，
+只作用于 `apps/panel` 子树。它不重复根契约规则；根契约始终优先。
 
 ---
 

@@ -1,51 +1,22 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
-import {
-  PageHeader,
-  ConfirmDialog,
-  Pagination,
-  JsonEditor,
-  FormSelect,
-  FormCheckbox,
-  FormInput,
-} from "../components/ui";
+import { Card, CardContent } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
+import { PageHeader, ConfirmDialog, Pagination } from "../components/ui";
 import { usePagination } from "../hooks/useCommon";
 import { getBindingsPaginated, createBinding, updateBinding, deleteBinding } from "../api/bindings";
 import { getNodes } from "../api/nodes";
 import { getAllProtocols } from "../api/protocols";
 import { getCertificates } from "../api/certificates";
 import { Binding, ManagedCertificate } from "../api/types";
+import { BindingFormDialog, BindingForm, defaultForm } from "./BindingFormDialog";
+import { BindingsTable } from "./BindingsTable";
 
 const bindingsQueryKey = "bindings";
 const nodesQueryKey = "nodes";
 const protocolsQueryKey = "protocols";
 const certificatesQueryKey = "certificates";
-
-interface BindingForm {
-  node_id: string;
-  protocol_config_id: string;
-  is_active: boolean;
-  override_settings: string;
-  tls_type: "none" | "certificate" | "acme" | "managed";
-  tls_cert_file: string;
-  tls_key_file: string;
-  tls_domain: string;
-  tls_cert_id: string;
-}
-
-const defaultForm: BindingForm = {
-  node_id: "",
-  protocol_config_id: "",
-  is_active: true,
-  override_settings: "{}",
-  tls_type: "none",
-  tls_cert_file: "",
-  tls_key_file: "",
-  tls_domain: "",
-  tls_cert_id: "",
-};
 
 const parseOverrideJson = (value: string): Record<string, unknown> => {
   try {
@@ -115,10 +86,6 @@ export function Bindings() {
     queryKey: [certificatesQueryKey],
     queryFn: () => getCertificates(),
   });
-
-  const selectedProtocol = protocols.find((p) => p.id === form.protocol_config_id);
-  const showTlsOverride = !!selectedProtocol && selectedProtocol.protocol_type !== "vless_reality";
-  const isSingBox = selectedProtocol?.core_type === "sing-box";
 
   const createMutation = useMutation({
     mutationFn: (payload: {
@@ -247,76 +214,6 @@ export function Bindings() {
     });
   };
 
-  const getNodeName = (nodeId: string) => {
-    const node = nodes.find((n) => n.id === nodeId);
-    return node ? node.name : nodeId;
-  };
-
-  const getProtocolName = (protocolId: string) => {
-    const protocol = protocols.find((p) => p.id === protocolId);
-    return protocol ? protocol.name : protocolId;
-  };
-
-  const renderTlsFields = () => {
-    if (!showTlsOverride) return null;
-    const tlsOptions = [
-      { id: "none", label: t("protocols.tlsTypeNone") },
-      { id: "managed", label: t("protocols.tlsTypeManaged") },
-      { id: "certificate", label: t("protocols.tlsTypeCertificate") },
-      ...(isSingBox ? [{ id: "acme", label: t("protocols.tlsTypeAcme") }] : []),
-    ];
-    return (
-      <div className="space-y-4 rounded-lg border border-border p-4">
-        <div className="text-sm font-medium">{t("bindings.tlsOverride")}</div>
-        <FormSelect
-          label={t("protocols.tlsType")}
-          value={form.tls_type}
-          onChange={(value) => updateForm({ tls_type: value as BindingForm["tls_type"] })}
-          options={tlsOptions}
-        />
-        {form.tls_type === "managed" && (
-          <FormSelect
-            label={t("protocols.managedCert")}
-            value={form.tls_cert_id}
-            onChange={(value) => updateForm({ tls_cert_id: value })}
-            options={certificates
-              .filter((c) => c.status === "active" && c.node_id === form.node_id)
-              .map((c) => ({ id: c.id, label: c.domain }))}
-            isRequired
-          />
-        )}
-        {form.tls_type === "certificate" && (
-          <>
-            <FormInput
-              label={t("protocols.tlsCertFile")}
-              value={form.tls_cert_file}
-              onChange={(value) => updateForm({ tls_cert_file: value })}
-              placeholder="/etc/ssl/certs/example.crt"
-              isRequired
-            />
-            <FormInput
-              label={t("protocols.tlsKeyFile")}
-              value={form.tls_key_file}
-              onChange={(value) => updateForm({ tls_key_file: value })}
-              placeholder="/etc/ssl/private/example.key"
-              isRequired
-            />
-          </>
-        )}
-        {form.tls_type === "acme" && isSingBox && (
-          <FormInput
-            label={t("protocols.tlsDomain")}
-            value={form.tls_domain}
-            onChange={(value) => updateForm({ tls_domain: value })}
-            placeholder="hy2.example.com"
-            description={t("protocols.tlsDomainDescription")}
-            isRequired
-          />
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-4">
       <PageHeader
@@ -331,63 +228,21 @@ export function Bindings() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
-            <Table aria-label="bindings">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("bindings.node")}</Table.Column>
-                    <Table.Column>{t("bindings.protocol")}</Table.Column>
-                    <Table.Column>{t("common.active")}</Table.Column>
-                    <Table.Column>{t("bindings.overrideSettings")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
-                      </div>
-                    )}
-                  >
-                    {bindings.map((binding) => (
-                      <Table.Row key={binding.id}>
-                        <Table.Cell>{getNodeName(binding.node_id)}</Table.Cell>
-                        <Table.Cell>{getProtocolName(binding.protocol_config_id)}</Table.Cell>
-                        <Table.Cell>
-                          {binding.is_active ? t("common.enabled") : t("common.disabled")}
-                        </Table.Cell>
-                        <Table.Cell className="max-w-xs truncate font-mono">
-                          {binding.override_settings
-                            ? JSON.stringify(binding.override_settings)
-                            : "-"}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onPress={() => openEdit(binding)}>
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteBindingId(binding.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
-            </Table>
+            <BindingsTable
+              bindings={bindings}
+              nodes={nodes}
+              protocols={protocols}
+              onEdit={openEdit}
+              onDelete={setDeleteBindingId}
+            />
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <Pagination
@@ -408,110 +263,33 @@ export function Bindings() {
         {t("bindings.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("bindings.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormSelect
-                label={t("bindings.node")}
-                value={form.node_id}
-                onChange={(value) => updateForm({ node_id: value })}
-                options={nodes.map((node) => ({
-                  id: node.id,
-                  label: node.name,
-                }))}
-                isRequired
-              />
-              <FormSelect
-                label={t("bindings.protocol")}
-                value={form.protocol_config_id}
-                onChange={(value) => updateForm({ protocol_config_id: value })}
-                options={protocols.map((protocol) => ({
-                  id: protocol.id,
-                  label: protocol.name,
-                }))}
-                isRequired
-              />
-              <FormCheckbox
-                isSelected={form.is_active}
-                onChange={(selected) => updateForm({ is_active: selected })}
-              >
-                {t("common.active")}
-              </FormCheckbox>
-              {renderTlsFields()}
-              <JsonEditor
-                label={t("bindings.overrideSettings")}
-                value={form.override_settings}
-                onChange={(value) => setOverrideSettings(value)}
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <BindingFormDialog
+        mode="create"
+        open={createOpen}
+        form={form}
+        nodes={nodes}
+        protocols={protocols}
+        certificates={certificates}
+        onOpenChange={setCreateOpen}
+        onFormChange={updateForm}
+        onOverrideSettingsChange={setOverrideSettings}
+        onSubmit={handleCreate}
+      />
 
-      <Modal.Backdrop
-        isOpen={!!editBinding}
+      <BindingFormDialog
+        mode="edit"
+        open={!!editBinding}
+        form={form}
+        nodes={nodes}
+        protocols={protocols}
+        certificates={certificates}
         onOpenChange={(open) => {
           if (!open) setEditBinding(null);
         }}
-      >
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("bindings.editTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormSelect
-                label={t("bindings.node")}
-                value={form.node_id}
-                onChange={(value) => updateForm({ node_id: value })}
-                options={nodes.map((node) => ({
-                  id: node.id,
-                  label: node.name,
-                }))}
-                isDisabled
-              />
-              <FormSelect
-                label={t("bindings.protocol")}
-                value={form.protocol_config_id}
-                onChange={(value) => updateForm({ protocol_config_id: value })}
-                options={protocols.map((protocol) => ({
-                  id: protocol.id,
-                  label: protocol.name,
-                }))}
-                isDisabled
-              />
-              <FormCheckbox
-                isSelected={form.is_active}
-                onChange={(selected) => updateForm({ is_active: selected })}
-              >
-                {t("common.active")}
-              </FormCheckbox>
-              {renderTlsFields()}
-              <JsonEditor
-                label={t("bindings.overrideSettings")}
-                value={form.override_settings}
-                onChange={(value) => setOverrideSettings(value)}
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setEditBinding(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleUpdate}>{t("common.update")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+        onFormChange={updateForm}
+        onOverrideSettingsChange={setOverrideSettings}
+        onSubmit={handleUpdate}
+      />
     </div>
   );
 }

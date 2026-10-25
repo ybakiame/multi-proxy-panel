@@ -1,12 +1,12 @@
 # ProxyPanel Web
 
-ProxyPanel Web 前端，基于 React + TypeScript + Vite + HeroUI + Tailwind CSS v4。
+ProxyPanel Web 前端，基于 React + TypeScript + Vite + shadcn/ui（Base UI）+ Tailwind CSS v4。
 
 ## 技术栈
 
 - **框架**: React 19 + TypeScript
 - **构建工具**: Vite 8 (Rolldown)
-- **UI 组件库**: HeroUI
+- **UI 组件**: shadcn/ui + Base UI（组件源码由 `components.json` 管理）
 - **样式**: Tailwind CSS v4
 - **路由**: React Router v7
 - **国际化**: react-i18next
@@ -60,7 +60,7 @@ src/
 ├── components/
 │   ├── Layout.tsx        # 侧边栏 + 顶部栏布局
 │   ├── nav.ts            # 导航菜单定义
-│   └── ui/               # HeroUI 风格自定义组件
+│   └── ui/               # shadcn/ui 基础组件与面板共享组件
 ├── context/
 │   └── AuthContext.tsx   # API Key 认证状态
 ├── hooks/

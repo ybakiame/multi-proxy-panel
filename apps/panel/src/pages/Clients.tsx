@@ -2,11 +2,17 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Badge, Modal, Spinner, Table } from "@heroui/react";
+import { Button } from "../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import {
   PageHeader,
   ConfirmDialog,
-  StatusBadge,
   Pagination,
   FormInput,
   FormSelect,
@@ -23,7 +29,7 @@ import {
 import type { CreateClientPayload } from "../api/clients";
 import { getGroups } from "../api/groups";
 import { Client } from "../api/types";
-import { formatBytes, formatDateTime } from "../utils/format";
+import { ClientsTable } from "./ClientsTable";
 
 const RESET_STRATEGIES = ["no_reset", "daily", "weekly", "monthly", "yearly"];
 const CLIENT_STATUSES = ["active", "on_hold", "disabled", "expired"];
@@ -62,20 +68,6 @@ function fromDateTimeLocal(value: string): string | undefined {
   const d = new Date(value);
   if (isNaN(d.getTime())) return undefined;
   return d.toISOString();
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds === null || seconds === undefined) return "-";
-  const parts: string[] = [];
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (mins > 0) parts.push(`${mins}m`);
-  if (secs > 0) parts.push(`${secs}s`);
-  return parts.join(" ") || "0s";
 }
 
 export function Clients() {
@@ -221,10 +213,6 @@ export function Clients() {
     setEditClient(client);
   };
 
-  const groupNames = (ids: string[]) => {
-    return ids.map((id) => groups.find((g) => g.id === id)?.name || id).join(", ") || "-";
-  };
-
   const resetStrategyLabel = (strategy: string) => {
     const key = strategy.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     return t(`clients.strategy.${key}` as any) || strategy;
@@ -243,125 +231,16 @@ export function Clients() {
         }}
       />
 
-      <Card>
-        <Card.Content>
-          {isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <Table aria-label="clients">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("common.name")}</Table.Column>
-                    <Table.Column>{t("clients.email")}</Table.Column>
-                    <Table.Column>{t("common.status")}</Table.Column>
-                    <Table.Column>
-                      {t("clients.trafficUsed")} / {t("clients.trafficLimit")}
-                    </Table.Column>
-                    <Table.Column>{t("clients.allTimeUsed")}</Table.Column>
-                    <Table.Column>{t("clients.onHold")}</Table.Column>
-                    <Table.Column>{t("clients.expiryDate")}</Table.Column>
-                    <Table.Column>{t("clients.resetStrategy")}</Table.Column>
-                    <Table.Column>{t("clients.maxDevices")}</Table.Column>
-                    <Table.Column>{t("clients.groups")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("common.empty")}
-                      </div>
-                    )}
-                  >
-                    {clients.map((client) => (
-                      <Table.Row key={client.id}>
-                        <Table.Cell>
-                          <div className="flex items-center gap-2">
-                            {client.name}
-                            {client.is_exceeded && (
-                              <Badge color="danger" size="sm" variant="soft">
-                                {t("clients.exceeded")}
-                              </Badge>
-                            )}
-                          </div>
-                        </Table.Cell>
-                        <Table.Cell>{client.email || "-"}</Table.Cell>
-                        <Table.Cell>
-                          <StatusBadge status={client.status} />
-                        </Table.Cell>
-                        <Table.Cell>
-                          {formatBytes(client.traffic_used_bytes)} /{" "}
-                          {formatBytes(client.traffic_limit_bytes)}
-                        </Table.Cell>
-                        <Table.Cell>{formatBytes(client.all_time_used_bytes)}</Table.Cell>
-                        <Table.Cell>
-                          <div className="space-y-1">
-                            {client.status === "on_hold" && (
-                              <Badge color="warning" size="sm" variant="soft">
-                                {t("clients.onHold")}
-                              </Badge>
-                            )}
-                            {client.on_hold_timeout && (
-                              <p className="text-xs text-muted-foreground">
-                                {t("clients.onHoldTimeout")}:{" "}
-                                {formatDateTime(client.on_hold_timeout)}
-                              </p>
-                            )}
-                            {client.on_hold_expire_duration_secs !== null && (
-                              <p className="text-xs text-muted-foreground">
-                                {t("clients.onHoldDuration")}:{" "}
-                                {formatDuration(client.on_hold_expire_duration_secs)}
-                              </p>
-                            )}
-                          </div>
-                        </Table.Cell>
-                        <Table.Cell>{formatDateTime(client.expiry_date)}</Table.Cell>
-                        <Table.Cell>
-                          {resetStrategyLabel(client.data_limit_reset_strategy)}
-                        </Table.Cell>
-                        <Table.Cell>{client.max_devices ?? "-"}</Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {groupNames(client.group_ids || [])}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="ghost" onPress={() => openEdit(client)}>
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => handleResetTraffic(client)}
-                            >
-                              {t("clients.resetTraffic")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => navigate(`/traffic?client_id=${client.id}`)}
-                            >
-                              {t("clients.trafficDetail")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onPress={() => setDeleteClientId(client.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
-            </Table>
-          )}
-        </Card.Content>
-      </Card>
+      <ClientsTable
+        clients={clients}
+        groups={groups}
+        isLoading={isLoading}
+        resetStrategyLabel={resetStrategyLabel}
+        onEdit={openEdit}
+        onResetTraffic={handleResetTraffic}
+        onTrafficDetail={(client) => navigate(`/traffic?client_id=${client.id}`)}
+        onDelete={setDeleteClientId}
+      />
 
       <Pagination
         page={page}
@@ -381,204 +260,200 @@ export function Clients() {
         {t("clients.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("clients.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-                isRequired
-              />
-              <FormInput
-                label={t("clients.email")}
-                value={form.email}
-                onChange={(value) => setForm({ ...form, email: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.trafficLimit")}
-                value={form.traffic_limit_bytes}
-                onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
-              />
-              <FormInput
-                type="datetime-local"
-                label={t("clients.expiryDate")}
-                value={form.expiry_date}
-                onChange={(value) => setForm({ ...form, expiry_date: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.resetDay")}
-                value={form.reset_day}
-                onChange={(value) => setForm({ ...form, reset_day: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.maxDevices")}
-                value={form.max_devices}
-                onChange={(value) => setForm({ ...form, max_devices: value })}
-              />
-              <FormSelect
-                label={t("clients.resetStrategy")}
-                value={form.data_limit_reset_strategy}
-                onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
-                options={RESET_STRATEGIES.map((strategy) => ({
-                  id: strategy,
-                  label: resetStrategyLabel(strategy),
-                }))}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.onHoldDuration")}
-                value={form.on_hold_expire_duration_secs}
-                onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
-              />
-              <FormInput
-                type="datetime-local"
-                label={t("clients.onHoldTimeout")}
-                value={form.on_hold_timeout}
-                onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
-              />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("clients.groups")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <FormCheckbox
-                      key={g.id}
-                      isSelected={form.selectedGroups.has(g.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedGroups);
-                        if (selected) next.add(g.id);
-                        else next.delete(g.id);
-                        setForm({ ...form, selectedGroups: next });
-                      }}
-                    >
-                      {g.name}
-                    </FormCheckbox>
-                  ))}
-                </div>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("clients.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+              isRequired
+            />
+            <FormInput
+              label={t("clients.email")}
+              value={form.email}
+              onChange={(value) => setForm({ ...form, email: value })}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.trafficLimit")}
+              value={form.traffic_limit_bytes}
+              onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
+            />
+            <FormInput
+              type="datetime-local"
+              label={t("clients.expiryDate")}
+              value={form.expiry_date}
+              onChange={(value) => setForm({ ...form, expiry_date: value })}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.resetDay")}
+              value={form.reset_day}
+              onChange={(value) => setForm({ ...form, reset_day: value })}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.maxDevices")}
+              value={form.max_devices}
+              onChange={(value) => setForm({ ...form, max_devices: value })}
+            />
+            <FormSelect
+              label={t("clients.resetStrategy")}
+              value={form.data_limit_reset_strategy}
+              onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
+              options={RESET_STRATEGIES.map((strategy) => ({
+                id: strategy,
+                label: resetStrategyLabel(strategy),
+              }))}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.onHoldDuration")}
+              value={form.on_hold_expire_duration_secs}
+              onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
+            />
+            <FormInput
+              type="datetime-local"
+              label={t("clients.onHoldTimeout")}
+              value={form.on_hold_timeout}
+              onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
+            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("clients.groups")}</p>
+              <div className="flex flex-wrap gap-2">
+                {groups.map((g) => (
+                  <FormCheckbox
+                    key={g.id}
+                    isSelected={form.selectedGroups.has(g.id)}
+                    onChange={(selected) => {
+                      const next = new Set(form.selectedGroups);
+                      if (selected) next.add(g.id);
+                      else next.delete(g.id);
+                      setForm({ ...form, selectedGroups: next });
+                    }}
+                  >
+                    {g.name}
+                  </FormCheckbox>
+                ))}
               </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleCreate}>{t("common.create")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleCreate}>{t("common.create")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal.Backdrop
-        isOpen={!!editClient}
+      <Dialog
+        open={!!editClient}
         onOpenChange={(open) => {
           if (!open) setEditClient(null);
         }}
       >
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("clients.editTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("common.name")}
-                value={form.name}
-                onChange={(value) => setForm({ ...form, name: value })}
-              />
-              <FormInput
-                label={t("clients.email")}
-                value={form.email}
-                onChange={(value) => setForm({ ...form, email: value })}
-              />
-              <FormSelect
-                label={t("common.status")}
-                value={form.status}
-                onChange={(value) => setForm({ ...form, status: value })}
-                options={CLIENT_STATUSES.map((status) => ({
-                  id: status,
-                  label: status,
-                }))}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.trafficLimit")}
-                value={form.traffic_limit_bytes}
-                onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
-              />
-              <FormInput
-                type="datetime-local"
-                label={t("clients.expiryDate")}
-                value={form.expiry_date}
-                onChange={(value) => setForm({ ...form, expiry_date: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.resetDay")}
-                value={form.reset_day}
-                onChange={(value) => setForm({ ...form, reset_day: value })}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.maxDevices")}
-                value={form.max_devices}
-                onChange={(value) => setForm({ ...form, max_devices: value })}
-              />
-              <FormSelect
-                label={t("clients.resetStrategy")}
-                value={form.data_limit_reset_strategy}
-                onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
-                options={RESET_STRATEGIES.map((strategy) => ({
-                  id: strategy,
-                  label: resetStrategyLabel(strategy),
-                }))}
-              />
-              <FormInput
-                type="number"
-                label={t("clients.onHoldDuration")}
-                value={form.on_hold_expire_duration_secs}
-                onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
-              />
-              <FormInput
-                type="datetime-local"
-                label={t("clients.onHoldTimeout")}
-                value={form.on_hold_timeout}
-                onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
-              />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{t("clients.groups")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <FormCheckbox
-                      key={g.id}
-                      isSelected={form.selectedGroups.has(g.id)}
-                      onChange={(selected) => {
-                        const next = new Set(form.selectedGroups);
-                        if (selected) next.add(g.id);
-                        else next.delete(g.id);
-                        setForm({ ...form, selectedGroups: next });
-                      }}
-                    >
-                      {g.name}
-                    </FormCheckbox>
-                  ))}
-                </div>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("clients.editTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("common.name")}
+              value={form.name}
+              onChange={(value) => setForm({ ...form, name: value })}
+            />
+            <FormInput
+              label={t("clients.email")}
+              value={form.email}
+              onChange={(value) => setForm({ ...form, email: value })}
+            />
+            <FormSelect
+              label={t("common.status")}
+              value={form.status}
+              onChange={(value) => setForm({ ...form, status: value })}
+              options={CLIENT_STATUSES.map((status) => ({
+                id: status,
+                label: status,
+              }))}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.trafficLimit")}
+              value={form.traffic_limit_bytes}
+              onChange={(value) => setForm({ ...form, traffic_limit_bytes: value })}
+            />
+            <FormInput
+              type="datetime-local"
+              label={t("clients.expiryDate")}
+              value={form.expiry_date}
+              onChange={(value) => setForm({ ...form, expiry_date: value })}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.resetDay")}
+              value={form.reset_day}
+              onChange={(value) => setForm({ ...form, reset_day: value })}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.maxDevices")}
+              value={form.max_devices}
+              onChange={(value) => setForm({ ...form, max_devices: value })}
+            />
+            <FormSelect
+              label={t("clients.resetStrategy")}
+              value={form.data_limit_reset_strategy}
+              onChange={(value) => setForm({ ...form, data_limit_reset_strategy: value })}
+              options={RESET_STRATEGIES.map((strategy) => ({
+                id: strategy,
+                label: resetStrategyLabel(strategy),
+              }))}
+            />
+            <FormInput
+              type="number"
+              label={t("clients.onHoldDuration")}
+              value={form.on_hold_expire_duration_secs}
+              onChange={(value) => setForm({ ...form, on_hold_expire_duration_secs: value })}
+            />
+            <FormInput
+              type="datetime-local"
+              label={t("clients.onHoldTimeout")}
+              value={form.on_hold_timeout}
+              onChange={(value) => setForm({ ...form, on_hold_timeout: value })}
+            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("clients.groups")}</p>
+              <div className="flex flex-wrap gap-2">
+                {groups.map((g) => (
+                  <FormCheckbox
+                    key={g.id}
+                    isSelected={form.selectedGroups.has(g.id)}
+                    onChange={(selected) => {
+                      const next = new Set(form.selectedGroups);
+                      if (selected) next.add(g.id);
+                      else next.delete(g.id);
+                      setForm({ ...form, selectedGroups: next });
+                    }}
+                  >
+                    {g.name}
+                  </FormCheckbox>
+                ))}
               </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setEditClient(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onPress={handleUpdate}>{t("common.update")}</Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditClient(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleUpdate}>{t("common.update")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

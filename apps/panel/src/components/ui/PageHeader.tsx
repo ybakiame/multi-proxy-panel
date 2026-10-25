@@ -1,5 +1,5 @@
-import { Button } from "@heroui/react";
-import { cn } from "../../utils/cn";
+import { Button } from "./button";
+import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
   title: string;
@@ -14,7 +14,7 @@ export function PageHeader({ title, action, className }: PageHeaderProps) {
   return (
     <div className={cn("mb-6 flex items-center justify-between", className)}>
       <h1 className="text-2xl font-bold">{title}</h1>
-      {action && <Button onPress={action.onClick}>{action.label}</Button>}
+      {action && <Button onClick={action.onClick}>{action.label}</Button>}
     </div>
   );
 }

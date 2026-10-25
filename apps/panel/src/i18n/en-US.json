@@ -39,7 +39,11 @@
     "stopped": "Stopped",
     "yes": "Yes",
     "no": "No",
-    "optional": "Optional"
+    "optional": "Optional",
+    "expand": "Show advanced options",
+    "collapse": "Hide advanced options",
+    "openMenu": "Open navigation menu",
+    "closeMenu": "Close navigation menu"
   },
   "status": {
     "online": "Online",
@@ -60,7 +64,8 @@
     "next": "Next",
     "first": "First",
     "last": "Last",
-    "pageInfo": "Page {{current}} of {{total}} ({{count}} total)"
+    "pageInfo": "Page {{current}} of {{total}} ({{count}} total)",
+    "perPage": "Items per page"
   },
   "nav": {
     "dashboard": "Dashboard",

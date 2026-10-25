@@ -16,8 +16,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
-          if (id.includes("@heroui/react")) {
-            return "heroui";
+          if (id.includes("@base-ui/react")) {
+            return "base-ui";
           }
           if (
             id.includes("react") ||
@@ -41,7 +41,7 @@ export default defineConfig({
   server: {
     port: 8080,
     proxy: {
-      "/api": {
+      "/api/v1": {
         target: "http://localhost:8081",
         changeOrigin: true,
       },

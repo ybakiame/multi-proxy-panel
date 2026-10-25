@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, SearchInput, FormSelect } from "../components/ui";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { usePagination } from "../hooks/useCommon";
 import { getLogs } from "../api/logs";
 import { formatDateTime } from "../utils/format";
@@ -70,8 +80,8 @@ export function Logs() {
         <Button
           type="button"
           variant="secondary"
-          isDisabled={isFetching}
-          onPress={() => {
+          disabled={isFetching}
+          onClick={() => {
             void refetch();
           }}
         >
@@ -79,12 +89,12 @@ export function Logs() {
         </Button>
       </form>
       {isError && (
-        <div role="alert" className="rounded-lg border border-danger p-4 text-danger">
+        <div role="alert" className="rounded-lg border border-destructive p-4 text-destructive">
           {t("logs.loadError")}
         </div>
       )}
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -92,48 +102,48 @@ export function Logs() {
           ) : isError && !data ? null : (
             <>
               <Table aria-label={t("logs.title")}>
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("logs.level")}</Table.Column>
-                      <Table.Column>{t("logs.source")}</Table.Column>
-                      <Table.Column>{t("logs.message")}</Table.Column>
-                      <Table.Column>{t("logs.time")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("logs.empty")}
-                        </div>
-                      )}
-                    >
-                      {logs.map((log) => (
-                        <Table.Row key={log.id}>
-                          <Table.Cell>{log.level}</Table.Cell>
-                          <Table.Cell>
-                            <div className="max-w-xs break-all">{log.source}</div>
-                            {log.node_id && (
-                              <div className="text-sm text-muted-foreground">
-                                {log.node_name ?? log.node_id}
-                              </div>
-                            )}
-                          </Table.Cell>
-                          <Table.Cell className="max-w-xs">
-                            <details>
-                              <summary className="cursor-pointer truncate" title={t("logs.expand")}>
-                                {log.message}
-                              </summary>
-                              <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-sm">
-                                {log.message}
-                              </pre>
-                            </details>
-                          </Table.Cell>
-                          <Table.Cell>{formatDateTime(log.created_at)}</Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("logs.level")}</TableHead>
+                    <TableHead>{t("logs.source")}</TableHead>
+                    <TableHead>{t("logs.message")}</TableHead>
+                    <TableHead>{t("logs.time")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {logs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="p-4 text-center text-muted-foreground">
+                        {t("logs.empty")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    logs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell>{log.level}</TableCell>
+                        <TableCell>
+                          <div className="max-w-xs break-all">{log.source}</div>
+                          {log.node_id && (
+                            <div className="text-sm text-muted-foreground">
+                              {log.node_name ?? log.node_id}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          <details>
+                            <summary className="cursor-pointer truncate" title={t("logs.expand")}>
+                              {log.message}
+                            </summary>
+                            <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-sm">
+                              {log.message}
+                            </pre>
+                          </details>
+                        </TableCell>
+                        <TableCell>{formatDateTime(log.created_at)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -145,7 +155,7 @@ export function Logs() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
     </div>
   );

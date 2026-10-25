@@ -53,6 +53,7 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0001](0001-neutral-fields-for-multi-kernel-protocols.md) | Accepted | 2026-05-30 | 多核心协议配置的中性字段设计 |
 | [ADR-0015](0015-lanpath-independent-repository.md) | Accepted | 2026-10-11 | Lanpath 独立仓库与代码所有权 |
 | [ADR-0016](0016-central-log-persistence.md) | Accepted | 2026-10-13 | Hub 日志持久化、共享脱敏与集中查询 |
+| [ADR-0017](0017-shadcn-base-ui-panel.md) | Accepted | 2026-10-25 | 管理面板采用 shadcn/ui 与 Base UI |
 
 > 客户端专属 ADR-0002–0014 随拆仓从当前工作区移除；决策原文和元数据修正记录
 > 保留在 Git 历史及 Lanpath 文档中，不再作为 ProxyPanel 的当前开发契约。

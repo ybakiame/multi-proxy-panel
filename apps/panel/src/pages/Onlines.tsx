@@ -1,8 +1,25 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, FormSelect, FormCheckbox, SearchInput } from "../components/ui";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { usePagination, useDebouncedValue } from "../hooks/useCommon";
 import { getOnlines } from "../api/onlines";
 import { getNodes } from "../api/nodes";
@@ -129,10 +146,10 @@ export function Onlines() {
         <FormCheckbox isSelected={autoRefresh} onChange={setAutoRefresh}>
           {t("metrics.autoRefresh")}
         </FormCheckbox>
-        <Button onPress={handleRefresh}>{t("common.refresh")}</Button>
+        <Button onClick={handleRefresh}>{t("common.refresh")}</Button>
       </div>
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -140,44 +157,44 @@ export function Onlines() {
           ) : (
             <>
               <Table aria-label="onlines">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("onlines.client")}</Table.Column>
-                      <Table.Column>{t("onlines.node")}</Table.Column>
-                      <Table.Column>{t("onlines.ip")}</Table.Column>
-                      <Table.Column>{t("onlines.inbound")}</Table.Column>
-                      <Table.Column>{t("onlines.connectedAt")}</Table.Column>
-                      <Table.Column>{t("onlines.duration")}</Table.Column>
-                      <Table.Column>{t("onlines.lastActive")}</Table.Column>
-                      <Table.Column>{t("common.actions")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("onlines.empty")}
-                        </div>
-                      )}
-                    >
-                      {display.map((s) => (
-                        <Table.Row key={s.id}>
-                          <Table.Cell>{clientNames.get(s.client_id) || s.client_id}</Table.Cell>
-                          <Table.Cell>{nodeNames.get(s.node_id) || s.node_id}</Table.Cell>
-                          <Table.Cell>{s.ip_address}</Table.Cell>
-                          <Table.Cell>{s.inbound_tag || "-"}</Table.Cell>
-                          <Table.Cell>{formatDateTime(s.connected_at)}</Table.Cell>
-                          <Table.Cell>{formatDurationSince(s.connected_at)}</Table.Cell>
-                          <Table.Cell>{formatDateTime(s.last_active_at)}</Table.Cell>
-                          <Table.Cell>
-                            <Button size="sm" variant="ghost" onPress={() => openIps(s)}>
-                              {t("onlines.historyIps")}
-                            </Button>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("onlines.client")}</TableHead>
+                    <TableHead>{t("onlines.node")}</TableHead>
+                    <TableHead>{t("onlines.ip")}</TableHead>
+                    <TableHead>{t("onlines.inbound")}</TableHead>
+                    <TableHead>{t("onlines.connectedAt")}</TableHead>
+                    <TableHead>{t("onlines.duration")}</TableHead>
+                    <TableHead>{t("onlines.lastActive")}</TableHead>
+                    <TableHead>{t("common.actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {display.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-4 text-center text-muted-foreground">
+                        {t("onlines.empty")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    display.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell>{clientNames.get(s.client_id) || s.client_id}</TableCell>
+                        <TableCell>{nodeNames.get(s.node_id) || s.node_id}</TableCell>
+                        <TableCell>{s.ip_address}</TableCell>
+                        <TableCell>{s.inbound_tag || "-"}</TableCell>
+                        <TableCell>{formatDateTime(s.connected_at)}</TableCell>
+                        <TableCell>{formatDurationSince(s.connected_at)}</TableCell>
+                        <TableCell>{formatDateTime(s.last_active_at)}</TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="ghost" onClick={() => openIps(s)}>
+                            {t("onlines.historyIps")}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -189,47 +206,45 @@ export function Onlines() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
-      <Modal.Backdrop
-        isOpen={!!ipsModal}
+      <Dialog
+        open={!!ipsModal}
         onOpenChange={(open) => {
           if (!open) setIpsModal(null);
         }}
       >
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>
-                {t("onlines.historyIpsTitle", { name: ipsModal?.clientName ?? "" })}
-              </Modal.Heading>
-            </Modal.Header>
-            <Modal.Body>
-              {ipsLoading ? (
-                <div className="flex h-24 items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : ipsModal && ipsModal.ips.length > 0 ? (
-                <ul className="space-y-1">
-                  {ipsModal.ips.map((ip) => (
-                    <li key={ip} className="rounded-md bg-surface-secondary px-3 py-1.5 text-sm">
-                      {ip}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t("onlines.noIps")}</p>
-              )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setIpsModal(null)}>
-                {t("common.close")}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("onlines.historyIpsTitle", { name: ipsModal?.clientName ?? "" })}
+            </DialogTitle>
+          </DialogHeader>
+          <div>
+            {ipsLoading ? (
+              <div className="flex h-24 items-center justify-center">
+                <Spinner />
+              </div>
+            ) : ipsModal && ipsModal.ips.length > 0 ? (
+              <ul className="space-y-1">
+                {ipsModal.ips.map((ip) => (
+                  <li key={ip} className="rounded-md bg-muted px-3 py-1.5 text-sm">
+                    {ip}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("onlines.noIps")}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIpsModal(null)}>
+              {t("common.close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

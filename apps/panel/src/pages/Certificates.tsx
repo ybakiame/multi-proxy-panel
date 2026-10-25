@@ -1,7 +1,24 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Modal, Spinner, Table } from "@heroui/react";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { PageHeader, ConfirmDialog, FormInput, FormSelect } from "../components/ui";
 import {
   getCertificates,
@@ -95,59 +112,60 @@ export function Certificates() {
       />
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
           ) : (
             <Table aria-label="certificates">
-              <Table.ScrollContainer>
-                <Table.Content>
-                  <Table.Header>
-                    <Table.Column isRowHeader>{t("certificates.domain")}</Table.Column>
-                    <Table.Column>{t("certificates.node")}</Table.Column>
-                    <Table.Column>{t("common.status")}</Table.Column>
-                    <Table.Column>{t("common.expiry")}</Table.Column>
-                    <Table.Column>{t("certificates.lastError")}</Table.Column>
-                    <Table.Column>{t("common.actions")}</Table.Column>
-                  </Table.Header>
-                  <Table.Body
-                    renderEmptyState={() => (
-                      <div className="p-4 text-center text-muted-foreground">
-                        {t("certificates.emptyHint")}
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("certificates.domain")}</TableHead>
+                  <TableHead>{t("certificates.node")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  <TableHead>{t("common.expiry")}</TableHead>
+                  <TableHead>{t("certificates.lastError")}</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {certs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
+                      {t("certificates.emptyHint")}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {certs.map((cert) => (
+                  <TableRow key={cert.id}>
+                    <TableCell className="font-mono text-sm">{cert.domain}</TableCell>
+                    <TableCell>{cert.node_name || cert.node_id}</TableCell>
+                    <TableCell>{statusBadge(cert.status)}</TableCell>
+                    <TableCell>
+                      {cert.expires_at ? new Date(cert.expires_at).toLocaleDateString() : "-"}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">{cert.last_error || "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => handleRenew(cert.id)}>
+                          {t("certificates.renew")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteId(cert.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
                       </div>
-                    )}
-                  >
-                    {certs.map((cert) => (
-                      <Table.Row key={cert.id}>
-                        <Table.Cell className="font-mono text-sm">{cert.domain}</Table.Cell>
-                        <Table.Cell>{cert.node_name || cert.node_id}</Table.Cell>
-                        <Table.Cell>{statusBadge(cert.status)}</Table.Cell>
-                        <Table.Cell>
-                          {cert.expires_at ? new Date(cert.expires_at).toLocaleDateString() : "-"}
-                        </Table.Cell>
-                        <Table.Cell className="max-w-xs truncate">
-                          {cert.last_error || "-"}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onPress={() => handleRenew(cert.id)}>
-                              {t("certificates.renew")}
-                            </Button>
-                            <Button size="sm" variant="danger" onPress={() => setDeleteId(cert.id)}>
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <ConfirmDialog
@@ -159,40 +177,38 @@ export function Certificates() {
         {t("certificates.deleteConfirm")}
       </ConfirmDialog>
 
-      <Modal.Backdrop isOpen={createOpen} onOpenChange={(open) => setCreateOpen(open)}>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>{t("certificates.createTitle")}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-4">
-              <FormInput
-                label={t("certificates.domain")}
-                value={form.domain}
-                onChange={(value) => setForm({ ...form, domain: value })}
-                placeholder="hy2.example.com"
-                description={t("certificates.domainDescription")}
-                isRequired
-              />
-              <FormSelect
-                label={t("certificates.node")}
-                value={form.node_id}
-                onChange={(value) => setForm({ ...form, node_id: value })}
-                options={nodes.map((n) => ({ id: n.id, label: n.name }))}
-                isRequired
-              />
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="ghost" onPress={() => setCreateOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button isDisabled={!form.domain.trim() || !form.node_id} onPress={handleCreate}>
-                {t("common.create")}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("certificates.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <FormInput
+              label={t("certificates.domain")}
+              value={form.domain}
+              onChange={(value) => setForm({ ...form, domain: value })}
+              placeholder="hy2.example.com"
+              description={t("certificates.domainDescription")}
+              isRequired
+            />
+            <FormSelect
+              label={t("certificates.node")}
+              value={form.node_id}
+              onChange={(value) => setForm({ ...form, node_id: value })}
+              options={nodes.map((n) => ({ id: n.id, label: n.name }))}
+              isRequired
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button disabled={!form.domain.trim() || !form.node_id} onClick={handleCreate}>
+              {t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

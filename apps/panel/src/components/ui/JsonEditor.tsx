@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { TextField, Label, TextArea, FieldError } from "@heroui/react";
+import { useId, useState } from "react";
+import { Label } from "./label";
+import { Textarea } from "./textarea";
 
 interface JsonEditorProps {
   value: string;
@@ -11,6 +12,8 @@ interface JsonEditorProps {
 
 export function JsonEditor({ value, onChange, error, label, placeholder }: JsonEditorProps) {
   const [isValid, setIsValid] = useState(true);
+  const id = useId();
+  const errorId = `${id}-error`;
 
   const handleChange = (newValue: string) => {
     onChange(newValue);
@@ -30,16 +33,23 @@ export function JsonEditor({ value, onChange, error, label, placeholder }: JsonE
   const errorMessage = error || (!isValid ? "Invalid JSON" : undefined);
 
   return (
-    <TextField isInvalid={invalid}>
-      {label && <Label>{label}</Label>}
-      <TextArea
+    <div>
+      {label && <Label htmlFor={id}>{label}</Label>}
+      <Textarea
+        id={id}
         value={value}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={(event) => handleChange(event.target.value)}
         placeholder={placeholder || "{}"}
         className="font-mono"
         rows={4}
+        aria-invalid={invalid || undefined}
+        aria-describedby={errorMessage ? errorId : undefined}
       />
-      {errorMessage && <FieldError>{errorMessage}</FieldError>}
-    </TextField>
+      {errorMessage && (
+        <p id={errorId} className="mt-1 text-sm text-destructive">
+          {errorMessage}
+        </p>
+      )}
+    </div>
   );
 }

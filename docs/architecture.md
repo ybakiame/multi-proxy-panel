@@ -105,7 +105,7 @@ pp-agent/
 
 基于 React 的响应式单页应用（SPA）：
 
-- **技术栈**: React 19 + TypeScript + Vite 8 + HeroUI 3 + Tailwind CSS v4 + react-i18next（国际化）
+- **技术栈**: React 19 + TypeScript + Vite 8 + shadcn/ui（Base UI）+ Tailwind CSS v4 + react-i18next（国际化）
 - **构建目标**: 静态 JavaScript / CSS 资源（由 Hub 或 CDN 托管）
 - **通信方式**: 通过 Axios 调用 Hub REST API
 

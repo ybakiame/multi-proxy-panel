@@ -24,7 +24,7 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 - **Hub** (`pp-hub`): 中央管理面板，暴露 HTTP REST API + gRPC 双向流服务
 - **Agent** (`pp-agent`): 部署在代理节点上，管理 sing-box/mihomo 进程，通过 gRPC 长连接与 Hub 通信
-- **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + HeroUI + Tailwind），通过 HTTP API 与 Hub 交互
+- **Panel** (`apps/panel`): 管理系统 Web 前端（React + Vite + shadcn/ui + Base UI + Tailwind），通过 HTTP API 与 Hub 交互
 - **CLI** (`pp-cli`): 数据库初始化及 Hub/Agent 组件的安装、升级与运维
 - **Lanpath**: 用户侧客户端已迁入独立仓库 `https://github.com/ybakiame/lanpath`，通过订阅/API 协作；本仓不包含客户端源码或构建依赖（ADR-0015）
 

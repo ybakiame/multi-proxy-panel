@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, FormSelect, FormCheckbox, MetricsChart } from "../components/ui";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { usePagination } from "../hooks/useCommon";
 import { getMetrics } from "../api/metrics";
 import { getNodes } from "../api/nodes";
@@ -60,18 +70,18 @@ export function Metrics() {
         <FormCheckbox isSelected={autoRefresh} onChange={setAutoRefresh}>
           {t("metrics.autoRefresh")}
         </FormCheckbox>
-        <Button onPress={() => refetch()}>{t("common.refresh")}</Button>
+        <Button onClick={() => refetch()}>{t("common.refresh")}</Button>
       </div>
       <Card>
-        <Card.Header>
-          <h3 className="text-lg font-semibold">{t("metrics.chartTitle")}</h3>
-        </Card.Header>
-        <Card.Content>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">{t("metrics.chartTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
           <MetricsChart metrics={metrics} />
-        </Card.Content>
+        </CardContent>
       </Card>
       <Card>
-        <Card.Content>
+        <CardContent>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -79,50 +89,50 @@ export function Metrics() {
           ) : (
             <>
               <Table aria-label="metrics">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("nodes.name")}</Table.Column>
-                      <Table.Column>{t("metrics.cpu")}</Table.Column>
-                      <Table.Column>{t("metrics.memory")}</Table.Column>
-                      <Table.Column>{t("metrics.disk")}</Table.Column>
-                      <Table.Column>{t("metrics.netRx")}</Table.Column>
-                      <Table.Column>{t("metrics.netTx")}</Table.Column>
-                      <Table.Column>{t("metrics.loadAvg")}</Table.Column>
-                      <Table.Column>{t("metrics.timestamp")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("metrics.empty")}
-                        </div>
-                      )}
-                    >
-                      {display.map((m) => {
-                        const node = nodes.find((n) => n.id === m.node_id);
-                        return (
-                          <Table.Row key={m.id}>
-                            <Table.Cell>{node ? node.name : m.node_id}</Table.Cell>
-                            <Table.Cell>{(m.cpu_percent ?? 0).toFixed(2)}%</Table.Cell>
-                            <Table.Cell>
-                              {formatBytes(m.mem_used ?? 0)} / {formatBytes(m.mem_total ?? 0)}
-                            </Table.Cell>
-                            <Table.Cell>
-                              {formatBytes(m.disk_used ?? 0)} / {formatBytes(m.disk_total ?? 0)}
-                            </Table.Cell>
-                            <Table.Cell>{formatBytes(m.net_rx ?? 0)}</Table.Cell>
-                            <Table.Cell>{formatBytes(m.net_tx ?? 0)}</Table.Cell>
-                            <Table.Cell>
-                              {(m.load_avg1 ?? 0).toFixed(2)} / {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
-                              {(m.load_avg15 ?? 0).toFixed(2)}
-                            </Table.Cell>
-                            <Table.Cell>{formatDateTime(m.timestamp)}</Table.Cell>
-                          </Table.Row>
-                        );
-                      })}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("nodes.name")}</TableHead>
+                    <TableHead>{t("metrics.cpu")}</TableHead>
+                    <TableHead>{t("metrics.memory")}</TableHead>
+                    <TableHead>{t("metrics.disk")}</TableHead>
+                    <TableHead>{t("metrics.netRx")}</TableHead>
+                    <TableHead>{t("metrics.netTx")}</TableHead>
+                    <TableHead>{t("metrics.loadAvg")}</TableHead>
+                    <TableHead>{t("metrics.timestamp")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {display.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-4 text-center text-muted-foreground">
+                        {t("metrics.empty")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    display.map((m) => {
+                      const node = nodes.find((n) => n.id === m.node_id);
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>{node ? node.name : m.node_id}</TableCell>
+                          <TableCell>{(m.cpu_percent ?? 0).toFixed(2)}%</TableCell>
+                          <TableCell>
+                            {formatBytes(m.mem_used ?? 0)} / {formatBytes(m.mem_total ?? 0)}
+                          </TableCell>
+                          <TableCell>
+                            {formatBytes(m.disk_used ?? 0)} / {formatBytes(m.disk_total ?? 0)}
+                          </TableCell>
+                          <TableCell>{formatBytes(m.net_rx ?? 0)}</TableCell>
+                          <TableCell>{formatBytes(m.net_tx ?? 0)}</TableCell>
+                          <TableCell>
+                            {(m.load_avg1 ?? 0).toFixed(2)} / {(m.load_avg5 ?? 0).toFixed(2)} /{" "}
+                            {(m.load_avg15 ?? 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell>{formatDateTime(m.timestamp)}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -134,7 +144,7 @@ export function Metrics() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
     </div>
   );

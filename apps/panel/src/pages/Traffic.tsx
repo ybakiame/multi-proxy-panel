@@ -2,8 +2,17 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Spinner, Table } from "@heroui/react";
 import { PageHeader, Pagination, FormSelect, FormInput, TrafficChart } from "../components/ui";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Spinner } from "../components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import type { TrafficPoint } from "../components/ui/TrafficChart";
 import { usePagination } from "../hooks/useCommon";
 import { getTraffic } from "../api/traffic";
@@ -178,12 +187,12 @@ export function Traffic() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {summaryCards.map((card) => (
           <Card key={card.label}>
-            <Card.Content className="p-5">
+            <CardContent className="p-5">
               <p className="text-sm text-muted-foreground">{card.label}</p>
               <p className="mt-1 truncate text-xl font-bold" title={card.value}>
                 {card.value}
               </p>
-            </Card.Content>
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -218,16 +227,16 @@ export function Traffic() {
       </div>
 
       <Card>
-        <Card.Header>
-          <h3 className="text-lg font-semibold">{t("traffic.chartTitle")}</h3>
-        </Card.Header>
-        <Card.Content>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">{t("traffic.chartTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
           <TrafficChart data={chartData} />
-        </Card.Content>
+        </CardContent>
       </Card>
 
       <Card>
-        <Card.Content>
+        <CardContent>
           {trafficLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -235,40 +244,40 @@ export function Traffic() {
           ) : (
             <>
               <Table aria-label="traffic">
-                <Table.ScrollContainer>
-                  <Table.Content>
-                    <Table.Header>
-                      <Table.Column isRowHeader>{t("traffic.hour")}</Table.Column>
-                      <Table.Column>{t("traffic.node")}</Table.Column>
-                      <Table.Column>{t("traffic.client")}</Table.Column>
-                      <Table.Column>{t("traffic.upload")}</Table.Column>
-                      <Table.Column>{t("traffic.download")}</Table.Column>
-                      <Table.Column>{t("traffic.total")}</Table.Column>
-                    </Table.Header>
-                    <Table.Body
-                      renderEmptyState={() => (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("traffic.empty")}
-                        </div>
-                      )}
-                    >
-                      {display.map((r) => (
-                        <Table.Row key={r.id}>
-                          <Table.Cell>{formatDateTime(r.hour_bucket)}</Table.Cell>
-                          <Table.Cell>
-                            {r.node_id ? nodeNames.get(r.node_id) || r.node_id : "-"}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {r.client_id ? clientNames.get(r.client_id) || r.client_id : "-"}
-                          </Table.Cell>
-                          <Table.Cell>{formatBytes(r.upload_bytes)}</Table.Cell>
-                          <Table.Cell>{formatBytes(r.download_bytes)}</Table.Cell>
-                          <Table.Cell>{formatBytes(r.upload_bytes + r.download_bytes)}</Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("traffic.hour")}</TableHead>
+                    <TableHead>{t("traffic.node")}</TableHead>
+                    <TableHead>{t("traffic.client")}</TableHead>
+                    <TableHead>{t("traffic.upload")}</TableHead>
+                    <TableHead>{t("traffic.download")}</TableHead>
+                    <TableHead>{t("traffic.total")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {display.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
+                        {t("traffic.empty")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    display.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell>{formatDateTime(r.hour_bucket)}</TableCell>
+                        <TableCell>
+                          {r.node_id ? nodeNames.get(r.node_id) || r.node_id : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {r.client_id ? clientNames.get(r.client_id) || r.client_id : "-"}
+                        </TableCell>
+                        <TableCell>{formatBytes(r.upload_bytes)}</TableCell>
+                        <TableCell>{formatBytes(r.download_bytes)}</TableCell>
+                        <TableCell>{formatBytes(r.upload_bytes + r.download_bytes)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
               </Table>
               <Pagination
                 page={page}
@@ -280,7 +289,7 @@ export function Traffic() {
               />
             </>
           )}
-        </Card.Content>
+        </CardContent>
       </Card>
     </div>
   );

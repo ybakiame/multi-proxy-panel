@@ -39,7 +39,11 @@
     "stopped": "已停止",
     "yes": "是",
     "no": "否",
-    "optional": "可选"
+    "optional": "可选",
+    "expand": "展开高级选项",
+    "collapse": "收起高级选项",
+    "openMenu": "打开导航菜单",
+    "closeMenu": "关闭导航菜单"
   },
   "status": {
     "online": "在线",
@@ -60,7 +64,8 @@
     "next": "下一页",
     "first": "首页",
     "last": "末页",
-    "pageInfo": "第 {{current}} 页，共 {{total}} 页（{{count}} 条）"
+    "pageInfo": "第 {{current}} 页，共 {{total}} 页（{{count}} 条）",
+    "perPage": "每页条数"
   },
   "nav": {
     "dashboard": "仪表盘",

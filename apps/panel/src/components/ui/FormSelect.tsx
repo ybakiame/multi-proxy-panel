@@ -1,4 +1,6 @@
-import { Select, Label, ListBox } from "@heroui/react";
+import { useId } from "react";
+import { Label } from "./label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 
 interface FormSelectOption {
   id: string;
@@ -26,29 +28,28 @@ export function FormSelect({
   placeholder,
   className,
 }: FormSelectProps) {
+  const id = useId();
+
   return (
-    <Select
-      value={value || null}
-      onChange={(v) => onChange((v as string) || "")}
-      isRequired={isRequired}
-      isDisabled={isDisabled}
-      className={className}
-      placeholder={placeholder}
-    >
-      {label && <Label>{label}</Label>}
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
+    <div className={className}>
+      {label && <Label htmlFor={id}>{label}</Label>}
+      <Select
+        value={value || null}
+        onValueChange={(nextValue) => onChange(nextValue || "")}
+        required={isRequired}
+        disabled={isDisabled}
+      >
+        <SelectTrigger id={id} className="w-full" aria-required={isRequired || undefined}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
           {options.map((opt) => (
-            <ListBox.Item key={opt.id} id={opt.id} textValue={opt.label}>
+            <SelectItem key={opt.id} value={opt.id}>
               {opt.label}
-            </ListBox.Item>
+            </SelectItem>
           ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
