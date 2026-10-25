@@ -64,7 +64,8 @@ impl GitHubReleaseClient {
         select_latest_stable(responses)
     }
 
-    /// Return a stable release by tag, accepting tags with or without `v`.
+    /// Return a non-draft release by tag, accepting tags with or without `v`.
+    /// Explicit prereleases are allowed for CLI testing; latest_stable remains stable-only.
     pub async fn by_tag(&self, tag: &str) -> PanelResult<Release> {
         parse_version(tag)?;
         let tag = if tag.starts_with('v') {
@@ -74,9 +75,9 @@ impl GitHubReleaseClient {
         };
         let url = format!("{}/repos/{}/releases/tags/{tag}", self.api_base, self.repo);
         let response: ReleaseResponse = self.get_json(&url).await?;
-        if response.draft || response.prerelease {
+        if response.draft {
             return Err(PanelError::Release(format!(
-                "release {tag} is a draft or prerelease; only stable releases are supported"
+                "release {tag} is a draft and cannot be installed"
             )));
         }
         Release::try_from(response)
@@ -189,6 +190,13 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(release.version, Version::new(1, 3, 0));
+    }
+
+    #[test]
+    fn explicit_prerelease_versions_are_valid() {
+        let release = Release::try_from(response("v2.0.0-rc.1", true)).unwrap();
+        assert_eq!(release.tag, "v2.0.0-rc.1");
+        assert!(!release.version.pre.is_empty());
     }
 
     #[test]
