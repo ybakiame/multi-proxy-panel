@@ -25,6 +25,8 @@
 
 ### Added
 
+- **CLI 检查更新**：`proxy-panel check-update` 无需 root 对比 Hub/Agent/CLI 当前版本与最新稳定 Release，支持 `--json` 机器可读输出；`upgrade`/`rollback` 共用 `maintenance.lock` 非阻塞锁，`upgrade --status-file` 原子写入 JSON 状态，失败时尝试从最新备份恢复（备份仅保留一份）。
+- **Hub 面板更新中心**：新增 `GET/POST /api/v1/system/update` 与 `GET /api/v1/system/update/status`（scope `system:read`/`system:write`）及面板 `/system` 页。默认仅检测更新并给出手动命令；管理员可选安装受限 sudoers 规则与 `NoNewPrivileges=false` drop-in 后开启面板一键升级（transient unit 执行，Hub 停止不中断更新；本版本不含 Agent 远程升级）。
 - **Agent Development Protocol 采纳**：`docs/adoption/` 保存协议审计与采纳结果；新增 ADR 索引、代理适配器说明、工作流和完成定义。
 - WSL `:Zone.Identifier` 清理脚本（`scripts/clear-zone-identifier.sh`）。
 - 补充 GNU AGPL-3.0 `LICENSE` 文件，明确 `AGPL-3.0-or-later` 许可。

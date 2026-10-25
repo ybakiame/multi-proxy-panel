@@ -1,0 +1,16 @@
+# ProxyPanel Hub in-panel update authorization (optional).
+#
+# Install (admin action, NOT automatic):
+#   sudo install -o root -g root -m 0440 deploy/proxy-panel-maintenance.sudoers \
+#     /etc/sudoers.d/proxy-panel-maintenance
+#   sudo visudo -cf /etc/sudoers.d/proxy-panel-maintenance
+#
+# Grants the unprivileged Hub user (proxypanel) exactly one command shape, run as root
+# without a password: a transient systemd unit that invokes the CLI upgrade with a
+# fixed unit name and status file. The version / repo arguments may vary; everything
+# else must match exactly. Must match Hub config maintenance_* paths.
+#
+# WARNING: this intentionally lets the Hub process (if its API is compromised) trigger
+# a root upgrade of itself. Enable only together with
+# deploy/proxy-panel-hub-maintenance.conf and PROXYPANEL_MAINTENANCE_ENABLED=true.
+proxypanel ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=proxy-panel-hub-update --collect /usr/local/bin/proxy-panel upgrade hub --version * --repo * --status-file /opt/proxy-panel/data/hub-update.json

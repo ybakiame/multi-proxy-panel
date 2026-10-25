@@ -20,3 +20,14 @@ auto_register_agents = true
 # JWT secret for admin authentication — required, at least 32 characters.
 # Generate a random value, e.g.: openssl rand -base64 42
 jwt_secret = "change-me-to-a-random-secret"
+
+# In-panel update center (Hub self-update). Disabled by default.
+# When enabled, POST /api/v1/system/update triggers `sudo systemd-run --unit=proxy-panel-hub-update
+# --collect <cli> upgrade hub ... --status-file <status_file>` as root. This requires the
+# admin-installed authorization files deploy/proxy-panel-maintenance.sudoers and
+# deploy/proxy-panel-hub-maintenance.conf — see docs/deployment.md "面板更新中心".
+# maintenance_enabled = false
+# maintenance_status_file = "data/hub-update.json"   # must match the sudoers --status-file argument
+# maintenance_cli_path = "/usr/local/bin/proxy-panel"
+# maintenance_sudo_path = "/usr/bin/sudo"
+# maintenance_systemd_run_path = "/usr/bin/systemd-run"

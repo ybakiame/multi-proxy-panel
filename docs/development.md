@@ -281,9 +281,10 @@ grep "BOOTSTRAP API KEY" scripts/.dev-logs/hub.log
 | `gen-token` | 生成安全随机 token | `cargo run --bin proxy-panel -- gen-token` |
 | `agent-token` | 生成 Agent 注册 token（带节点名标注） | `cargo run --bin proxy-panel -- agent-token --node-name "node-01"` |
 | `diagnose` | 数据库连接诊断 | `cargo run --bin proxy-panel -- diagnose --database-url "..."` |
+| `check-update` | 检测组件更新（hub / agent / cli），只读无需 root | `proxy-panel check-update [--json]` |
 | `install hub` | 安装 Hub 组件（下载、配置、写 unit） | `sudo proxy-panel install hub` |
 | `install agent` | 安装 Agent 组件（下载、配置、启动） | `sudo proxy-panel install agent --hub-url ... --token ...` |
-| `upgrade <component>` | 升级组件（hub / agent / cli），失败自动回滚 | `sudo proxy-panel upgrade agent` |
+| `upgrade <component>` | 升级组件（hub / agent / cli），失败时尝试自动回滚（尽力恢复，备份仅保留最新一份） | `sudo proxy-panel upgrade agent` |
 | `rollback <component>` | 回滚到备份版本 | `sudo proxy-panel rollback hub` |
 | `uninstall <component>` | 卸载组件 | `sudo proxy-panel uninstall agent --purge` |
 | `status` | 查看各组件安装/运行状态 | `proxy-panel status` |

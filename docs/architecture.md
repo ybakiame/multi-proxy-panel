@@ -74,6 +74,7 @@ pp-hub/
 │   │   ├── traffic.rs       # 流量查询
 │   │   ├── metrics.rs       # 主机指标查询
 │   │   ├── logs.rs          # 系统日志查询
+│   │   ├── system_update.rs # Hub 自更新检测/触发（routes/system_update/，见 ADR-0018）
 │   │   └── health.rs        # 健康检查
 │   └── service/             # 业务逻辑层
 │       ├── node.rs          # 节点业务逻辑
@@ -475,6 +476,16 @@ service HubAgent {
 - 生产环境应在 Hub 前部署 TLS 终止（Nginx / Caddy / Cloudflare）
 - gRPC 支持 TLS（Tonic 已配置 `tls-ring` feature）
 - Agent 与 Hub 的 gRPC 连接建议通过内网或 VPN
+
+### Hub 自更新的 root 边界
+
+Hub 进程以非特权 `proxypanel` 用户运行，面板的 Hub 自更新（`/api/v1/system/update*`，
+`system:read` / `system:write` scope）**不直接执行升级**：默认关闭
+（`maintenance_enabled=false`），仅返回检测结果与手动命令；管理员可选安装受限
+sudoers 规则 + `NoNewPrivileges=false` drop-in 后，Hub 经受限 sudo 以 transient
+systemd unit 调用 CLI 完成升级（详见 [ADR-0018](adr/0018-hub-self-update-maintenance.md)）。
+升级执行、备份与失败恢复全部在 CLI（root）内完成；状态文件供 Hub 重启后恢复。
+本版本不提供 Agent 远程升级，Agent 升级需节点本地 root 执行 CLI。
 
 ---
 

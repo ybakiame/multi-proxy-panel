@@ -299,6 +299,10 @@ sudo proxy-panel install agent \
 # 查看各组件状态
 sudo proxy-panel status
 
+# 检查更新（无需 root）
+proxy-panel check-update
+proxy-panel check-update hub --json
+
 # 升级组件
 sudo proxy-panel upgrade hub
 sudo proxy-panel upgrade agent
@@ -320,6 +324,12 @@ sudo proxy-panel restart agent
 sudo proxy-panel uninstall agent --purge
 sudo proxy-panel uninstall hub --purge
 ```
+
+Hub 自更新也可在 Web 面板 `/system` 页检测与触发：默认仅显示检测结果和手动命令；
+管理员可选安装受限 sudo 授权与 systemd drop-in 后开启面板一键升级（默认关闭，见
+[docs/deployment.md](docs/deployment.md#面板更新中心可选) 与
+[ADR-0018](docs/adr/0018-hub-self-update-maintenance.md)）。Agent 不提供远程升级，
+需在节点本地执行上述 CLI 命令。
 
 详见 [docs/deployment.md](docs/deployment.md)。
 

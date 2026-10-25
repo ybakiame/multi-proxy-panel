@@ -87,7 +87,9 @@ sudo proxy-panel upgrade cli --status-file /opt/proxy-panel/upgrade-status.json
 sudo proxy-panel rollback hub
 ```
 
-升级会先解析稳定 Release 并完成下载、校验和解压，再备份和替换文件。相同版本会跳过，较旧目标会被拒绝（降级使用 `rollback`）。Hub 的二进制与 `web/dist` 一同备份和恢复；失败时自动回滚，且仅重新启动升级前处于 active 的服务。`--status-file` 原子写入 `running`、`succeeded`、`failed` 或 `rolled_back` JSON 状态。install、upgrade 和 rollback 共用 `/opt/proxy-panel/maintenance.lock` 非阻塞锁。
+升级会先解析稳定 Release 并完成下载、校验和解压，再备份和替换文件。相同版本会跳过，较旧目标会被拒绝（降级使用 `rollback`）。Hub 的二进制与 `web/dist` 一同备份和恢复；启动失败时会尝试从备份恢复旧版并报告结果——这是尽力恢复，不保证必然成功（备份仅保留最新一份，升级前请自行备份数据库与配置），且仅重新启动升级前处于 active 的服务。`--status-file` 原子写入 `running`、`succeeded`、`failed` 或 `rolled_back` JSON 状态。install、upgrade 和 rollback 共用 `/opt/proxy-panel/maintenance.lock` 非阻塞锁。
+
+Hub 自更新也可经面板 `/system` 页触发：Hub 通过受限 sudo + transient systemd unit 调用本 CLI（默认关闭，授权安装见 `deploy/proxy-panel-maintenance.sudoers` 与根部署文档）。
 
 ## 环境变量
 

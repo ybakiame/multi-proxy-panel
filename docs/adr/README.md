@@ -54,7 +54,8 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0015](0015-lanpath-independent-repository.md) | Accepted | 2026-10-11 | Lanpath 独立仓库与代码所有权 |
 | [ADR-0016](0016-central-log-persistence.md) | Accepted | 2026-10-13 | Hub 日志持久化、共享脱敏与集中查询 |
 | [ADR-0017](0017-shadcn-base-ui-panel.md) | Accepted | 2026-10-25 | 管理面板采用 shadcn/ui 与 Base UI |
+| [ADR-0018](0018-hub-self-update-maintenance.md) | Accepted | 2026-10-25 | Hub 受控自更新与部署授权模型 |
 
 > 客户端专属 ADR-0002–0014 随拆仓从当前工作区移除；决策原文和元数据修正记录
 > 保留在 Git 历史及 Lanpath 文档中，不再作为 ProxyPanel 的当前开发契约。
-> 本仓编号不重用，后续决策从 ADR-0017 继续。
+> 本仓编号不重用，后续决策从 ADR-0019 继续。
