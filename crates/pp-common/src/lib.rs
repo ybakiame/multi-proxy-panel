@@ -2,6 +2,7 @@
 
 pub mod crypto;
 pub mod error;
+pub mod logging;
 pub mod models;
 pub mod process;
 pub mod protocol;

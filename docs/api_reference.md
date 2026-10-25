@@ -1127,15 +1127,17 @@
 
 ### GET `/api/v1/logs`
 
-查询系统日志。
+查询系统或节点日志，需要 `logs:read` 权限。默认返回系统日志；节点日志额外包含 `node_id` 和 `node_name`。
 
 **查询参数:**
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `level` | string | 日志级别: `error`, `warn`, `info`, `debug` |
-| `source` | string | 日志来源筛选 |
-| `limit` | integer | 最大返回数量（默认 100） |
+| `level` | string | 日志级别: `error`, `warn`, `info`, `debug`, `trace`（大小写不敏感） |
+| `kind` | string | `system`（默认）或 `agent` |
+| `source` | string | 日志来源包含匹配；节点日志也匹配节点名称，最多 256 字节 |
+| `page` / `per_page` | integer | 同时提供时分页；每页最多 200 条 |
+| `limit` | integer | 未分页时最大返回数量（默认 100，范围 1–200） |
 
 **响应:**
 

@@ -449,6 +449,11 @@
     "secret": "Secret"
   },
   "logs": {
+    "kind": "Log type",
+    "system": "System logs",
+    "agent": "Node logs",
+    "loadError": "Failed to load logs. Refresh to retry.",
+    "expand": "Expand full message",
     "title": "Logs",
     "level": "Level",
     "source": "Source",

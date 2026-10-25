@@ -556,6 +556,11 @@ RUST_LOG=proxy_panel_agent=debug,pp_core=debug
 RUST_LOG=error
 ```
 
+Hub 应用级 INFO/WARN/ERROR 事件异步写入系统日志；Agent 上报日志保存在节点日志。
+管理页面可切换两类记录。RUST_LOG 同时控制终端和采集入口，Hub 不将 SQL/HTTP DEBUG
+事件写入数据库；终端详细调试输出仍可能包含敏感内容。首次修复升级需同时发布 Hub 与
+管理 Web，旧 Hub 不支持 `kind=agent` 查询。
+
 ### 使用 tokio-console 调试异步任务
 
 ```bash

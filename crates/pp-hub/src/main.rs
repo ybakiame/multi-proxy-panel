@@ -16,6 +16,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod config;
 mod grpc;
+mod logging;
 mod middleware;
 mod rate_limiter;
 mod response;
@@ -531,12 +532,7 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "proxy_panel_hub=info,tower_http=debug".into()),
-        )
-        .init();
+    let pending_logs = logging::init();
 
     let args = Args::parse();
 
@@ -570,6 +566,8 @@ async fn main() -> anyhow::Result<()> {
     let db = pp_db::init_db(&hub_config.database_url).await?;
     pp_db::run_migrations(&db).await?;
     pp_db::upgrade::run_versioned_upgrades(&db, env!("CARGO_PKG_VERSION")).await?;
+
+    let log_writer = pending_logs.start(db.clone());
 
     if let Err(e) = ensure_bootstrap_api_key(&db).await {
         tracing::warn!("failed to ensure bootstrap api key: {}", e);
@@ -735,6 +733,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tracing::info!("ProxyPanel Hub shutdown complete");
+    log_writer.shutdown().await;
     Ok(())
 }
 

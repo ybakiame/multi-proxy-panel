@@ -57,10 +57,10 @@ async fn main() -> anyhow::Result<()> {
     let log_sender = agent_logger.sender();
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "proxy_panel_agent=info".into());
-    tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .finish()
+        .unwrap_or_else(|_| "proxy_panel_agent=info,pp_core=info".into());
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(tracing_subscriber::fmt::layer())
         .with(logger::GrpcLogLayer::new(log_sender))
         .init();
 

@@ -73,6 +73,12 @@ bun run --filter pp-web build
 
 ---
 
+## 验证记录
+
+- [2026-10-13 日志链路修复](testing/2026-10-13-central-logging.md)
+
+---
+
 ## 技术栈
 
 | 层级 | 技术 |

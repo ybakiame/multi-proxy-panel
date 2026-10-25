@@ -198,7 +198,7 @@ multi-proxy-panel/
 | `pp-agent` | 节点代理，管理本地 sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
 | `apps/panel` | 管理系统 Web 前端（bun workspaces 成员） | 静态文件 |
 | `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、组件生命周期管理（安装/升级/回滚/卸载/状态/日志/重启） | `proxy-panel` |
-| `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具 | 库 |
+| `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具、日志脱敏与字段采集 | 库 |
 | `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
 | `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
 | `pp-config` | 配置抽象：将通用协议配置转译为 sing-box JSON 或 mihomo YAML | 库 |

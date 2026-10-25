@@ -239,6 +239,8 @@ export interface ClientIps {
 
 export interface Log {
   id: string;
+  node_id?: string;
+  node_name?: string;
   level: string;
   source: string;
   message: string;

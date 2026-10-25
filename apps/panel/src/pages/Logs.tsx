@@ -13,14 +13,16 @@ const logsQueryKey = "logs";
 export function Logs() {
   const { t } = useTranslation();
   const { page, perPage, setPage, setPerPage } = usePagination(1, 20);
+  const [kind, setKind] = useState<"system" | "agent">("system");
   const [level, setLevel] = useState("all");
   const [source, setSource] = useState("");
   const [appliedLevel, setAppliedLevel] = useState("all");
   const [appliedSource, setAppliedSource] = useState("");
 
-  const { data, isLoading } = useQuery({
-    queryKey: [logsQueryKey, { page, perPage, level: appliedLevel, source: appliedSource }],
-    queryFn: () => getLogs(page, perPage, appliedLevel, appliedSource),
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+    queryKey: [logsQueryKey, { kind, page, perPage, level: appliedLevel, source: appliedSource }],
+    queryFn: () => getLogs(page, perPage, appliedLevel, appliedSource, kind),
+    refetchInterval: page === 1 ? 15000 : false,
   });
 
   const logs = data?.data ?? [];
@@ -36,7 +38,26 @@ export function Logs() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("logs.title")} />
-      <div className="flex flex-wrap items-end gap-4">
+      <form
+        className="flex flex-wrap items-end gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleFilter();
+        }}
+      >
+        <FormSelect
+          label={t("logs.kind")}
+          value={kind}
+          onChange={(value) => {
+            setKind(value === "agent" ? "agent" : "system");
+            setPage(1);
+          }}
+          options={[
+            { id: "system", label: t("logs.system") },
+            { id: "agent", label: t("logs.agent") },
+          ]}
+          className="min-w-[160px]"
+        />
         <FormSelect
           label={t("logs.level")}
           value={level}
@@ -45,17 +66,32 @@ export function Logs() {
           className="min-w-[160px]"
         />
         <SearchInput value={source} onChange={setSource} placeholder={t("logs.source")} />
-        <Button onPress={handleFilter}>{t("common.filter")}</Button>
-      </div>
+        <Button type="submit">{t("common.filter")}</Button>
+        <Button
+          type="button"
+          variant="secondary"
+          isDisabled={isFetching}
+          onPress={() => {
+            void refetch();
+          }}
+        >
+          {t("common.refresh")}
+        </Button>
+      </form>
+      {isError && (
+        <div role="alert" className="rounded-lg border border-danger p-4 text-danger">
+          {t("logs.loadError")}
+        </div>
+      )}
       <Card>
         <Card.Content>
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
             </div>
-          ) : (
+          ) : isError && !data ? null : (
             <>
-              <Table aria-label="logs">
+              <Table aria-label={t("logs.title")}>
                 <Table.ScrollContainer>
                   <Table.Content>
                     <Table.Header>
@@ -74,8 +110,24 @@ export function Logs() {
                       {logs.map((log) => (
                         <Table.Row key={log.id}>
                           <Table.Cell>{log.level}</Table.Cell>
-                          <Table.Cell>{log.source}</Table.Cell>
-                          <Table.Cell className="max-w-xs truncate">{log.message}</Table.Cell>
+                          <Table.Cell>
+                            <div className="max-w-xs break-all">{log.source}</div>
+                            {log.node_id && (
+                              <div className="text-sm text-muted-foreground">
+                                {log.node_name ?? log.node_id}
+                              </div>
+                            )}
+                          </Table.Cell>
+                          <Table.Cell className="max-w-xs">
+                            <details>
+                              <summary className="cursor-pointer truncate" title={t("logs.expand")}>
+                                {log.message}
+                              </summary>
+                              <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-sm">
+                                {log.message}
+                              </pre>
+                            </details>
+                          </Table.Cell>
                           <Table.Cell>{formatDateTime(log.created_at)}</Table.Cell>
                         </Table.Row>
                       ))}

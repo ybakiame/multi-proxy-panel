@@ -449,6 +449,11 @@
     "secret": "密钥"
   },
   "logs": {
+    "kind": "日志类型",
+    "system": "系统日志",
+    "agent": "节点日志",
+    "loadError": "日志加载失败，请点击刷新重试。",
+    "expand": "展开完整日志",
     "title": "日志",
     "level": "级别",
     "source": "来源",

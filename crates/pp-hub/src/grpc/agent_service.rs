@@ -4,8 +4,8 @@ use pp_db::entities::{
     protocol_config, traffic_record,
 };
 use pp_proto::{
-    AgentMessage, CoreStatusReport, Heartbeat, HostMetrics, HubMessage, LogBatch,
-    OnlineUsersReport, TrafficReport, hub_agent_server::HubAgent,
+    AgentMessage, CoreStatusReport, Heartbeat, HostMetrics, HubMessage, OnlineUsersReport,
+    TrafficReport, hub_agent_server::HubAgent,
 };
 // RegisterRequest 仅被 cfg(test) 的 test_handle_register 使用。
 #[cfg(test)]
@@ -20,7 +20,9 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+mod logs;
 mod register;
+use logs::handle_logs;
 
 use register::handle_register;
 
@@ -461,36 +463,6 @@ async fn handle_metrics(
     Ok(())
 }
 
-async fn handle_logs(
-    state: &AppState,
-    agent_id: Uuid,
-    logs: LogBatch,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    for entry in logs.entries {
-        let active = agent_log::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            node_id: Set(agent_id),
-            level: Set(entry.level),
-            target: Set(entry.target),
-            message: Set(entry.message),
-            fields: Set(Some(serde_json::json!(
-                entry
-                    .fields
-                    .into_iter()
-                    .collect::<std::collections::HashMap<_, _>>()
-            ))),
-            created_at: Set(chrono::DateTime::from_timestamp(entry.timestamp, 0)
-                .unwrap_or_else(chrono::Utc::now)
-                .into()),
-        };
-        if let Err(e) = active.insert(&state.db).await {
-            tracing::warn!("failed to insert agent log: {}", e);
-        }
-    }
-
-    Ok(())
-}
-
 async fn handle_core_status(
     state: &AppState,
     agent_id: Uuid,
@@ -526,7 +498,7 @@ async fn handle_core_status(
             "error".to_string()
         }),
         target: Set(format!("core-{}", status.core_type)),
-        message: Set(message),
+        message: Set(pp_common::logging::sanitize_log_text(&message)),
         fields: Set(Some(serde_json::json!({
             "core_type": status.core_type,
             "version": status.version,

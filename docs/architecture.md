@@ -509,3 +509,12 @@ service HubAgent {
 - **流量聚合**: 按小时桶聚合，避免单条记录过多
 - **日志批量**: Agent 端批量上报，减少 gRPC 消息数量
 - **配置缓存**: Hub 可缓存生成的配置 JSON，减少重复构建
+
+### 运行日志持久化
+
+Hub 的应用级 INFO/WARN/ERROR tracing 事件通过容量 512 的非阻塞队列异步写入
+`system_logs`，启动早期事件在数据库就绪前缓冲，退出时最多等待 5 秒排空。
+SQL/HTTP 调试事件不持久化；队列满、数据库写入失败时保留终端告警，不递归记录写入错误。
+Agent 经认证 gRPC 上报的事件保存在 `agent_logs`；中心日志接口以 `kind=system|agent`
+区分查询，沿用 `logs:read` 权限与现有清理任务。消息和结构化字段做常见凭据脱敏及长度限制。
+参见 [ADR-0016](adr/0016-central-log-persistence.md)。
