@@ -43,7 +43,8 @@
     "expand": "展开高级选项",
     "collapse": "收起高级选项",
     "openMenu": "打开导航菜单",
-    "closeMenu": "关闭导航菜单"
+    "closeMenu": "关闭导航菜单",
+    "retry": "重试"
   },
   "status": {
     "online": "在线",
@@ -87,6 +88,19 @@
     "traffic": "流量记录",
     "system": "系统维护"
   },
+  "navSection": {
+    "overview": "概览",
+    "infrastructure": "节点与配置",
+    "access": "用户与订阅",
+    "observability": "观测",
+    "system": "系统"
+  },
+  "version": {
+    "badge": "Hub v{{hub}} · UI v{{ui}}",
+    "badgeHubOnly": "Hub v{{hub}}",
+    "badgeUnavailable": "Hub 不可用 · UI v{{ui}}",
+    "hubUnreachable": "无法获取 Hub 版本"
+  },
   "login": {
     "title": "ProxyPanel",
     "subtitle": "管理面板登录",
@@ -94,10 +108,16 @@
     "apiKeyPlaceholder": "输入 API 密钥",
     "verify": "验证密钥",
     "invalid": "无效的 API 密钥",
-    "failed": "验证失败: {{error}}"
+    "failed": "验证失败: {{error}}",
+    "brandTitle": "多节点代理集群，一处管理",
+    "brandSubtitle": "集中管理 sing-box / mihomo 节点、协议配置、用户订阅与流量观测。",
+    "highlightNodes": "Hub-Agent 架构，节点统一接入与灰度推送",
+    "highlightSecurity": "API 密钥访问控制与托管 TLS 证书",
+    "highlightObserve": "实时流量、主机指标与日志观测"
   },
   "dashboard": {
     "title": "仪表盘",
+    "subtitle": "集群运行概览与近 24 小时流量",
     "totalNodes": "总节点数",
     "online": "在线",
     "onlineUsers": "在线用户",
@@ -109,7 +129,16 @@
     "recentLogs": "最近日志",
     "nodeStatus": "节点状态",
     "loading": "加载仪表板数据...",
-    "error": "部分仪表板数据加载失败。"
+    "error": "部分仪表板数据加载失败。",
+    "systemStatus": "系统状态",
+    "hubHealthy": "运行正常",
+    "hubDegraded": "服务降级",
+    "hubUnreachable": "无法连接",
+    "trafficTotal": "24h 总流量",
+    "onlineNodes": "在线节点",
+    "viewAll": "查看全部",
+    "sectionError": "该板块数据加载失败",
+    "addNode": "接入节点"
   },
   "nodes": {
     "title": "节点管理",

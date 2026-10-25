@@ -41,21 +41,21 @@ export function TrafficChart({ data, height = 300 }: TrafficChartProps) {
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="time"
-          tick={{ fill: "var(--muted)", fontSize: 12 }}
+          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
           tickLine={false}
           axisLine={{ stroke: "var(--border)" }}
           minTickGap={32}
         />
         <YAxis
           tickFormatter={(value: number) => formatBytes(value)}
-          tick={{ fill: "var(--muted)", fontSize: 12 }}
+          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
           tickLine={false}
           axisLine={false}
           width={90}
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: "var(--surface)",
+            backgroundColor: "var(--card)",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-md)",
             color: "var(--foreground)",
@@ -71,8 +71,8 @@ export function TrafficChart({ data, height = 300 }: TrafficChartProps) {
           type="monotone"
           dataKey="upload"
           name={t("traffic.upload")}
-          stroke="var(--accent)"
-          fill="var(--accent)"
+          stroke="var(--chart-1)"
+          fill="var(--chart-1)"
           fillOpacity={0.25}
           strokeWidth={2}
         />
@@ -80,8 +80,8 @@ export function TrafficChart({ data, height = 300 }: TrafficChartProps) {
           type="monotone"
           dataKey="download"
           name={t("traffic.download")}
-          stroke="var(--success)"
-          fill="var(--success)"
+          stroke="var(--chart-2)"
+          fill="var(--chart-2)"
           fillOpacity={0.25}
           strokeWidth={2}
         />

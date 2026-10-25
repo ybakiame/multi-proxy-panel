@@ -5,6 +5,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------------------------------------------------------------------------
+ * Semantic → utility mapping (shadcn/Tailwind). Values live in :root / .dark.
+ * ------------------------------------------------------------------------- */
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
@@ -27,11 +30,13 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-surface: var(--card);
   --color-surface-hover: var(--muted);
+  --color-workspace: var(--background);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -54,74 +59,142 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.488 0.243 264.376);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.94 0.01 260);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.95 0.005 260);
-  --muted-foreground: oklch(0.5 0.015 260);
-  --accent: oklch(0.94 0.02 260);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.5 0.22 27.325);
-  --success: oklch(0.48 0.15 149.214);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.5 0.14 60);
-  --border: oklch(0.9 0.005 260);
-  --input: oklch(0.9 0.005 260);
-  --ring: oklch(0.65 0.15 264);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0.02 260);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.9 0.005 260);
-  --sidebar-ring: oklch(0.65 0.15 264);
+/* ---------------------------------------------------------------------------
+ * Primitives — 湖水青（lake teal）与中性灰阶，所有颜色均为 OKLCH。
+ * ------------------------------------------------------------------------- */
+@theme {
+  /* 湖水青主色阶 */
+  --color-lake-50: oklch(0.96 0.03 188);
+  --color-lake-100: oklch(0.92 0.055 188);
+  --color-lake-200: oklch(0.85 0.085 189);
+  --color-lake-300: oklch(0.77 0.11 190);
+  --color-lake-400: oklch(0.69 0.13 191);
+  --color-lake-500: oklch(0.6 0.13 192);
+  --color-lake-600: oklch(0.52 0.12 194);
+  --color-lake-700: oklch(0.45 0.105 196);
+  --color-lake-800: oklch(0.37 0.085 198);
+  --color-lake-900: oklch(0.3 0.065 200);
+  --color-lake-950: oklch(0.22 0.05 202);
 }
 
+/* ---------------------------------------------------------------------------
+ * Semantic tokens — 亮主题
+ * ------------------------------------------------------------------------- */
+:root {
+  --radius: 0.7rem;
+
+  /* 背景 / surface：灰白工作区 + 纯白卡片 */
+  --background: oklch(0.968 0.006 245);
+  --foreground: oklch(0.21 0.02 250);
+  --card: oklch(0.997 0.002 245);
+  --card-foreground: oklch(0.21 0.02 250);
+  --popover: oklch(0.997 0.002 245);
+  --popover-foreground: oklch(0.21 0.02 250);
+
+  /* 品牌 / 交互主色（湖水青） */
+  --primary: var(--color-lake-700);
+  --primary-foreground: oklch(0.985 0.005 245);
+  --secondary: oklch(0.945 0.012 245);
+  --secondary-foreground: oklch(0.25 0.02 250);
+  --accent: var(--color-lake-100);
+  --accent-foreground: var(--color-lake-900);
+
+  /* 文字层级 */
+  --muted: oklch(0.952 0.008 245);
+  --muted-foreground: oklch(0.51 0.02 250);
+
+  /* 边框：紧凑细分割线 */
+  --border: oklch(0.915 0.007 245);
+  --input: oklch(0.885 0.009 245);
+
+  /* 状态色 */
+  --destructive: oklch(0.55 0.2 26);
+  --success: oklch(0.55 0.13 155);
+  --success-foreground: oklch(0.985 0.005 245);
+  --warning: oklch(0.62 0.12 75);
+  --warning-foreground: oklch(0.25 0.03 75);
+
+  /* 图表序列 */
+  --chart-1: var(--color-lake-600);
+  --chart-2: oklch(0.58 0.14 252);
+  --chart-3: oklch(0.6 0.13 155);
+  --chart-4: oklch(0.72 0.14 85);
+  --chart-5: oklch(0.58 0.2 350);
+
+  /* 焦点 / focus ring */
+  --ring: var(--color-lake-500);
+
+  /* 侧栏 */
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--muted);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* Component tokens — 统一卡片阴影与品牌渐变（仅品牌区 / 重点 KPI 使用渐变） */
+  --shadow-card: 0 1px 2px 0 oklch(0.3 0.03 250 / 0.05), 0 1px 3px 0 oklch(0.3 0.03 250 / 0.07);
+  --shadow-card-hover:
+    0 2px 4px 0 oklch(0.3 0.03 250 / 0.07), 0 4px 10px 0 oklch(0.3 0.03 250 / 0.09);
+  --gradient-brand: linear-gradient(
+    155deg,
+    oklch(0.8 0.11 186) 0%,
+    oklch(0.6 0.13 192) 52%,
+    oklch(0.45 0.11 200) 100%
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Semantic tokens — 暗主题
+ * ------------------------------------------------------------------------- */
 .dark {
-  --background: oklch(0.16 0.01 260);
-  --foreground: oklch(0.95 0.005 260);
-  --card: oklch(0.21 0.015 260);
-  --card-foreground: oklch(0.95 0.005 260);
-  --popover: oklch(0.21 0.015 260);
-  --popover-foreground: oklch(0.95 0.005 260);
-  --primary: oklch(0.5 0.2 264);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.28 0.015 260);
-  --secondary-foreground: oklch(0.95 0.005 260);
-  --muted: oklch(0.28 0.015 260);
-  --muted-foreground: oklch(0.72 0.015 260);
-  --accent: oklch(0.3 0.02 260);
-  --accent-foreground: oklch(0.95 0.005 260);
-  --destructive: oklch(0.704 0.191 22.216);
-  --success: oklch(0.7 0.17 149.214);
-  --success-foreground: oklch(0.16 0.01 260);
-  --warning: oklch(0.8 0.16 75);
-  --border: oklch(1 0 0 / 12%);
+  --background: oklch(0.17 0.009 255);
+  --foreground: oklch(0.93 0.008 245);
+  --card: oklch(0.215 0.012 255);
+  --card-foreground: oklch(0.93 0.008 245);
+  --popover: oklch(0.215 0.012 255);
+  --popover-foreground: oklch(0.93 0.008 245);
+
+  --primary: oklch(0.8 0.12 187);
+  --primary-foreground: oklch(0.19 0.03 225);
+  --secondary: oklch(0.27 0.014 255);
+  --secondary-foreground: oklch(0.93 0.008 245);
+  --accent: oklch(0.3 0.04 200);
+  --accent-foreground: oklch(0.85 0.09 190);
+
+  --muted: oklch(0.27 0.014 255);
+  --muted-foreground: oklch(0.69 0.013 250);
+
+  --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.62 0.15 264);
-  --sidebar: oklch(0.21 0.015 260);
-  --sidebar-foreground: oklch(0.95 0.005 260);
-  --sidebar-primary: oklch(0.5 0.2 264);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.3 0.02 260);
-  --sidebar-accent-foreground: oklch(0.95 0.005 260);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.62 0.15 264);
+
+  --destructive: oklch(0.7 0.19 24);
+  --success: oklch(0.74 0.15 155);
+  --success-foreground: oklch(0.17 0.009 255);
+  --warning: oklch(0.8 0.14 80);
+  --warning-foreground: oklch(0.19 0.03 75);
+
+  --chart-1: oklch(0.78 0.12 187);
+  --chart-2: oklch(0.68 0.14 252);
+  --chart-3: oklch(0.75 0.14 155);
+  --chart-4: oklch(0.8 0.13 85);
+  --chart-5: oklch(0.68 0.19 350);
+
+  --ring: oklch(0.78 0.12 187);
+
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--muted);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --shadow-card: 0 1px 2px 0 oklch(0 0 0 / 0.35), 0 1px 3px 0 oklch(0 0 0 / 0.45);
+  --shadow-card-hover: 0 2px 4px 0 oklch(0 0 0 / 0.45), 0 6px 14px 0 oklch(0 0 0 / 0.5);
 }
 
 @layer base {
@@ -152,10 +225,21 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--foreground) 15%, transparent);
+  background: color-mix(in oklch, var(--foreground) 15%, transparent);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--foreground) 30%, transparent);
+  background: color-mix(in oklch, var(--foreground) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
