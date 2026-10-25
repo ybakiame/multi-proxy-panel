@@ -189,14 +189,14 @@ export function Dashboard() {
 
       {/* 重点状态卡 + KPI */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="flex flex-col justify-between gap-4 rounded-xl bg-(--gradient-brand) p-5 text-primary-foreground">
+        <div className="flex flex-col justify-between gap-4 rounded-xl bg-[image:var(--gradient-brand)] p-5 text-brand-foreground">
           <div className="space-y-1.5">
             <p className="text-xs font-medium tracking-wider uppercase opacity-80">
               {t("dashboard.systemStatus")}
             </p>
             <p className="text-2xl font-bold tracking-tight">
               {hubHealth.isLoading ? (
-                <span className="inline-block h-7 w-24 animate-pulse rounded-md bg-primary-foreground/25" />
+                <span className="inline-block h-7 w-24 animate-pulse rounded-md bg-brand-foreground/25" />
               ) : (
                 hubStatusText
               )}
@@ -207,7 +207,7 @@ export function Dashboard() {
                 : t("version.badgeHubOnly", { hub: hubHealth.data?.version ?? "…" })}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 border-t border-primary-foreground/20 pt-3">
+          <div className="grid grid-cols-2 gap-3 border-t border-brand-foreground/20 pt-3">
             <Link to="/nodes" className="space-y-0.5 transition-opacity hover:opacity-80">
               <p className="text-xs opacity-75">{t("dashboard.onlineNodes")}</p>
               <p className="text-lg font-semibold tabular-nums">

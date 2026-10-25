@@ -19,6 +19,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-brand-foreground: oklch(0.985 0.005 245);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -109,9 +110,9 @@
 
   /* 状态色 */
   --destructive: oklch(0.55 0.2 26);
-  --success: oklch(0.55 0.13 155);
+  --success: oklch(0.45 0.13 155);
   --success-foreground: oklch(0.985 0.005 245);
-  --warning: oklch(0.62 0.12 75);
+  --warning: oklch(0.48 0.12 60);
   --warning-foreground: oklch(0.25 0.03 75);
 
   /* 图表序列 */
@@ -140,9 +141,9 @@
     0 2px 4px 0 oklch(0.3 0.03 250 / 0.07), 0 4px 10px 0 oklch(0.3 0.03 250 / 0.09);
   --gradient-brand: linear-gradient(
     155deg,
-    oklch(0.8 0.11 186) 0%,
-    oklch(0.6 0.13 192) 52%,
-    oklch(0.45 0.11 200) 100%
+    oklch(0.5 0.11 186) 0%,
+    oklch(0.42 0.12 192) 52%,
+    oklch(0.34 0.1 200) 100%
   );
 }
 

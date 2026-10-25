@@ -240,7 +240,12 @@ export function System() {
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">{t("system.executionDisabledHint")}</p>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Input readOnly value={info.manual_command} className="flex-1 font-mono" />
+                <Input
+                  readOnly
+                  value={info.manual_command}
+                  className="flex-1 font-mono"
+                  aria-label={t("system.copyCommand")}
+                />
                 <Button
                   variant="secondary"
                   className="shrink-0"

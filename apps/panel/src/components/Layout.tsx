@@ -198,7 +198,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <aside className="hidden w-60 flex-col border-r border-border bg-card md:flex lg:w-64">
         <BrandRow />
         <div className="px-4 pb-1">
-          <VersionBadge withStatus />
+          <VersionBadge withStatus className="max-w-full" />
         </div>
         <NavigationGroups />
       </aside>

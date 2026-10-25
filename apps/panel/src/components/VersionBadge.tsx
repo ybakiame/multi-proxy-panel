@@ -45,13 +45,13 @@ export function VersionBadge({ className, withStatus = false }: VersionBadgeProp
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground",
+        "inline-flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground",
         className,
       )}
-      title={isError ? t("version.hubUnreachable") : undefined}
+      title={isError ? t("version.hubUnreachable") : text}
     >
       {statusDot}
-      <span className={cn(isLoading && "animate-pulse")}>{text}</span>
+      <span className={cn("truncate", isLoading && "animate-pulse")}>{text}</span>
     </span>
   );
 }

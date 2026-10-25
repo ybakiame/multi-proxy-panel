@@ -44,7 +44,7 @@ export function Login() {
   return (
     <div className="grid min-h-screen bg-background lg:grid-cols-[1.05fr_1fr]">
       {/* 品牌区：湖水青渐变，仅此处与重点 KPI 允许渐变 */}
-      <div className="relative hidden flex-col justify-between bg-(--gradient-brand) p-10 text-primary-foreground lg:flex xl:p-14">
+      <div className="relative hidden flex-col justify-between bg-[image:var(--gradient-brand)] p-10 text-brand-foreground lg:flex xl:p-14">
         <div className="flex items-center gap-3">
           <BrandMark className="h-10 w-10" />
           <span className="text-lg font-semibold tracking-tight">ProxyPanel</span>
@@ -53,13 +53,13 @@ export function Login() {
           <h1 className="text-3xl leading-tight font-bold tracking-tight xl:text-4xl">
             {t("login.brandTitle")}
           </h1>
-          <p className="text-sm leading-relaxed text-primary-foreground/85">
+          <p className="text-sm leading-relaxed text-brand-foreground/85">
             {t("login.brandSubtitle")}
           </p>
           <ul className="space-y-3 pt-2">
             {highlights.map(({ icon: Icon, labelKey }) => (
               <li key={labelKey} className="flex items-center gap-2.5 text-sm">
-                <span className="flex size-7 items-center justify-center rounded-lg bg-primary-foreground/15">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-brand-foreground/15">
                   <Icon className="h-4 w-4" />
                 </span>
                 {t(labelKey)}
@@ -67,7 +67,7 @@ export function Login() {
             ))}
           </ul>
         </div>
-        <VersionBadge className="text-primary-foreground/80" withStatus />
+        <VersionBadge className="text-brand-foreground/80" withStatus />
       </div>
 
       {/* 表单区 */}
