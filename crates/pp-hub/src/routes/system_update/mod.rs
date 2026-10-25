@@ -252,7 +252,7 @@ fn release_validation_error(error: PanelError) -> ApiError {
 
 fn manual_command(state: &Arc<AppState>) -> String {
     format!(
-        "{} upgrade hub --version latest --repo {} --status-file {}",
+        "sudo {} upgrade hub --version latest --repo {} --status-file {}",
         state.config.maintenance_cli_path.display(),
         state.config.release_repo,
         state.config.maintenance_status_file.display()
