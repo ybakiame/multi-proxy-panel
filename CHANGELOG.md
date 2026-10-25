@@ -7,10 +7,12 @@
 > 维护说明：
 > - `v0.4.0`–`v0.4.5` 条目依据仓库 git 发布标签（日期 + 标签说明）整理；`v0.4.0` 之前的
 >   版本历史未在仓库中保留，不做回溯重建。
-> - `[Unreleased]` 记录 `v0.4.5` 之后 mainline 的主要变更主题（逐条提交历史见
->   `git log v0.4.5..HEAD`），发布时按下述流程整理为新版本标题。
+> - `[Unreleased]` 记录 `v0.5.0-rc.1` 之后 mainline 的主要变更主题（逐条提交历史见
+>   `git log v0.5.0-rc.1..HEAD`），发布时按下述流程整理为新版本标题。
 
 ## [Unreleased]
+
+## [0.5.0-rc.1] - 2026-10-25
 
 ### Fixed
 
@@ -90,7 +92,8 @@
 - 前端引入 TanStack Query。
 - CI/CD Release 流程。
 
-[Unreleased]: https://github.com/ybakiame/multi-proxy-panel/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/ybakiame/multi-proxy-panel/compare/v0.5.0-rc.1...HEAD
+[0.5.0-rc.1]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.5.0-rc.1
 [0.4.5]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.5
 [0.4.4]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.4
 [0.4.3]: https://github.com/ybakiame/multi-proxy-panel/releases/tag/v0.4.3
