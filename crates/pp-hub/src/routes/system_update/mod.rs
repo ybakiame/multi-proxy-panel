@@ -196,18 +196,18 @@ fn update_in_progress() -> ApiError {
 
 fn validate_target(release: &Release) -> Result<(), ApiError> {
     let tag_version = parse_version(&release.tag).map_err(release_validation_error)?;
-    if tag_version != release.version || !release.version.pre.is_empty() {
-        return Err(ApiError::bad_request(
-            "invalid_target_version",
-            "target must be a stable release with a matching semantic-version tag",
-        ));
-    }
     if compare_versions(CURRENT_VERSION, &release.tag).map_err(release_validation_error)?
         != Ordering::Less
     {
         return Err(ApiError::bad_request(
             "no_update_available",
             "target version is not newer than the running Hub",
+        ));
+    }
+    if tag_version != release.version || !release.version.pre.is_empty() {
+        return Err(ApiError::bad_request(
+            "invalid_target_version",
+            "target must be a stable release with a matching semantic-version tag",
         ));
     }
     Ok(())
