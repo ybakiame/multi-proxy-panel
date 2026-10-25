@@ -3,6 +3,7 @@ use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
@@ -62,6 +63,27 @@ impl ApiKeyCache {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct MaintenanceState {
+    update_in_progress: Arc<AtomicBool>,
+}
+
+impl MaintenanceState {
+    pub fn try_begin_update(&self) -> bool {
+        self.update_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub fn finish_update(&self) {
+        self.update_in_progress.store(false, Ordering::Release);
+    }
+
+    pub fn update_in_progress(&self) -> bool {
+        self.update_in_progress.load(Ordering::Acquire)
+    }
+}
+
 /// Connection handle for a single Agent.
 pub struct AgentConnection {
     #[allow(dead_code)]
@@ -81,6 +103,7 @@ pub struct AppState {
     pub agents: Arc<RwLock<HashMap<Uuid, AgentConnection>>>,
     pub metrics_handle: Option<Arc<MetricsHandle>>,
     pub api_key_cache: ApiKeyCache,
+    pub maintenance: MaintenanceState,
     /// Pending core-binary list/delete requests awaiting the agent's reply.
     pub binary_waiters:
         Arc<RwLock<HashMap<Uuid, tokio::sync::oneshot::Sender<pp_proto::CoreBinaryList>>>>,
@@ -100,6 +123,7 @@ impl AppState {
             agents: Arc::new(RwLock::new(HashMap::new())),
             metrics_handle,
             api_key_cache: ApiKeyCache::default(),
+            maintenance: MaintenanceState::default(),
             binary_waiters: Arc::new(RwLock::new(HashMap::new())),
         })
     }

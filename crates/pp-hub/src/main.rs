@@ -32,7 +32,7 @@ use rate_limiter::RateLimiter;
 use routes::{
     api_key, bindings, certificates, client, core_version, health, inbound_host, install, login,
     logs, metrics, metrics_export, node_group, nodes, onlines, protocol, protocol_preset,
-    relay_rule, subscription, traffic, usage, webhook,
+    relay_rule, subscription, system_update, traffic, usage, webhook,
 };
 use state::AppState;
 
@@ -486,11 +486,11 @@ pub fn build_app(state: Arc<AppState>, hub_config: &HubConfig) -> Router {
             delete(webhook::delete_webhook)
                 .route_layer(middleware::api_key::scope_layer(scopes::WEBHOOKS_WRITE)),
         )
-        // Logs
         .route(
             "/api/v1/logs",
             get(logs::query_logs).route_layer(middleware::api_key::scope_layer(scopes::LOGS_READ)),
         )
+        .merge(system_update::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::api_key::require_api_key,

@@ -27,6 +27,11 @@ pub struct HubConfig {
     pub public_http_url: Option<String>,
     pub public_grpc_url: Option<String>,
     pub release_repo: String,
+    pub maintenance_enabled: bool,
+    pub maintenance_status_file: PathBuf,
+    pub maintenance_cli_path: PathBuf,
+    pub maintenance_sudo_path: PathBuf,
+    pub maintenance_systemd_run_path: PathBuf,
 }
 
 impl Default for HubConfig {
@@ -45,6 +50,11 @@ impl Default for HubConfig {
             public_http_url: None,
             public_grpc_url: None,
             release_repo: default_release_repo(),
+            maintenance_enabled: false,
+            maintenance_status_file: PathBuf::from("data/hub-update.json"),
+            maintenance_cli_path: PathBuf::from("/usr/local/bin/proxy-panel"),
+            maintenance_sudo_path: PathBuf::from("/usr/bin/sudo"),
+            maintenance_systemd_run_path: PathBuf::from("/usr/bin/systemd-run"),
         }
     }
 }
@@ -67,7 +77,12 @@ impl HubConfig {
             )?
             .set_default("auto_register_agents", false)?
             .set_default("jwt_secret", Self::default().jwt_secret)?
-            .set_default("release_repo", Self::default().release_repo)?;
+            .set_default("release_repo", Self::default().release_repo)?
+            .set_default("maintenance_enabled", false)?
+            .set_default("maintenance_status_file", "data/hub-update.json")?
+            .set_default("maintenance_cli_path", "/usr/local/bin/proxy-panel")?
+            .set_default("maintenance_sudo_path", "/usr/bin/sudo")?
+            .set_default("maintenance_systemd_run_path", "/usr/bin/systemd-run")?;
 
         let built = cfg.build()?;
 
@@ -94,6 +109,23 @@ impl HubConfig {
             release_repo: built
                 .get_string("release_repo")
                 .unwrap_or_else(|_| Self::default().release_repo),
+            maintenance_enabled: built.get_bool("maintenance_enabled").unwrap_or(false),
+            maintenance_status_file: built
+                .get_string("maintenance_status_file")
+                .unwrap_or_else(|_| "data/hub-update.json".to_string())
+                .into(),
+            maintenance_cli_path: built
+                .get_string("maintenance_cli_path")
+                .unwrap_or_else(|_| "/usr/local/bin/proxy-panel".to_string())
+                .into(),
+            maintenance_sudo_path: built
+                .get_string("maintenance_sudo_path")
+                .unwrap_or_else(|_| "/usr/bin/sudo".to_string())
+                .into(),
+            maintenance_systemd_run_path: built
+                .get_string("maintenance_systemd_run_path")
+                .unwrap_or_else(|_| "/usr/bin/systemd-run".to_string())
+                .into(),
         };
 
         if let Some(listen) = overrides.listen {
@@ -188,6 +220,25 @@ fn validate_jwt_secret(secret: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maintenance_defaults_are_disabled_and_use_system_paths() {
+        let config = HubConfig::default();
+        assert!(!config.maintenance_enabled);
+        assert_eq!(
+            config.maintenance_status_file,
+            PathBuf::from("data/hub-update.json")
+        );
+        assert_eq!(
+            config.maintenance_cli_path,
+            PathBuf::from("/usr/local/bin/proxy-panel")
+        );
+        assert_eq!(config.maintenance_sudo_path, PathBuf::from("/usr/bin/sudo"));
+        assert_eq!(
+            config.maintenance_systemd_run_path,
+            PathBuf::from("/usr/bin/systemd-run")
+        );
+    }
 
     #[test]
     fn parse_csv_works() {
