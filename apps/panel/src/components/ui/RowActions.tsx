@@ -54,7 +54,7 @@ export function RowActions({ label, actions, primaryAction }: RowActionsProps) {
               key={action.label}
               disabled={action.disabled}
               variant={action.destructive ? "destructive" : "default"}
-              onSelect={action.onSelect}
+              onClick={action.onSelect}
             >
               {action.label}
             </DropdownMenuItem>
