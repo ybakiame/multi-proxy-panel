@@ -14,7 +14,7 @@
 | [部署指南](deployment.md) | 运维工程师 | Docker/手动部署、高可用、安全配置、监控、备份恢复、升级 |
 | [贡献指南](contributing.md) | 贡献者 | 提交规范、PR 流程、代码审查、发布流程 |
 | [ADR 索引与约定](adr/README.md) | 架构师、贡献者 | 架构决策记录索引、状态约定与模板 |
-| [编码代理适配器](adapters/README.md) | 使用 AI 编码代理的贡献者 | pi / .agents 适配器的入口、能力边界与验证命令 |
+| [编码代理适配器](adapters/README.md) | 使用 AI 编码代理的贡献者 | `.agents` 规则与局部适配器的入口、能力边界与验证命令 |
 | [开发代理指南](../AGENTS.md) | AI 编码代理 | 项目契约：构建、规范、常见任务、工作流、完成定义与升级条件 |
 | [协议引用与服务端复核](adoption/2026-10-11-server-only-reconciliation.md) | 维护者 | 当前协议引用及客户端拆仓后的历史验收 |
 | [协议采纳记录](adoption/adoption-report.md) | 维护者 | Agent Development Protocol 采纳审计与结果（Pass 1 / Pass 2） |
