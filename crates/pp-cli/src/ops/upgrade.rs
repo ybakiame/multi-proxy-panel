@@ -185,10 +185,12 @@ async fn perform_upgrade(
     ensure_dir(&extract_dir).await?;
     extract_tar_gz(&archive, &extract_dir).await?;
     let new_binary = find_extracted_binary(&extract_dir, component.binary).await?;
-    let new_web = extract_dir.join("web/dist");
-    if component.with_web && !new_web.is_dir() {
-        bail!("hub tarball 中未找到 web/dist");
-    }
+    let new_web = if component.with_web {
+        super::fsutil::find_web_dist(&extract_dir)
+            .with_context(|| "hub tarball 中未找到 web/dist")?
+    } else {
+        PathBuf::new()
+    };
 
     ensure_dir(&paths.backup_dir).await?;
     let backup_label =

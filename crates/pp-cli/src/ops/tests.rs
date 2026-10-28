@@ -85,6 +85,26 @@ fn backup_path_format() {
     );
 }
 
+#[test]
+fn finds_current_and_legacy_bundled_web_assets() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join("web/dist")).unwrap();
+    assert_eq!(
+        super::fsutil::find_web_dist(temp.path()),
+        Some(temp.path().join("web/dist"))
+    );
+
+    std::fs::remove_dir_all(temp.path().join("web")).unwrap();
+    std::fs::create_dir(temp.path().join("dist")).unwrap();
+    assert_eq!(
+        super::fsutil::find_web_dist(temp.path()),
+        Some(temp.path().join("dist"))
+    );
+
+    std::fs::remove_dir(temp.path().join("dist")).unwrap();
+    assert_eq!(super::fsutil::find_web_dist(temp.path()), None);
+}
+
 #[tokio::test]
 async fn restores_binary_and_web_from_retained_copies() {
     let temp = tempfile::tempdir().unwrap();

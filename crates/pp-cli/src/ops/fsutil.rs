@@ -17,6 +17,14 @@ pub async fn ensure_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Find web assets in current or legacy Hub release archives.
+pub fn find_web_dist(extract_dir: &Path) -> Option<PathBuf> {
+    ["web/dist", "dist"]
+        .into_iter()
+        .map(|path| extract_dir.join(path))
+        .find(|path| path.is_dir())
+}
+
 /// Write text to a file with optional permissions.
 pub async fn write_file(path: &Path, contents: &str, mode: Option<u32>) -> Result<()> {
     let mut file = tokio::fs::File::create(path)
