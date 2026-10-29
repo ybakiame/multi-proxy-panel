@@ -7,14 +7,14 @@
 
 ## 项目简介
 
-ProxyPanel 采用 **Hub-Agent** 架构，支持多节点统一管理、协议配置、订阅生成、流量统计与主机指标监控。用户侧客户端由独立的 [岚径 · Lanpath 仓库](https://github.com/ybakiame/lanpath) 维护，通过公开订阅/API 与本项目协作。
+ProxyPanel 采用 **Hub-Agent** 架构，支持多节点统一管理、协议配置、订阅生成、流量统计与主机指标监控。
 
 ### 核心特性
 
 - **节点预生成与状态监控**：在 Hub 创建节点并生成安装指令，Agent 通过心跳保持在线状态
 - **安全协议配置**：VLESS + REALITY、VLESS + XHTTP、Hysteria2、AnyTLS
 - **双核心支持**：[sing-box](https://github.com/SagerNet/sing-box) 与 [mihomo](https://github.com/MetaCubeX/mihomo)
-- **订阅与节点导出**：生成分享链接、Clash YAML、sing-box JSON 和通用 JSON 节点数据
+- **订阅与节点导出**：支持常见客户端通过分享连接进行导入
 - **流量与指标**：按入站和用户统计流量，采集 CPU、内存、磁盘、网络与系统负载
 - **版本化配置推送**：内容哈希去重，支持手动灰度推送以及按需 reload/restart
 - **gRPC 双向流**：Hub 与 Agent 通过长连接进行配置下发和状态上报
@@ -50,8 +50,6 @@ flowchart TB
     hub -- "gRPC（双向流）" --> agent
 ```
 
-本仓维护 Hub、Agent、管理 Web、CLI 与服务端共享模块，不包含 Lanpath 客户端源码或构建依赖。
-
 ## 支持的协议
 
 | 协议 | sing-box | mihomo | 说明 |
@@ -71,9 +69,8 @@ flowchart TB
 | V2RayNG 兼容输出 | 与 Base64 分享链接生成器相同，便于客户端选择 |
 | Clash YAML | Clash/mihomo 配置 |
 | sing-box JSON | sing-box 配置，可使用内置或自定义模板 |
-| 通用 JSON 节点数组 | 调试、检查或二次处理，不是独立客户端订阅格式 |
 
-订阅链接由 `/sub/{token}` 提供；格式是输出选项，不会改变公开订阅端点。
+订阅链接由 `/sub/{token}` 提供；输出格式通过 UA 检测或 `format` 参数指定。
 
 ## 快速开始
 
@@ -97,7 +94,7 @@ cargo run --bin proxy-panel-hub
 
 Hub 默认监听 `localhost:8081`（HTTP）和 `localhost:50052`（gRPC）。首次启动的管理凭证、前端开发模式及 Agent 调试方法见 [开发指南](docs/development.md)。
 
-节点不采用自动注册。请先在面板 **节点管理** 中预生成节点，再将面板生成的安装指令复制到目标 Agent 服务器执行；外部 Agent 通常通过 `https://面板域名:443` 连接，而不是直接连接内部 50052 端口。
+请先在面板 **节点管理** 中预生成节点，再将面板生成的安装指令复制到目标 Agent 服务器执行；外部 Agent 通常通过 `https://面板域名:443` 连接，而不是直接连接内部 50052 端口。
 
 生产安装、Caddy/Nginx 反向代理、公开订阅与管理认证隔离、升级和回滚见 [部署指南](docs/deployment.md)。
 
