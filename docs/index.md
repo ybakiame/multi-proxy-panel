@@ -38,9 +38,9 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 ### 核心能力
 
 - 多节点统一管理（心跳、状态监控）
-- 多协议支持（VLESS/VMess/Trojan/SS2022/Hysteria2/TUIC）
+- 安全协议支持（VLESS + REALITY/XHTTP、Hysteria2、AnyTLS）
 - 双核心兼容（sing-box + mihomo）
-- 自动订阅生成（Base64/JSON/Clash/SingBox/V2RayNG）
+- 分享链接、Clash YAML、sing-box JSON 与通用 JSON 节点数据输出
 - 实时流量统计与主机性能监控
 - 配置热重载与远程核心控制
 

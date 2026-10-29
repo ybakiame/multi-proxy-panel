@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::generator::ProxyNode;
 
-/// Generate a simple JSON array of outbounds (sing-box compatible style).
+/// Generate a generic JSON array of normalized node descriptions.
 pub fn generate(nodes: &[ProxyNode]) -> PanelResult<String> {
     let outbounds: Vec<_> = nodes
         .iter()

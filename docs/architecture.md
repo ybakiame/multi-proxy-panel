@@ -183,11 +183,11 @@ trait ConfigBuilder: Send + Sync {
 
 | 格式 | 内容类型 | 典型客户端 |
 |------|----------|-----------|
-| Base64 | `text/plain` | V2RayN、V2RayNG、Shadowrocket |
-| JSON | `application/json` | 通用 |
-| Clash | `application/x-yaml` | Clash Verge、Clash Meta |
-| SingBox | `application/json` | sing-box GUI、NekoBox |
-| V2RayNG | `application/json` | V2RayNG (专用格式) |
+| Base64 | `text/plain` | V2RayN、V2RayNG、Shadowrocket 等分享链接客户端 |
+| JSON | `application/json` | 通用节点数组，供调试和二次处理，不是独立客户端订阅格式 |
+| Clash | `application/x-yaml` | Clash/mihomo 客户端 |
+| SingBox | `application/json` | sing-box 配置 |
+| V2RayNG | `text/plain` | 与 Base64 输出相同的分享链接 |
 
 **凭证注入：**
 
