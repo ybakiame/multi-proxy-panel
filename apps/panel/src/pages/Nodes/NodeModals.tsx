@@ -154,6 +154,7 @@ interface BinariesModalProps {
   node: Node | null;
   binaries: CoreBinary[];
   binLoading: boolean;
+  binError: string;
   deleteBinary: string | null;
   onClose: () => void;
   onDelete: (fileName: string) => void;
@@ -172,6 +173,7 @@ export function BinariesModal({
   node,
   binaries,
   binLoading,
+  binError,
   deleteBinary,
   onClose,
   onDelete,
@@ -194,12 +196,17 @@ export function BinariesModal({
               {node ? `${t("nodes.binariesTitle")}: ${node.name}` : t("nodes.binariesTitle")}
             </DialogTitle>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-auto">
+          <div className="max-h-[60vh] space-y-3 overflow-auto">
+            {binError && (
+              <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {binError}
+              </p>
+            )}
             <DataTable
               aria-label="core binaries"
               columns={5}
               loading={binLoading}
-              empty={binaries.length === 0 ? t("common.empty") : undefined}
+              empty={binaries.length === 0 ? t("nodes.noCoreBinaries") : undefined}
               header={
                 <TableRow>
                   <TableHead>{t("nodes.binaryName")}</TableHead>

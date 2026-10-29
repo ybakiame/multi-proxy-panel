@@ -22,7 +22,7 @@
    - `database_url`: PostgreSQL 连接字符串（生产必须）
    - `jwt_secret`: 至少 32 字符的随机字符串，用于签发管理员 JWT
    - `cors_origins`: Web 面板的来源域名
-   - `public_http_url` / `public_grpc_url`: 反向代理后的公网地址，用于生成安装指令
+   - `public_http_url` / `public_grpc_url`: 反向代理后的公网地址，用于生成安装指令；gRPC 推荐使用独立灰云子域名
 
 3. 使用环境变量覆盖（可选）：
 

@@ -169,6 +169,8 @@
     "selectCore": "选择核心",
     "binaries": "核心",
     "binariesTitle": "核心二进制",
+    "noCoreBinaries": "尚未安装核心二进制",
+    "binariesReadError": "无法读取节点核心目录，请检查 Agent 状态和日志。",
     "binaryName": "文件",
     "binarySize": "大小",
     "binaryModified": "修改时间",

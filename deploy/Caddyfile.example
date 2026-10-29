@@ -1,5 +1,13 @@
-# Replace panel.example.com and the bcrypt hash before use.
+# Replace panel.example.com, grpc.example.com and the bcrypt hash before use.
+# Keep the gRPC subdomain DNS-only (grey cloud); the panel may use Cloudflare.
 # Generate the hash interactively with `caddy hash-password`.
+grpc.example.com {
+    @grpc path /proxypanel.HubAgent/*
+    handle @grpc {
+        reverse_proxy h2c://127.0.0.1:50052
+    }
+}
+
 panel.example.com {
     encode zstd gzip
 

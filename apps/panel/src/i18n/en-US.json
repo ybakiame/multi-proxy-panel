@@ -169,6 +169,8 @@
     "selectCore": "Select Core",
     "binaries": "Binaries",
     "binariesTitle": "Core Binaries",
+    "noCoreBinaries": "No core binaries installed",
+    "binariesReadError": "Unable to read the node core directory. Check the Agent status and logs.",
     "binaryName": "File",
     "binarySize": "Size",
     "binaryModified": "Modified",

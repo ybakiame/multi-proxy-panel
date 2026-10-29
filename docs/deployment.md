@@ -86,7 +86,7 @@ RUST_LOG=proxy_panel_hub=info,tower_http=info
 
 # Public install URLs and pre-provisioned Agent credentials
 PROXYPANEL_PUBLIC_HTTP_URL=https://panel.example.com
-PROXYPANEL_PUBLIC_GRPC_URL=https://panel.example.com:443
+PROXYPANEL_PUBLIC_GRPC_URL=https://grpc.example.com:443
 PROXYPANEL_AGENT_TOKEN=PRE_GENERATED_NODE_TOKEN
 PROXYPANEL_AGENT_ID=PRE_GENERATED_NODE_UUID
 PROXYPANEL_RELEASE_REPO=ybakiame/multi-proxy-panel
@@ -143,9 +143,16 @@ server {
 
 #### Caddy 配置示例
 
-生产环境可直接参考 `deploy/Caddyfile.example`。该模板在同一域名下分离 gRPC、公开订阅/安装脚本与管理面板，并为管理 UI/API/metrics 增加 Basic Auth。使用 `caddy hash-password` 交互生成哈希并替换模板占位符，不要把密码或真实哈希提交到仓库。
+生产环境可直接参考 `deploy/Caddyfile.example`。模板使用独立 `grpc.example.com` 承载 gRPC，面板域名分离公开订阅/安装脚本与管理 UI/API/metrics，并为管理入口增加 Basic Auth。使用 `caddy hash-password` 交互生成哈希并替换模板占位符，不要把密码或真实哈希提交到仓库。
 
-标准版 Caddy 没有内置 `rate_limit` 指令；限流应在网关、CDN 或配套的访问控制层实现。
+推荐将 gRPC 子域名设为 **DNS only（灰云）**，避免 Cloudflare 的 HTML 挑战或 WAF 403 中断长连接；网页和订阅仍可保持代理。`public_grpc_url` 应指向 `https://grpc.example.com:443`，已有节点需要同步更新 `PROXYPANEL_HUB_URL` 并重启 Agent。配置后可用以下命令检查：
+
+```bash
+curl -i -X POST 'https://grpc.example.com/proxypanel.HubAgent/Stream' \
+  -H 'content-type: application/grpc' -H 'te: trailers' --data-binary ''
+```
+
+响应头应为 `content-type: application/grpc`，不应是 `text/html` 或 Cloudflare 403 页面。标准版 Caddy 没有内置 `rate_limit` 指令；限流应在网关、CDN 或配套的访问控制层实现。
 
 ---
 
@@ -201,7 +208,7 @@ sudo systemctl enable --now proxy-panel-hub
 
 ```bash
 sudo proxy-panel install agent \
-  --hub-url "https://panel.example.com:443" \
+  --hub-url "https://grpc.example.com:443" \
   --token "your-agent-token" \
   --name "tokyo-01"
 ```
@@ -331,7 +338,7 @@ Hub 提供公开端点 `/install.sh` 与 `/install-hub.sh` 伺服 bootstrap 脚�
 
 ```bash
 curl -fsSL https://panel.example.com/install.sh | bash -s -- \
-  --hub-url "https://panel.example.com:443" \
+  --hub-url "https://grpc.example.com:443" \
   --token "your-agent-token" \
   --agent-id "<预生成节点 UUID>" \
   --name "tokyo-01" \
@@ -392,7 +399,7 @@ sudo proxy-panel upgrade agent
 
 ```bash
 curl -fsSL https://panel.example.com/install.sh | bash -s -- \
-  --hub-url "https://panel.example.com:443" \
+  --hub-url "https://grpc.example.com:443" \
   --token "your-new-token"
 ```
 

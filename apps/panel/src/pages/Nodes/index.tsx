@@ -43,6 +43,7 @@ export function Nodes() {
   const [pushing, setPushing] = useState(false);
   const [binNode, setBinNode] = useState<Node | null>(null);
   const [binaries, setBinaries] = useState<CoreBinary[]>([]);
+  const [binError, setBinError] = useState("");
   const [binLoading, setBinLoading] = useState(false);
   const [deleteBinary, setDeleteBinary] = useState<string | null>(null);
   const [pushResult, setPushResult] = useState<string | null>(null);
@@ -159,11 +160,15 @@ export function Nodes() {
 
   const openBinaries = async (node: Node) => {
     setBinNode(node);
+    setBinError("");
     setBinLoading(true);
     try {
-      setBinaries(await getCoreBinaries(node.id));
+      const report = await getCoreBinaries(node.id);
+      setBinaries(report.binaries);
+      setBinError(report.error);
     } catch {
-      // error handled by axios interceptor
+      setBinaries([]);
+      setBinError(t("nodes.binariesReadError"));
     } finally {
       setBinLoading(false);
     }
@@ -354,6 +359,7 @@ export function Nodes() {
         node={binNode}
         binaries={binaries}
         binLoading={binLoading}
+        binError={binError}
         deleteBinary={deleteBinary}
         onClose={() => setBinNode(null)}
         onDelete={setDeleteBinary}

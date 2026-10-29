@@ -15,7 +15,7 @@ trusted_proxy_ips = "127.0.0.1,::1"
 
 # Public URLs used in generated install commands. Set these explicitly behind a proxy.
 public_http_url = "https://panel.example.com"
-public_grpc_url = "https://panel.example.com:443"
+public_grpc_url = "https://grpc.example.com:443"
 
 # JWT secret for admin authentication — required, at least 32 characters.
 # Generate a random value, e.g.: openssl rand -base64 42

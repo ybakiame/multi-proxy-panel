@@ -297,10 +297,10 @@
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Tokyo-01",
     "token": "new-secure-token-generated-on-the-fly",
-    "hub_url": "https://panel.example.com:443",
+    "hub_url": "https://grpc.example.com:443",
     "script_url": "https://panel.example.com/install.sh",
     "version": "v0.3.3",
-    "command": "curl -fsSL 'https://panel.example.com/install.sh' | bash -s -- --hub-url 'https://panel.example.com:443' --token 'new-secure-token-generated-on-the-fly' --agent-id '550e8400-e29b-41d4-a716-446655440000' --name 'Tokyo-01' --version 'v0.3.3'"
+    "command": "curl -fsSL 'https://panel.example.com/install.sh' | bash -s -- --hub-url 'https://grpc.example.com:443' --token 'new-secure-token-generated-on-the-fly' --agent-id '550e8400-e29b-41d4-a716-446655440000' --name 'Tokyo-01' --version 'v0.3.3'"
   }
 }
 ```
