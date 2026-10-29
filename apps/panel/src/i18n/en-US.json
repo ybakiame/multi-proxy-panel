@@ -261,7 +261,12 @@
     "publishedAt": "Published",
     "updateAvailable": "Update",
     "inUse": "In Use",
-    "setActive": "Set Active"
+    "setActive": "Set Active",
+    "useLatestRelease": "Use Latest Release",
+    "useLatestPrerelease": "Use Latest Pre-release",
+    "prereleaseHint": "Pre-releases may contain unstable changes. Activation only marks updates as pending; push manually to apply.",
+    "latestNotFound": "No latest version was found for this core. Please retry later.",
+    "latestError": "Failed to save or activate the latest version. Please retry."
   },
   "protocols": {
     "title": "Protocol Templates",

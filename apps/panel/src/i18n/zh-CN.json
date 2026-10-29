@@ -261,7 +261,12 @@
     "publishedAt": "发布时间",
     "updateAvailable": "有更新",
     "inUse": "使用中",
-    "setActive": "设为使用"
+    "setActive": "设为使用",
+    "useLatestRelease": "使用最新正式版",
+    "useLatestPrerelease": "使用最新预发布版",
+    "prereleaseHint": "预发布版可能包含未稳定变更；激活仅标记待推送，需手动推送后生效。",
+    "latestNotFound": "未找到对应核心的最新版本，请稍后重试。",
+    "latestError": "最新版本保存或激活失败，请重试。"
   },
   "protocols": {
     "title": "协议模板",

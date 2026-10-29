@@ -32,6 +32,8 @@ export function CoreVersions() {
   const [upstreamOpen, setUpstreamOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, SaveVersionItem>>(new Map());
   const [saving, setSaving] = useState(false);
+  const [latestAction, setLatestAction] = useState<string | null>(null);
+  const [quickError, setQuickError] = useState("");
 
   const { data: versions = [], isLoading } = useQuery({
     queryKey: [coreVersionsQueryKey],
@@ -67,6 +69,43 @@ export function CoreVersions() {
       queryClient.invalidateQueries({ queryKey: [coreVersionsQueryKey] });
     },
   });
+
+  const latestMutation = useMutation({
+    mutationFn: async ({ coreType, channel }: { coreType: string; channel: string }) => {
+      const upstream = await getUpstreamCoreVersions();
+      const item = upstream
+        .find((core) => core.core_type === coreType)
+        ?.versions.find((version) => version.channel === channel);
+      if (!item) throw new Error(t("coreVersions.latestNotFound"));
+      await saveCoreVersions([
+        {
+          core_type: coreType,
+          version: item.version,
+          channel: item.channel,
+          published_at: item.published_at,
+          commit_sha: item.commit_sha,
+        },
+      ]);
+      const versions = await getCoreVersions(coreType);
+      const target = versions.find((version) => version.version === item.version);
+      if (!target) throw new Error(t("coreVersions.latestNotFound"));
+      await activateCoreVersion(target.id);
+      return target;
+    },
+    onSuccess: () => {
+      setQuickError("");
+      queryClient.invalidateQueries({ queryKey: [coreVersionsQueryKey] });
+      queryClient.invalidateQueries({ queryKey: [upstreamQueryKey] });
+    },
+    onError: () => setQuickError(t("coreVersions.latestError")),
+    onSettled: () => setLatestAction(null),
+  });
+
+  const useLatest = (coreType: string, channel: string) => {
+    setQuickError("");
+    setLatestAction(`${coreType}|${channel}`);
+    latestMutation.mutate({ coreType, channel });
+  };
 
   const openUpstream = () => {
     setUpstreamOpen(true);
@@ -118,6 +157,41 @@ export function CoreVersions() {
           onClick: openUpstream,
         }}
       />
+
+      <Card>
+        <CardContent className="space-y-4">
+          {["sing-box", "mihomo"].map((coreType) => (
+            <div key={coreType} className="flex flex-wrap items-center gap-2">
+              <span className="w-24 text-sm font-medium">{coreType}</span>
+              <Button
+                size="sm"
+                disabled={latestAction !== null}
+                onClick={() => useLatest(coreType, "release")}
+              >
+                {latestAction === `${coreType}|release` ? (
+                  <Spinner />
+                ) : (
+                  t("coreVersions.useLatestRelease")
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={latestAction !== null}
+                onClick={() => useLatest(coreType, "prerelease")}
+              >
+                {latestAction === `${coreType}|prerelease` ? (
+                  <Spinner />
+                ) : (
+                  t("coreVersions.useLatestPrerelease")
+                )}
+              </Button>
+            </div>
+          ))}
+          <p className="text-sm text-muted-foreground">{t("coreVersions.prereleaseHint")}</p>
+          {quickError && <p className="text-sm text-destructive">{quickError}</p>}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent>
