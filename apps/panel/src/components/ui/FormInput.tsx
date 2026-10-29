@@ -13,6 +13,7 @@ interface FormInputProps {
   isInvalid?: boolean;
   errorMessage?: string;
   isReadOnly?: boolean;
+  isDisabled?: boolean;
   className?: string;
 }
 
@@ -27,6 +28,7 @@ export function FormInput({
   isInvalid,
   errorMessage,
   isReadOnly,
+  isDisabled,
   className,
 }: FormInputProps) {
   const id = useId();
@@ -47,6 +49,7 @@ export function FormInput({
         placeholder={placeholder}
         required={isRequired}
         readOnly={isReadOnly}
+        disabled={isDisabled}
         aria-invalid={isInvalid || undefined}
         aria-describedby={describedBy || undefined}
       />

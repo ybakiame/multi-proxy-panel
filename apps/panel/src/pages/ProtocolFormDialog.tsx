@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { ExternalLinkIcon } from "lucide-react";
 import { FormCheckbox, FormInput, FormSelect } from "../components/ui";
 import { Button } from "../components/ui/button";
 import {
@@ -20,8 +21,22 @@ const CORE_PROTOCOLS: Record<string, string[]> = {
 
 const CORE_TYPES = ["sing-box", "mihomo"];
 const FLOW_OPTIONS = ["xtls-rprx-vision"];
-const XHTTP_MODES = ["auto", "packet-up", "stream-up"];
+const XHTTP_MODES = ["auto", "stream-one", "stream-up", "packet-up"];
 const OBFS_TYPES = ["none", "salamander"];
+
+const PROTOCOL_DOCS: Record<string, Record<string, string>> = {
+  "sing-box": {
+    vless_reality: "https://sing-box.sagernet.org/configuration/inbound/vless/",
+    hysteria2: "https://sing-box.sagernet.org/configuration/inbound/hysteria2/",
+    anytls: "https://sing-box.sagernet.org/configuration/inbound/anytls/",
+  },
+  mihomo: {
+    vless_reality: "https://wiki.metacubex.one/en/config/inbound/listeners/vless/",
+    vless_xhttp: "https://wiki.metacubex.one/en/config/inbound/listeners/vless/",
+    hysteria2: "https://wiki.metacubex.one/en/config/inbound/listeners/hysteria2/",
+    anytls: "https://wiki.metacubex.one/en/config/inbound/listeners/anytls/",
+  },
+};
 
 export interface ProtocolForm {
   name: string;
@@ -80,8 +95,8 @@ export function ProtocolFormDialog({
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => onFormChange({ ...form, uuid: value })}
-              description={t("protocols.uuidDescription")}
-              isRequired
+              description={t("protocols.credentialInjected")}
+              isDisabled
             />
             <FormSelect
               label={t("protocols.flow")}
@@ -135,18 +150,22 @@ export function ProtocolFormDialog({
               label={t("protocols.uuid")}
               value={form.uuid}
               onChange={(value) => onFormChange({ ...form, uuid: value })}
-              description={t("protocols.uuidDescription")}
-              isRequired
+              description={t("protocols.credentialInjected")}
+              isDisabled
             />
             <FormInput
               label={t("protocols.path")}
               value={form.path}
               onChange={(value) => onFormChange({ ...form, path: value })}
+              placeholder="/xhttp"
+              description={t("protocols.xhttpPathDescription")}
             />
             <FormInput
               label={t("protocols.host")}
               value={form.host}
               onChange={(value) => onFormChange({ ...form, host: value })}
+              placeholder="cdn.example.com"
+              description={t("protocols.xhttpHostDescription")}
             />
             <FormSelect
               label={t("protocols.mode")}
@@ -156,6 +175,7 @@ export function ProtocolFormDialog({
                 id: option,
                 label: option,
               }))}
+              description={t("protocols.xhttpModeDescription")}
             />
           </>
         );
@@ -166,8 +186,8 @@ export function ProtocolFormDialog({
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => onFormChange({ ...form, password: value })}
-              description={t("protocols.passwordDescription")}
-              isRequired
+              description={t("protocols.credentialInjected")}
+              isDisabled
             />
             <FormSelect
               label={t("protocols.obfsType")}
@@ -204,8 +224,8 @@ export function ProtocolFormDialog({
               label={t("protocols.password")}
               value={form.password}
               onChange={(value) => onFormChange({ ...form, password: value })}
-              description={t("protocols.passwordDescription")}
-              isRequired
+              description={t("protocols.credentialInjected")}
+              isDisabled
             />
             <FormInput
               label={t("protocols.masquerade")}
@@ -239,12 +259,14 @@ export function ProtocolFormDialog({
             value={form.core_type}
             onChange={(value) => {
               const supported = CORE_PROTOCOLS[value] ?? PROTOCOL_TYPES;
+              const protocolType = supported.includes(form.protocol_type)
+                ? form.protocol_type
+                : supported[0];
               onFormChange({
                 ...form,
                 core_type: value,
-                protocol_type: supported.includes(form.protocol_type)
-                  ? form.protocol_type
-                  : supported[0],
+                protocol_type: protocolType,
+                tls_enabled: protocolType === "vless_reality" ? form.tls_enabled : true,
               });
             }}
             options={CORE_TYPES.map((core) => ({ id: core, label: core }))}
@@ -253,13 +275,28 @@ export function ProtocolFormDialog({
           <FormSelect
             label={t("protocols.type")}
             value={form.protocol_type}
-            onChange={(value) => onFormChange({ ...form, protocol_type: value })}
+            onChange={(value) =>
+              onFormChange({
+                ...form,
+                protocol_type: value,
+                tls_enabled: value === "vless_reality" ? form.tls_enabled : true,
+              })
+            }
             options={(CORE_PROTOCOLS[form.core_type] ?? PROTOCOL_TYPES).map((type) => ({
               id: type,
               label: type,
             }))}
             isRequired
           />
+          <a
+            href={PROTOCOL_DOCS[form.core_type]?.[form.protocol_type]}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            {t("protocols.officialDocs")}
+            <ExternalLinkIcon aria-hidden="true" className="size-4" />
+          </a>
           <FormInput
             label={t("protocols.listen")}
             value={form.listen_address}
@@ -280,11 +317,8 @@ export function ProtocolFormDialog({
             </Button>
           </div>
           {form.protocol_type !== "vless_reality" && (
-            <FormCheckbox
-              isSelected={form.tls_enabled}
-              onChange={(selected) => onFormChange({ ...form, tls_enabled: selected })}
-            >
-              {t("protocols.useTls")}
+            <FormCheckbox isSelected isDisabled>
+              {t("protocols.useTlsRequired")}
             </FormCheckbox>
           )}
           {renderDynamicFields()}

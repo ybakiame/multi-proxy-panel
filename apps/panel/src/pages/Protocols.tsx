@@ -24,7 +24,7 @@ const defaultForm: ProtocolForm = {
   core_type: "sing-box",
   listen_address: "0.0.0.0",
   listen_port: "",
-  tls_enabled: false,
+  tls_enabled: true,
   uuid: "",
   password: "",
   flow: "xtls-rprx-vision",
@@ -33,7 +33,7 @@ const defaultForm: ProtocolForm = {
   private_key: "",
   public_key: "",
   short_id: "",
-  path: "",
+  path: "/xhttp",
   host: "",
   mode: "auto",
   obfs_type: "none",
@@ -152,7 +152,9 @@ export function Protocols() {
         core_type: protocol.core_type,
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
-        tls_enabled: !!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0,
+        tls_enabled:
+          protocol.protocol_type !== "vless_reality" ||
+          (!!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0),
       });
     } else {
       setForm(defaultForm);
