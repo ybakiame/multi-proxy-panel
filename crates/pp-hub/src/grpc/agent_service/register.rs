@@ -34,84 +34,7 @@ pub(super) async fn handle_register(
         .await
         .map_err(|e| Status::internal(format!("database error: {}", e)))?;
 
-    let auto_register = state.config.auto_register_agents;
-
-    if let Some(node) = node {
-        // Existing node: verify token against stored hash using Argon2 verification.
-        if node.token_hash.is_empty() {
-            tracing::warn!(
-                "node {} has empty token_hash; reject registration",
-                agent_id
-            );
-            return Err(Box::new(Status::failed_precondition(
-                "node token is not set; provision a token first",
-            )));
-        }
-        let token_valid =
-            pp_common::verify_secret_async(req.token.clone(), node.token_hash.clone())
-                .await
-                .unwrap_or(false);
-        if !token_valid {
-            tracing::warn!("agent {} provided invalid token", agent_id);
-            return Err(Box::new(Status::unauthenticated("invalid agent token")));
-        }
-
-        let mut active: node::ActiveModel = node.into();
-        active.status = Set("online".to_string());
-        active.hostname = Set(req.hostname.clone());
-        active.cores_available = Set(serde_json::json!(req.capabilities));
-        if let Some(addr) = &remote_addr
-            && !is_loopback_addr(addr)
-        {
-            active.address = Set(addr.clone());
-        }
-        if !req.domain.is_empty() {
-            active.domain = Set(Some(req.domain.clone()));
-        }
-        active.last_seen_at = Set(Some(chrono::Utc::now().into()));
-        active.updated_at = Set(chrono::Utc::now().into());
-        active
-            .update(&state.db)
-            .await
-            .map_err(|e| Status::internal(format!("database error: {}", e)))?;
-    } else if auto_register {
-        let token_hash = pp_common::hash_secret_async(req.token.clone())
-            .await
-            .map_err(|_| Status::internal("failed to hash agent token"))?;
-
-        let new_node = node::ActiveModel {
-            id: Set(agent_id),
-            name: Set(req.hostname.clone()),
-            hostname: Set(req.hostname.clone()),
-            address: Set(remote_addr
-                .clone()
-                .filter(|a| !is_loopback_addr(a))
-                .unwrap_or_default()),
-            domain: Set(if req.domain.is_empty() {
-                None
-            } else {
-                Some(req.domain.clone())
-            }),
-            token_hash: Set(token_hash),
-            cores_available: Set(serde_json::json!(req.capabilities)),
-            labels: Set(Some(serde_json::json!(
-                req.labels
-                    .into_iter()
-                    .collect::<std::collections::HashMap<_, _>>()
-            ))),
-            usage_coefficient: Set(1.0),
-            status: Set("online".to_string()),
-            parent_id: Set(None),
-            last_seen_at: Set(Some(chrono::Utc::now().into())),
-            created_at: Set(chrono::Utc::now().into()),
-            updated_at: Set(chrono::Utc::now().into()),
-        };
-        new_node
-            .insert(&state.db)
-            .await
-            .map_err(|e| Status::internal(format!("database error: {}", e)))?;
-        tracing::info!("auto-registered new agent: {}", agent_id);
-    } else {
+    let Some(node) = node else {
         tracing::warn!(
             "agent {} attempted to register but node does not exist",
             agent_id
@@ -119,7 +42,43 @@ pub(super) async fn handle_register(
         return Err(Box::new(Status::not_found(
             "node not registered; create the node and provision a token first",
         )));
+    };
+
+    if node.token_hash.is_empty() {
+        tracing::warn!(
+            "node {} has empty token_hash; reject registration",
+            agent_id
+        );
+        return Err(Box::new(Status::failed_precondition(
+            "node token is not set; provision a token first",
+        )));
     }
+    let token_valid = pp_common::verify_secret_async(req.token.clone(), node.token_hash.clone())
+        .await
+        .unwrap_or(false);
+    if !token_valid {
+        tracing::warn!("agent {} provided invalid token", agent_id);
+        return Err(Box::new(Status::unauthenticated("invalid agent token")));
+    }
+
+    let mut active: node::ActiveModel = node.into();
+    active.status = Set("online".to_string());
+    active.hostname = Set(req.hostname.clone());
+    active.cores_available = Set(serde_json::json!(req.capabilities));
+    if let Some(addr) = &remote_addr
+        && !is_loopback_addr(addr)
+    {
+        active.address = Set(addr.clone());
+    }
+    if !req.domain.is_empty() {
+        active.domain = Set(Some(req.domain.clone()));
+    }
+    active.last_seen_at = Set(Some(chrono::Utc::now().into()));
+    active.updated_at = Set(chrono::Utc::now().into());
+    active
+        .update(&state.db)
+        .await
+        .map_err(|e| Status::internal(format!("database error: {}", e)))?;
 
     // Register the connection
     state

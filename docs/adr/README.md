@@ -56,6 +56,7 @@ ADR 记录**为什么**做出某个重要决策，以及当时的权衡；它是
 | [ADR-0017](0017-shadcn-base-ui-panel.md) | Accepted | 2026-10-25 | 管理面板采用 shadcn/ui 与 Base UI |
 | [ADR-0018](0018-hub-self-update-maintenance.md) | Accepted | 2026-10-25 | Hub 受控自更新与部署授权模型 |
 | [ADR-0019](0019-devenv-migration-and-rc-docker-skip.md) | Accepted | 2026-10-25 | 开发环境迁移至 devenv 与 RC 标签跳过 Docker 发布 |
+| [ADR-0020](0020-preprovisioned-agent-enrollment.md) | Accepted | 2026-10-29 | 节点统一采用 Hub 预生成接入 |
 
 > 客户端专属 ADR-0002–0014 随拆仓从当前工作区移除；决策原文和元数据修正记录
 > 保留在 Git 历史及 Lanpath 文档中，不再作为 ProxyPanel 的当前开发契约。

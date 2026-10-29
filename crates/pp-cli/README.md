@@ -58,7 +58,20 @@ proxy-panel provision-node \
   --address "192.0.2.1"
 ```
 
-输出 `node_id` 和 `token`。
+输出 `node_id` 和 `token`。节点必须先在 Hub 预生成，再把面板生成的安装指令复制到目标 Agent 服务器执行；旧 `auto_register_agents` 配置已不再生效。
+
+### 安装 Agent
+
+```bash
+sudo proxy-panel install agent \
+  --hub-url "https://panel.example.com:443" \
+  --token "<预生成节点 token>" \
+  --agent-id "<节点 UUID>" \
+  --name "tokyo-01" \
+  --version "vX.Y.Z"
+```
+
+Hub URL 必须使用 HTTPS，仅本机开发可使用 `http://127.0.0.1` 或 `http://localhost`。CLI 会拒绝空 Token、非法 UUID 和包含换行的参数。安装后 Token 由 `/etc/proxy-panel/agent.env` 提供，不会写入 Agent 的 systemd 进程参数。
 
 ### 数据库诊断
 

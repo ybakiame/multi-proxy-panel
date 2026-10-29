@@ -14,6 +14,13 @@
 #   -h, --help           Show this help
 
 set -euo pipefail
+umask 077
+
+CURL_OPTIONS=(--proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --retry 3 --retry-delay 2)
+
+download() {
+    curl "${CURL_OPTIONS[@]}" -o "$1" "$2"
+}
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -124,13 +131,13 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 log "下载 ${CLI_TARBALL}..."
-if ! curl -fsSL -o "${TMP_DIR}/${CLI_TARBALL}" "${DOWNLOAD_BASE}/${CLI_TARBALL}"; then
+if ! download "${TMP_DIR}/${CLI_TARBALL}" "${DOWNLOAD_BASE}/${CLI_TARBALL}"; then
     err "下载 ${CLI_TARBALL} 失败"
     exit 1
 fi
 
 log "下载 ${SHA256_FILE}..."
-if ! curl -fsSL -o "${TMP_DIR}/${SHA256_FILE}" "${DOWNLOAD_BASE}/${SHA256_FILE}"; then
+if ! download "${TMP_DIR}/${SHA256_FILE}" "${DOWNLOAD_BASE}/${SHA256_FILE}"; then
     err "下载 ${SHA256_FILE} 失败"
     exit 1
 fi

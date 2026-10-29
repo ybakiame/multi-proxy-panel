@@ -26,8 +26,12 @@ pub(crate) fn test_state(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
 }
 
 async fn bootstrap_app() -> (Router, Arc<AppState>, String) {
+    bootstrap_app_with_config(HubConfig::default()).await
+}
+
+async fn bootstrap_app_with_config(config: HubConfig) -> (Router, Arc<AppState>, String) {
     let db = setup_db().await;
-    let state = test_state(db);
+    let state = AppState::new(db, config, RateLimiter::default(), None);
     ensure_bootstrap_api_key(&state.db)
         .await
         .expect("bootstrap key");
@@ -533,6 +537,48 @@ async fn node_install_command_rotates_token() {
     let body2 = response_json(resp2).await;
     let token2 = body2["data"]["token"].as_str().expect("token 2");
     assert_ne!(token1, token2, "token should be rotated");
+}
+
+#[tokio::test]
+async fn node_install_command_uses_explicit_public_urls() {
+    let config = HubConfig {
+        public_http_url: Some("https://panel.example.com".to_string()),
+        public_grpc_url: Some("https://panel.example.com:443".to_string()),
+        ..Default::default()
+    };
+    let (app, _state, key) = bootstrap_app_with_config(config).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes",
+            &key,
+            Some(json!({ "name": "public-url-test" })),
+        ))
+        .await
+        .expect("create");
+    let create_body = response_json(create_response).await;
+    let node_id = create_body["data"]["id"].as_str().expect("node id");
+    let response = app
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("install command");
+    let body = response_json(response).await;
+
+    assert_eq!(
+        body["data"]["script_url"],
+        "https://panel.example.com/install.sh"
+    );
+    assert_eq!(body["data"]["hub_url"], "https://panel.example.com:443");
+    let command = body["data"]["command"].as_str().expect("command");
+    assert!(command.contains("--hub-url 'https://panel.example.com:443'"));
+    assert!(!command.contains(":50052"));
 }
 
 #[tokio::test]

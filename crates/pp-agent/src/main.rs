@@ -76,8 +76,8 @@ async fn main() -> anyhow::Result<()> {
 
     restore_last_config(&supervisor, &args.data_dir).await;
 
-    // Load or generate agent token
-    let token = load_or_register_token(&args.data_dir, args.token).await?;
+    // Load the provisioned agent token
+    let token = load_token(&args.data_dir, args.token).await?;
 
     // Load or generate a stable agent id so restarts don't create duplicate nodes.
     let agent_id = load_or_register_agent_id(&args.data_dir, args.agent_id).await?;
@@ -150,10 +150,7 @@ async fn restore_last_config(supervisor: &pp_core::CoreSupervisor, data_dir: &Pa
     }
 }
 
-async fn load_or_register_token(
-    data_dir: &Path,
-    provided: Option<String>,
-) -> anyhow::Result<String> {
+async fn load_token(data_dir: &Path, provided: Option<String>) -> anyhow::Result<String> {
     let token_path = data_dir.join(".agent_token");
 
     if let Some(token) = provided {
@@ -173,17 +170,9 @@ async fn load_or_register_token(
         return Ok(token.trim().to_string());
     }
 
-    let token = pp_common::generate_secure_token();
-    tokio::fs::write(&token_path, &token).await?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = tokio::fs::metadata(&token_path).await?.permissions();
-        perms.set_mode(0o600);
-        tokio::fs::set_permissions(&token_path, perms).await?;
-    }
-    tracing::info!("generated new agent token (auto-register mode)");
-    Ok(token)
+    anyhow::bail!(
+        "agent token is required; provision the node in Hub and install with the generated command"
+    )
 }
 
 async fn load_or_register_agent_id(

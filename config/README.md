@@ -22,7 +22,7 @@
    - `database_url`: PostgreSQL 连接字符串（生产必须）
    - `jwt_secret`: 至少 32 字符的随机字符串，用于签发管理员 JWT
    - `cors_origins`: Web 面板的来源域名
-   - `auto_register_agents`: 生产环境必须设为 `false`
+   - `public_http_url` / `public_grpc_url`: 反向代理后的公网地址，用于生成安装指令
 
 3. 使用环境变量覆盖（可选）：
 
@@ -37,7 +37,7 @@
 - [ ] `jwt_secret` 已改为随机长字符串（Hub 会拒绝默认占位符）
 - [ ] `database_url` 使用 PostgreSQL 而非 SQLite
 - [ ] `cors_origins` 设置为精确的 Web 面板域名
-- [ ] `auto_register_agents` 设为 `false`
+- [ ] 节点均通过 Hub 预生成，旧 `auto_register_agents` 配置已删除
 - [ ] 配置了 `trusted_proxy_ips`（若使用反向代理）
 - [ ] 通过反向代理或 `http_tls_*` 启用 HTTPS
 

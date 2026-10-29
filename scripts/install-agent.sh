@@ -3,8 +3,8 @@
 # Downloads the CLI binary then delegates to `proxy-panel install agent`.
 #
 # Usage:
-#   curl -fsSL https://<hub>/install.sh | bash -s -- --hub-url http://hub:50052 --token xxx [--agent-id <uuid>] [--name mynode] [--version latest] [--repo owner/repo]
-#   bash install-agent.sh --hub-url http://1.2.3.4:50052 --token <token> --name mynode
+#   curl -fsSL https://<hub>/install.sh | bash -s -- --hub-url https://<hub>:443 --token xxx [--agent-id <uuid>] [--name mynode] [--version latest] [--repo owner/repo]
+#   bash install-agent.sh --hub-url https://<hub>:443 --token <token> --name mynode
 #
 # Options:
 #   --hub-url <url>      Hub gRPC address (required unless --uninstall)
@@ -18,6 +18,13 @@
 #   -h, --help           Show this help
 
 set -euo pipefail
+umask 077
+
+CURL_OPTIONS=(--proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --retry 3 --retry-delay 2)
+
+download() {
+    curl "${CURL_OPTIONS[@]}" -o "$1" "$2"
+}
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -96,11 +103,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# 1. Root check
+# 1. Root check and input validation
 # ---------------------------------------------------------------------------
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     err "请使用 root 权限运行此脚本（sudo）"
     exit 1
+fi
+
+if [[ "$UNINSTALL" != true ]]; then
+    if [[ -z "$HUB_URL" || -z "$TOKEN" ]]; then
+        err "安装 Agent 必须提供 --hub-url 和 --token"
+        exit 1
+    fi
+    if [[ "$HUB_URL" == *$'\r'* || "$HUB_URL" == *$'\n'* ]]; then
+        err "Hub URL 不能包含换行符"
+        exit 1
+    fi
+    case "$HUB_URL" in
+        https://*|http://127.0.0.1|http://127.0.0.1:*|http://localhost|http://localhost:*) ;;
+        *)
+            err "Hub URL 必须使用 HTTPS；仅本机开发可使用 http://127.0.0.1 或 http://localhost"
+            exit 1
+            ;;
+    esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -148,13 +173,13 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 log "下载 ${CLI_TARBALL}..."
-if ! curl -fsSL -o "${TMP_DIR}/${CLI_TARBALL}" "${DOWNLOAD_BASE}/${CLI_TARBALL}"; then
+if ! download "${TMP_DIR}/${CLI_TARBALL}" "${DOWNLOAD_BASE}/${CLI_TARBALL}"; then
     err "下载 ${CLI_TARBALL} 失败"
     exit 1
 fi
 
 log "下载 ${SHA256_FILE}..."
-if ! curl -fsSL -o "${TMP_DIR}/${SHA256_FILE}" "${DOWNLOAD_BASE}/${SHA256_FILE}"; then
+if ! download "${TMP_DIR}/${SHA256_FILE}" "${DOWNLOAD_BASE}/${SHA256_FILE}"; then
     err "下载 ${SHA256_FILE} 失败"
     exit 1
 fi

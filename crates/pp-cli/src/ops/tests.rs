@@ -28,6 +28,40 @@ fn build_download_url_tagged_no_v() {
 }
 
 #[test]
+fn agent_install_requires_secure_urls_and_valid_secrets() {
+    use super::install::validate_agent_install_args;
+
+    validate_agent_install_args("https://panel.example.com:443", "token", None, None).unwrap();
+    validate_agent_install_args("http://127.0.0.1:50052", "token", None, None).unwrap();
+    validate_agent_install_args("http://localhost:50052", "token", None, None).unwrap();
+
+    for url in [
+        "http://panel.example.com:50052",
+        "https://user:password@panel.example.com",
+        "not-a-url",
+    ] {
+        assert!(validate_agent_install_args(url, "token", None, None).is_err());
+    }
+    assert!(validate_agent_install_args("https://panel.example.com", "", None, None).is_err());
+    assert!(
+        validate_agent_install_args("https://panel.example.com", "token\nINJECTED=1", None, None)
+            .is_err()
+    );
+    assert!(
+        validate_agent_install_args("https://panel.example.com", "token", Some("bad-id"), None)
+            .is_err()
+    );
+}
+
+#[test]
+fn agent_unit_reads_token_from_environment_not_command_line() {
+    assert!(!super::AGENT_UNIT.contains("--token"));
+    assert!(super::AGENT_UNIT.contains("EnvironmentFile=-/etc/proxy-panel/agent.env"));
+    assert!(super::AGENT_UNIT.contains("UMask=0077"));
+    assert!(super::HUB_UNIT.contains("UMask=0077"));
+}
+
+#[test]
 fn parse_sha256_from_sums_ok() {
     let sums = "abc123  file.tar.gz\ndef456  other.tar.gz\n";
     assert_eq!(

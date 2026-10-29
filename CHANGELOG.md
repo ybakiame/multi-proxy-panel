@@ -12,6 +12,14 @@
 
 ## [Unreleased]
 
+### Security
+
+- 强化预生成节点安装链路：Agent Token 不再出现在 systemd 进程参数中，安装脚本与 CLI 校验必填参数并要求非本机 Hub 使用 HTTPS，下载增加协议、超时和重试约束；Hub/Caddy 模板仅监听本机并分离公开端点与管理认证。
+
+### Removed
+
+- 移除 `auto_register_agents` 及 Agent 自动注册路径；所有节点必须先在 Hub 预生成，旧配置键不再生效。见 ADR-0020。
+
 ## [0.5.0-rc.3] - 2026-10-28
 
 ### Removed

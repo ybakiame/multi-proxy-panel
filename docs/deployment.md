@@ -84,9 +84,11 @@ PROXYPANEL_GRPC_LISTEN=0.0.0.0:50052
 PROXYPANEL_DATABASE_URL=postgres://proxypanel:CHANGE_THIS_TO_STRONG_PASSWORD@postgres/proxypanel
 RUST_LOG=proxy_panel_hub=info,tower_http=info
 
-# Agent (if running agent on same host)
+# Public install URLs and pre-provisioned Agent credentials
 PROXYPANEL_PUBLIC_HTTP_URL=https://panel.example.com
-PROXYPANEL_PUBLIC_GRPC_URL=https://grpc.example.com:50052
+PROXYPANEL_PUBLIC_GRPC_URL=https://panel.example.com:443
+PROXYPANEL_AGENT_TOKEN=PRE_GENERATED_NODE_TOKEN
+PROXYPANEL_AGENT_ID=PRE_GENERATED_NODE_UUID
 PROXYPANEL_RELEASE_REPO=ybakiame/multi-proxy-panel
 EOF
 ```
@@ -120,43 +122,30 @@ server {
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
 
+    # Agent gRPC 长连接
+    location /proxypanel.HubAgent/ {
+        grpc_pass grpc://127.0.0.1:50052;
+        grpc_set_header Host $host;
+        grpc_read_timeout 1h;
+        grpc_send_timeout 1h;
+    }
+
     # Web 前端和 API
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://127.0.0.1:8081;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-
-# gRPC 代理（需要 http2）
-server {
-    listen 443 ssl http2;
-    server_name grpc.example.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        grpc_pass grpc://localhost:50052;
-        grpc_set_header Host $host;
-    }
-}
 ```
 
 #### Caddy 配置示例
 
-```caddyfile
-# Caddyfile
-panel.example.com {
-    reverse_proxy localhost:8080
-}
+生产环境可直接参考 `deploy/Caddyfile.example`。该模板在同一域名下分离 gRPC、公开订阅/安装脚本与管理面板，并为管理 UI/API/metrics 增加 Basic Auth。使用 `caddy hash-password` 交互生成哈希并替换模板占位符，不要把密码或真实哈希提交到仓库。
 
-grpc.example.com {
-    reverse_proxy h2c://localhost:50052
-}
-```
+标准版 Caddy 没有内置 `rate_limit` 指令；限流应在网关、CDN 或配套的访问控制层实现。
 
 ---
 
@@ -212,7 +201,7 @@ sudo systemctl enable --now proxy-panel-hub
 
 ```bash
 sudo proxy-panel install agent \
-  --hub-url "https://grpc.example.com:50052" \
+  --hub-url "https://panel.example.com:443" \
   --token "your-agent-token" \
   --name "tokyo-01"
 ```
@@ -314,7 +303,7 @@ sudo proxy-panel logs agent --follow
 
 ## 节点一键安装（推荐）
 
-Hub 提供公开端点 `/install.sh` 与 `/install-hub.sh` 伺服 bootstrap 脚本，并在管理 API 中提供「生成安装指令」功能。脚本行为与之前一致：自动检测架构、下载 CLI、校验 SHA256、委托给 `proxy-panel install` 完成后续操作。
+Hub 提供公开端点 `/install.sh` 与 `/install-hub.sh` 伺服 bootstrap 脚本。当前接入流程为“在 Hub 预生成节点 → 在面板生成安装指令 → 到目标 Agent 服务器执行”；自动注册已移除，旧 `auto_register_agents` 配置可删除且不会恢复旧行为。脚本自动检测架构、下载 CLI、校验 SHA256，再委托 `proxy-panel install` 完成安装；下载仅允许 HTTPS，并带连接超时与有限重试。
 
 ### 前置配置
 
@@ -332,18 +321,21 @@ Hub 提供公开端点 `/install.sh` 与 `/install-hub.sh` 伺服 bootstrap 脚�
 2. 系统调用 `POST /api/v1/nodes/{id}/install-command`，自动：
    - 轮换该节点的 token（旧 token 立即失效）
    - 生成包含 `--hub-url`、`--token`、`--agent-id`、`--name`、`--version` 的 `curl \| bash` 命令
-3. 复制弹窗中的命令，在节点服务器上以 root 执行即可
+3. 复制弹窗中的命令，在目标 Agent 服务器上以 root 执行；不要在 Hub 上重复执行节点安装命令
+
+每次生成指令都会轮换长期 Token。对已经接入的节点，旧 Token 会失效并导致断连；命令中的 Token 也会进入 shell 历史，请勿粘贴到日志、工单或公开聊天中。执行前可使用 `history -d` 清理对应历史项，或由管理员通过安全的带外方式传递命令。
 
 ### 手动执行一键安装 Agent
 
-若已知 token，也可直接在节点服务器上执行：
+若已知预生成节点的 token，也可直接在目标 Agent 服务器上执行。非本机 Hub 必须使用 HTTPS；`http://127.0.0.1` 与 `http://localhost` 仅用于本机开发：
 
 ```bash
 curl -fsSL https://panel.example.com/install.sh | bash -s -- \
-  --hub-url "https://grpc.example.com:50052" \
+  --hub-url "https://panel.example.com:443" \
   --token "your-agent-token" \
+  --agent-id "<预生成节点 UUID>" \
   --name "tokyo-01" \
-  --version "v0.3.3"
+  --version "v0.5.0-rc.3"
 ```
 
 ### 一键安装 Hub
@@ -396,11 +388,11 @@ sudo systemctl stop proxy-panel-hub
 sudo proxy-panel upgrade agent
 ```
 
-或重复执行 bootstrap 脚本（行为等价）：
+重装节点时才重复执行 bootstrap 脚本。它会重写 env 并安装指定版本，不等价于日常二进制升级；所需新 Token 应通过面板重新生成安装指令获得：
 
 ```bash
 curl -fsSL https://panel.example.com/install.sh | bash -s -- \
-  --hub-url "https://grpc.example.com:50052" \
+  --hub-url "https://panel.example.com:443" \
   --token "your-new-token"
 ```
 
@@ -486,17 +478,17 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-Group=root
-WorkingDirectory=/opt/proxypanel
-ExecStart=/opt/proxypanel/bin/proxy-panel-agent \
-  --hub-url "https://grpc.example.com" \
-  --token "YOUR_AGENT_TOKEN" \
-  --data-dir /var/lib/proxypanel \
-  --bin-dir /usr/local/bin
-Restart=always
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxy-panel
+EnvironmentFile=-/etc/proxy-panel/agent.env
+ExecStart=/usr/local/bin/proxy-panel-agent \
+  --hub-url ${PROXYPANEL_HUB_URL} \
+  --data-dir /var/lib/proxy-panel/agent \
+  --bin-dir /opt/proxy-panel/bin
+UMask=0077
+Restart=on-failure
 RestartSec=10
-Environment="RUST_LOG=proxy_panel_agent=info"
 
 [Install]
 WantedBy=multi-user.target
@@ -588,18 +580,19 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO proxypanel_app;
 ### 2. 防火墙规则
 
 ```bash
-# Hub 服务器
+# Hub 服务器（HTTP 与 gRPC 均经本机 Nginx/Caddy）
 sudo ufw default deny incoming
-sudo ufw allow 22/tcp      # SSH
-sudo ufw allow 443/tcp     # HTTPS (Nginx/Caddy)
-sudo ufw allow 50052/tcp   # gRPC (限制为仅 Agent IP)
+sudo ufw allow 22/tcp      # SSH，按实际管理端口调整
+sudo ufw allow 443/tcp     # HTTPS 与 gRPC
 sudo ufw enable
 
-# Agent 服务器
+# 若绕过反代、使用原生 gRPC TLS，仅允许节点网段访问 50052：
+# sudo ufw allow from AGENT_IP_RANGE to any port 50052 proto tcp
+
+# Agent 服务器：Agent 主动连接 Hub，不需要开放 50052 入站
 sudo ufw default deny incoming
-sudo ufw allow 22/tcp      # SSH
-sudo ufw allow 443/tcp     # 代理服务端口
-sudo ufw allow from HUB_IP to any port 50052  # 仅允许 Hub 连接
+sudo ufw allow 22/tcp      # SSH，按实际管理端口调整
+# 按节点入站绑定另行放行代理协议端口
 sudo ufw enable
 ```
 
@@ -611,7 +604,7 @@ ProxyPanel Hub 的 HTTP API 默认不启用 TLS。推荐使用反向代理（Ngi
 
 ```bash
 # Caddy（自动证书）
-caddy reverse-proxy --from panel.example.com --to localhost:8080
+caddy reverse-proxy --from panel.example.com --to 127.0.0.1:8081
 
 # Certbot + Nginx
 sudo certbot --nginx -d panel.example.com -d grpc.example.com
@@ -631,9 +624,9 @@ Agent 连接 TLS Hub：
 
 ```bash
 proxy-panel-agent \
-  --hub-url https://grpc.example.com:50052 \
+  --hub-url https://panel.example.com:50052 \
   --tls-ca /path/to/ca.crt \
-  --tls-domain grpc.example.com
+  --tls-domain panel.example.com
 ```
 
 或通过环境变量：

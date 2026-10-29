@@ -59,6 +59,7 @@ services:
     environment:
       PROXYPANEL_HUB_URL: http://proxypanel-hub:50052
       PROXYPANEL_AGENT_TOKEN: ${PROXYPANEL_AGENT_TOKEN:?Set PROXYPANEL_AGENT_TOKEN in .env}
+      PROXYPANEL_AGENT_ID: ${PROXYPANEL_AGENT_ID:?Set PROXYPANEL_AGENT_ID in .env}
       PROXYPANEL_AGENT_NAME: docker-agent
     volumes:
       - agent-data:/var/lib/proxy-panel/agent

@@ -215,6 +215,42 @@ jwt_secret = "{}"
     Ok(())
 }
 
+pub(super) fn validate_agent_install_args(
+    hub_url: &str,
+    token: &str,
+    agent_id: Option<&str>,
+    name: Option<&str>,
+) -> Result<()> {
+    if token.trim().is_empty() {
+        bail!("Agent token 不能为空");
+    }
+    for (field, value) in [
+        ("Hub URL", hub_url),
+        ("Agent token", token),
+        ("Agent ID", agent_id.unwrap_or("")),
+        ("节点名称", name.unwrap_or("")),
+    ] {
+        if value.contains('\r') || value.contains('\n') {
+            bail!("{} 不能包含换行符", field);
+        }
+    }
+    if let Some(id) = agent_id {
+        uuid::Uuid::parse_str(id).context("Agent ID 必须是有效 UUID")?;
+    }
+
+    let url = reqwest::Url::parse(hub_url).context("Hub URL 格式无效")?;
+    let secure = url.scheme() == "https";
+    let loopback_http =
+        url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"));
+    if url.host_str().is_none() || (!secure && !loopback_http) {
+        bail!("Hub URL 必须使用 HTTPS；仅本机开发可使用 http://127.0.0.1 或 http://localhost");
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        bail!("Hub URL 不能包含用户名或密码");
+    }
+    Ok(())
+}
+
 /// Install the Agent component.
 pub async fn install_agent(
     hub_url: &str,
@@ -224,6 +260,7 @@ pub async fn install_agent(
     version: &str,
     repo: &str,
 ) -> Result<()> {
+    validate_agent_install_args(hub_url, token, agent_id, name)?;
     require_root()?;
     let _lock = MaintenanceLock::acquire(Path::new(OPT_DIR))?;
     let arch = release_arch()?;
