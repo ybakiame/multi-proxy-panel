@@ -9,6 +9,7 @@ use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 use crate::rate_limiter::RateLimiter;
 use crate::{AppState, HubConfig, build_app, ensure_bootstrap_api_key};
@@ -537,6 +538,66 @@ async fn node_install_command_rotates_token() {
     let body2 = response_json(resp2).await;
     let token2 = body2["data"]["token"].as_str().expect("token 2");
     assert_ne!(token1, token2, "token should be rotated");
+}
+
+#[tokio::test]
+async fn connected_node_requires_explicit_rotation() {
+    let (app, state, key) = bootstrap_app().await;
+    let create_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes",
+            &key,
+            Some(json!({ "name": "connected-node" })),
+        ))
+        .await
+        .expect("create");
+    let create_body = response_json(create_response).await;
+    let node_id = create_body["data"]["id"].as_str().expect("node id");
+    let original_token = create_body["data"]["token"].as_str().expect("token");
+    let node_id = Uuid::parse_str(node_id).expect("uuid");
+
+    let node = pp_db::entities::node::Entity::find_by_id(node_id)
+        .one(&state.db)
+        .await
+        .expect("node")
+        .expect("exists");
+    let original_hash = node.token_hash.clone();
+    let mut active: pp_db::entities::node::ActiveModel = node.into();
+    active.last_seen_at = Set(Some(chrono::Utc::now().fixed_offset()));
+    active.update(&state.db).await.expect("mark connected");
+
+    let rejected = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("reject implicit rotation");
+    assert_eq!(rejected.status(), StatusCode::CONFLICT);
+    let unchanged = pp_db::entities::node::Entity::find_by_id(node_id)
+        .one(&state.db)
+        .await
+        .expect("node")
+        .expect("exists");
+    assert_eq!(unchanged.token_hash, original_hash);
+
+    let rotated = app
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            Some(json!({ "rotate": true })),
+        ))
+        .await
+        .expect("explicit rotation");
+    assert_eq!(rotated.status(), StatusCode::OK);
+    let body = response_json(rotated).await;
+    assert_ne!(body["data"]["token"], original_token);
 }
 
 #[tokio::test]

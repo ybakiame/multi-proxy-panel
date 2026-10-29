@@ -185,6 +185,8 @@
     "pushResult": "成功 {{ok}} / 失败 {{fail}}",
     "installCommand": "接入指令",
     "installTitle": "一键接入指令",
+    "rotateCredentials": "轮换接入凭证",
+    "rotateCredentialsConfirm": "节点 {{name}} 已接入过。轮换后旧 Token 立即失效，现有 Agent 将断连，必须更新为新凭证。确定继续吗？",
     "installWarning": "该操作已轮换节点 Token，旧 Token 立即失效。",
     "installHint": "在目标服务器上执行以下命令即可安装 Agent。",
     "scriptUrl": "脚本地址",

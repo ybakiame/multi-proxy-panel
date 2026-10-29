@@ -51,6 +51,7 @@ export function Nodes() {
   const [pushResult, setPushResult] = useState<string | null>(null);
   const [pushPushing, setPushPushing] = useState(false);
   const [installCmd, setInstallCmd] = useState<InstallCommand | null>(null);
+  const [rotateNode, setRotateNode] = useState<Node | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -202,15 +203,23 @@ export function Nodes() {
     }
   };
 
-  const openInstallCommand = async (node: Node) => {
+  const requestInstallCommand = async (node: Node, rotate: boolean) => {
     setInstallLoading(true);
     try {
-      const cmd = await getInstallCommand(node.id);
+      const cmd = await getInstallCommand(node.id, rotate);
       setInstallCmd(cmd);
     } catch {
       // error handled by axios interceptor
     } finally {
       setInstallLoading(false);
+    }
+  };
+
+  const openInstallCommand = (node: Node) => {
+    if (node.last_seen_at) {
+      setRotateNode(node);
+    } else {
+      requestInstallCommand(node, false);
     }
   };
 
@@ -385,6 +394,19 @@ export function Nodes() {
         logsLoading={logsLoading}
         onClose={() => setLogNode(null)}
       />
+
+      <ConfirmDialog
+        title={t("nodes.rotateCredentials")}
+        confirmText={t("nodes.rotateCredentials")}
+        isOpen={!!rotateNode}
+        onClose={() => setRotateNode(null)}
+        onConfirm={() => {
+          if (rotateNode) requestInstallCommand(rotateNode, true);
+          setRotateNode(null);
+        }}
+      >
+        {t("nodes.rotateCredentialsConfirm", { name: rotateNode?.name })}
+      </ConfirmDialog>
 
       <InstallModal
         isOpen={!!installCmd || installLoading}

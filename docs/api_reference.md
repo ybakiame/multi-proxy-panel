@@ -282,7 +282,7 @@
 
 ### POST `/api/v1/nodes/{id}/install-command`
 
-为指定节点生成一键安装命令。调用时**自动轮换该节点的 token**（旧 token 立即失效），并返回可直接在节点服务器执行的 `curl | bash` 命令。
+为指定节点生成一键安装命令。首次接入会直接生成新 Token；已接入节点必须在请求体中显式提供 `{"rotate": true}` 才会轮换，否则返回 `409 already_provisioned` 且不修改原 Token。
 
 **所需 scope:** `NODES_WRITE`
 
@@ -319,14 +319,16 @@
 | `was_connected` | 该节点是否曾经接入过 Agent（`last_seen_at` 非空）。若为 `true`，前端可提示 token 轮换将导致已在线 Agent 断连 |
 
 **Token 轮换语义:**
-- 每次调用都会生成新的随机 token 并更新数据库中的 `token_hash`
-- 旧 token 立即失效，已连接的 Agent 将在下次心跳/重连时被断开
-- 建议在准备安装新节点或重新安装现有节点时调用
+- 首次接入会生成新的随机 token 并更新数据库中的 `token_hash`
+- 已接入节点仅在 `rotate=true` 时轮换；未显式确认的请求不会改变 Token
+- 轮换后旧 token 立即失效，已连接的 Agent 将在下次心跳/重连时被断开
+- 节点列表中的 `online` 仅在最近 90 秒存在有效心跳时保留，超时或无心跳显示 `offline`
 - 生产环境应显式配置 `public_http_url` 与 `public_grpc_url`，反向代理后的外部 gRPC 地址通常为 `https://域名:443`
 - 安装命令包含长期 Token，会进入目标服务器的 shell 历史；不得写入日志或公开发送
 
 **状态码:**
 - `200 OK`
+- `409 already_provisioned` — 已接入节点未显式确认轮换
 - `404 Not Found` — 节点不存在
 - `500 Internal Server Error`
 

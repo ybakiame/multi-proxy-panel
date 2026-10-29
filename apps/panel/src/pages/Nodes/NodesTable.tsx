@@ -45,7 +45,10 @@ export function NodesTable({
       actions={[
         { label: t("nodes.logs"), onSelect: () => onLogs(node) },
         { label: t("nodes.pushConfig"), onSelect: () => onPush(node) },
-        { label: t("nodes.installCommand"), onSelect: () => onInstall(node) },
+        {
+          label: node.last_seen_at ? t("nodes.rotateCredentials") : t("nodes.installCommand"),
+          onSelect: () => onInstall(node),
+        },
         { label: t("nodes.binaries"), onSelect: () => onBinaries(node) },
         { label: t("certificates.create"), onSelect: () => onCertificate(node) },
         { label: t("common.delete"), onSelect: () => onDelete(node), destructive: true },

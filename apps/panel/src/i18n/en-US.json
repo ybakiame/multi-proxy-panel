@@ -185,6 +185,8 @@
     "pushResult": "Succeeded {{ok}} / Failed {{fail}}",
     "installCommand": "Connect Command",
     "installTitle": "One-Click Connect Command",
+    "rotateCredentials": "Rotate Credentials",
+    "rotateCredentialsConfirm": "{{name}} has connected before. Rotation immediately invalidates the old token and disconnects the current Agent. Continue?",
     "installWarning": "This action has rotated the node token. The old token is immediately invalid.",
     "installHint": "Run the following command on the target server to install the agent.",
     "scriptUrl": "Script URL",

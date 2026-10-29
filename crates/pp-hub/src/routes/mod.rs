@@ -12,6 +12,8 @@ pub mod logs;
 pub mod metrics;
 pub mod metrics_export;
 pub mod node_group;
+pub mod node_logs;
+pub mod node_status;
 pub mod nodes;
 pub mod onlines;
 pub mod protocol;

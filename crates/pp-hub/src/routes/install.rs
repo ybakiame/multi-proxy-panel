@@ -1,6 +1,7 @@
 //! Install script and one-click install command endpoints.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::HeaderMap,
 };
@@ -60,21 +61,34 @@ pub async fn serve_hub_install_script(
     render_script(script, &state.config.release_repo)
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct InstallCommandPayload {
+    pub rotate: Option<bool>,
+}
+
 /// Generate a one-click install command for a specific node.
-/// Rotates the node's token and returns a curl | bash command.
+/// Connected nodes require an explicit rotation request to prevent accidental credential resets.
 pub async fn node_install_command(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
+    payload: Option<Json<InstallCommandPayload>>,
 ) -> ApiResult<Value> {
+    let payload = payload.unwrap_or_default();
     let n = node::Entity::find_by_id(id)
         .one(&state.db)
         .await
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found("node not found"))?;
 
-    // Check whether the node has ever connected before moving `n` into ActiveModel
     let was_connected = n.last_seen_at.is_some();
+    if was_connected && payload.rotate != Some(true) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::CONFLICT,
+            "already_provisioned",
+            "node is already provisioned; confirm credential rotation explicitly",
+        ));
+    }
 
     // Rotate token
     let raw_token = pp_common::generate_secure_token();

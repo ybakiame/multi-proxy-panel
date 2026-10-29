@@ -1,98 +1,18 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     response::Json,
 };
-use pp_db::entities::{agent_log, node, node_pending_update};
+use pp_db::entities::{node, node_pending_update};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::response::{ApiError, ApiResponse, ApiResult, PaginatedResponse, PaginatedResult};
+use crate::routes::node_status::{latest_core_statuses, node_to_json};
 use crate::state::AppState;
-
-fn core_status_from_log(log: &agent_log::Model) -> Option<Value> {
-    let fields = log.fields.as_ref()?;
-    let core_type = fields.get("core_type")?.as_str()?;
-    let version = fields.get("version")?.as_str()?;
-    let running = fields.get("running")?.as_bool()?;
-    let uptime_sec = fields.get("uptime_sec")?.as_u64()?;
-    let last_error = fields.get("last_error")?.as_str().unwrap_or("");
-    Some(json!({
-        "core_type": core_type,
-        "version": version,
-        "running": running,
-        "uptime_sec": uptime_sec,
-        "last_error": last_error,
-        "updated_at": log.created_at,
-    }))
-}
-
-async fn latest_core_statuses(
-    state: &AppState,
-    node_ids: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, Vec<Value>>, ApiError> {
-    if node_ids.is_empty() {
-        return Ok(std::collections::HashMap::new());
-    }
-
-    let mut by_node: std::collections::HashMap<Uuid, std::collections::HashMap<String, Value>> =
-        std::collections::HashMap::new();
-
-    // Query per node with LIMIT to avoid loading the entire table.
-    // Each node has very few cores, so LIMIT 10 is sufficient for deduplication.
-    for node_id in node_ids {
-        let logs = agent_log::Entity::find()
-            .filter(agent_log::Column::NodeId.eq(*node_id))
-            .filter(agent_log::Column::Target.like("core-%"))
-            .order_by_desc(agent_log::Column::CreatedAt)
-            .limit(10)
-            .all(&state.db)
-            .await
-            .map_err(ApiError::from)?;
-
-        for log in logs {
-            if let Some(status) = core_status_from_log(&log) {
-                let core_type = status
-                    .get("core_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                by_node
-                    .entry(log.node_id)
-                    .or_default()
-                    .entry(core_type)
-                    .or_insert(status);
-            }
-        }
-    }
-
-    Ok(by_node
-        .into_iter()
-        .map(|(node_id, statuses)| (node_id, statuses.into_values().collect()))
-        .collect())
-}
-
-fn node_to_json(n: node::Model, core_statuses: Vec<Value>) -> Value {
-    json!({
-        "id": n.id,
-        "name": n.name,
-        "hostname": n.hostname,
-        "address": n.address,
-        "domain": n.domain,
-        "cores_available": n.cores_available,
-        "labels": n.labels.unwrap_or(json!({})),
-        "usage_coefficient": n.usage_coefficient,
-        "status": n.status,
-        "parent_id": n.parent_id,
-        "last_seen_at": n.last_seen_at,
-        "core_statuses": core_statuses,
-    })
-}
 
 pub async fn list_nodes(
     State(state): State<Arc<AppState>>,
@@ -532,69 +452,4 @@ pub async fn push_config(
     })))
 }
 
-pub async fn query_node_logs(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
-    Query(params): Query<HashMap<String, String>>,
-) -> PaginatedResult<Value> {
-    // Verify node exists
-    let _ = node::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| ApiError::not_found("node not found"))?;
-
-    let level = params.get("level");
-    let mut query = agent_log::Entity::find().filter(agent_log::Column::NodeId.eq(id));
-
-    if let Some(l) = level {
-        query = query.filter(agent_log::Column::Level.eq(l));
-    }
-
-    let (records, total) =
-        if let Some((page, per_page)) = crate::routes::common::parse_pagination(&params) {
-            let total = query
-                .clone()
-                .count(&state.db)
-                .await
-                .map_err(ApiError::from)? as u64;
-            let items = query
-                .order_by_desc(agent_log::Column::CreatedAt)
-                .offset((page - 1) * per_page)
-                .limit(per_page)
-                .all(&state.db)
-                .await
-                .map_err(ApiError::from)?;
-            (items, total)
-        } else {
-            let limit = params
-                .get("limit")
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(100);
-            let items = query
-                .order_by_desc(agent_log::Column::CreatedAt)
-                .limit(limit)
-                .all(&state.db)
-                .await
-                .map_err(ApiError::from)?;
-            let total = items.len() as u64;
-            (items, total)
-        };
-
-    let data: Vec<Value> = records
-        .into_iter()
-        .map(|r| {
-            json!({
-                "id": r.id,
-                "node_id": r.node_id,
-                "level": r.level,
-                "target": r.target,
-                "message": r.message,
-                "fields": r.fields,
-                "created_at": r.created_at,
-            })
-        })
-        .collect();
-
-    Ok(PaginatedResponse::new(data, total))
-}
+pub use crate::routes::node_logs::query_node_logs;

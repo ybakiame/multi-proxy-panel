@@ -79,8 +79,8 @@ export interface InstallCommand {
   was_connected: boolean;
 }
 
-export const getInstallCommand = (id: string) =>
-  post<InstallCommand>(`/api/v1/nodes/${id}/install-command`, {});
+export const getInstallCommand = (id: string, rotate = false) =>
+  post<InstallCommand>(`/api/v1/nodes/${id}/install-command`, { rotate });
 
 export const pushPendingUpdates = (payload: { node_ids?: string[]; core_type?: string }) =>
   post<PushPendingResults>("/api/v1/nodes/push-pending", payload);
