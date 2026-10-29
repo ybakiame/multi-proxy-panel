@@ -4,7 +4,8 @@ use axum::{
 };
 use pp_db::entities::{client, client_group_binding, node_user_usage_record};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, Set, TransactionTrait,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -26,8 +27,8 @@ async fn get_client_group_ids(
 }
 
 /// Replace a client's group bindings with the provided list.
-async fn sync_client_groups(
-    db: &sea_orm::DatabaseConnection,
+pub(crate) async fn sync_client_groups<C: ConnectionTrait>(
+    db: &C,
     client_id: Uuid,
     group_ids: &[Uuid],
 ) -> Result<(), sea_orm::DbErr> {
@@ -205,13 +206,20 @@ pub async fn create_client(
         updated_at: Set(chrono::Utc::now().into()),
     };
 
-    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
-
-    if let Some(group_ids) = payload.group_ids {
-        sync_client_groups(&state.db, inserted.id, &group_ids)
-            .await
-            .map_err(ApiError::from)?;
-    }
+    let inserted = state
+        .db
+        .transaction(|db| {
+            let group_ids = payload.group_ids.clone();
+            Box::pin(async move {
+                let inserted = active.insert(db).await?;
+                if let Some(group_ids) = group_ids {
+                    sync_client_groups(db, inserted.id, &group_ids).await?;
+                }
+                Ok::<_, sea_orm::DbErr>(inserted)
+            })
+        })
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
 
     Ok(ApiResponse::new(json!({
         "id": inserted.id,

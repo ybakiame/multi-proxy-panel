@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -633,5 +633,89 @@ async fn node_install_command_was_connected_false_for_new_node() {
         body["data"]["was_connected"].as_bool(),
         Some(false),
         "new node should have was_connected=false"
+    );
+}
+
+#[tokio::test]
+async fn subscription_requires_explicit_groups_and_is_idempotent() {
+    let (app, state, key) = bootstrap_app().await;
+    let response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/clients",
+            &key,
+            Some(json!({ "name": "subscription-client" })),
+        ))
+        .await
+        .expect("create client");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+    let client_id = body["data"]["id"].as_str().expect("client id");
+    assert!(body["data"].get("subscription").is_none());
+    assert_eq!(
+        pp_db::entities::subscription::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        0
+    );
+
+    let missing_groups = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/subscriptions",
+            &key,
+            Some(json!({ "client_id": client_id })),
+        ))
+        .await
+        .expect("missing groups");
+    assert_eq!(missing_groups.status(), StatusCode::BAD_REQUEST);
+
+    let group = pp_db::entities::node_group::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        name: Set("subscription-group".to_string()),
+        description: Set(None),
+        labels: Set(None),
+        created_at: Set(chrono::Utc::now().into()),
+        updated_at: Set(chrono::Utc::now().into()),
+    };
+    let group = group.insert(&state.db).await.expect("insert group");
+
+    let mut token = String::new();
+    for _ in 0..2 {
+        let response = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/v1/subscriptions",
+                &key,
+                Some(json!({ "client_id": client_id, "group_ids": [group.id] })),
+            ))
+            .await
+            .expect("enable subscription");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        if token.is_empty() {
+            token = body["data"]["token"].as_str().expect("token").to_string();
+        } else {
+            assert_eq!(body["data"]["token"], token);
+        }
+    }
+
+    assert_eq!(
+        pp_db::entities::subscription::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        pp_db::entities::client_group_binding::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        1
     );
 }

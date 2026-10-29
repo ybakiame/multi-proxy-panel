@@ -30,6 +30,7 @@ import type { CreateClientPayload } from "../api/clients";
 import { getGroups } from "../api/groups";
 import { Client } from "../api/types";
 import { ClientsTable } from "./ClientsTable";
+import { ClientSubscriptionDialog } from "./ClientSubscriptionDialog";
 
 const RESET_STRATEGIES = ["no_reset", "daily", "weekly", "monthly", "yearly"];
 const CLIENT_STATUSES = ["active", "on_hold", "disabled", "expired"];
@@ -77,6 +78,7 @@ export function Clients() {
   const { page, perPage, setPage, setPerPage } = usePagination();
   const [createOpen, setCreateOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
+  const [subscriptionClient, setSubscriptionClient] = useState<Client | null>(null);
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
   const [form, setForm] = useState<ClientForm>({
     name: "",
@@ -239,7 +241,14 @@ export function Clients() {
         onEdit={openEdit}
         onResetTraffic={handleResetTraffic}
         onTrafficDetail={(client) => navigate(`/traffic?client_id=${client.id}`)}
+        onSubscription={setSubscriptionClient}
         onDelete={setDeleteClientId}
+      />
+
+      <ClientSubscriptionDialog
+        key={subscriptionClient?.id}
+        client={subscriptionClient}
+        onClose={() => setSubscriptionClient(null)}
       />
 
       <Pagination
