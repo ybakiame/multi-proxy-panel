@@ -19,26 +19,18 @@
 
 ## 环境准备
 
-### 统一 Nix 开发环境
+### 统一 devenv 开发环境
 
-本地编译、运行、测试与提交统一进入仓库 `flake.nix` / `flake.lock` 环境
-（devenv flake 集成：`devenv.nix` + `nix/tools.nix`；`.envrc` 可 direnv 自动加载）。
-不再安装宿主机 Bun/Protobuf 或通过 apt/brew 补齐构建系统库。
-环境清单与 Nix 安装方法见 [Nix 开发环境](../nix-flake.md)；Rust 版本由
-`rust-toolchain.toml` 经 flake 提供的 rustup 管理。
-
-```bash
-nix develop --no-pure-eval
-# 自动化不加载用户 shell rc，防止用户 shell 覆盖 flake：
-nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun run --filter pp-web verify'
-```
-
-若 Nix 下载连接失败，可设置本机 HTTP 代理后重试（此工作区示例）：
+本地编译、运行、测试与提交统一进入原生 devenv 环境
+（`devenv.nix` + `devenv.yaml` + `devenv.lock`；`.envrc` 可 direnv 自动加载）。
+不再安装宿主机 Bun/Protobuf 或通过 apt/brew 补齐构建系统库，也不再使用 flake 入口。
+环境清单与安装方法见 [devenv 开发环境](../nix-flake.md)；Rust 版本由
+`rust-toolchain.toml` 经环境提供的 rustup 管理。缓存只使用官方 `cache.nixos.org`。
 
 ```bash
-export http_proxy="http://127.0.0.1:7899"
-export https_proxy="http://127.0.0.1:7899"
-nix develop --no-pure-eval
+devenv shell
+# 自动化不加载用户 shell rc，防止用户 shell 覆盖环境：
+devenv shell -- bash --noprofile --norc -c 'bun run --filter pp-web verify'
 ```
 
 下文本地命令均假定已进入该环境。数据库由外部服务提供；客户端构建在独立 Lanpath 仓库执行。
@@ -52,7 +44,7 @@ nix develop --no-pure-eval
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop --no-pure-eval
+devenv shell
 ```
 
 ### 2. 启动基础设施
@@ -660,8 +652,8 @@ SELECT * FROM clients; # 查看客户端
 
 ### Q: 编译失败，提示 protobuf 相关错误？
 
-在仓库根目录进入 `nix develop --no-pure-eval`，然后执行 `protoc --version`。
-protobuf 编译器由 flake 提供，无需安装宿主机包。
+在仓库根目录执行 `devenv shell -- protoc --version`。
+protobuf 编译器由 devenv 提供，无需安装宿主机包。
 
 ### Q: Web 前端编译后无法访问？
 

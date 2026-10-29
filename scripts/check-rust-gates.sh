@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ProxyPanel Rust 门禁：fmt、workspace clippy、workspace test。
-# PP_RUST_GATE_FAST=1 跳过测试，供 pre-commit 使用；在 nix develop 内运行。
+# PP_RUST_GATE_FAST=1 跳过测试，供 pre-commit 使用；在 devenv shell 内运行。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

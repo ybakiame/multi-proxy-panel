@@ -74,12 +74,12 @@ flowchart TB
 
 ## 快速开始
 
-本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)。开发命令均在 `nix develop --no-pure-eval` 环境中执行。
+本地构建、运行和验证统一使用仓库 [devenv 环境](nix-flake.md)。开发命令均在 `devenv shell` 环境中执行。
 
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop --no-pure-eval
+devenv shell
 
 # 启动开发数据库并初始化
 docker compose up -d postgres

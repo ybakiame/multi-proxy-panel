@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   pull_request:
 
+env:
+  NIX_CONFIG: |
+    substituters = https://cache.nixos.org https://devenv.cachix.org
+    extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
+
 jobs:
   changes:
     name: Detect changes
@@ -28,8 +33,8 @@ jobs:
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - 'scripts/check-rust-gates.sh'
-              - 'flake.nix'
-              - 'flake.lock'
+              - 'devenv.yaml'
+              - 'devenv.lock'
               - 'devenv.nix'
               - 'nix/**'
               - '.github/workflows/ci.yml'
@@ -37,8 +42,8 @@ jobs:
               - 'apps/panel/**'
               - 'package.json'
               - 'bun.lock'
-              - 'flake.nix'
-              - 'flake.lock'
+              - 'devenv.yaml'
+              - 'devenv.lock'
               - 'devenv.nix'
               - 'nix/**'
               - '.github/workflows/ci.yml'
@@ -53,14 +58,20 @@ jobs:
         uses: actions/checkout@v5
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+      - name: Configure devenv cache
+        uses: cachix/cachix-action@v16
+        with:
+          name: devenv
+      - name: Install devenv
+        run: nix profile add nixpkgs#devenv
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Check formatting
-        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo fmt --all --check'
+        run: devenv shell -- cargo fmt --all --check
       - name: Run Clippy
-        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo clippy --workspace --all-targets -- -D warnings'
+        run: devenv shell -- cargo clippy --workspace --all-targets -- -D warnings
       - name: Run tests
-        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'cargo test --workspace'
+        run: devenv shell -- cargo test --workspace
 
   web:
     name: Web Checks
@@ -72,7 +83,13 @@ jobs:
         uses: actions/checkout@v5
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+      - name: Configure devenv cache
+        uses: cachix/cachix-action@v16
+        with:
+          name: devenv
+      - name: Install devenv
+        run: nix profile add nixpkgs#devenv
       - name: Install dependencies
-        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun install --frozen-lockfile'
+        run: devenv shell -- bun install --frozen-lockfile
       - name: Verify panel
-        run: nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun run --filter pp-web verify'
+        run: devenv shell -- bun run --filter pp-web verify

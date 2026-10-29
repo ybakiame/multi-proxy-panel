@@ -15,14 +15,14 @@ ProxyPanel Web 前端，基于 React + TypeScript + Vite + shadcn/ui（Base UI�
 
 ## 环境要求
 
-使用仓库根目录的 [Nix 开发环境](../../nix-flake.md)，Bun 与系统构建工具由 flake 提供。
+使用仓库根目录的 [devenv 环境](../../nix-flake.md)，Bun 与系统构建工具由 devenv 提供。
 所有命令在仓库根目录执行，依赖统一安装到根 Bun workspace。
 
 ## 可用脚本
 
 ```bash
 # 进入项目环境并安装锁定依赖
-nix develop --no-pure-eval
+devenv shell
 bun install --frozen-lockfile
 
 # 启动开发服务器（带热重载）
@@ -41,7 +41,7 @@ bun run --filter pp-web verify
 ## 发布构建验证
 
 ```bash
-nix develop --no-pure-eval
+devenv shell
 bun install --frozen-lockfile
 bun run --filter pp-web verify
 ```
