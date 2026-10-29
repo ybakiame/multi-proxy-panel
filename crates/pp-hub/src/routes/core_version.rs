@@ -2,8 +2,7 @@
 //!
 //! The catalog is populated by the user selecting versions fetched from
 //! GitHub releases (`/upstream` is read-only, `/` accepts the selection).
-//! Protocol configs reference saved versions via `core_version`, and the
-//! agent installs the matching binary on demand.
+//! One active version per core controls the binary installed on demand.
 
 use axum::{
     Json,

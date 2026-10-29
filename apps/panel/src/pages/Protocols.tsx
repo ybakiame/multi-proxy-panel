@@ -277,7 +277,7 @@ export function Protocols() {
         <CardContent>
           <DataTable
             aria-label="protocols"
-            columns={7}
+            columns={6}
             loading={isLoading}
             empty={protocols.length === 0 ? t("common.empty") : undefined}
             header={
@@ -285,7 +285,6 @@ export function Protocols() {
                 <TableHead>{t("common.name")}</TableHead>
                 <TableHead>{t("protocols.type")}</TableHead>
                 <TableHead>{t("protocols.core")}</TableHead>
-                <TableHead>Version</TableHead>
                 <TableHead>{t("protocols.listen")}</TableHead>
                 <TableHead>{t("protocols.port")}</TableHead>
                 <TableHead>{t("common.actions")}</TableHead>
@@ -297,7 +296,6 @@ export function Protocols() {
                 <TableCell>{protocol.name}</TableCell>
                 <TableCell>{protocol.protocol_type}</TableCell>
                 <TableCell>{protocol.core_type}</TableCell>
-                <TableCell>{protocol.core_version || "-"}</TableCell>
                 <TableCell>{protocol.listen_address}</TableCell>
                 <TableCell>{protocol.listen_port}</TableCell>
                 <TableCell>
