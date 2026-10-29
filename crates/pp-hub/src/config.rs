@@ -20,7 +20,6 @@ pub struct HubConfig {
     pub static_dir: PathBuf,
     pub cors_origins: Option<Vec<String>>,
     pub trusted_proxy_ips: Option<HashSet<IpAddr>>,
-    pub auto_register_agents: bool,
     pub jwt_secret: String,
     pub http_tls_cert: Option<PathBuf>,
     pub http_tls_key: Option<PathBuf>,
@@ -43,7 +42,6 @@ impl Default for HubConfig {
             static_dir: PathBuf::from("apps/panel/dist"),
             cors_origins: None,
             trusted_proxy_ips: None,
-            auto_register_agents: false,
             jwt_secret: JWT_SECRET_PLACEHOLDERS[0].to_string(),
             http_tls_cert: None,
             http_tls_key: None,
@@ -75,7 +73,6 @@ impl HubConfig {
                 "static_dir",
                 Self::default().static_dir.to_string_lossy().to_string(),
             )?
-            .set_default("auto_register_agents", false)?
             .set_default("jwt_secret", Self::default().jwt_secret)?
             .set_default("release_repo", Self::default().release_repo)?
             .set_default("maintenance_enabled", false)?
@@ -98,7 +95,6 @@ impl HubConfig {
                 .into(),
             cors_origins: parse_csv(built.get_string("cors_origins").ok().as_deref()),
             trusted_proxy_ips: parse_ips(built.get_string("trusted_proxy_ips").ok().as_deref()),
-            auto_register_agents: built.get_bool("auto_register_agents").unwrap_or(false),
             jwt_secret: built
                 .get_string("jwt_secret")
                 .unwrap_or_else(|_| Self::default().jwt_secret),
@@ -137,9 +133,6 @@ impl HubConfig {
         if let Some(static_dir) = overrides.static_dir {
             hub_config.static_dir = static_dir;
         }
-        if let Some(auto) = overrides.auto_register_agents {
-            hub_config.auto_register_agents = auto;
-        }
 
         validate_jwt_secret(&hub_config.jwt_secret).map_err(config::ConfigError::Message)?;
 
@@ -162,7 +155,6 @@ pub struct ConfigOverrides {
     pub grpc_listen: Option<String>,
     pub database_url: Option<String>,
     pub static_dir: Option<PathBuf>,
-    pub auto_register_agents: Option<bool>,
 }
 
 fn parse_csv(value: Option<&str>) -> Option<Vec<String>> {

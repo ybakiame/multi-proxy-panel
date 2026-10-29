@@ -5,6 +5,7 @@ use axum::{
 use pp_db::entities::subscription_template;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+    TransactionTrait,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -281,31 +282,75 @@ pub async fn list_subscriptions(
 #[derive(serde::Deserialize)]
 pub struct CreateSubscriptionPayload {
     pub client_id: Uuid,
+    pub group_ids: Option<Vec<Uuid>>,
+}
+
+pub(crate) async fn ensure_default_subscription<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    client_id: Uuid,
+) -> Result<pp_db::entities::subscription::Model, sea_orm::DbErr> {
+    use pp_db::entities::subscription;
+
+    if let Some(existing) = subscription::Entity::find()
+        .filter(subscription::Column::ClientId.eq(client_id))
+        .one(db)
+        .await?
+    {
+        return Ok(existing);
+    }
+
+    let token = pp_common::generate_secure_token();
+    let url_path = format!("/sub/{}", token);
+    let active = subscription::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        client_id: Set(client_id),
+        token: Set(token),
+        url_path: Set(url_path),
+        expire_at: Set(None),
+        is_active: Set(true),
+        last_accessed_at: Set(None),
+        created_at: Set(chrono::Utc::now().into()),
+    };
+    active.insert(db).await
 }
 
 pub async fn create_subscription(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateSubscriptionPayload>,
 ) -> ApiResult<Value> {
-    let token = pp_common::generate_secure_token();
-    let url_path = format!("/sub/{}", token);
+    use pp_db::entities::subscription;
 
-    let active = pp_db::entities::subscription::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        client_id: Set(payload.client_id),
-        token: Set(token.clone()),
-        url_path: Set(url_path.clone()),
-        expire_at: Set(None),
-        is_active: Set(true),
-        last_accessed_at: Set(None),
-        created_at: Set(chrono::Utc::now().into()),
-    };
-    let inserted = active.insert(&state.db).await.map_err(ApiError::from)?;
+    let group_ids = payload.group_ids.unwrap_or_default();
+    let existing = subscription::Entity::find()
+        .filter(subscription::Column::ClientId.eq(payload.client_id))
+        .one(&state.db)
+        .await
+        .map_err(ApiError::from)?;
+    if existing.is_none() && group_ids.is_empty() {
+        return Err(ApiError::bad_request(
+            "subscription_groups_required",
+            "select at least one node group before enabling the subscription",
+        ));
+    }
+
+    let inserted = state
+        .db
+        .transaction(|db| {
+            Box::pin(async move {
+                if !group_ids.is_empty() {
+                    crate::routes::client::sync_client_groups(db, payload.client_id, &group_ids)
+                        .await?;
+                }
+                ensure_default_subscription(db, payload.client_id).await
+            })
+        })
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
 
     Ok(ApiResponse::new(json!({
         "id": inserted.id,
-        "token": token,
-        "url_path": url_path,
+        "token": inserted.token,
+        "url_path": inserted.url_path,
     })))
 }
 

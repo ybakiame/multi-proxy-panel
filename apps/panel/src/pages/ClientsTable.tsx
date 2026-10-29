@@ -14,6 +14,7 @@ interface ClientsTableProps {
   onEdit: (client: Client) => void;
   onResetTraffic: (client: Client) => void;
   onTrafficDetail: (client: Client) => void;
+  onSubscription: (client: Client) => void;
   onDelete: (clientId: string) => void;
 }
 
@@ -39,6 +40,7 @@ export function ClientsTable({
   onEdit,
   onResetTraffic,
   onTrafficDetail,
+  onSubscription,
   onDelete,
 }: ClientsTableProps) {
   const { t } = useTranslation();
@@ -51,6 +53,7 @@ export function ClientsTable({
       label={client.name}
       primaryAction={{ label: t("common.edit"), onSelect: () => onEdit(client) }}
       actions={[
+        { label: t("clients.subscription"), onSelect: () => onSubscription(client) },
         { label: t("clients.resetTraffic"), onSelect: () => onResetTraffic(client) },
         { label: t("clients.trafficDetail"), onSelect: () => onTrafficDetail(client) },
         { label: t("common.delete"), onSelect: () => onDelete(client.id), destructive: true },

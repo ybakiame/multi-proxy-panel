@@ -200,11 +200,27 @@ fn build_vless_proxy(node: &ProxyNode) -> Result<Value, PanelError> {
                 .or_else(|| node.settings.get("path"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("/");
-            proxy["plugin-opts"] = json!({
-                "mode": "xhttp",
+            let mode = node
+                .settings
+                .get("xhttp_mode")
+                .or_else(|| node.settings.get("mode"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("auto");
+            proxy["xhttp-opts"] = json!({
+                "mode": mode,
                 "host": host,
                 "path": path,
             });
+            proxy["servername"] = json!(
+                node.tls
+                    .as_ref()
+                    .and_then(|tls| tls.get("serverName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&node.server)
+            );
+            proxy["skip-cert-verify"] = json!(
+                !pp_common::settings_helper::tls_has_real_certificate(node.tls.as_ref())
+            );
         }
         _ => {}
     }
@@ -364,6 +380,36 @@ mod tests {
         assert!(out.starts_with("proxies:"));
         assert!(out.contains("type: vless"));
         assert!(out.contains("reality-opts:"));
+    }
+
+    #[test]
+    fn clash_xhttp_uses_official_transport_and_tls_fields() {
+        let node = ProxyNode {
+            name: "test-xhttp".into(),
+            protocol: ProtocolType::VlessXhttp,
+            server: "192.0.2.1".into(),
+            port: 443,
+            settings: serde_json::json!({
+                "clients": [{"id": "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4"}],
+                "xhttp_path": "/xhttp",
+                "xhttp_host": "cdn.example.com",
+                "xhttp_mode": "stream-one",
+            }),
+            tls: Some(serde_json::json!({
+                "serverName": "tls.example.com",
+                "certFile": "/etc/ssl/cert.pem",
+                "keyFile": "/etc/ssl/key.pem",
+            })),
+        };
+        let proxy = build_vless_proxy(&node).unwrap();
+        assert_eq!(proxy["network"], "xhttp");
+        assert_eq!(proxy["xhttp-opts"]["path"], "/xhttp");
+        assert_eq!(proxy["xhttp-opts"]["host"], "cdn.example.com");
+        assert_eq!(proxy["xhttp-opts"]["mode"], "stream-one");
+        assert_eq!(proxy["servername"], "tls.example.com");
+        assert_eq!(proxy["skip-cert-verify"], false);
+        assert_eq!(proxy["uuid"], "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4");
+        assert!(proxy.get("plugin-opts").is_none());
     }
 
     #[test]

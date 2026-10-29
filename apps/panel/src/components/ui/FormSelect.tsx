@@ -15,6 +15,7 @@ interface FormSelectProps {
   isRequired?: boolean;
   isDisabled?: boolean;
   placeholder?: string;
+  description?: string;
   className?: string;
 }
 
@@ -26,6 +27,7 @@ export function FormSelect({
   isRequired,
   isDisabled,
   placeholder,
+  description,
   className,
 }: FormSelectProps) {
   const id = useId();
@@ -39,7 +41,12 @@ export function FormSelect({
         required={isRequired}
         disabled={isDisabled}
       >
-        <SelectTrigger id={id} className="w-full" aria-required={isRequired || undefined}>
+        <SelectTrigger
+          id={id}
+          className="w-full"
+          aria-required={isRequired || undefined}
+          aria-describedby={description ? `${id}-description` : undefined}
+        >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -50,6 +57,11 @@ export function FormSelect({
           ))}
         </SelectContent>
       </Select>
+      {description && (
+        <p id={`${id}-description`} className="mt-1 text-sm text-muted-foreground">
+          {description}
+        </p>
+      )}
     </div>
   );
 }

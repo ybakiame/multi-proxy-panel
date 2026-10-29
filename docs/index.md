@@ -18,7 +18,7 @@
 | [开发代理指南](../AGENTS.md) | AI 编码代理 | 项目契约：构建、规范、常见任务、工作流、完成定义与升级条件 |
 | [协议引用与服务端复核](adoption/2026-10-11-server-only-reconciliation.md) | 维护者 | 当前协议引用及客户端拆仓后的历史验收 |
 | [协议采纳记录](adoption/adoption-report.md) | 维护者 | Agent Development Protocol 采纳审计与结果（Pass 1 / Pass 2） |
-| [Nix 开发环境](../nix-flake.md) | 开发者、CI 维护者 | 通过 flake + devenv 管理服务端 Rust、Protobuf、Bun 与构建系统库 |
+| [devenv 开发环境](../nix-flake.md) | 开发者、CI 维护者 | 通过原生 devenv 管理服务端 Rust、Protobuf、Bun 与构建系统库 |
 | [变更日志](../CHANGELOG.md) | 所有使用者 | 各版本新增、变更、修复与安全说明 |
 
 ---
@@ -38,9 +38,9 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 ### 核心能力
 
 - 多节点统一管理（心跳、状态监控）
-- 多协议支持（VLESS/VMess/Trojan/SS2022/Hysteria2/TUIC）
+- 安全协议支持（VLESS + REALITY/XHTTP、Hysteria2、AnyTLS）
 - 双核心兼容（sing-box + mihomo）
-- 自动订阅生成（Base64/JSON/Clash/SingBox/V2RayNG）
+- 分享链接、Clash YAML、sing-box JSON 与通用 JSON 节点数据输出
 - 实时流量统计与主机性能监控
 - 配置热重载与远程核心控制
 
@@ -52,7 +52,7 @@ ProxyPanel 是一个现代化的代理节点集中管理面板，采用 **Rust**
 # 1. 克隆项目
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop --no-pure-eval
+devenv shell
 
 # 2. 启动数据库
 docker compose up -d postgres

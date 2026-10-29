@@ -24,7 +24,7 @@ const defaultForm: ProtocolForm = {
   core_type: "sing-box",
   listen_address: "0.0.0.0",
   listen_port: "",
-  tls_enabled: false,
+  tls_enabled: true,
   uuid: "",
   password: "",
   flow: "xtls-rprx-vision",
@@ -33,7 +33,7 @@ const defaultForm: ProtocolForm = {
   private_key: "",
   public_key: "",
   short_id: "",
-  path: "",
+  path: "/xhttp",
   host: "",
   mode: "auto",
   obfs_type: "none",
@@ -152,7 +152,9 @@ export function Protocols() {
         core_type: protocol.core_type,
         listen_address: protocol.listen_address,
         listen_port: protocol.listen_port.toString(),
-        tls_enabled: !!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0,
+        tls_enabled:
+          protocol.protocol_type !== "vless_reality" ||
+          (!!protocol.tls_settings && Object.keys(protocol.tls_settings).length > 0),
       });
     } else {
       setForm(defaultForm);
@@ -275,7 +277,7 @@ export function Protocols() {
         <CardContent>
           <DataTable
             aria-label="protocols"
-            columns={7}
+            columns={6}
             loading={isLoading}
             empty={protocols.length === 0 ? t("common.empty") : undefined}
             header={
@@ -283,7 +285,6 @@ export function Protocols() {
                 <TableHead>{t("common.name")}</TableHead>
                 <TableHead>{t("protocols.type")}</TableHead>
                 <TableHead>{t("protocols.core")}</TableHead>
-                <TableHead>Version</TableHead>
                 <TableHead>{t("protocols.listen")}</TableHead>
                 <TableHead>{t("protocols.port")}</TableHead>
                 <TableHead>{t("common.actions")}</TableHead>
@@ -295,7 +296,6 @@ export function Protocols() {
                 <TableCell>{protocol.name}</TableCell>
                 <TableCell>{protocol.protocol_type}</TableCell>
                 <TableCell>{protocol.core_type}</TableCell>
-                <TableCell>{protocol.core_version || "-"}</TableCell>
                 <TableCell>{protocol.listen_address}</TableCell>
                 <TableCell>{protocol.listen_port}</TableCell>
                 <TableCell>

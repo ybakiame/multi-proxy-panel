@@ -297,10 +297,10 @@
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Tokyo-01",
     "token": "new-secure-token-generated-on-the-fly",
-    "hub_url": "https://grpc.example.com:50052",
+    "hub_url": "https://grpc.example.com:443",
     "script_url": "https://panel.example.com/install.sh",
     "version": "v0.3.3",
-    "command": "curl -fsSL 'https://panel.example.com/install.sh' | bash -s -- --hub-url 'https://grpc.example.com:50052' --token 'new-secure-token-generated-on-the-fly' --agent-id '550e8400-e29b-41d4-a716-446655440000' --name 'Tokyo-01' --version 'v0.3.3'"
+    "command": "curl -fsSL 'https://panel.example.com/install.sh' | bash -s -- --hub-url 'https://grpc.example.com:443' --token 'new-secure-token-generated-on-the-fly' --agent-id '550e8400-e29b-41d4-a716-446655440000' --name 'Tokyo-01' --version 'v0.3.3'"
   }
 }
 ```
@@ -322,6 +322,8 @@
 - 每次调用都会生成新的随机 token 并更新数据库中的 `token_hash`
 - 旧 token 立即失效，已连接的 Agent 将在下次心跳/重连时被断开
 - 建议在准备安装新节点或重新安装现有节点时调用
+- 生产环境应显式配置 `public_http_url` 与 `public_grpc_url`，反向代理后的外部 gRPC 地址通常为 `https://域名:443`
+- 安装命令包含长期 Token，会进入目标服务器的 shell 历史；不得写入日志或公开发送
 
 **状态码:**
 - `200 OK`
@@ -838,7 +840,7 @@
 
 ### POST `/api/v1/clients`
 
-创建客户端。
+创建客户端。客户端默认没有订阅，需管理员后续选择节点分组并显式启用。
 
 **请求体:**
 
@@ -944,14 +946,14 @@
 
 ### POST `/api/v1/subscriptions`
 
-创建订阅。
+按指定节点分组启用客户端订阅。首次启用必须提供至少一个 `group_id`，分组关系与订阅在同一事务中创建；已有订阅时幂等返回现有记录，不重复生成 Token。
 
 **请求体:**
 
 ```json
 {
   "client_id": "880e8400-e29b-41d4-a716-446655440003",
-  "template_id": "aa0e8400-e29b-41d4-a716-446655440005"
+  "group_ids": ["aa0e8400-e29b-41d4-a716-446655440005"]
 }
 ```
 

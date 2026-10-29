@@ -3,6 +3,7 @@ import type { Subscription, SubscriptionTemplate } from "./types";
 
 export interface CreateSubscriptionPayload {
   client_id: string;
+  group_ids?: string[];
 }
 
 export interface CreateTemplatePayload {

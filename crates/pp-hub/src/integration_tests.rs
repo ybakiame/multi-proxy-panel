@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -26,8 +26,12 @@ pub(crate) fn test_state(db: sea_orm::DatabaseConnection) -> Arc<AppState> {
 }
 
 async fn bootstrap_app() -> (Router, Arc<AppState>, String) {
+    bootstrap_app_with_config(HubConfig::default()).await
+}
+
+async fn bootstrap_app_with_config(config: HubConfig) -> (Router, Arc<AppState>, String) {
     let db = setup_db().await;
-    let state = test_state(db);
+    let state = AppState::new(db, config, RateLimiter::default(), None);
     ensure_bootstrap_api_key(&state.db)
         .await
         .expect("bootstrap key");
@@ -536,6 +540,48 @@ async fn node_install_command_rotates_token() {
 }
 
 #[tokio::test]
+async fn node_install_command_uses_explicit_public_urls() {
+    let config = HubConfig {
+        public_http_url: Some("https://panel.example.com".to_string()),
+        public_grpc_url: Some("https://panel.example.com:443".to_string()),
+        ..Default::default()
+    };
+    let (app, _state, key) = bootstrap_app_with_config(config).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/nodes",
+            &key,
+            Some(json!({ "name": "public-url-test" })),
+        ))
+        .await
+        .expect("create");
+    let create_body = response_json(create_response).await;
+    let node_id = create_body["data"]["id"].as_str().expect("node id");
+    let response = app
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/v1/nodes/{}/install-command", node_id),
+            &key,
+            None,
+        ))
+        .await
+        .expect("install command");
+    let body = response_json(response).await;
+
+    assert_eq!(
+        body["data"]["script_url"],
+        "https://panel.example.com/install.sh"
+    );
+    assert_eq!(body["data"]["hub_url"], "https://panel.example.com:443");
+    let command = body["data"]["command"].as_str().expect("command");
+    assert!(command.contains("--hub-url 'https://panel.example.com:443'"));
+    assert!(!command.contains(":50052"));
+}
+
+#[tokio::test]
 async fn node_install_command_not_found() {
     let (app, _state, key) = bootstrap_app().await;
 
@@ -587,5 +633,89 @@ async fn node_install_command_was_connected_false_for_new_node() {
         body["data"]["was_connected"].as_bool(),
         Some(false),
         "new node should have was_connected=false"
+    );
+}
+
+#[tokio::test]
+async fn subscription_requires_explicit_groups_and_is_idempotent() {
+    let (app, state, key) = bootstrap_app().await;
+    let response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/clients",
+            &key,
+            Some(json!({ "name": "subscription-client" })),
+        ))
+        .await
+        .expect("create client");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+    let client_id = body["data"]["id"].as_str().expect("client id");
+    assert!(body["data"].get("subscription").is_none());
+    assert_eq!(
+        pp_db::entities::subscription::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        0
+    );
+
+    let missing_groups = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/v1/subscriptions",
+            &key,
+            Some(json!({ "client_id": client_id })),
+        ))
+        .await
+        .expect("missing groups");
+    assert_eq!(missing_groups.status(), StatusCode::BAD_REQUEST);
+
+    let group = pp_db::entities::node_group::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        name: Set("subscription-group".to_string()),
+        description: Set(None),
+        labels: Set(None),
+        created_at: Set(chrono::Utc::now().into()),
+        updated_at: Set(chrono::Utc::now().into()),
+    };
+    let group = group.insert(&state.db).await.expect("insert group");
+
+    let mut token = String::new();
+    for _ in 0..2 {
+        let response = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/v1/subscriptions",
+                &key,
+                Some(json!({ "client_id": client_id, "group_ids": [group.id] })),
+            ))
+            .await
+            .expect("enable subscription");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        if token.is_empty() {
+            token = body["data"]["token"].as_str().expect("token").to_string();
+        } else {
+            assert_eq!(body["data"]["token"], token);
+        }
+    }
+
+    assert_eq!(
+        pp_db::entities::subscription::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        pp_db::entities::client_group_binding::Entity::find()
+            .count(&state.db)
+            .await
+            .unwrap(),
+        1
     );
 }

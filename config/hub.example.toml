@@ -1,8 +1,8 @@
 # Example Hub configuration.
 # Copy this file to config/hub.toml and adjust values for your deployment.
 
-listen = "0.0.0.0:8081"
-grpc_listen = "0.0.0.0:50052"
+listen = "127.0.0.1:8081"
+grpc_listen = "127.0.0.1:50052"
 database_url = "postgres://proxypanel:changeme@localhost/proxypanel"
 static_dir = "apps/panel/dist"
 
@@ -13,9 +13,9 @@ cors_origins = "http://localhost:8080,https://panel.example.com"
 # Comma-separated list of trusted proxy IPs. Only these IPs may provide X-Forwarded-For.
 trusted_proxy_ips = "127.0.0.1,::1"
 
-# Allow any agent with a valid token to auto-register as a new node.
-# WARNING: enable only for development. Always disable in production.
-auto_register_agents = true
+# Public URLs used in generated install commands. Set these explicitly behind a proxy.
+public_http_url = "https://panel.example.com"
+public_grpc_url = "https://grpc.example.com:443"
 
 # JWT secret for admin authentication — required, at least 32 characters.
 # Generate a random value, e.g.: openssl rand -base64 42

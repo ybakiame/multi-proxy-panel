@@ -20,6 +20,7 @@ import type { Node, AgentLog } from "../../api/types";
 import { useNodeActions, defaultFormState, type NodeFormState } from "./useNodeActions";
 import { InstallWizard } from "./InstallWizard";
 import { EditModal, PushModal, BinariesModal, LogsModal, InstallModal } from "./NodeModals";
+import { CertificateFormDialog } from "../CertificateFormDialog";
 
 const nodesQueryKey = "nodes";
 const pendingQueryKey = "pending-updates";
@@ -42,7 +43,9 @@ export function Nodes() {
   const [pushCore, setPushCore] = useState("sing-box");
   const [pushing, setPushing] = useState(false);
   const [binNode, setBinNode] = useState<Node | null>(null);
+  const [certNode, setCertNode] = useState<Node | null>(null);
   const [binaries, setBinaries] = useState<CoreBinary[]>([]);
+  const [binError, setBinError] = useState("");
   const [binLoading, setBinLoading] = useState(false);
   const [deleteBinary, setDeleteBinary] = useState<string | null>(null);
   const [pushResult, setPushResult] = useState<string | null>(null);
@@ -159,11 +162,15 @@ export function Nodes() {
 
   const openBinaries = async (node: Node) => {
     setBinNode(node);
+    setBinError("");
     setBinLoading(true);
     try {
-      setBinaries(await getCoreBinaries(node.id));
+      const report = await getCoreBinaries(node.id);
+      setBinaries(report.binaries);
+      setBinError(report.error);
     } catch {
-      // error handled by axios interceptor
+      setBinaries([]);
+      setBinError(t("nodes.binariesReadError"));
     } finally {
       setBinLoading(false);
     }
@@ -293,6 +300,7 @@ export function Nodes() {
         onPush={openPush}
         onInstall={openInstallCommand}
         onBinaries={openBinaries}
+        onCertificate={setCertNode}
         onDelete={(node) => setDeleteNodeId(node.id)}
       />
 
@@ -349,11 +357,20 @@ export function Nodes() {
         onConfirm={handlePush}
       />
 
+      <CertificateFormDialog
+        key={certNode?.id}
+        isOpen={!!certNode}
+        nodes={nodes}
+        initialNodeId={certNode?.id}
+        onOpenChange={(open) => !open && setCertNode(null)}
+      />
+
       <BinariesModal
         isOpen={!!binNode}
         node={binNode}
         binaries={binaries}
         binLoading={binLoading}
+        binError={binError}
         deleteBinary={deleteBinary}
         onClose={() => setBinNode(null)}
         onDelete={setDeleteBinary}

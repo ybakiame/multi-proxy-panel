@@ -125,7 +125,6 @@ grpc_listen = "0.0.0.0:$HUB_GRPC_PORT"
 database_url = "$DB_URL"
 static_dir = "apps/panel/dist"
 cors_origins = "http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT"
-auto_register_agents = true
 EOF
         log_info "已生成开发配置文件: $HUB_CONFIG"
     fi
@@ -154,11 +153,31 @@ EOF
     cd "$PROJECT_ROOT"
     BIN_DIR="$PROJECT_ROOT/scripts/.dev-bin"
     mkdir -p "$BIN_DIR"
+    AGENT_PROVISION_ARGS=()
+    if [[ ! -s "$AGENT_DATA_DIR/.agent_token" || ! -s "$AGENT_DATA_DIR/.agent_id" ]]; then
+        log_info "首次启动，预生成开发节点..."
+        PROVISION_OUTPUT="$(cargo run --quiet --bin proxy-panel -- provision-node \
+            --database-url "$DB_URL" --name "dev-agent-node")"
+        DEV_AGENT_ID=""
+        DEV_AGENT_TOKEN=""
+        while read -r key value; do
+            case "$key" in
+                node_id:) DEV_AGENT_ID="$value" ;;
+                token:) DEV_AGENT_TOKEN="$value" ;;
+            esac
+        done <<< "$PROVISION_OUTPUT"
+        if [[ -z "$DEV_AGENT_ID" || -z "$DEV_AGENT_TOKEN" ]]; then
+            log_error "无法解析开发节点接入凭证"
+            exit 1
+        fi
+        AGENT_PROVISION_ARGS=(--token "$DEV_AGENT_TOKEN" --agent-id "$DEV_AGENT_ID")
+    fi
     nohup bash -c "
         RUST_LOG=proxy_panel_agent=info \
         cargo run --bin proxy-panel-agent -- \
             --hub-url \"http://localhost:$HUB_GRPC_PORT\" \
             --name \"dev-agent-node\" \
+            $(printf '%q ' "${AGENT_PROVISION_ARGS[@]}") \
             --data-dir \"$AGENT_DATA_DIR\" \
             --bin-dir \"$BIN_DIR\"
     " > "$AGENT_LOG" 2>&1 &

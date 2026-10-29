@@ -1,26 +1,25 @@
 # ProxyPanel
 
-> 一个现代化的代理节点集中管理面板，采用 Rust 全栈构建。
+> 面向多节点代理服务的集中管理面板，采用 Rust 后端与 React 管理界面。
 
 [![Rust Version](https://img.shields.io/badge/rust-1.88%2B-blue)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-orange)](LICENSE)
 
 ## 项目简介
 
-ProxyPanel 是一个开源的代理服务管理面板，采用 **Hub-Agent** 架构设计。它支持多节点统一管理、多协议配置、自动订阅生成、实时流量统计与主机监控，并提供现代化的 Web 管理界面。
+ProxyPanel 采用 **Hub-Agent** 架构，支持多节点统一管理、协议配置、订阅生成、流量统计与主机指标监控。
 
 ### 核心特性
 
-- **多节点管理**: 支持无限节点注册，自动心跳检测与状态监控
-- **多协议支持**: VLESS (REALITY / Vision / XHTTP)、VMess、Trojan、Shadowsocks 2022、Hysteria2、TUIC v5
-- **多核心兼容**: 同时支持 [sing-box](https://github.com/SagerNet/sing-box) 与 [mihomo](https://github.com/MetaCubeX/mihomo)
-- **订阅系统**: 自动生成 Base64、JSON、Clash、SingBox、V2RayNG 格式订阅链接
-- **实时流量统计**: 按入站端口和用户维度统计上传/下载流量
-- **主机监控**: CPU、内存、磁盘、网络、系统负载实时上报
-- **配置热重载**: 无需重启即可向节点推送配置更新
-- **gRPC 双向流**: Hub 与 Agent 之间通过长连接双向实时通信
-- **现代化前端**: 基于 React + shadcn/ui（Base UI） + Tailwind CSS 的响应式 Web 管理界面
-- **多数据库支持**: PostgreSQL (生产) / SQLite (开发测试)
+- **节点预生成与状态监控**：在 Hub 创建节点并生成安装指令，Agent 通过心跳保持在线状态
+- **安全协议配置**：VLESS + REALITY、VLESS + XHTTP、Hysteria2、AnyTLS
+- **双核心支持**：[sing-box](https://github.com/SagerNet/sing-box) 与 [mihomo](https://github.com/MetaCubeX/mihomo)
+- **订阅与节点导出**：支持常见客户端通过分享连接进行导入
+- **流量与指标**：按入站和用户统计流量，采集 CPU、内存、磁盘、网络与系统负载
+- **版本化配置推送**：内容哈希去重，支持手动灰度推送以及按需 reload/restart
+- **gRPC 双向流**：Hub 与 Agent 通过长连接进行配置下发和状态上报
+- **管理界面**：React + shadcn/ui（Base UI） + Tailwind CSS
+- **数据库**：PostgreSQL 与 SQLite
 
 ## 系统架构
 
@@ -30,13 +29,13 @@ flowchart TB
         direction TB
         api["HTTP API (Axum)"]
         grpc["gRPC Stream (Tonic)"]
-        web["Web App (React)"]
+        web["Static Web App (React)"]
         biz["Business Layer<br/>(Services / State)"]
         db[("Database (Sea-ORM)<br/>PostgreSQL / SQLite")]
         api --> biz
         grpc --> biz
-        web --> biz
         biz --> db
+        api --> web
     end
     subgraph agent["ProxyPanel Agent (Node)"]
         direction TB
@@ -51,331 +50,116 @@ flowchart TB
     hub -- "gRPC（双向流）" --> agent
 ```
 
-用户侧客户端已迁入独立的 [岚径 · Lanpath 仓库](https://github.com/ybakiame/lanpath)，
-通过公开订阅/API 与 ProxyPanel 协作。两仓构建、版本和发布独立，
-本仓仅维护 Hub、Agent、管理 Web、CLI 与服务端共享模块。
-
-## 快速开始
-
-### 环境要求
-
-本地构建、运行和验证统一使用仓库 [Nix 开发环境](nix-flake.md)（`flake.nix` / `flake.lock`，
-devenv flake 集成：根 `devenv.nix` + `nix/tools.nix`，`.envrc` 可 direnv 自动加载）。
-以下开发命令均在 `nix develop --no-pure-eval` 内执行，Bun、Protobuf 与构建系统库使用 flake
-提供的版本；Rust 经该环境的 rustup 按 `rust-toolchain.toml` 管理。
-
-- Rust 1.88+（参见 `rust-toolchain.toml`）
-- PostgreSQL 15+ (或 SQLite 用于开发)
-- Bun 1.3+ (构建 Web 前端，见 `apps/panel/package.json` 的 packageManager 字段)
-
-
-### 1. 克隆项目
-
-```bash
-git clone https://github.com/ybakiame/multi-proxy-panel.git
-cd multi-proxy-panel
-nix develop --no-pure-eval
-```
-
-### 2. 启动数据库
-
-```bash
-docker compose up -d postgres
-```
-
-### 3. 初始化数据库
-
-```bash
-cargo run --bin proxy-panel -- init-db \
-  --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
-```
-
-### 4. 创建首个管理员
-
-```bash
-cargo run --bin proxy-panel -- create-user \
-  --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel" \
-  --username admin \
-  --password "STRONG_PASSWORD"
-```
-
-### 5. 启动 Hub
-
-```bash
-cargo run --release --bin proxy-panel-hub
-```
-
-Hub 将监听：
-- HTTP API: `http://localhost:8081`
-- gRPC: `http://localhost:50052`
-
-### 6. 构建 Web 前端
-
-前端依赖在**仓库根目录**统一安装（Bun workspaces，单一 `bun.lock`）：
-
-```bash
-bun install
-
-# panel 发布构建（产物 apps/panel/dist/）
-bun run --filter pp-web build
-```
-
-产物位于 `apps/panel/dist/`，Hub 会自动从该目录托管静态文件（可通过 `--static-dir` 覆盖）。
-
-开发模式热重载：
-
-```bash
-bun run --filter pp-web dev
-```
-
-也可 `cd apps/panel && bun run dev`（依赖仍由根目录 `bun install` 提供）。
-
-### 7. 使用 CLI 安装 Agent（推荐）
-
-在节点服务器上先安装 `proxy-panel` CLI，再用 CLI 安装 Agent：
-
-```bash
-# 方式一：通过 Hub 提供的 bootstrap 脚本一键安装
-curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
-  --hub-url "https://grpc.example.com:50052" \
-  --token "your-agent-token" \
-  --name "node-01"
-
-# 方式二：手动下载 CLI 后执行安装
-# 下载对应架构的 proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz 并解压到 /usr/local/bin/
-sudo proxy-panel install agent \
-  --hub-url "https://grpc.example.com:50052" \
-  --token "your-agent-token" \
-  --name "node-01"
-```
-
-安装脚本会自动完成：
-- 架构检测（x86_64 / aarch64）与 glibc 兼容性检查
-- 从 GitHub Release 下载 CLI tar.gz 并校验 SHA256
-- 安装 CLI 到 `/usr/local/bin/`
-- 调用 `proxy-panel install agent` 完成 Agent 安装、systemd 服务创建并启动
-
-> 也可在 Web 面板的 **节点管理** 页面点击「安装指令」按钮，直接获取包含 token 的完整安装命令。
-
-### 8. 手动启动 Agent（开发调试）
-
-```bash
-cargo run --release --bin proxy-panel-agent \
-  --hub-url "http://your-hub:50052" \
-  --token "your-agent-token"
-```
-
-## 项目结构
-
-```
-multi-proxy-panel/
-├── Cargo.toml              # Workspace 根配置
-├── docker-compose.yml      # 开发环境编排
-├── proto/
-│   ├── hub_agent.proto         # Hub-Agent gRPC 协议定义
-│   └── singbox_daemon.proto    # sing-box 守护进程协议定义
-├── crates/
-│   ├── pp-common/          # 共享类型、错误、工具函数
-│   ├── pp-db/              # Sea-ORM 实体与迁移
-│   ├── pp-proto/           # gRPC Protobuf 生成代码
-│   ├── pp-config/          # sing-box/mihomo 配置构建器
-│   ├── pp-core/            # 核心进程管理抽象
-│   ├── pp-subscription/    # 订阅链接生成器
-│   ├── pp-hub/             # 中央管理面板 (HTTP + gRPC)
-│   ├── pp-agent/           # 节点代理程序
-│   └── pp-cli/             # 管理 CLI 工具
-├── apps/
-│   └── panel/              # 管理系统：React Web 前端（Vite + shadcn/ui（Base UI） + Tailwind）
-├── docs/                   # 项目文档（索引见 docs/index.md）
-├── scripts/                # 辅助脚本
-└── CHANGELOG.md            # 变更日志
-```
-
-## 主要 Crate 说明
-
-| Crate | 说明 | 产物 |
-|-------|------|------|
-| `pp-hub` | 中央管理面板，提供 REST API、gRPC 服务和静态文件托管 | `proxy-panel-hub` |
-| `pp-agent` | 节点代理，管理本地 sing-box/mihomo 进程，上报指标 | `proxy-panel-agent` |
-| `apps/panel` | 管理系统 Web 前端（bun workspaces 成员） | 静态文件 |
-| `pp-cli` | 管理命令行工具：数据库初始化、Token 生成、组件生命周期管理（安装/升级/回滚/卸载/状态/日志/重启） | `proxy-panel` |
-| `pp-common` | 共享模块：DTO、枚举、错误类型、加密工具、日志脱敏与字段采集 | 库 |
-| `pp-db` | 数据库层：连接池、Sea-ORM 实体、迁移 | 库 |
-| `pp-proto` | gRPC 协议编译生成的 Rust 代码 | 库 |
-| `pp-config` | 配置抽象：将通用协议配置转译为 sing-box JSON 或 mihomo YAML | 库 |
-| `pp-core` | 核心进程管理：启动、停止、重载 | 库 |
-| `pp-subscription` | 订阅生成：Base64、Clash、SingBox、V2RayNG 等格式 | 库 |
-
 ## 支持的协议
 
 | 协议 | sing-box | mihomo | 说明 |
 |------|:--------:|:------:|------|
-| VLESS + REALITY | ✅ | ✅ | 推荐，最低特征 |
-| VLESS + XHTTP | ❌ | ✅ | 新一代传输 |
-| Hysteria2 | ✅ | ✅ | QUIC 加速 |
-| AnyTLS | ✅ | ✅ | 新兴协议 |
+| VLESS + REALITY | ✅ | ✅ | REALITY 传输 |
+| VLESS + XHTTP | ❌ | ✅ | XHTTP 传输，当前仅支持 mihomo |
+| Hysteria2 | ✅ | ✅ | 基于 QUIC |
+| AnyTLS | ✅ | ✅ | AnyTLS 协议 |
 
-## 开发指南
+协议与核心的兼容关系以 `pp-common/src/protocol.rs` 和对应配置构建器为准。
 
-完整文档索引见 [docs/index.md](docs/index.md)；开发流程、变更工作流与测试细节见 [docs/development.md](docs/development.md)。
+## 订阅输出
 
-快速命令：
+| 输出 | 用途 |
+|------|------|
+| Base64 编码的分享链接 | 支持分享链接订阅的客户端 |
+| V2RayNG 兼容输出 | 与 Base64 分享链接生成器相同，便于客户端选择 |
+| Clash YAML | Clash/mihomo 配置 |
+| sing-box JSON | sing-box 配置，可使用内置或自定义模板 |
+
+订阅链接由 `/sub/{token}` 提供；输出格式通过 UA 检测或 `format` 参数指定。
+
+## 快速开始
+
+本地构建、运行和验证统一使用仓库 [devenv 环境](nix-flake.md)。开发命令均在 `devenv shell` 环境中执行。
 
 ```bash
-# 运行测试
-cargo test --workspace
+git clone https://github.com/ybakiame/multi-proxy-panel.git
+cd multi-proxy-panel
+devenv shell
 
-# 检查代码
-cargo clippy --workspace --all-targets -- -D warnings
+# 启动开发数据库并初始化
+docker compose up -d postgres
+cargo run --bin proxy-panel -- init-db \
+  --database-url "postgres://proxypanel:proxypanel@localhost/proxypanel"
 
-# 格式化代码
-cargo fmt --all
-
-# Rust 全量门禁（fmt + clippy + test）
-bun run verify:rust
-
-# 前端：根目录安装依赖后按包构建/校验
+# 构建管理界面并启动 Hub
 bun install
 bun run --filter pp-web build
-
-# 生成实体（修改迁移后）
-cd crates/pp-db && sea-orm-cli generate entity -o src/entities
+cargo run --bin proxy-panel-hub
 ```
 
-## 部署指南
+Hub 默认监听 `localhost:8081`（HTTP）和 `localhost:50052`（gRPC）。首次启动的管理凭证、前端开发模式及 Agent 调试方法见 [开发指南](docs/development.md)。
 
-详见 [docs/deployment.md](docs/deployment.md)。
+请先在面板 **节点管理** 中预生成节点，再将面板生成的安装指令复制到目标 Agent 服务器执行；外部 Agent 通常通过 `https://面板域名:443` 连接，而不是直接连接内部 50052 端口。
 
-### Docker 部署（推荐）
+生产安装、Caddy/Nginx 反向代理、公开订阅与管理认证隔离、升级和回滚见 [部署指南](docs/deployment.md)。
+
+## 项目结构
+
+```text
+multi-proxy-panel/
+├── proto/                  # Hub-Agent 与 sing-box 守护进程协议
+├── crates/
+│   ├── pp-common/          # 共享类型、错误、加密与日志工具
+│   ├── pp-db/              # Sea-ORM 实体、迁移与版本化数据升级
+│   ├── pp-proto/           # Protobuf 生成代码
+│   ├── pp-config/          # sing-box/mihomo 配置构建器
+│   ├── pp-core/            # 核心进程管理
+│   ├── pp-subscription/    # 分享链接、订阅配置与 JSON 节点数据生成
+│   ├── pp-hub/             # HTTP API、gRPC 服务与静态文件托管
+│   ├── pp-agent/           # 节点 Agent
+│   └── pp-cli/             # 安装、升级、回滚与运维 CLI
+├── apps/panel/             # React 管理界面
+├── config/                 # Hub 配置示例
+├── deploy/                 # systemd 与 Caddy 部署模板
+├── docs/                   # 项目文档（索引见 docs/index.md）
+└── scripts/                # 开发、安装与检查脚本
+```
+
+主要二进制：
+
+| 组件 | 产物 |
+|------|------|
+| Hub | `proxy-panel-hub` |
+| Agent | `proxy-panel-agent` |
+| CLI | `proxy-panel` |
+
+## 开发与验证
 
 ```bash
-# 启动完整栈
-docker compose up -d
-
-# 仅启动数据库
-docker compose up -d postgres
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all
+bun run verify:rust
+bun run --filter pp-web verify
 ```
 
-### 使用 CLI 安装组件（推荐）
+完整流程见 [开发指南](docs/development.md) 和 [贡献指南](docs/contributing.md)。
 
-项目通过 GitHub Actions 自动构建并发布二进制文件与容器镜像：
+## 文档
 
-- **GitHub Release**: 推送 `v*` 标签时自动触发，发布 `proxy-panel-cli-linux-{x86_64,aarch64}.tar.gz`、`proxy-panel-hub-linux-{x86_64,aarch64}.tar.gz` 与 `proxy-panel-agent-linux-{x86_64,aarch64}.tar.gz`，附带 `SHA256SUMS`（RC 预发布标签照常发布二进制）
-- **GHCR 镜像**: 稳定版本标签与手动触发时构建并推送 `ghcr.io/ybakiame/proxy-panel-hub` 与 `ghcr.io/ybakiame/proxy-panel-agent`；RC 预发布标签（如 `v0.5.0-rc.1`）跳过 Docker 发布（见 [ADR-0019](docs/adr/0019-devenv-migration-and-rc-docker-skip.md)）
-
-**安装 Hub：**
-
-```bash
-# 通过 bootstrap 脚本
-curl -fsSL https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/scripts/install-hub.sh | bash -s --
-
-# 或手动下载 CLI 后执行
-sudo proxy-panel install hub
-```
-
-安装完成后按提示编辑 `/etc/proxy-panel/hub.toml` 配置数据库，然后：
-
-```bash
-sudo proxy-panel init-db --database-url "postgres://..."
-sudo systemctl enable --now proxy-panel-hub
-```
-
-**安装 Agent：**
-
-```bash
-# 通过 bootstrap 脚本
-curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
-  --hub-url "https://grpc.example.com:50052" \
-  --token "your-agent-token"
-
-# 或手动下载 CLI 后执行
-sudo proxy-panel install agent \
-  --hub-url "https://grpc.example.com:50052" \
-  --token "your-agent-token"
-```
-
-**常用 CLI 命令速查：**
-
-```bash
-# 查看各组件状态
-sudo proxy-panel status
-
-# 检查更新（无需 root）
-proxy-panel check-update
-proxy-panel check-update hub --json
-
-# 升级组件
-sudo proxy-panel upgrade hub
-sudo proxy-panel upgrade agent
-sudo proxy-panel upgrade cli
-
-# 回滚到上一版本
-sudo proxy-panel rollback hub
-sudo proxy-panel rollback agent
-
-# 查看日志
-sudo proxy-panel logs hub --lines 100 --follow
-sudo proxy-panel logs agent --lines 50
-
-# 重启服务
-sudo proxy-panel restart hub
-sudo proxy-panel restart agent
-
-# 卸载
-sudo proxy-panel uninstall agent --purge
-sudo proxy-panel uninstall hub --purge
-```
-
-Hub 自更新也可在 Web 面板 `/system` 页检测与触发：默认仅显示检测结果和手动命令；
-管理员可选安装受限 sudo 授权与 systemd drop-in 后开启面板一键升级（默认关闭，见
-[docs/deployment.md](docs/deployment.md#面板更新中心可选) 与
-[ADR-0018](docs/adr/0018-hub-self-update-maintenance.md)）。Agent 不提供远程升级，
-需在节点本地执行上述 CLI 命令。
-
-详见 [docs/deployment.md](docs/deployment.md)。
-
-### 手动部署
-
-1. 编译 Release 版本：`cargo build --release`
-2. 配置 Hub 环境变量
-3. 配置 Agent 启动参数
-4. 使用 systemd 管理进程（参见 docs/deployment.md）
-
-## API 概览
-
-Hub 提供完整的 REST API，详见 [docs/api_reference.md](docs/api_reference.md)。
-
-主要端点：
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/health` | GET | 健康检查 |
-| `/api/v1/nodes` | GET/POST | 节点列表 / 创建节点 |
-| `/api/v1/nodes/{id}/push` | POST | 向节点推送配置 |
-| `/api/v1/protocols` | GET/POST | 协议配置管理 |
-| `/api/v1/clients` | GET/POST | 客户端管理 |
-| `/api/v1/bindings` | GET/POST | 节点-配置绑定 |
-| `/api/v1/subscriptions` | GET/POST | 订阅管理 |
-| `/sub/{token}` | GET | 公开订阅端点 |
-| `/api/v1/traffic` | GET | 流量查询 |
-| `/api/v1/metrics` | GET | 指标查询 |
-| `/api/v1/logs` | GET | 日志查询 |
+- [文档中心](docs/index.md)
+- [部署指南](docs/deployment.md)
+- [API 参考](docs/api_reference.md)
+- [架构说明](docs/architecture.md)
+- [Nix 开发环境](nix-flake.md)
+- [ADR 索引](docs/adr/README.md)
+- [变更日志](CHANGELOG.md)
 
 ## 安全说明
 
-- Agent Token 采用加密安全的随机生成（32 bytes Base64）
-- REALITY 密钥对通过 X25519 生成
-- 建议在生产环境使用反向代理（Nginx / Caddy）并启用 TLS
+- 节点必须在 Hub 预生成，Agent Token 以 Argon2 哈希存储在 Hub 数据库中
+- 安装后 Agent Token 由权限受限的 env 文件提供，不写入 systemd 进程参数
+- 生产环境应通过 Nginx/Caddy 启用 HTTPS，并将 Hub 的内部 HTTP/gRPC 监听限制在本机
+- 管理 UI/API 与公开订阅、安装脚本及 Agent gRPC 应分别配置访问控制
 - 数据库连接建议使用专用账号并限制权限
 
-## 贡献指南
+## 贡献与许可证
 
-欢迎提交 Issue 和 PR！请阅读 [docs/contributing.md](docs/contributing.md) 了解详情；变更记录见 [CHANGELOG.md](CHANGELOG.md)。
-
-## 许可证
+欢迎提交 Issue 和 PR，请先阅读 [贡献指南](docs/contributing.md)。
 
 本项目采用 [AGPL-3.0-or-later](LICENSE) 许可证开源。
-
----
-
-<p align="center">Made with ❤️ by ProxyPanel Contributors</p>

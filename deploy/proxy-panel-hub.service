@@ -16,6 +16,7 @@ ExecStart=/usr/local/bin/proxy-panel-hub \
     --config /etc/proxy-panel/hub.toml \
     --static-dir /opt/proxy-panel/web/dist
 
+UMask=0077
 Restart=on-failure
 RestartSec=10
 

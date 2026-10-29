@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/ybakiame/multi-proxy-panel/main/scr
 
 ```bash
 curl -fsSL https://<your-hub-domain>/install.sh | bash -s -- \
-  --hub-url "https://grpc.example.com:50052" \
+  --hub-url "https://<your-hub-domain>:443" \
   --token "your-agent-token" \
   --name "node-01"
 ```
@@ -69,7 +69,8 @@ sudo proxy-panel uninstall hub --purge
 |------|------|
 | `clash-full-template.json` | Clash Meta 完整配置订阅模板（占位符方式） |
 | `proxy-panel-hub.service` | Hub 服务单元 |
-| `proxy-panel-agent.service` | Agent 服务单元 |
+| `proxy-panel-agent.service` | Agent 服务单元（Token 仅从 env 读取，不进入进程参数） |
+| `Caddyfile.example` | HTTPS、gRPC、公开订阅与管理认证分离的 Caddy 模板 |
 | `proxy-panel-maintenance.sudoers` | （可选）面板更新中心的受限 sudo 授权样例，见下文 |
 | `proxy-panel-hub-maintenance.conf` | （可选）Hub 维护 drop-in，仅放宽 `NoNewPrivileges`，见下文 |
 
@@ -172,7 +173,7 @@ sudo proxy-panel logs hub --follow
 在节点服务器上创建 `/etc/proxy-panel/agent.env`：
 
 ```bash
-PROXYPANEL_HUB_URL=https://grpc.example.com:50052
+PROXYPANEL_HUB_URL=https://<your-hub-domain>:443
 PROXYPANEL_AGENT_TOKEN=your-agent-token
 ```
 

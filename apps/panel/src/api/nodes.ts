@@ -60,9 +60,7 @@ export interface CoreBinary {
 }
 
 export const getCoreBinaries = (id: string) =>
-  get<{ binaries: CoreBinary[]; error: string }>(`/api/v1/nodes/${id}/binaries`).then(
-    (res) => res.binaries,
-  );
+  get<{ binaries: CoreBinary[]; error: string }>(`/api/v1/nodes/${id}/binaries`);
 
 export const deleteCoreBinary = (id: string, fileName: string) =>
   del(`/api/v1/nodes/${id}/binaries/${encodeURIComponent(fileName)}`);

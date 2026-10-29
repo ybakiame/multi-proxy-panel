@@ -34,22 +34,15 @@ ProxyPanel 是 Rust Workspace 项目，采用 **Hub-Agent** 架构：
 
 ### 2.1 工具链
 
-本地编译、运行、测试和提交钩子统一在仓库 `flake.nix` 开发环境中执行，不使用宿主机
-Bun/Protobuf 或系统库。该环境为 devenv flake 集成（`devenv.nix` + `nix/tools.nix`，
-见 [ADR-0019](docs/adr/0019-devenv-migration-and-rc-docker-skip.md)）；已装 direnv 时
-`.envrc` 自动加载同一环境。先 `nix develop --no-pure-eval`，自动化使用
-`nix develop --no-pure-eval --command bash --noprofile --norc -c '<命令>'`，避免用户 shell rc 覆盖环境。
-`--no-pure-eval` 为 devenv 定位项目根目录所需（与 Lanpath 一致）。
-Rust 版本仍由 `rust-toolchain.toml` 经 flake 的 rustup 管理。
-如 Nix 下载连接失败，可按本机代理配置重试（此工作区代理为 `http://127.0.0.1:7899`）：
+本地编译、运行、测试和提交钩子统一在仓库原生 devenv 环境中执行，不使用宿主机
+Bun/Protobuf 或系统库。环境由 `devenv.nix`、`devenv.yaml`、`devenv.lock` 与
+`nix/tools.nix` 声明（见 [ADR-0021](docs/adr/0021-native-devenv-cli.md)）；已装 direnv 时
+`.envrc` 自动加载同一环境。交互式使用 `devenv shell`，单条命令使用
+`devenv shell -- <命令>`，自动化可用 `devenv shell -- bash --noprofile --norc -c '<命令>'`，
+避免用户 shell rc 覆盖环境。缓存只使用官方 `cache.nixos.org` 与 devenv 官方 Cachix。
+Rust 版本仍由 `rust-toolchain.toml` 经环境的 rustup 管理。
 
-```bash
-export http_proxy="http://127.0.0.1:7899"
-export https_proxy="http://127.0.0.1:7899"
-nix develop --no-pure-eval
-```
-
-详见 [Nix 开发环境](nix-flake.md)。下文构建命令均假定已进入该环境。
+详见 [devenv 开发环境](nix-flake.md)。下文构建命令均假定已进入该环境。
 
 - Rust 1.88+（Workspace 指定 `rust-version = "1.88"`，edition = "2024"）
 - 使用 `rust-toolchain.toml` 锁定工具链

@@ -19,26 +19,18 @@
 
 ## 环境准备
 
-### 统一 Nix 开发环境
+### 统一 devenv 开发环境
 
-本地编译、运行、测试与提交统一进入仓库 `flake.nix` / `flake.lock` 环境
-（devenv flake 集成：`devenv.nix` + `nix/tools.nix`；`.envrc` 可 direnv 自动加载）。
-不再安装宿主机 Bun/Protobuf 或通过 apt/brew 补齐构建系统库。
-环境清单与 Nix 安装方法见 [Nix 开发环境](../nix-flake.md)；Rust 版本由
-`rust-toolchain.toml` 经 flake 提供的 rustup 管理。
-
-```bash
-nix develop --no-pure-eval
-# 自动化不加载用户 shell rc，防止用户 shell 覆盖 flake：
-nix develop --no-pure-eval --command bash --noprofile --norc -c 'bun run --filter pp-web verify'
-```
-
-若 Nix 下载连接失败，可设置本机 HTTP 代理后重试（此工作区示例）：
+本地编译、运行、测试与提交统一进入原生 devenv 环境
+（`devenv.nix` + `devenv.yaml` + `devenv.lock`；`.envrc` 可 direnv 自动加载）。
+不再安装宿主机 Bun/Protobuf 或通过 apt/brew 补齐构建系统库，也不再使用 flake 入口。
+环境清单与安装方法见 [devenv 开发环境](../nix-flake.md)；Rust 版本由
+`rust-toolchain.toml` 经环境提供的 rustup 管理。缓存只使用官方 `cache.nixos.org`。
 
 ```bash
-export http_proxy="http://127.0.0.1:7899"
-export https_proxy="http://127.0.0.1:7899"
-nix develop --no-pure-eval
+devenv shell
+# 自动化不加载用户 shell rc，防止用户 shell 覆盖环境：
+devenv shell -- bash --noprofile --norc -c 'bun run --filter pp-web verify'
 ```
 
 下文本地命令均假定已进入该环境。数据库由外部服务提供；客户端构建在独立 Lanpath 仓库执行。
@@ -52,7 +44,7 @@ nix develop --no-pure-eval
 ```bash
 git clone https://github.com/ybakiame/multi-proxy-panel.git
 cd multi-proxy-panel
-nix develop --no-pure-eval
+devenv shell
 ```
 
 ### 2. 启动基础设施
@@ -197,17 +189,19 @@ RUST_LOG=proxy_panel_hub=debug,tower_http=debug \
 
 **终端 2 — 启动 Agent（可选）:**
 
-开发环境默认在 `config/hub.toml` 中开启 `auto_register_agents = true`，Agent 首次连接时会自动在 Hub 中注册为新节点。
+先在面板 **节点管理** 中预生成节点并取得节点 UUID 和安装 Token，再启动 Agent。自动注册已移除，未预生成的节点会被 Hub 拒绝。
 
 ```bash
 RUST_LOG=proxy_panel_agent=debug \
   cargo run --bin proxy-panel-agent \
   -- --hub-url "http://localhost:50052" \
+     --token "<预生成节点 token>" \
+     --agent-id "<节点 UUID>" \
      --name "dev-agent-node" \
      --data-dir /tmp/proxypanel-agent
 ```
 
-> 生产环境请关闭 `auto_register_agents`（或通过环境变量 `PROXYPANEL_AUTO_REGISTER_AGENTS=false` 覆盖），先在 **节点管理** 中创建节点并获取 token，再通过 `--token <token>` 启动 Agent。
+旧配置中的 `auto_register_agents` 和 `PROXYPANEL_AUTO_REGISTER_AGENTS` 已不再生效，可从本地配置中删除。
 
 **终端 3 — 启动前端开发服务器:**
 
@@ -658,8 +652,8 @@ SELECT * FROM clients; # 查看客户端
 
 ### Q: 编译失败，提示 protobuf 相关错误？
 
-在仓库根目录进入 `nix develop --no-pure-eval`，然后执行 `protoc --version`。
-protobuf 编译器由 flake 提供，无需安装宿主机包。
+在仓库根目录执行 `devenv shell -- protoc --version`。
+protobuf 编译器由 devenv 提供，无需安装宿主机包。
 
 ### Q: Web 前端编译后无法访问？
 

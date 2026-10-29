@@ -1,5 +1,7 @@
 # ADR-0019: 开发环境迁移至 devenv 与 RC 标签跳过 Docker 发布
 
+> 补记（2026-10-29）：开发环境的 flake 集成方式已由 [ADR-0021](0021-native-devenv-cli.md) 取代，当前统一使用原生 devenv CLI。本文中 RC 标签跳过 Docker 发布的决定仍然有效。
+
 - **Status:** Accepted
 - **Date:** 2026-10-25
 - **Deciders:** 维护者
