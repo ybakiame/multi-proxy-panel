@@ -20,6 +20,7 @@ interface NodesTableProps {
   onPush: (node: Node) => void;
   onInstall: (node: Node) => void;
   onBinaries: (node: Node) => void;
+  onCertificate: (node: Node) => void;
   onDelete: (node: Node) => void;
 }
 
@@ -32,6 +33,7 @@ export function NodesTable({
   onPush,
   onInstall,
   onBinaries,
+  onCertificate,
   onDelete,
 }: NodesTableProps) {
   const { t } = useTranslation();
@@ -45,6 +47,7 @@ export function NodesTable({
         { label: t("nodes.pushConfig"), onSelect: () => onPush(node) },
         { label: t("nodes.installCommand"), onSelect: () => onInstall(node) },
         { label: t("nodes.binaries"), onSelect: () => onBinaries(node) },
+        { label: t("certificates.create"), onSelect: () => onCertificate(node) },
         { label: t("common.delete"), onSelect: () => onDelete(node), destructive: true },
       ]}
     />

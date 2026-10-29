@@ -207,6 +207,7 @@
     "title": "Certificates",
     "create": "+ Issue Certificate",
     "createTitle": "Issue Certificate",
+    "createError": "Certificate request failed. Check DNS resolution and the node status, then retry.",
     "domain": "Domain",
     "domainDescription": "The domain must resolve to the selected node; port 80 must be reachable during issuance (HTTP-01 challenge).",
     "node": "Node",

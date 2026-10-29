@@ -3,22 +3,11 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog";
 import { TableCell, TableHead, TableRow } from "../components/ui/table";
-import { DataTable, PageHeader, ConfirmDialog, FormInput, FormSelect } from "../components/ui";
-import {
-  getCertificates,
-  createCertificate,
-  renewCertificate,
-  deleteCertificate,
-} from "../api/certificates";
+import { DataTable, PageHeader, ConfirmDialog } from "../components/ui";
+import { getCertificates, renewCertificate, deleteCertificate } from "../api/certificates";
 import { getNodes } from "../api/nodes";
+import { CertificateFormDialog } from "./CertificateFormDialog";
 
 const certificatesQueryKey = "certificates";
 const nodesQueryKey = "nodes";
@@ -28,7 +17,6 @@ export function Certificates() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState({ domain: "", node_id: "" });
 
   const { data: certs = [], isLoading: loading } = useQuery({
     queryKey: [certificatesQueryKey],
@@ -38,15 +26,6 @@ export function Certificates() {
   const { data: nodes = [] } = useQuery({
     queryKey: [nodesQueryKey],
     queryFn: getNodes,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: createCertificate,
-    onSuccess: () => {
-      setCreateOpen(false);
-      setForm({ domain: "", node_id: "" });
-      queryClient.invalidateQueries({ queryKey: [certificatesQueryKey] });
-    },
   });
 
   const renewMutation = useMutation({
@@ -63,10 +42,6 @@ export function Certificates() {
       queryClient.invalidateQueries({ queryKey: [certificatesQueryKey] });
     },
   });
-
-  const handleCreate = () => {
-    createMutation.mutate({ domain: form.domain.trim(), node_id: form.node_id });
-  };
 
   const handleRenew = (id: string) => {
     renewMutation.mutate(id);
@@ -155,38 +130,7 @@ export function Certificates() {
         {t("certificates.deleteConfirm")}
       </ConfirmDialog>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("certificates.createTitle")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <FormInput
-              label={t("certificates.domain")}
-              value={form.domain}
-              onChange={(value) => setForm({ ...form, domain: value })}
-              placeholder="hy2.example.com"
-              description={t("certificates.domainDescription")}
-              isRequired
-            />
-            <FormSelect
-              label={t("certificates.node")}
-              value={form.node_id}
-              onChange={(value) => setForm({ ...form, node_id: value })}
-              options={nodes.map((n) => ({ id: n.id, label: n.name }))}
-              isRequired
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button disabled={!form.domain.trim() || !form.node_id} onClick={handleCreate}>
-              {t("common.create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CertificateFormDialog isOpen={createOpen} nodes={nodes} onOpenChange={setCreateOpen} />
     </div>
   );
 }

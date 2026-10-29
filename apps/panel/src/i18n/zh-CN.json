@@ -207,6 +207,7 @@
     "title": "证书管理",
     "create": "+ 申请证书",
     "createTitle": "申请证书",
+    "createError": "证书申请失败，请检查域名解析和节点状态后重试。",
     "domain": "域名",
     "domainDescription": "域名需已解析到所选节点，申请时节点 80 端口需可访问（HTTP-01 挑战）。",
     "node": "节点",

@@ -20,6 +20,7 @@ import type { Node, AgentLog } from "../../api/types";
 import { useNodeActions, defaultFormState, type NodeFormState } from "./useNodeActions";
 import { InstallWizard } from "./InstallWizard";
 import { EditModal, PushModal, BinariesModal, LogsModal, InstallModal } from "./NodeModals";
+import { CertificateFormDialog } from "../CertificateFormDialog";
 
 const nodesQueryKey = "nodes";
 const pendingQueryKey = "pending-updates";
@@ -42,6 +43,7 @@ export function Nodes() {
   const [pushCore, setPushCore] = useState("sing-box");
   const [pushing, setPushing] = useState(false);
   const [binNode, setBinNode] = useState<Node | null>(null);
+  const [certNode, setCertNode] = useState<Node | null>(null);
   const [binaries, setBinaries] = useState<CoreBinary[]>([]);
   const [binError, setBinError] = useState("");
   const [binLoading, setBinLoading] = useState(false);
@@ -298,6 +300,7 @@ export function Nodes() {
         onPush={openPush}
         onInstall={openInstallCommand}
         onBinaries={openBinaries}
+        onCertificate={setCertNode}
         onDelete={(node) => setDeleteNodeId(node.id)}
       />
 
@@ -352,6 +355,14 @@ export function Nodes() {
         onClose={() => setPushNode(null)}
         onChangeCore={setPushCore}
         onConfirm={handlePush}
+      />
+
+      <CertificateFormDialog
+        key={certNode?.id}
+        isOpen={!!certNode}
+        nodes={nodes}
+        initialNodeId={certNode?.id}
+        onOpenChange={(open) => !open && setCertNode(null)}
       />
 
       <BinariesModal
